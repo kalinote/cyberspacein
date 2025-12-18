@@ -1,0 +1,634 @@
+<template>
+  <div>
+    <Header />
+    
+    <!-- 英雄区域 -->
+    <section class="bg-linear-to-br from-blue-50 to-white py-12">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div class="lg:col-span-2">
+            <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">行动</span>部署中心</h1>
+            <p class="text-gray-600 text-lg mb-6">统一管理情报收集行动，从资源调配、目标设定到行动执行的全流程控制平台。</p>
+            <div class="flex flex-wrap gap-4">
+              <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
+                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Icon icon="mdi:server-network" class="text-blue-600 text-xl" />
+                </div>
+                <div>
+                  <p class="text-sm text-gray-500">活跃资源</p>
+                  <p class="text-xl font-bold text-gray-900">328</p>
+                </div>
+              </div>
+              <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
+                <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                  <Icon icon="mdi:target" class="text-green-600 text-xl" />
+                </div>
+                <div>
+                  <p class="text-sm text-gray-500">执行中目标</p>
+                  <p class="text-xl font-bold text-gray-900">12</p>
+                </div>
+              </div>
+              <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
+                <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <Icon icon="mdi:timeline-clock" class="text-amber-600 text-xl" />
+                </div>
+                <div>
+                  <p class="text-sm text-gray-500">今日完成行动</p>
+                  <p class="text-xl font-bold text-gray-900">47</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">快速部署行动</h3>
+            <div class="space-y-4">
+              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2" @click="$router.push('/action/new')">
+                <Icon icon="mdi:rocket-launch-outline" />
+                <span>新建标准行动</span>
+              </button>
+              <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/action/resource-config')">
+                <Icon icon="mdi:server-network" />
+                <span>行动资源配置</span>
+              </button>
+              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
+                <Icon icon="mdi:history" />
+                <span>查看历史行动</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 常用行动模板 -->
+    <section class="py-12 bg-linear-to-b from-white to-gray-50">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center mb-8">
+          <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+            <Icon icon="mdi:file-document-multiple" class="text-blue-600 text-2xl" />
+            <span><span class="text-blue-500">常用行动</span>模板</span>
+          </h2>
+          <el-button type="primary" link>
+            <template #icon><Icon icon="mdi:arrow-right" /></template>
+            查看全部
+          </el-button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+          <div 
+            v-for="(template, index) in commonTemplates" 
+            :key="index"
+            class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow flex flex-col"
+          >
+          <div class="mb-4">
+            <h3 class="text-xl font-bold text-gray-900 mb-4">{{ template.title }}</h3>
+            <el-tag 
+              class="border-0" 
+              :style="{ backgroundColor: template.taskTypeTagColor, color: template.taskTypeTagTextColor }" 
+              size="medium"
+            >
+              {{ template.taskType }}
+            </el-tag>
+          </div>
+
+            <div class="space-y-3 mb-6 flex-1">
+              <div class="flex items-start space-x-3">
+                <Icon icon="mdi:target" class="text-blue-500 text-lg mt-0.5 shrink-0" />
+                <div class="flex-1">
+                  <p class="text-sm text-gray-500 mb-1">任务目标</p>
+                  <p class="text-sm font-medium text-gray-900">{{ template.taskGoal }}</p>
+                </div>
+              </div>
+
+              <div class="flex items-start space-x-3">
+                <Icon icon="mdi:server-network" class="text-green-500 text-lg mt-0.5 shrink-0" />
+                <div class="flex-1">
+                  <p class="text-sm text-gray-500 mb-1">资源分配</p>
+                  <p class="text-sm font-medium text-gray-900">{{ template.resourceAllocation }}</p>
+                </div>
+              </div>
+
+              <div class="flex items-start space-x-3">
+                <Icon icon="mdi:format-list-numbered" class="text-purple-500 text-lg mt-0.5 shrink-0" />
+                <div class="flex-1">
+                  <p class="text-sm text-gray-500 mb-1">步骤数</p>
+                  
+                  <div class="flex items-center flex-wrap gap-2 text-sm font-medium text-gray-900">
+                    <span>{{ template.branchCount }} 个分支，共{{ template.stepCount }} 个步骤</span>
+                    <div @click="viewSteps(template.id)" class="text-blue-500 cursor-pointer hover:text-blue-600 transition-colors">
+                      查看
+                    </div>
+                  </div>
+                  </div>
+              </div>
+
+              <div class="flex items-start space-x-3">
+                <Icon icon="mdi:calendar-clock" class="text-amber-500 text-lg mt-0.5 shrink-0" />
+                <div class="flex-1">
+                  <p class="text-sm text-gray-500 mb-1">执行期限</p>
+                  <p class="text-sm font-medium text-gray-900">{{ template.executionDeadline }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-4 border-t border-gray-200 flex flex-col gap-2 mt-auto">
+              <el-button 
+                type="primary" 
+                class="w-full ml-0!" 
+                @click="createActionFromTemplate(template)"
+              >
+                <template #icon><Icon icon="mdi:rocket-launch" /></template>
+                从此模板创建行动
+              </el-button>
+              <el-button 
+                plain 
+                class="w-full ml-0! text-red-500! border-red-500! " 
+                @click="removeFromCommonTemplates(index)"
+              >
+                <template #icon><Icon icon="mdi:delete-outline" /></template>
+                从常用模板删除
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 资源管理 -->
+    <section class="py-12 bg-white">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center mb-8">
+          <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+            <Icon icon="mdi:server-network" class="text-blue-600 text-2xl" />
+            <span><span class="text-blue-500">资源</span>管理</span>
+          </h2>
+          <el-button type="primary" link>
+            <template #icon><Icon icon="mdi:settings" /></template>
+            资源配置
+          </el-button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-linear-to-br from-blue-50 to-white rounded-2xl p-6 border border-blue-100 shadow-sm cursor-pointer">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 bg-linear-to-br from-blue-500 to-cyan-400 rounded-xl flex items-center justify-center">
+                  <Icon icon="mdi:server" class="text-white text-2xl" />
+                </div>
+                <div>
+                  <h3 class="font-bold text-gray-900">代理网络</h3>
+                  <p class="text-sm text-gray-500">全球接入节点</p>
+                </div>
+              </div>
+              <span class="text-green-600 font-bold">87%</span>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <div class="flex justify-between text-sm mb-1">
+                  <span class="text-gray-600">可用节点</span>
+                  <span class="font-medium">152/175</span>
+                </div>
+                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div class="h-full bg-green-500 rounded-full" style="width: 87%"></div>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3 pt-3">
+                <div class="text-center p-3 bg-white rounded-lg">
+                  <p class="text-sm text-gray-500">响应延迟</p>
+                  <p class="text-lg font-bold text-gray-900">≤2.1s</p>
+                </div>
+                <div class="text-center p-3 bg-white rounded-lg">
+                  <p class="text-sm text-gray-500">可用地区</p>
+                  <p class="text-lg font-bold text-gray-900">24</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-linear-to-br from-amber-50 to-white rounded-2xl p-6 border border-amber-100 shadow-sm cursor-pointer">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 bg-linear-to-br from-amber-500 to-orange-400 rounded-xl flex items-center justify-center">
+                  <Icon icon="mdi:account-key" class="text-white text-2xl" />
+                </div>
+                <div>
+                  <h3 class="font-bold text-gray-900">采集账号</h3>
+                  <p class="text-sm text-gray-500">平台身份资源</p>
+                </div>
+              </div>
+              <span class="text-amber-600 font-bold">64%</span>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <div class="flex justify-between text-sm mb-1">
+                  <span class="text-gray-600">可用账号</span>
+                  <span class="font-medium">89/139</span>
+                </div>
+                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div class="h-full bg-amber-500 rounded-full" style="width: 64%"></div>
+                </div>
+              </div>
+              <div class="grid grid-cols-3 gap-2 pt-3">
+                <div class="text-center p-2 bg-white rounded-lg">
+                  <p class="text-xs text-gray-500">社交</p>
+                  <p class="text-sm font-bold text-gray-900">42</p>
+                </div>
+                <div class="text-center p-2 bg-white rounded-lg">
+                  <p class="text-xs text-gray-500">论坛</p>
+                  <p class="text-sm font-bold text-gray-900">31</p>
+                </div>
+                <div class="text-center p-2 bg-white rounded-lg">
+                  <p class="text-xs text-gray-500">新闻</p>
+                  <p class="text-sm font-bold text-gray-900">16</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-linear-to-br from-purple-50 to-white rounded-2xl p-6 border border-purple-100 shadow-sm cursor-pointer">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 bg-linear-to-br from-purple-500 to-pink-400 rounded-xl flex items-center justify-center">
+                  <Icon icon="mdi:cube-outline" class="text-white text-2xl" />
+                </div>
+                <div>
+                  <h3 class="font-bold text-gray-900">沙盒容器</h3>
+                  <p class="text-sm text-gray-500">隔离执行环境</p>
+                </div>
+              </div>
+              <span class="text-purple-600 font-bold">92%</span>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <div class="flex justify-between text-sm mb-1">
+                  <span class="text-gray-600">可用容器</span>
+                  <span class="font-medium">46/50</span>
+                </div>
+                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div class="h-full bg-purple-500 rounded-full" style="width: 92%"></div>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3 pt-3">
+                <div class="text-center p-3 bg-white rounded-lg">
+                  <p class="text-sm text-gray-500">CPU负载</p>
+                  <p class="text-lg font-bold text-gray-900">34%</p>
+                </div>
+                <div class="text-center p-3 bg-white rounded-lg">
+                  <p class="text-sm text-gray-500">内存使用</p>
+                  <p class="text-lg font-bold text-gray-900">61%</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 行动执行监控 -->
+    <section class="py-12 bg-linear-to-b from-gray-50 to-white">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-8 flex items-center space-x-2">
+          <Icon icon="mdi:monitor-dashboard" class="text-blue-600 text-2xl" />
+          <span><span class="text-blue-500">行动</span>执行监控</span>
+        </h2>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div class="bg-white rounded-2xl p-6 shadow-lg border border-red-100">
+            <h3 class="text-lg font-bold text-gray-900 mb-6">当前行动状态</h3>
+            <div class="space-y-4">
+              <div class="flex items-center justify-between p-4 bg-linear-to-r from-red-50 to-white rounded-xl border border-red-200">
+                <div class="flex items-center space-x-3">
+                  <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                    <Icon icon="mdi:alert-circle" class="text-red-600 text-xl" />
+                  </div>
+                  <div>
+                    <p class="font-medium text-gray-900">异常行为检测</p>
+                    <p class="text-sm text-gray-500">3个代理节点响应异常</p>
+                  </div>
+                </div>
+                <el-button type="danger" link size="small">查看详情</el-button>
+              </div>
+
+              <div class="flex items-center justify-between p-4 bg-linear-to-r from-green-50 to-white rounded-xl border border-green-200">
+                <div class="flex items-center space-x-3">
+                  <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <Icon icon="mdi:check-circle" class="text-green-600 text-xl" />
+                  </div>
+                  <div>
+                    <p class="font-medium text-gray-900">数据采集流量</p>
+                    <p class="text-sm text-gray-500">平均 2.4GB/小时，正常</p>
+                  </div>
+                </div>
+                <div class="text-green-600 text-sm font-medium">+12%</div>
+              </div>
+
+              <div class="flex items-center justify-between p-4 bg-linear-to-r from-blue-50 to-white rounded-xl border border-blue-200">
+                <div class="flex items-center space-x-3">
+                  <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Icon icon="mdi:chart-line" class="text-blue-600 text-xl" />
+                  </div>
+                  <div>
+                    <p class="font-medium text-gray-900">任务成功率</p>
+                    <p class="text-sm text-gray-500">今日成功 147/150 任务</p>
+                  </div>
+                </div>
+                <div class="text-blue-600 text-sm font-medium">98%</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl p-6 shadow-lg border border-red-100">
+            <h3 class="text-lg font-bold text-gray-900 mb-6">资源使用热图</h3>
+            <div class="grid grid-cols-4 gap-3">
+              <div class="col-span-4 h-6 bg-linear-to-r from-green-400 via-yellow-400 to-red-500 rounded-full mb-2"></div>
+              <div class="text-center">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                  <Icon icon="mdi:server" class="text-green-600 text-2xl" />
+                </div>
+                <p class="text-xs text-gray-600">美洲节点</p>
+                <p class="text-sm font-bold text-gray-900">42%</p>
+              </div>
+              <div class="text-center">
+                <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                  <Icon icon="mdi:server" class="text-yellow-600 text-2xl" />
+                </div>
+                <p class="text-xs text-gray-600">欧洲节点</p>
+                <p class="text-sm font-bold text-gray-900">68%</p>
+              </div>
+              <div class="text-center">
+                <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                  <Icon icon="mdi:server" class="text-orange-600 text-2xl" />
+                </div>
+                <p class="text-xs text-gray-600">亚洲节点</p>
+                <p class="text-sm font-bold text-gray-900">79%</p>
+              </div>
+              <div class="text-center">
+                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                  <Icon icon="mdi:server" class="text-red-600 text-2xl" />
+                </div>
+                <p class="text-xs text-gray-600">大洋洲节点</p>
+                <p class="text-sm font-bold text-gray-900">91%</p>
+              </div>
+            </div>
+            <div class="mt-6 pt-6 border-t border-gray-200">
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-600">建议操作</span>
+                <el-button type="primary" link size="small">优化资源分配</el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script>
+import { Icon } from '@iconify/vue'
+import * as echarts from 'echarts'
+import Header from '@/components/Header.vue'
+
+export default {
+  name: 'Action',
+  components: {
+    Header,
+    Icon
+  },
+  data() {
+    return {
+      intelligenceTypes: ['social'],
+      newKeyword: '',
+      keywords: [
+        { text: '网络安全威胁', type: 'primary' },
+        { text: '新兴技术', type: 'success' },
+        { text: '市场趋势', type: 'warning' }
+      ],
+      commonTemplates: [
+        {
+          id: 1,
+          title: '社交媒体舆情监控',
+          taskType: '情报收集',
+          taskTypeTagColor: '#dbeafe',
+          taskTypeTagTextColor: '#1e40af',
+          taskGoal: '监控Twitter、Reddit等平台的技术讨论趋势和热点话题',
+          resourceAllocation: '代理网络: 25节点 | 采集账号: 8个 | 沙盒容器: 3个',
+          executionDeadline: '7天',
+          branchCount: 3,
+          stepCount: 10
+        },
+        {
+          id: 2,
+          title: '技术论坛情报收集',
+          taskType: '深度挖掘',
+          taskTypeTagColor: '#d1fae5',
+          taskTypeTagTextColor: '#065f46',
+          taskGoal: '收集Stack Overflow、GitHub等平台的技术漏洞和安全信息',
+          resourceAllocation: '代理网络: 18节点 | 采集账号: 5个 | 沙盒容器: 2个',
+          executionDeadline: '5天',
+          branchCount: 2,
+          stepCount: 8
+        },
+        {
+          id: 3,
+          title: '新闻媒体事件追踪',
+          taskType: '实时监控',
+          taskTypeTagColor: '#fef3c7',
+          taskTypeTagTextColor: '#92400e',
+          taskGoal: '追踪全球主要新闻媒体的网络安全相关报道和事件',
+          resourceAllocation: '代理网络: 15节点 | 采集账号: 6个 | 沙盒容器: 2个',
+          executionDeadline: '3天',
+          branchCount: 1,
+          stepCount: 5
+        },
+        {
+          id: 4,
+          title: '网络安全事件分析',
+          taskType: '深度分析',
+          taskTypeTagColor: '#fee2e2',
+          taskTypeTagTextColor: '#991b1b',
+          taskGoal: '分析网络安全事件的成因和趋势',
+          resourceAllocation: '代理网络: 10节点 | 采集账号: 4个 | 沙盒容器: 1个',
+          executionDeadline: '2天',
+          branchCount: 1,
+          stepCount: 3
+        },{
+          id: 5,
+          title: '原神相关图像采集',
+          taskType: '资源探测',
+          taskTypeTagColor: '#e9d5ff',
+          taskTypeTagTextColor: '#6b21a8',
+          taskGoal: '采集Pixiv、Twitter等平台上的原神相关二创图',
+          resourceAllocation: '代理网络: 10节点 | 采集账号: 4个 | 沙盒容器: 1个',
+          executionDeadline: '1天',
+          branchCount: 1,
+          stepCount: 1
+        }
+      ],
+      
+      treeData: {
+        name: '行动方案',
+        children: [
+          {
+            name: '主要方案',
+            value: 100,
+            itemStyle: { color: '#3b82f6' },
+            children: [
+              { name: '公开网络代理', value: 40, itemStyle: { color: '#60a5fa' } },
+              { name: '标准频率采集', value: 30, itemStyle: { color: '#60a5fa' } },
+              { name: '实时数据校验', value: 30, itemStyle: { color: '#60a5fa' } }
+            ]
+          },
+          {
+            name: '应急方案',
+            value: 80,
+            itemStyle: { color: '#f59e0b' },
+            children: [
+              { name: '高隐蔽性模式', value: 40, itemStyle: { color: '#fbbf24' } },
+              { name: '备用代理切换', value: 30, itemStyle: { color: '#fbbf24' } },
+              { name: '降频采集策略', value: 30, itemStyle: { color: '#fbbf24' } }
+            ]
+          },
+          {
+            name: '扩展方案',
+            value: 60,
+            itemStyle: { color: '#10b981' },
+            children: [
+              { name: '多平台并行', value: 40, itemStyle: { color: '#34d399' } },
+              { name: '深度数据挖掘', value: 30, itemStyle: { color: '#34d399' } },
+              { name: 'AI辅助分析', value: 30, itemStyle: { color: '#34d399' } }
+            ]
+          }
+        ]
+      },
+      
+      treeChart: null,
+      zoomLevel: 1
+    }
+  },
+  
+  methods: {
+    initTreeChart() {
+      this.$nextTick(() => {
+        const chartDom = document.getElementById('tree-chart')
+        if (!chartDom) return
+        
+        this.treeChart = echarts.init(chartDom)
+        
+        const option = {
+          tooltip: {
+            trigger: 'item',
+            triggerOn: 'mousemove',
+            formatter: (params) => {
+              return `${params.name}<br/>权重: ${params.value}`
+            }
+          },
+          series: [{
+            type: 'tree',
+            data: [this.treeData],
+            top: '10%',
+            left: '15%',
+            bottom: '10%',
+            right: '15%',
+            symbolSize: 10,
+            label: {
+              position: 'left',
+              verticalAlign: 'middle',
+              align: 'right',
+              fontSize: 12,
+              color: '#374151'
+            },
+            leaves: {
+              label: {
+                position: 'right',
+                verticalAlign: 'middle',
+                align: 'left'
+              }
+            },
+            emphasis: {
+              focus: 'descendant'
+            },
+            expandAndCollapse: false,
+            animationDuration: 550,
+            animationDurationUpdate: 750,
+            lineStyle: {
+              color: '#d1d5db',
+              width: 1.5
+            }
+          }]
+        }
+        
+        this.treeChart.setOption(option)
+        
+        window.addEventListener('resize', () => {
+          this.treeChart?.resize()
+        })
+      })
+    },
+    
+    zoomIn() {
+      this.zoomLevel = Math.min(this.zoomLevel * 1.2, 3)
+      this.updateZoom()
+    },
+    
+    zoomOut() {
+      this.zoomLevel = Math.max(this.zoomLevel / 1.2, 0.5)
+      this.updateZoom()
+    },
+    
+    resetView() {
+      this.zoomLevel = 1
+      this.updateZoom()
+    },
+    
+    updateZoom() {
+      if (this.treeChart) {
+        this.treeChart.setOption({
+          series: [{
+            zoom: this.zoomLevel
+          }]
+        })
+      }
+    },
+    
+    addKeyword() {
+      if (this.newKeyword.trim()) {
+        this.keywords.push({
+          text: this.newKeyword,
+          type: ''
+        })
+        this.newKeyword = ''
+      }
+    },
+    
+    removeKeyword(index) {
+      this.keywords.splice(index, 1)
+    },
+    
+    createActionFromTemplate(template) {
+      this.$message.success(`正在从模板"${template.title}"创建行动...`)
+    },
+    
+    removeFromCommonTemplates(index) {
+      this.$confirm('确定要从常用模板中删除此模板吗？', '确认删除', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        this.commonTemplates.splice(index, 1)
+        this.$message.success('已从常用模板中删除')
+      }).catch(() => {
+        this.$message.info('已取消删除')
+      })
+    },
+
+    viewSteps(templateId) {
+      this.$message.error(`[尚未实现] 查看步骤: ${templateId}`)
+    },
+  },
+  
+  mounted() {
+    this.initTreeChart()
+  }
+}
+</script>
+

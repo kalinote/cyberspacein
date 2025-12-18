@@ -1,0 +1,384 @@
+# API 接口快速开始指南
+
+## 🎯 快速开始
+
+### 1. 环境配置（已完成）
+
+环境配置文件已自动创建：
+- `.env.development` - 开发环境
+- `.env.production` - 生产环境
+
+默认 API 地址：`http://192.168.31.51:8080/api/v1`
+
+如需修改，编辑对应的 `.env` 文件即可。
+
+### 2. 启动项目
+
+```bash
+pnpm dev
+```
+
+修改环境变量后，需要重启开发服务器。
+
+### 3. 查看示例
+
+打开浏览器访问 ActionResourceConfig 页面，该页面已集成后端接口：
+- 自动从后端获取基础组件列表
+- 支持分页加载
+- 支持本地搜索过滤
+
+## 📁 文件说明
+
+### 核心文件
+
+```
+src/
+├── utils/
+│   └── request.js              # ✅ axios 配置和请求工具
+├── api/
+│   └── action.js               # ✅ 行动相关 API 接口
+└── views/
+    └── action/
+        └── ActionResourceConfig.vue  # ✅ 示例页面（已改造）
+```
+
+## 🔌 接口配置
+
+### 当前已实现接口
+
+#### 获取基础组件列表（分页）
+```javascript
+import { actionApi } from '@/api/action'
+
+const response = await actionApi.getBaseComponents({
+  page: 1,
+  page_size: 10
+})
+```
+
+**接口地址**: `GET /action/resource_management/base_components`
+
+**请求参数**:
+- `page`: 页码（默认：1）
+- `page_size`: 每页数量（默认：10）
+
+**返回数据**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total": 100,
+    "page": 1,
+    "page_size": 10,
+    "total_pages": 10,
+    "items": [
+      {
+        "id": "xxx",
+        "name": "组件名称",
+        "description": "组件描述",
+        "status": "finished",
+        "last_run_at": "2025-12-17T08:41:34.874000Z",
+        "total_runs": 2,
+        "average_runtime": 43
+      }
+    ]
+  }
+}
+```
+
+### 其他预留接口
+
+```javascript
+// 获取组件详情
+actionApi.getComponentById('component_id')
+
+// 创建组件
+actionApi.createComponent({ name: '新组件', description: '描述' })
+
+// 更新组件
+actionApi.updateComponent('component_id', { name: '更新名称' })
+
+// 删除组件
+actionApi.deleteComponent('component_id')
+
+// 运行组件
+actionApi.runComponent('component_id')
+
+// 停止组件
+actionApi.stopComponent('component_id')
+```
+
+## 🛠️ 使用工具函数
+
+### 1. 普通请求
+
+```javascript
+import { request } from '@/utils/request'
+
+// GET 请求
+const response = await request.get('/your-path', { param: 'value' })
+
+// POST 请求
+const response = await request.post('/your-path', { data: 'value' })
+
+// PUT 请求
+const response = await request.put('/your-path', { data: 'value' })
+
+// DELETE 请求
+const response = await request.delete('/your-path')
+```
+
+### 2. 分页数据请求
+
+```javascript
+import { getPaginatedData } from '@/utils/request'
+import { actionApi } from '@/api/action'
+
+const result = await getPaginatedData(
+  actionApi.getBaseComponents,
+  { page: 1, page_size: 10 }
+)
+
+console.log(result.items)        // 数据列表
+console.log(result.pagination)   // { total, page, pageSize, totalPages }
+```
+
+## 📝 在新页面中使用 API
+
+### 完整示例
+
+```vue
+<template>
+  <div v-loading="loading">
+    <!-- 数据列表 -->
+    <div v-for="item in dataList" :key="item.id">
+      {{ item.name }}
+    </div>
+    
+    <!-- 分页 -->
+    <el-pagination
+      v-model:current-page="pagination.page"
+      v-model:page-size="pagination.pageSize"
+      :total="pagination.total"
+      @current-change="handlePageChange"
+      @size-change="handlePageSizeChange"
+    />
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { actionApi } from '@/api/action'
+import { getPaginatedData } from '@/utils/request'
+import { ElMessage } from 'element-plus'
+
+const loading = ref(false)
+const dataList = ref([])
+const pagination = ref({
+  page: 1,
+  pageSize: 10,
+  total: 0,
+  totalPages: 0
+})
+
+const fetchData = async () => {
+  loading.value = true
+  try {
+    const result = await getPaginatedData(
+      actionApi.getBaseComponents,
+      {
+        page: pagination.value.page,
+        page_size: pagination.value.pageSize
+      }
+    )
+    
+    dataList.value = result.items
+    pagination.value = {
+      ...pagination.value,
+      ...result.pagination
+    }
+  } catch (error) {
+    console.error('获取数据失败:', error)
+    ElMessage.error('获取数据失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+const handlePageChange = (page) => {
+  pagination.value.page = page
+  fetchData()
+}
+
+const handlePageSizeChange = (pageSize) => {
+  pagination.value.pageSize = pageSize
+  pagination.value.page = 1
+  fetchData()
+}
+
+onMounted(() => {
+  fetchData()
+})
+</script>
+```
+
+## 🔧 添加新 API 接口
+
+### 步骤 1: 在 API 文件中定义
+
+```javascript
+// src/api/your-module.js
+import { request } from '@/utils/request'
+
+export const yourApi = {
+  getList(params) {
+    return request.get('/your-endpoint', params)
+  },
+  
+  create(data) {
+    return request.post('/your-endpoint', data)
+  },
+  
+  update(id, data) {
+    return request.put(`/your-endpoint/${id}`, data)
+  },
+  
+  delete(id) {
+    return request.delete(`/your-endpoint/${id}`)
+  }
+}
+```
+
+### 步骤 2: 在组件中使用
+
+```vue
+<script setup>
+import { yourApi } from '@/api/your-module'
+
+const handleAction = async () => {
+  try {
+    const response = await yourApi.getList({ page: 1 })
+    console.log(response.data)
+  } catch (error) {
+    console.error(error)
+  }
+}
+</script>
+```
+
+## ⚠️ 注意事项
+
+### 1. 接口地址配置
+
+当前配置：
+- 开发环境: `http://192.168.31.51:8080/api/v1`
+- 生产环境: `http://192.168.31.51:8080/api/v1`
+
+如果后端接口地址不同，请修改 `.env.development` 或 `.env.production`。
+
+### 2. 接口地址不一致问题
+
+用户提供的接口示例：`http://127.0.0.1:8000/api/v1/action/resource_management/base_components`
+
+但配置的基础地址是：`http://192.168.31.51:8080/api/v1`
+
+**解决方案**：
+- 如果后端运行在 `127.0.0.1:8000`，请修改 `.env.development` 为：
+  ```
+  VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
+  ```
+- 如果后端运行在 `192.168.31.51:8080`，保持现有配置不变
+
+### 3. 跨域问题
+
+如遇到 CORS 跨域错误，有两种解决方案：
+
+#### 方案1: 后端配置 CORS（推荐）
+后端需要允许前端域名访问。
+
+#### 方案2: 前端配置代理
+在 `vite.config.js` 中添加代理配置：
+
+```javascript
+export default {
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://192.168.31.51:8080',
+        changeOrigin: true
+      }
+    }
+  }
+}
+```
+
+然后修改 `.env.development` 为：
+```
+VITE_API_BASE_URL=/api/v1
+```
+
+### 4. 响应格式验证
+
+确保后端返回的数据格式符合约定：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total": 100,
+    "page": 1,
+    "page_size": 10,
+    "total_pages": 10,
+    "items": [...]
+  }
+}
+```
+
+如果字段名不同，需要调整 `getPaginatedData` 函数。
+
+## 🐛 调试技巧
+
+### 1. 查看请求详情
+
+打开浏览器开发者工具（F12）：
+- Network 标签可以查看所有请求
+- Console 标签可以查看日志输出
+
+### 2. 测试接口连通性
+
+在浏览器控制台中测试：
+
+```javascript
+import { actionApi } from '@/api/action'
+
+// 测试获取列表
+actionApi.getBaseComponents({ page: 1, page_size: 10 })
+  .then(res => console.log('成功:', res))
+  .catch(err => console.error('失败:', err))
+```
+
+### 3. 检查环境变量
+
+在代码中打印当前配置：
+
+```javascript
+console.log('API Base URL:', import.meta.env.VITE_API_BASE_URL)
+```
+
+## 📚 更多文档
+
+- [API 配置详细说明](./api_configuration.md)
+- [后端集成总结](./backend_integration_summary.md)
+
+## ✅ 验证清单
+
+- [ ] 启动开发服务器
+- [ ] 打开 ActionResourceConfig 页面
+- [ ] 检查浏览器控制台是否有错误
+- [ ] 检查 Network 标签是否有 API 请求
+- [ ] 验证数据是否正确显示
+- [ ] 测试分页功能是否正常
+
+如有问题，请查看浏览器控制台的错误信息。
