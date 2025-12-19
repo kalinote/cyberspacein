@@ -376,10 +376,13 @@
                 删除
               </el-button>
             </div>
+            <el-form-item label="接口名称" :prop="`handles.${index}.name`" :rules="handleRules.name">
+              <el-input v-model="handle.name" placeholder="请输入接口名称，必须是英文字母开头，只能包含字母、数字和下划线" />
+            </el-form-item>
             <el-form-item :label="`类型`" :prop="`handles.${index}.type`" :rules="handleRules.type">
               <el-select v-model="handle.type" placeholder="请选择类型" class="w-full">
-                <el-option label="source" value="source" />
-                <el-option label="target" value="target" />
+                <el-option label="输出接口" value="source" />
+                <el-option label="输入接口" value="target" />
               </el-select>
             </el-form-item>
             <el-form-item :label="`位置`" :prop="`handles.${index}.position`" :rules="handleRules.position">
@@ -391,7 +394,7 @@
               </el-select>
             </el-form-item>
             <el-form-item :label="`接口类型`" :prop="`handles.${index}.socket_type`" :rules="handleRules.socket_type">
-              <el-select v-model="handle.socket_type" placeholder="请选择接口类型" class="w-full">
+              <el-select v-model="handle.socket_type" placeholder="请选择接口类型，记得点确定" class="w-full">
                 <el-option
                   v-for="socketType in socketTypeConfigs"
                   :key="socketType.socket_type"
@@ -444,6 +447,9 @@
                 删除
               </el-button>
             </div>
+            <el-form-item label="输入项名称" :prop="`inputs.${index}.name`" :rules="inputRules.name">
+              <el-input v-model="input.name" placeholder="请输入输入项名称，必须是英文字母开头，只能包含字母、数字和下划线" />
+            </el-form-item>
             <el-form-item :label="`输入类型`" :prop="`inputs.${index}.type`" :rules="inputRules.type">
               <el-select v-model="input.type" placeholder="请选择输入类型" class="w-full">
                 <el-option
@@ -560,6 +566,16 @@ const socketTypeConfigs = ref([
 
 const inputTypes = ref(['int', 'string', 'textarea', 'select', 'checkbox', 'checkbox-group', 'radio-group', 'boolean', 'datetime', 'tags'])
 
+const validateName = (rule, value, callback) => {
+  if (!value) {
+    callback(new Error('请输入名称'))
+  } else if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(value)) {
+    callback(new Error('名称必须以英文字母开头，只能包含字母、数字和下划线'))
+  } else {
+    callback()
+  }
+}
+
 const formData = ref({
   name: '',
   description: '',
@@ -583,6 +599,9 @@ const formRules = {
 }
 
 const handleRules = {
+  name: [
+    { required: true, validator: validateName, trigger: 'blur' }
+  ],
   type: [
     { required: true, message: '请选择接口类型', trigger: 'change' }
   ],
@@ -598,6 +617,9 @@ const handleRules = {
 }
 
 const inputRules = {
+  name: [
+    { required: true, validator: validateName, trigger: 'blur' }
+  ],
   type: [
     { required: true, message: '请选择输入类型', trigger: 'change' }
   ],
@@ -653,10 +675,6 @@ const getResourceCount = (tabKey) => {
     return componentList.value.length
   }
   return 0
-}
-
-const getTotalResourceCount = () => {
-  return nodeList.value.length + componentList.value.length
 }
 
 const getNodeColor = (node) => {
@@ -744,6 +762,7 @@ const fetchComponentsForSelect = async () => {
 
 const addHandle = () => {
   formData.value.handles.push({
+    name: '',
     type: '',
     position: '',
     socket_type: '',
@@ -759,6 +778,7 @@ const removeHandle = (index) => {
 
 const addInput = () => {
   formData.value.inputs.push({
+    name: '',
     type: '',
     position: 'center',
     label: '',
@@ -791,6 +811,7 @@ const handleSubmit = async () => {
       related_components: formData.value.related_components || [],
       handles: formData.value.handles.map(handle => {
         const handleData = {
+          name: handle.name,
           type: handle.type,
           position: handle.position,
           socket_type: handle.socket_type,
@@ -804,6 +825,7 @@ const handleSubmit = async () => {
       }),
       inputs: formData.value.inputs.map(input => {
         const inputData = {
+          name: input.name,
           type: input.type,
           position: input.position,
           label: input.label,
@@ -867,7 +889,7 @@ const getComponentStatusText = (status) => {
   const statusMap = {
     'finished': '成功',
     'running': '运行中',
-    'failed': '失败',
+    'error': '失败',
     'unknown': '未知'
   }
   return statusMap[status] || status
@@ -877,7 +899,7 @@ const getComponentStatusTagType = (status) => {
   const typeMap = {
     'finished': 'success',
     'running': 'primary',
-    'failed': 'danger',
+    'error': 'danger',
     'unknown': 'info'
   }
   return typeMap[status] || ''
@@ -887,7 +909,7 @@ const getComponentStatusIcon = (status) => {
   const iconMap = {
     'finished': 'mdi:check-circle',
     'running': 'mdi:loading',
-    'failed': 'mdi:alert-circle',
+    'error': 'mdi:alert-circle',
     'unknown': 'mdi:clock-outline'
   }
   return iconMap[status] || 'mdi:help-circle'
@@ -897,7 +919,7 @@ const getComponentStatusIconClass = (status) => {
   const classMap = {
     'finished': 'text-green-600',
     'running': 'text-blue-600',
-    'failed': 'text-red-600',
+    'error': 'text-red-600',
     'unknown': 'text-gray-600'
   }
   return classMap[status] || 'text-gray-600'
@@ -907,7 +929,7 @@ const getComponentStatusBgClass = (status) => {
   const classMap = {
     'finished': 'bg-green-100',
     'running': 'bg-blue-100',
-    'failed': 'bg-red-100',
+    'error': 'bg-red-100',
     'unknown': 'bg-gray-100'
   }
   return classMap[status] || 'bg-gray-100'

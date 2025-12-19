@@ -18,16 +18,18 @@ router = APIRouter(
     tags=["action"],
 )
 
+
 @router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]])
 async def get_actions():
     nodes = await ActionNodeModel.find_all().to_list()
-    
+
     results = []
     for node in nodes:
         handles_response = []
         for handle in node.handles:
             handles_response.append(ActionNodeHandleResponse(
                 id=handle.id,
+                name=handle.name,
                 type=handle.type,
                 position=handle.position,
                 socket_type=handle.socket_type,
@@ -35,15 +37,17 @@ async def get_actions():
                 label=handle.label,
                 custom_style=handle.custom_style
             ))
-        
+
         inputs_response = []
         for input_item in node.inputs:
             options = None
             if input_item.options:
-                options = [ActionNodeOption(**opt) for opt in input_item.options]
-            
+                options = [ActionNodeOption(**opt)
+                           for opt in input_item.options]
+
             inputs_response.append(ActionNodeInputResponse(
                 id=input_item.id,
+                name=input_item.name,
                 type=input_item.type,
                 position=input_item.position,
                 label=input_item.label,
@@ -54,7 +58,7 @@ async def get_actions():
                 custom_style=input_item.custom_style,
                 custom_props=input_item.custom_props
             ))
-        
+
         results.append(ActionNodeResponse(
             id=node.id,
             name=node.name,
@@ -65,41 +69,44 @@ async def get_actions():
             inputs=inputs_response,
             related_components=node.related_components
         ))
-    
+
     return ApiResponse.success(data=results)
+
 
 @router.post("/resource_management/nodes", response_model=ApiResponse[ActionNodeResponse])
 async def create_node(data: ActionNode):
     node_id = generate_id(data.name + data.type.value + data.version)
-    
+
     existing_node = await ActionNodeModel.find_one({"_id": node_id})
     if existing_node:
         return ApiResponse.error(code=400, message=f"节点已存在，ID: {node_id}")
-    
+
     handles_with_id = []
     handle_models = []
     for handle in data.handles:
-        handle_id = generate_id(handle.type + handle.socket_type + handle.label)
+        handle_id = generate_id(
+            handle.type + handle.socket_type + handle.name)
         handle_dict = {
             **handle.model_dump(),
             "id": handle_id
         }
         handles_with_id.append(handle_dict)
         handle_models.append(ActionNodeHandleModel(**handle_dict))
-    
+
     inputs_with_id = []
     input_models = []
     for input_item in data.inputs:
-        input_id = generate_id(input_item.type + input_item.label)
+        input_id = generate_id(input_item.type + input_item.name)
         input_dict = {
             **input_item.model_dump(),
             "id": input_id
         }
         if input_item.options:
-            input_dict["options"] = [opt.model_dump() for opt in input_item.options]
+            input_dict["options"] = [opt.model_dump()
+                                     for opt in input_item.options]
         inputs_with_id.append(input_dict)
         input_models.append(ActionNodeInputModel(**input_dict))
-    
+
     node_model = ActionNodeModel(
         id=node_id,
         name=data.name,
@@ -110,10 +117,10 @@ async def create_node(data: ActionNode):
         inputs=input_models,
         related_components=data.related_components
     )
-    
+
     await node_model.insert()
     logger.info(f"成功创建节点: {node_id}")
-    
+
     response_data = ActionNodeResponse(
         id=node_id,
         name=data.name,
@@ -124,9 +131,8 @@ async def create_node(data: ActionNode):
         inputs=inputs_with_id,
         related_components=data.related_components
     )
-    
-    return ApiResponse.success(data=response_data)
 
+    return ApiResponse.success(data=response_data)
 
 
 @router.get("/resource_management/base_components", response_model=PageResponse[BaseComponent])
@@ -149,3 +155,53 @@ async def get_base_components(
         ))
 
     return PageResponse.create(results, len(components), params.page, params.page_size)
+
+
+@router.get("/node_config/{node_id}/init", response_model=ApiResponse[Dict[str, Any]])
+async def get_node_config_init(node_id: str):
+    logger.info(f"获取节点配置初始化: {node_id}")
+    return ApiResponse.success(data={
+        "meta": {
+            "node_id": node_id,     # 节点id，指的是在一个行动流程中的节点，而不是数据库中的“静态的”节点id
+            "action_id": "694251b96d9534925bd9f6f3",     # 行动流程id
+        },
+        
+        # 静态配置，对应静态节点的input中的配置内容
+        "config": {
+            "page": 2,
+            "crawler_type": "keyword"
+        },
+        
+        # 输入数据，对应静态节点中的type为target的handle，也就是上游数据来源
+        "inputs": {
+            "keywords": {
+                # type分为value和reference，分别对应直接数据和数据队列
+                "type": "value",
+                "value": ["黑丝"]
+            },
+            "platforms": {
+                "type": "value",
+                "value": ["javbus"]
+            }
+        },
+        
+        # 输出数据，对应静态节点中的type为source的handle，也就是下游数据去向，目前固定为rabbitmq队列
+        "outputs": {
+            "data_out": [
+                {
+                    "type": "reference",
+                    "value": ["tmp_queue"]     # 数据队列名称
+                }
+            ]
+        }
+    })
+
+@router.post("/node_config/{node_id}/result", response_model=ApiResponse[Dict[str, Any]])
+async def report_action_node_result(node_id: str, data: Dict[str, Any]):
+    logger.info(f"上报节点配置结果: {node_id}, {data}")
+    return ApiResponse.success(data={})
+
+@router.post("/node_config/{node_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]])
+async def report_action_node_heartbeat(node_id: str, data: Dict[str, Any]):
+    logger.info(f"上报节点心跳: {node_id}, {data}")
+    return ApiResponse.success(data={})

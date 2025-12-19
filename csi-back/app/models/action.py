@@ -1,11 +1,12 @@
 from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
 from beanie import Document
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
-class ActionNodeHandleModel(Document):
+class ActionNodeHandleModel(BaseModel):
     id: str
+    name: str
     type: str
     position: str
     socket_type: str
@@ -14,8 +15,9 @@ class ActionNodeHandleModel(Document):
     custom_style: Optional[Dict[str, Any]] = None
 
 
-class ActionNodeInputModel(Document):
+class ActionNodeInputModel(BaseModel):
     id: str
+    name: str
     type: str
     position: str
     label: str

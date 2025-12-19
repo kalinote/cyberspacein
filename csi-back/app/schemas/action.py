@@ -11,6 +11,7 @@ class ActionNodeOption(BaseModel):
 
 
 class ActionNodeHandle(BaseModel):
+    name: str = Field(description="连接点名称")
     type: Literal["source", "target"] = Field(description="连接点类型")
     position: Literal["left", "right", "top", "bottom"] = Field(description="连接点位置")
     socket_type: str = Field(description="接口类型")
@@ -22,6 +23,7 @@ class ActionNodeHandleResponse(ActionNodeHandle):
     id: str = Field(description="连接点ID")
 
 class ActionNodeInput(BaseModel):
+    name: str = Field(description="输入项名称")
     type: Literal["string", "select", "tags", "int", "boolean"] = Field(description="输入项类型")
     position: Literal["left", "right", "top", "bottom", "center"] = Field(description="输入项位置")
     label: str = Field(description="输入项标签")
