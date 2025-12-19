@@ -1,10 +1,15 @@
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from fastapi import APIRouter, Depends
+from app.schemas.action import ActionNode
 
 from app.curd.action import get_components_by_project_id, get_components_project_by_name
-from app.schemas.action import BaseComponent
+from app.schemas.action import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
 from app.schemas.general import PageParams, PageResponse
+from app.schemas.response import ApiResponse
+from app.schemas.enum import ActionNodeTypeEnum
+from app.utils.id_lib import generate_id
+from app.models.action import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
 
 logger = logging.getLogger(__name__)
 
@@ -13,15 +18,114 @@ router = APIRouter(
     tags=["action"],
 )
 
-@router.get("/nodes")
+@router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]])
 async def get_actions():
-    return {"message": "Hello, World!"}
+    nodes = await ActionNodeModel.find_all().to_list()
+    
+    results = []
+    for node in nodes:
+        handles_response = []
+        for handle in node.handles:
+            handles_response.append(ActionNodeHandleResponse(
+                id=handle.id,
+                type=handle.type,
+                position=handle.position,
+                socket_type=handle.socket_type,
+                allowed_socket_types=handle.allowed_socket_types,
+                label=handle.label,
+                custom_style=handle.custom_style
+            ))
+        
+        inputs_response = []
+        for input_item in node.inputs:
+            options = None
+            if input_item.options:
+                options = [ActionNodeOption(**opt) for opt in input_item.options]
+            
+            inputs_response.append(ActionNodeInputResponse(
+                id=input_item.id,
+                type=input_item.type,
+                position=input_item.position,
+                label=input_item.label,
+                description=input_item.description,
+                required=input_item.required,
+                default=input_item.default,
+                options=options,
+                custom_style=input_item.custom_style,
+                custom_props=input_item.custom_props
+            ))
+        
+        results.append(ActionNodeResponse(
+            id=node.id,
+            name=node.name,
+            description=node.description,
+            type=ActionNodeTypeEnum(node.type),
+            version=node.version,
+            handles=handles_response,
+            inputs=inputs_response,
+            related_components=node.related_components
+        ))
+    
+    return ApiResponse.success(data=results)
 
-
-@router.post("/nodes")
-async def create_node(data: Dict[str, Any]):
-    logger.info(f"收到新增节点请求，数据: {data}")
-    return {"message": "节点数据已接收", "data": data}
+@router.post("/resource_management/nodes", response_model=ApiResponse[ActionNodeResponse])
+async def create_node(data: ActionNode):
+    node_id = generate_id(data.name + data.type.value + data.version)
+    
+    existing_node = await ActionNodeModel.find_one({"_id": node_id})
+    if existing_node:
+        return ApiResponse.error(code=400, message=f"节点已存在，ID: {node_id}")
+    
+    handles_with_id = []
+    handle_models = []
+    for handle in data.handles:
+        handle_id = generate_id(handle.type + handle.socket_type + handle.label)
+        handle_dict = {
+            **handle.model_dump(),
+            "id": handle_id
+        }
+        handles_with_id.append(handle_dict)
+        handle_models.append(ActionNodeHandleModel(**handle_dict))
+    
+    inputs_with_id = []
+    input_models = []
+    for input_item in data.inputs:
+        input_id = generate_id(input_item.type + input_item.label)
+        input_dict = {
+            **input_item.model_dump(),
+            "id": input_id
+        }
+        if input_item.options:
+            input_dict["options"] = [opt.model_dump() for opt in input_item.options]
+        inputs_with_id.append(input_dict)
+        input_models.append(ActionNodeInputModel(**input_dict))
+    
+    node_model = ActionNodeModel(
+        id=node_id,
+        name=data.name,
+        description=data.description,
+        type=data.type.value,
+        version=data.version,
+        handles=handle_models,
+        inputs=input_models,
+        related_components=data.related_components
+    )
+    
+    await node_model.insert()
+    logger.info(f"成功创建节点: {node_id}")
+    
+    response_data = ActionNodeResponse(
+        id=node_id,
+        name=data.name,
+        description=data.description,
+        type=data.type,
+        version=data.version,
+        handles=handles_with_id,
+        inputs=inputs_with_id,
+        related_components=data.related_components
+    )
+    
+    return ApiResponse.success(data=response_data)
 
 
 

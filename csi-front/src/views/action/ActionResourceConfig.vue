@@ -96,11 +96,12 @@
         <div class="flex-1 overflow-auto p-6">
           <!-- 节点列表 -->
           <div v-if="activeTab === 'nodes'" class="space-y-4">
-            <div
-              v-for="(node, index) in filteredNodeList"
-              :key="index"
-              class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6"
-            >
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+              <div
+                v-for="(node, index) in filteredNodeList"
+                :key="index"
+                class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
+              >
               <div class="flex items-start justify-between">
                 <div class="flex items-start gap-4 flex-1">
                   <div 
@@ -167,11 +168,12 @@
                   </el-button>
                 </div>
               </div>
-            </div>
+              </div>
 
-            <div v-if="filteredNodeList.length === 0" class="text-center py-16">
-              <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
-              <p class="text-gray-500">暂无数据</p>
+              <div v-if="!loading && filteredNodeList.length === 0" class="flex flex-col items-center justify-center py-16">
+                <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
+                <p class="text-gray-500">暂无数据</p>
+              </div>
             </div>
           </div>
 
@@ -264,7 +266,7 @@
                 </div>
               </div>
 
-              <div v-if="!loading && filteredComponentList.length === 0" class="text-center py-16">
+              <div v-if="!loading && filteredComponentList.length === 0" class="flex flex-col items-center justify-center py-16">
                 <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
                 <p class="text-gray-500">暂无数据</p>
               </div>
@@ -283,7 +285,7 @@
             </div>
           </div>
 
-          <div v-else class="text-center py-16">
+          <div v-else class="flex flex-col items-center justify-center py-16">
             <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
             <p class="text-gray-500 text-lg mb-2">功能开发中</p>
             <p class="text-gray-400 text-sm">{{ getCurrentTabLabel() }}管理功能即将上线</p>
@@ -362,7 +364,6 @@
             </el-button>
           </div>
           <div v-if="formData.handles.length === 0" class="text-center py-8 text-gray-400">
-            <Icon icon="mdi:power-plug-off" class="text-4xl mb-2" />
             <p>暂无接口配置，请点击上方按钮添加</p>
           </div>
           <div v-for="(handle, index) in formData.handles" :key="index" class="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
@@ -431,7 +432,6 @@
             </el-button>
           </div>
           <div v-if="formData.inputs.length === 0" class="text-center py-8 text-gray-400">
-            <Icon icon="mdi:form-textbox-remove" class="text-4xl mb-2" />
             <p>暂无输入项配置，请点击上方按钮添加</p>
           </div>
           <div v-for="(input, index) in formData.inputs" :key="index" class="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
@@ -543,356 +543,7 @@ const resourceTabs = [
   { key: 'containers', label: '沙盒容器', icon: 'mdi:cube-outline' }
 ]
 
-const nodeList = ref([
-  {
-    id: 'keyword',
-    name: '原生关键词构造器',
-    description: '自定义关键词，不会有任何分词等预处理',
-    type: 'input',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'keyword_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'keywords',
-        label: '关键词',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'keyword',
-        type: 'string',
-        position: 'center',
-        label: '关键词',
-        description: '输入用于搜索的关键词',
-        required: true,
-        default: '',
-        custom_style: {},
-        custom_props: {
-          placeholder: '请输入关键词',
-          clearable: true
-        }
-      }
-    ]
-  },
-  {
-    id: 'platform',
-    name: '平台选择器',
-    description: '从后端获取可用平台，并设置输出单个平台',
-    type: 'input',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'platform_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'platform',
-        label: '平台',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'platform',
-        type: 'select',
-        position: 'center',
-        label: '平台',
-        description: '选择要进行数据采集的平台',
-        required: true,
-        default: '',
-        options: [
-          { label: 'Bilibili', value: 'bilibili' },
-          { label: 'JavBus', value: 'javbus' },
-          { label: 'BBS News', value: 'bbsnews' }
-        ],
-        custom_style: {},
-        custom_props: {
-          placeholder: '请选择平台',
-          clearable: true
-        }
-      }
-    ]
-  },
-  {
-    id: 'multi_platform_selector',
-    name: '自定义多平台选择器',
-    description: '允许自定义多个平台，并输出平台列表',
-    type: 'input',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'platforms_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'platform',
-        label: '平台列表',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'platforms',
-        type: 'tags',
-        position: 'center',
-        label: '平台列表',
-        description: '输入平台名称后按回车或点击添加按钮，如果输入不支持的平台则会跳过该平台',
-        required: true,
-        default: [],
-        custom_style: {},
-        custom_props: {
-          placeholder: '输入平台名称（如：bilibili、youtube）',
-          maxTags: 10,
-          showCount: true
-        }
-      }
-    ]
-  },
-  {
-    id: 'generic_keyword_crawler',
-    name: '通用关键词采集器',
-    description: '从指定平台采集指定关键词或关键词组的相关的数据，并输出采集结果',
-    type: 'crawler',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'platform_input',
-        type: 'target',
-        position: 'left',
-        socket_type: 'platform',
-        allowed_socket_types: ['platform'],
-        label: '平台',
-        custom_style: {}
-      },
-      {
-        id: 'keywords_input',
-        type: 'target',
-        position: 'left',
-        socket_type: 'keywords',
-        allowed_socket_types: ['keywords'],
-        label: '关键词',
-        custom_style: {}
-      },
-      {
-        id: 'results_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'crawler_results',
-        label: '采集结果',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'request_delay',
-        type: 'int',
-        position: 'center',
-        label: '请求延迟',
-        description: '每次请求等待的延迟时间，用于防止请求过快，单位：毫秒',
-        required: true,
-        default: 200,
-        custom_style: {},
-        custom_props: {
-          min: 0,
-          step: 10
-        }
-      }
-    ]
-  },
-  {
-    id: 'rabbitmq',
-    name: 'RabbitMQ消息队列',
-    description: '将数据发送到指定RabbitMQ消息队列，或者从指定RabbitMQ消息队列接收数据',
-    type: 'output',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'rabbitmq_input',
-        type: 'target',
-        position: 'left',
-        socket_type: 'rabbitmq_data',
-        allowed_socket_types: ['rabbitmq_data'],
-        label: 'RabbitMQ数据',
-        custom_style: {}
-      },
-      {
-        id: 'rabbitmq_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'rabbitmq_data',
-        label: 'MQ消息',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'queue_name',
-        type: 'string',
-        position: 'center',
-        label: '队列名称',
-        description: '存入数据的目标队列名称',
-        required: true,
-        default: '',
-        custom_style: {},
-        custom_props: {
-          placeholder: '请输入队列名称，默认：tmp_data',
-          clearable: true
-        }
-      }
-    ]
-  },
-  {
-    id: 'elasticsearch',
-    name: 'Elasticsearch搜索引擎',
-    description: '将数据存入指定Elasticsearch搜索引擎，或者从指定Elasticsearch搜索引擎接收数据',
-    type: 'output',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'es_input',
-        type: 'target',
-        position: 'left',
-        socket_type: 'es_data',
-        allowed_socket_types: ['es_data'],
-        label: 'ES数据',
-        custom_style: {}
-      },
-      {
-        id: 'es_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'es_data',
-        label: 'ES数据',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'index_name',
-        type: 'string',
-        position: 'center',
-        label: '索引名称',
-        description: '存入数据的目标索引名称',
-        required: true,
-        default: '',
-        custom_style: {},
-        custom_props: {
-          placeholder: '请输入索引名称，默认：tmp_data',
-          clearable: true
-        }
-      }
-    ]
-  },
-  {
-    id: 'mongo_db',
-    name: 'MongoDB数据库',
-    description: '将数据存入指定MongoDB数据库，或者从指定MongoDB数据库接收数据',
-    type: 'output',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'mongo_input',
-        type: 'target',
-        position: 'left',
-        socket_type: 'mongo_data',
-        allowed_socket_types: ['mongo_data'],
-        label: 'MongoDB数据',
-        custom_style: {}
-      },
-      {
-        id: 'mongo_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'mongo_data',
-        label: 'MongoDB数据',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'database_name',
-        type: 'string',
-        position: 'center',
-        label: '数据库名称',
-        description: '存入数据的目标数据库名称',
-        required: true,
-        default: '',
-        custom_style: {},
-        custom_props: {
-          placeholder: '请输入数据库名称，默认：tmp_data',
-          clearable: true
-        }
-      }
-    ]
-  },
-  {
-    id: 'data_validator',
-    name: '数据格式验证器',
-    description: '验证数据的目标格式，验证通过则数据验证结果输出True，同时输出原数据，否则输出False，默认原数据不输出，通过设置始终输出数据来强制输出原数据',
-    type: 'output',
-    version: '1.0.0',
-    handles: [
-      {
-        id: 'generic_data_input',
-        type: 'target',
-        position: 'left',
-        socket_type: 'generic_data',
-        allowed_socket_types: ['generic_data'],
-        label: '任意数据',
-        custom_style: {}
-      },
-      {
-        id: 'data_validator_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'basic_type_boolean',
-        label: '数据验证结果',
-        custom_style: {}
-      },
-      {
-        id: 'generic_dict_output',
-        type: 'source',
-        position: 'right',
-        socket_type: 'generic_data',
-        label: '数据输出',
-        custom_style: {}
-      }
-    ],
-    inputs: [
-      {
-        id: 'target_validation_format',
-        type: 'select',
-        position: 'center',
-        label: '验证格式',
-        description: '验证数据的目标格式，验证通过则数据验证结果输出True，否则输出False',
-        required: true,
-        default: 'rabbitmq',
-        options: [
-          { label: 'RabbitMQ', value: 'rabbitmq' },
-          { label: 'Elasticsearch', value: 'elasticsearch' },
-          { label: 'MongoDB', value: 'mongodb' }
-        ],
-        custom_style: {
-          width: '200px'
-        },
-        custom_props: {
-          placeholder: '请选择输出标准格式，默认：RabbitMQ',
-          clearable: true
-        }
-      },
-      {
-        id: 'force_output',
-        type: 'boolean',
-        position: 'center',
-        label: '始终输出数据',
-        description: '是否强制输出数据验证结果，验证不通过时默认数据输出为空，设置为True则始终输出数据',
-        required: true,
-        default: false
-      }
-    ]
-  }
-])
+const nodeList = ref([])
 
 const componentList = ref([])
 
@@ -1009,6 +660,7 @@ const getTotalResourceCount = () => {
 }
 
 const getNodeColor = (node) => {
+  if (!node) return '#909399'
   if (node.handles && node.handles.length > 0) {
     const firstHandle = node.handles[0]
     const socketConfig = socketTypeConfigs.value.find(
@@ -1171,11 +823,9 @@ const handleSubmit = async () => {
     const response = await actionApi.createNode(submitData)
     
     if (response.code === 0) {
-      if (response.data) {
-        nodeList.value.push(response.data)
-      }
       ElMessage.success('新增行动节点成功')
       dialogVisible.value = false
+      await fetchNodeList()
     } else {
       ElMessage.error(`新增行动节点失败: ${response.message}`)
     }
@@ -1296,6 +946,24 @@ const handleRunComponent = (component) => {
   }
 }
 
+const fetchNodeList = async () => {
+  loading.value = true
+  try {
+    const response = await actionApi.getNodes()
+    if (response.code === 0) {
+      nodeList.value = response.data || []
+    } else {
+      ElMessage.error(`获取行动节点列表失败: ${response.message}`)
+      nodeList.value = []
+    }
+  } catch (error) {
+    ElMessage.error('获取行动节点列表失败')
+    nodeList.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
 const fetchComponentList = async () => {
   loading.value = true
   try {
@@ -1334,6 +1002,7 @@ const handlePageSizeChange = (pageSize) => {
 }
 
 onMounted(() => {
+  fetchNodeList()
   fetchComponentList()
 })
 </script>

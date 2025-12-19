@@ -11,7 +11,6 @@ class ActionNodeOption(BaseModel):
 
 
 class ActionNodeHandle(BaseModel):
-    id: str = Field(description="连接点ID")
     type: Literal["source", "target"] = Field(description="连接点类型")
     position: Literal["left", "right", "top", "bottom"] = Field(description="连接点位置")
     socket_type: str = Field(description="接口类型")
@@ -19,9 +18,10 @@ class ActionNodeHandle(BaseModel):
     label: str = Field(description="连接点标签")
     custom_style: Optional[Dict[str, Any]] = Field(default=None, description="自定义样式")
 
+class ActionNodeHandleResponse(ActionNodeHandle):
+    id: str = Field(description="连接点ID")
 
 class ActionNodeInput(BaseModel):
-    id: str = Field(description="输入项ID")
     type: Literal["string", "select", "tags", "int", "boolean"] = Field(description="输入项类型")
     position: Literal["left", "right", "top", "bottom", "center"] = Field(description="输入项位置")
     label: str = Field(description="输入项标签")
@@ -32,16 +32,22 @@ class ActionNodeInput(BaseModel):
     custom_style: Optional[Dict[str, Any]] = Field(default=None, description="自定义样式")
     custom_props: Optional[Dict[str, Any]] = Field(default=None, description="自定义属性")
 
+class ActionNodeInputResponse(ActionNodeInput):
+    id: str = Field(description="输入项ID")
 
 class ActionNode(BaseModel):
-    id: str = Field(description="节点类型ID")
     name: str = Field(description="节点类型名称")
     description: str = Field(description="节点类型描述")
     type: ActionNodeTypeEnum = Field(description="节点类别")
     version: str = Field(description="节点版本")
     handles: List[ActionNodeHandle] = Field(description="连接点列表")
     inputs: List[ActionNodeInput] = Field(description="输入配置列表")
+    related_components: List[str] = Field(description="相关组件列表")
 
+class ActionNodeResponse(ActionNode):
+    id: str = Field(description="节点类型ID")
+    handles: List[ActionNodeHandleResponse] = Field(description="连接点列表")
+    inputs: List[ActionNodeInputResponse] = Field(description="输入配置列表")
 
 class BaseComponent(BaseModel):
     id: str = Field(description="基础组件ID")

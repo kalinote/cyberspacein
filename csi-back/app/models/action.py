@@ -4,7 +4,7 @@ from beanie import Document
 from pydantic import Field
 
 
-class HandleModel(Document):
+class ActionNodeHandleModel(Document):
     id: str
     type: str
     position: str
@@ -14,7 +14,7 @@ class HandleModel(Document):
     custom_style: Optional[Dict[str, Any]] = None
 
 
-class InputModel(Document):
+class ActionNodeInputModel(Document):
     id: str
     type: str
     position: str
@@ -27,24 +27,25 @@ class InputModel(Document):
     custom_props: Optional[Dict[str, Any]] = None
 
 
-class NodeTypeConfigModel(Document):
-    id: str = Field(unique=True)
+class ActionNodeModel(Document):
+    id: str = Field(alias="_id")
     name: str
     description: str
     type: str
     version: str
-    handles: List[HandleModel]
-    inputs: List[InputModel]
+    handles: List[ActionNodeHandleModel]
+    inputs: List[ActionNodeInputModel]
+    related_components: List[str]
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     class Settings:
-        name = "node_type_configs"
+        name = "action_nodes"
         indexes = [
-            "id",
+            "id"
+            "name",
             "type",
             "version",
-            "created_at",
         ]
 
