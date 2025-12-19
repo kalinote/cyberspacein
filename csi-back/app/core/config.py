@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     API_V1_STR: str
@@ -22,10 +22,11 @@ class Settings(BaseSettings):
     CRAWLAB_BASE_URL: str
     CRAWLAB_TOKEN: str
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
 
 settings = Settings()
 

@@ -1,8 +1,12 @@
+import logging
+from typing import Dict, Any
 from fastapi import APIRouter, Depends
 
 from app.curd.action import get_components_by_project_id, get_components_project_by_name
 from app.schemas.action import BaseComponent
 from app.schemas.general import PageParams, PageResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/action",
@@ -12,6 +16,14 @@ router = APIRouter(
 @router.get("/nodes")
 async def get_actions():
     return {"message": "Hello, World!"}
+
+
+@router.post("/nodes")
+async def create_node(data: Dict[str, Any]):
+    logger.info(f"收到新增节点请求，数据: {data}")
+    return {"message": "节点数据已接收", "data": data}
+
+
 
 @router.get("/resource_management/base_components", response_model=PageResponse[BaseComponent])
 async def get_base_components(

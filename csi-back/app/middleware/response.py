@@ -16,8 +16,13 @@ class ResponseMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = None
         try:
             response = await call_next(request)
+            
+            exclude_paths = ["/openapi.json", "/docs", "/redoc"]
+            if any(request.url.path == path for path in exclude_paths):
+                return response
             
             if response.status_code == 200 and "application/json" in response.headers.get("content-type", ""):
                 response_body = b""
@@ -55,4 +60,9 @@ class ResponseMiddleware(BaseHTTPMiddleware):
             
         except Exception as e:
             logger.exception(f"响应中间件处理异常: {str(e)}")
-            return response
+            if response is not None:
+                return response
+            return JSONResponse(
+                content=ApiResponse.error(code=500, message=f"服务器内部错误: {str(e)}").model_dump(),
+                status_code=500
+            )

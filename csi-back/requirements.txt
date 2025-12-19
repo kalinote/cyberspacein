@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-pydantic-settings
+pydantic-settings >= 2.12.0
 python-dotenv
 
 sqlalchemy[asyncio]>=2.0.0

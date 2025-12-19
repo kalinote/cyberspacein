@@ -9,12 +9,12 @@ import aiohttp
 
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] [%(levelname)s] [FlowSDK] %(message)s',
+    format='[%(asctime)s] [%(levelname)s] [CSI_SDK] %(message)s',
     datefmt='%H:%M:%S'
 )
-logger = logging.getLogger("FlowSDK")
+logger = logging.getLogger("CSI_SDK")
 
-class AsyncFlowNode:
+class AsyncBaseComponent:
     def __init__(self, action_node_id: str = None, api_base_url: str = None, manual_config: str = None):
         """
         初始化 Node 对象，解析参数。
@@ -39,7 +39,7 @@ class AsyncFlowNode:
         self.is_remote = bool(self.action_node_id and self.api_base_url)
 
     def _parse_args(self):
-        parser = argparse.ArgumentParser(description="Flow Node SDK (Async)")
+        parser = argparse.ArgumentParser(description="CSI Base Components SDK (Async)")
         parser.add_argument('--action-node-id', type=str, help='行动节点ID', default=os.getenv('ACTION_NODE_ID'))
         parser.add_argument('--api-base-url', type=str, help='API基础URL', default=os.getenv('API_BASE_URL'))
         parser.add_argument('--local-config', type=str, help='本地调试配置文件路径', default=None)

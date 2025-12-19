@@ -1168,16 +1168,22 @@ const handleSubmit = async () => {
       })
     }
     
-    nodeList.value.push(submitData)
-    ElMessage.success('新增行动节点成功')
-    dialogVisible.value = false
-  } catch (error) {
-    if (error !== false) {
-      ElMessage.error('表单验证失败，请检查输入')
+    const response = await actionApi.createNode(submitData)
+    
+    if (response.code === 0) {
+      if (response.data) {
+        nodeList.value.push(response.data)
+      }
+      ElMessage.success('新增行动节点成功')
+      dialogVisible.value = false
+    } else {
+      ElMessage.error(`新增行动节点失败: ${response.message}`)
     }
+  } catch (error) {
+    ElMessage.error(`新增行动节点失败: ${error.message}`)
   } finally {
     submitting.value = false
-  }
+  } 
 }
 
 const handleView = (node) => {

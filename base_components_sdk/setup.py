@@ -8,14 +8,14 @@ with open("README.md", "r", encoding="utf-8") as f:
     long_description = f.read()
 
 setup(
-    name="csi-base-components-sdk",
+    name="csi-base-component-sdk",
     version="1.0.0",
     author="kalinote",
     author_email="knote840746219@gmail.com",
-    description="异步Flow Node SDK，用于与后端API交互",
+    description="csi基本组件开发工具包",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/kalinote/csi-base-components-sdk",
+    url="https://github.com/kalinote/csi-base-component-sdk",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -30,10 +30,10 @@ setup(
     ],
     python_requires=">=3.7",
     install_requires=requirements,
-    keywords="csi components sdk async",
+    keywords="csi component sdk async",
     project_urls={
-        "Bug Reports": "https://github.com/kalinote/csi-base-components-sdk/issues",
-        "Source": "https://github.com/kalinote/csi-base-components-sdk",
+        "Bug Reports": "https://github.com/kalinote/csi-base-component-sdk/issues",
+        "Source": "https://github.com/kalinote/csi-base-component-sdk",
     },
 )
 

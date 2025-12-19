@@ -32,11 +32,11 @@ async def create_database_if_not_exists():
     temp_engine = create_async_engine(server_url, echo=False)
     try:
         async with temp_engine.connect() as conn:
-            await conn.execute(text(
-                f"CREATE DATABASE IF NOT EXISTS {db_name} "
-                f"CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-            ))
-            await conn.commit()
+            async with conn.begin():
+                await conn.execute(text(
+                    f"CREATE DATABASE IF NOT EXISTS {db_name} "
+                    f"CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                ))
             logger.info(f"数据库 {db_name} 已确保存在")
     finally:
         await temp_engine.dispose()
