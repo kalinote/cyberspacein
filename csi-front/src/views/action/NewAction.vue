@@ -141,7 +141,7 @@
 
                 <!-- 底部保存按钮 -->
                 <div class="p-4 border-t border-gray-200 shrink-0">
-                    <el-button 
+                <el-button 
                         type="primary" 
                         class="w-full"
                         @click="handleSaveAction"
@@ -216,6 +216,49 @@ const fetchNodeConfigs = async () => {
     }
 }
 
+const INPUT_TYPE_DEFAULTS = {
+    'int': null,
+    'string': '',
+    'textarea': '',
+    'select': null,
+    'checkbox': false,
+    'checkbox-group': [],
+    'radio-group': null,
+    'boolean': false,
+    'datetime': null,
+    'tags': []
+}
+
+const normalizeDefaultValue = (type, value) => {
+    if (value === undefined || value === null) {
+        return INPUT_TYPE_DEFAULTS[type] ?? null
+    }
+    
+    switch (type) {
+        case 'int':
+            const numValue = Number(value)
+            return isNaN(numValue) ? null : numValue
+            
+        case 'boolean':
+        case 'checkbox':
+            return Boolean(value)
+            
+        case 'tags':
+        case 'checkbox-group':
+            return Array.isArray(value) ? value : []
+            
+        case 'string':
+        case 'textarea':
+        case 'select':
+        case 'radio-group':
+        case 'datetime':
+            return value
+            
+        default:
+            return value
+    }
+}
+
 const socketTypeConfigs = ref([
     // 基本数据类型
     {
@@ -269,13 +312,7 @@ const getDefaultData = (config) => {
     
     if (config.inputs) {
         config.inputs.forEach(input => {
-            let defaultValue = input.default
-            // 暂时这样特殊处理一下，后续再想怎么搞
-            if (input.type === 'int' && defaultValue !== null && defaultValue !== undefined) {
-                const numValue = Number(defaultValue)
-                defaultValue = isNaN(numValue) ? null : numValue
-            }
-            data[input.id] = defaultValue
+            data[input.id] = normalizeDefaultValue(input.type, input.default)
         })
     }
     
@@ -337,7 +374,7 @@ const nodeTypes = computed(() => {
 })
 
 const elements = ref([])
-const { addEdges, addNodes, onConnect, screenToFlowCoordinate, onNodesInitialized, updateNode, isValidConnection } = useVueFlow()
+const { addEdges, addNodes, onConnect, screenToFlowCoordinate, onNodesInitialized, updateNode, isValidConnection, getNodes, getEdges, getViewport } = useVueFlow()
 
 isValidConnection.value = (connection) => {
     const sourceNode = elements.value.find(el => el.id === connection.source)
@@ -565,30 +602,76 @@ const onDrop = (event) => {
 }
 
 const handleSaveAction = () => {
-    const nodes = elements.value.filter(el => el.type !== undefined)
-    const edges = elements.value.filter(el => el.source !== undefined && el.target !== undefined)
-    
-    const flowStructure = {
-        title: actionTitle.value,
-        description: actionDescription.value,
-        nodes: nodes.map(node => ({
-            id: node.id,
-            type: node.type,
-            position: node.position,
-            data: node.data
-        })),
-        edges: edges.map(edge => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle,
-            targetHandle: edge.targetHandle,
-            style: edge.style
-        }))
+    if (!actionTitle.value || actionTitle.value.trim() === '') {
+        ElMessage.error('请输入行动标题')
+        return
     }
     
-    console.log('Flow 结构:', flowStructure)
-    console.log('节点数量:', nodes.length)
-    console.log('连接数量:', edges.length)
+    const nodes = getNodes.value
+    const edges = getEdges.value
+    const viewport = getViewport()
+    
+    if (!nodes || nodes.length === 0) {
+        ElMessage.error('请至少添加一个节点')
+        return
+    }
+    
+    const processedNodes = nodes.map(node => {
+        const config = node.data?.config
+        if (!config) {
+            return null
+        }
+        
+        const formData = {}
+        if (config.inputs && config.inputs.length > 0) {
+            config.inputs.forEach(input => {
+                formData[input.name] = node.data[input.id]
+            })
+        }
+        
+        return {
+            id: node.id,
+            type: config.type,
+            position: {
+                x: node.position.x,
+                y: node.position.y
+            },
+            data: {
+                definition_id: config.id,
+                version: config.version,
+                form_data: formData
+            }
+        }
+    }).filter(node => node !== null)
+    
+    const processedEdges = edges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        sourceHandle: edge.sourceHandle,
+        target: edge.target,
+        targetHandle: edge.targetHandle
+    }))
+    
+    const actionData = {
+        name: actionTitle.value,
+        description: actionDescription.value || '',
+        implementation_period: 3600,
+        resource: {},
+        graph: {
+            nodes: processedNodes,
+            edges: processedEdges,
+            viewport: {
+                x: viewport.x,
+                y: viewport.y,
+                zoom: viewport.zoom
+            }
+        }
+    }
+    
+    console.log('===== 保存行动数据 =====')
+    console.log(JSON.stringify(actionData, null, 2))
+    console.log('=======================')
+    
+    ElMessage.success('数据已构造完成，请在控制台查看')
 }
 </script>

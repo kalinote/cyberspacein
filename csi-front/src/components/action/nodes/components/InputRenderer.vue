@@ -1,6 +1,6 @@
 <template>
     <div 
-        class="input-renderer-wrapper" 
+        class="input-renderer-wrapper nodrag" 
         :class="[positionClass, { 'multi-line-layout': isMultiLineLayout }]"
         :style="inputConfig.custom_style"
     >

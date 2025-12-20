@@ -326,9 +326,16 @@
           </el-form-item>
           <el-form-item label="节点类型" prop="type">
             <el-select v-model="formData.type" placeholder="请选择节点类型" class="w-full">
-              <el-option label="input" value="input" />
-              <el-option label="output" value="output" />
-              <el-option label="crawler" value="crawler" />
+              <!-- TODO: 通过接口获取 -->
+              <el-option label="构造器" value="construct" />
+              <el-option label="采集节点" value="crawler" />
+              <el-option label="存储节点" value="storage" />
+              <el-option label="中间件节点" value="middleware" />
+              <el-option label="处理器节点" value="processor" />
+              <el-option label="基本逻辑节点" value="logic" />
+              <el-option label="简单运算节点" value="simple_operation" />
+              <el-option label="输出节点" value="output" />
+              <el-option label="输入节点" value="input" />
             </el-select>
           </el-form-item>
           <el-form-item label="版本号" prop="version">
@@ -564,6 +571,7 @@ const socketTypeConfigs = ref([
   { socket_type: 'mongo_data', color: '#13c2c2', custom_style: {} }
 ])
 
+// TODO: 这里类型还需要进一步确认
 const inputTypes = ref(['int', 'string', 'textarea', 'select', 'checkbox', 'checkbox-group', 'radio-group', 'boolean', 'datetime', 'tags'])
 
 const validateName = (rule, value, callback) => {
