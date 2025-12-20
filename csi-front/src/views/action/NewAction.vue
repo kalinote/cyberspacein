@@ -24,7 +24,7 @@
                 <div class="px-4 pt-4 pb-2 border-b border-gray-200 shrink-0">
                     <h3 class="text-base font-semibold text-gray-800 text-center">节点列表</h3>
                 </div>
-                <div class="flex flex-col select-none overflow-y-auto flex-1 overflow-x-hidden min-h-0">
+                <div class="flex flex-col select-none overflow-y-auto flex-1 overflow-x-hidden min-h-0" v-loading="loadingNodeConfigs" :element-loading-text="'加载节点配置中...'">
                     <div 
                         v-for="category in nodeCategories" 
                         :key="category.type"
@@ -144,6 +144,7 @@
                     <el-button 
                         type="primary" 
                         class="w-full"
+                        @click="handleSaveAction"
                     >
                         保存行动
                     </el-button>
@@ -162,367 +163,58 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted, markRaw } from 'vue'
+import { ref, computed, onUnmounted, onMounted, markRaw } from 'vue'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
 import { VueFlow, useVueFlow } from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
+import { actionApi } from '@/api/action'
+import { ElMessage } from 'element-plus'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 
-const nodeTypeConfigs = ref([
-    {
-        id: 'keyword',
-        name: '原生关键词构造器',
-        description: '自定义关键词，不会有任何分词等预处理',
-        type: 'input',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'keyword_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'keywords',
-                label: '关键词',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'keyword',
-                type: 'string',
-                position: 'center',
-                label: '关键词',
-                description: '输入用于搜索的关键词',
-                required: true,
-                default: '',
-                custom_style: {},
-                custom_props: {
-                    placeholder: '请输入关键词',
-                    clearable: true
+const nodeTypeConfigs = ref([])
+const loadingNodeConfigs = ref(false)
+
+const fetchNodeConfigs = async () => {
+    loadingNodeConfigs.value = true
+    try {
+        const response = await actionApi.getNodes()
+        if (response.code === 0) {
+            const nodes = response.data || []
+            nodeTypeConfigs.value = nodes.map(node => {
+                const processedNode = { ...node }
+                
+                if (processedNode.handles) {
+                    processedNode.handles = processedNode.handles.map(handle => ({
+                        ...handle,
+                        id: handle.id || handle.name
+                    }))
                 }
-            }
-        ]
-    },
-    {
-        id: 'platform',
-        name: '平台选择器',
-        description: '从后端获取可用平台，并设置输出单个平台',
-        type: 'input',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'platform_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'platform',
-                label: '平台',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'platform',
-                type: 'select',
-                position: 'center',
-                label: '平台',
-                description: '选择要进行数据采集的平台',
-                required: true,
-                default: '',
-                options: [
-                    { label: 'Bilibili', value: 'bilibili' },
-                    { label: 'JavBus', value: 'javbus' },
-                    { label: 'BBS News', value: 'bbsnews' }
-                ],
-                custom_style: {},
-                custom_props: {
-                    placeholder: '请选择平台',
-                    clearable: true
+                
+                if (processedNode.inputs) {
+                    processedNode.inputs = processedNode.inputs.map(input => ({
+                        ...input,
+                        id: input.id || input.name
+                    }))
                 }
-            }
-        ]
-    },
-    {
-        id: 'multi_platform_selector',
-        name: '自定义多平台选择器',
-        description: '允许自定义多个平台，并输出平台列表',
-        type: 'input',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'platforms_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'platform',
-                label: '平台列表',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'platforms',
-                type: 'tags',
-                position: 'center',
-                label: '平台列表',
-                description: '输入平台名称后按回车或点击添加按钮，如果输入不支持的平台则会跳过该平台',
-                required: true,
-                default: [],
-                custom_style: {},
-                custom_props: {
-                    placeholder: '输入平台名称（如：bilibili、youtube）',
-                    maxTags: 10,
-                    showCount: true
-                }
-            }
-        ]
-    },
-    {
-        id: 'generic_keyword_crawler',
-        name: '通用关键词采集器',
-        description: '从指定平台采集指定关键词或关键词组的相关的数据，并输出采集结果',
-        type: 'crawler',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'platform_input',
-                type: 'target',
-                position: 'left',
-                socket_type: 'platform',
-                allowed_socket_types: ['platform'],
-                label: '平台',
-                custom_style: {}
-            },
-            {
-                id: 'keywords_input',
-                type: 'target',
-                position: 'left',
-                socket_type: 'keywords',
-                allowed_socket_types: ['keywords'],
-                label: '关键词',
-                custom_style: {}
-            },
-            {
-                id: 'results_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'crawler_results',
-                label: '采集结果',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'request_delay',
-                type: 'int',
-                position: 'center',
-                label: '请求延迟',
-                description: '每次请求等待的延迟时间，用于防止请求过快，单位：毫秒',
-                required: true,
-                default: 200,
-                custom_style: {},
-                custom_props: {
-                    min: 0,
-                    step: 10
-                }
-            }
-        ]
-    },
-    {
-        id: 'rabbitmq',
-        name: 'RabbitMQ消息队列',
-        description: '将数据发送到指定RabbitMQ消息队列，或者从指定RabbitMQ消息队列接收数据',
-        type: 'output',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'rabbitmq_input',
-                type: 'target',
-                position: 'left',
-                socket_type: 'rabbitmq_data',
-                allowed_socket_types: ['rabbitmq_data'],
-                label: 'RabbitMQ数据',
-                custom_style: {}
-            },
-            {
-                id: 'rabbitmq_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'rabbitmq_data',
-                label: 'MQ消息',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'queue_name',
-                type: 'string',
-                position: 'center',
-                label: '队列名称',
-                description: '存入数据的目标队列名称',
-                required: true,
-                default: '',
-                custom_style: {},
-                custom_props: {
-                    placeholder: '请输入队列名称，默认：tmp_data',
-                    clearable: true
-                }
-            }
-        ]
-    },
-    {
-        id: 'elasticsearch',
-        name: 'Elasticsearch搜索引擎',
-        description: '将数据存入指定Elasticsearch搜索引擎，或者从指定Elasticsearch搜索引擎接收数据',
-        type: 'output',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'es_input',
-                type: 'target',
-                position: 'left',
-                socket_type: 'es_data',
-                allowed_socket_types: ['es_data'],
-                label: 'ES数据',
-                custom_style: {}
-            },
-            {
-                id: 'es_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'es_data',
-                label: 'ES数据',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'index_name',
-                type: 'string',
-                position: 'center',
-                label: '索引名称',
-                description: '存入数据的目标索引名称',
-                required: true,
-                default: '',
-                custom_style: {},
-                custom_props: {
-                    placeholder: '请输入索引名称，默认：tmp_data',
-                    clearable: true
-                }
-            }
-        ]
-    },
-    {
-        id: 'mongo_db',
-        name: 'MongoDB数据库',
-        description: '将数据存入指定MongoDB数据库，或者从指定MongoDB数据库接收数据',
-        type: 'output',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'mongo_input',
-                type: 'target',
-                position: 'left',
-                socket_type: 'mongo_data',
-                allowed_socket_types: ['mongo_data'],
-                label: 'MongoDB数据',
-                custom_style: {}
-            },
-            {
-                id: 'mongo_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'mongo_data',
-                label: 'MongoDB数据',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'database_name',
-                type: 'string',
-                position: 'center',
-                label: '数据库名称',
-                description: '存入数据的目标数据库名称',
-                required: true,
-                default: '',
-                custom_style: {},
-                custom_props: {
-                    placeholder: '请输入数据库名称，默认：tmp_data',
-                    clearable: true
-                }
-            }
-        ]
-    },
-    {
-        id: 'data_validator',
-        name: '数据格式验证器',
-        description: '验证数据的目标格式，验证通过则数据验证结果输出True，同时输出原数据，否则输出False，默认原数据不输出，通过设置始终输出数据来强制输出原数据',
-        type: 'output',
-        version: '1.0.0',
-        handles: [
-            {
-                id: 'generic_data_input',
-                type: 'target',
-                position: 'left',
-                socket_type: 'generic_data',
-                allowed_socket_types: ['generic_data'],
-                label: '任意数据',
-                custom_style: {}
-            },
-            {
-                id: 'data_validator_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'basic_type_boolean',
-                label: '数据验证结果',
-                custom_style: {}
-            },
-            {
-                id: 'generic_dict_output',
-                type: 'source',
-                position: 'right',
-                socket_type: 'generic_data',
-                label: '数据输出',
-                custom_style: {}
-            }
-        ],
-        inputs: [
-            {
-                id: 'target_validation_format',
-                type: 'select',
-                position: 'center',
-                label: '验证格式',
-                description: '验证数据的目标格式，验证通过则数据验证结果输出True，否则输出False',
-                required: true,
-                default: 'rabbitmq',
-                options: [
-                    { label: 'RabbitMQ', value: 'rabbitmq' },
-                    { label: 'Elasticsearch', value: 'elasticsearch' },
-                    { label: 'MongoDB', value: 'mongodb' },
-                ],
-                custom_style: {
-                    width: '200px'
-                },
-                custom_props: {
-                    placeholder: '请选择输出标准格式，默认：RabbitMQ',
-                    clearable: true
-                }
-            },
-            {
-                id: 'force_output',
-                type: 'boolean',
-                position: 'center',
-                label: '始终输出数据',
-                description: '是否强制输出数据验证结果，验证不通过时默认数据输出为空，设置为True则始终输出数据',
-                required: true,
-                default: false,
-            }
-        ]
+                
+                return processedNode
+            })
+        } else {
+            ElMessage.error(`获取节点配置失败: ${response.message}`)
+            nodeTypeConfigs.value = []
+        }
+    } catch (error) {
+        ElMessage.error('获取节点配置失败')
+        nodeTypeConfigs.value = []
+    } finally {
+        loadingNodeConfigs.value = false
     }
-])
+}
 
 const socketTypeConfigs = ref([
     // 基本数据类型
@@ -577,7 +269,13 @@ const getDefaultData = (config) => {
     
     if (config.inputs) {
         config.inputs.forEach(input => {
-            data[input.id] = input.default
+            let defaultValue = input.default
+            // 暂时这样特殊处理一下，后续再想怎么搞
+            if (input.type === 'int' && defaultValue !== null && defaultValue !== undefined) {
+                const numValue = Number(defaultValue)
+                defaultValue = isNaN(numValue) ? null : numValue
+            }
+            data[input.id] = defaultValue
         })
     }
     
@@ -789,6 +487,10 @@ const stopRightResize = () => {
     window.removeEventListener('mouseup', stopRightResize)
 }
 
+onMounted(() => {
+    fetchNodeConfigs()
+})
+
 onUnmounted(() => {
     window.removeEventListener('mousemove', onLeftResize)
     window.removeEventListener('mouseup', stopLeftResize)
@@ -860,5 +562,33 @@ const onDrop = (event) => {
         })
         addNodes([newNode])
     }
+}
+
+const handleSaveAction = () => {
+    const nodes = elements.value.filter(el => el.type !== undefined)
+    const edges = elements.value.filter(el => el.source !== undefined && el.target !== undefined)
+    
+    const flowStructure = {
+        title: actionTitle.value,
+        description: actionDescription.value,
+        nodes: nodes.map(node => ({
+            id: node.id,
+            type: node.type,
+            position: node.position,
+            data: node.data
+        })),
+        edges: edges.map(edge => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle,
+            targetHandle: edge.targetHandle,
+            style: edge.style
+        }))
+    }
+    
+    console.log('Flow 结构:', flowStructure)
+    console.log('节点数量:', nodes.length)
+    console.log('连接数量:', edges.length)
 }
 </script>

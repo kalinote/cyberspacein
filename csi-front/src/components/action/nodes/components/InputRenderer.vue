@@ -21,7 +21,7 @@
                 
                 <component 
                     :is="componentType"
-                    :model-value="modelValue"
+                    :model-value="normalizedModelValue"
                     @update:model-value="handleUpdate"
                     v-bind="computedProps"
                     :disabled="disabled"
@@ -77,7 +77,7 @@
                 
                 <component 
                     :is="componentType"
-                    :model-value="modelValue"
+                    :model-value="normalizedModelValue"
                     @update:model-value="handleUpdate"
                     v-bind="computedProps"
                     :disabled="disabled"
@@ -174,6 +174,17 @@ const positionClass = computed(() => {
         'bottom': 'mt-auto'
     }
     return classMap[position] || 'mx-auto'
+})
+
+const normalizedModelValue = computed(() => {
+    if (props.inputConfig.type === 'int') {
+        if (props.modelValue === null || props.modelValue === undefined || props.modelValue === '') {
+            return null
+        }
+        const numValue = Number(props.modelValue)
+        return isNaN(numValue) ? null : numValue
+    }
+    return props.modelValue
 })
 
 const handleUpdate = (value) => {
