@@ -50,7 +50,7 @@
                 <Icon icon="mdi:server-network" />
                 <span>行动资源配置</span>
               </button>
-              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
+              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/action/history')">
                 <Icon icon="mdi:history" />
                 <span>查看历史行动</span>
               </button>
@@ -287,11 +287,101 @@
     <!-- 行动执行监控 -->
     <section class="py-12 bg-linear-to-b from-gray-50 to-white">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 class="text-2xl font-bold text-gray-900 mb-8 flex items-center space-x-2">
-          <Icon icon="mdi:monitor-dashboard" class="text-blue-600 text-2xl" />
-          <span><span class="text-blue-500">行动</span>执行监控</span>
-        </h2>
+        <div class="flex justify-between items-center mb-8">
+          <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+            <Icon icon="mdi:monitor-dashboard" class="text-blue-600 text-2xl" />
+            <span><span class="text-blue-500">行动</span>执行监控</span>
+          </h2>
+          <el-button type="primary" link @click="$router.push('/action/history')">
+            <template #icon><Icon icon="mdi:arrow-right" /></template>
+            查看历史行动
+          </el-button>
+        </div>
 
+        <!-- 正在执行的行动 -->
+        <div class="mb-12">
+          <div v-loading="loadingRunningActions" :element-loading-text="'加载中...'" class="min-h-[200px]">
+            <div v-if="runningActions.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
+              <Icon icon="mdi:play-circle-outline" class="text-6xl text-gray-300 mb-4" />
+              <p class="text-gray-500 text-lg mb-2">暂无正在执行的行动</p>
+              <p class="text-gray-400 text-sm">创建新行动后，执行中的行动将显示在这里</p>
+            </div>
+
+            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div
+                v-for="action in runningActions"
+                :key="action.id"
+                class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-all hover:border-blue-300"
+              >
+                <div class="flex items-start justify-between mb-4">
+                  <div class="flex-1">
+                    <h3 class="text-lg font-bold text-gray-900 mb-2 line-clamp-1">{{ action.name }}</h3>
+                    <p class="text-sm text-gray-600 line-clamp-2 mb-3">{{ action.description }}</p>
+                  </div>
+                  <div class="ml-3 shrink-0">
+                    <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center animate-pulse">
+                      <Icon icon="mdi:loading" class="text-blue-600 text-2xl animate-spin" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="space-y-3 mb-4">
+                  <div class="flex items-center justify-between text-sm">
+                    <span class="text-gray-500 flex items-center gap-2">
+                      <Icon icon="mdi:clock-outline" class="text-blue-500" />
+                      开始时间
+                    </span>
+                    <span class="font-medium text-gray-900">{{ formatTime(action.startTime) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between text-sm">
+                    <span class="text-gray-500 flex items-center gap-2">
+                      <Icon icon="mdi:progress-clock" class="text-green-500" />
+                      运行时长
+                    </span>
+                    <span class="font-medium text-gray-900">{{ formatDuration(action.duration) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between text-sm">
+                    <span class="text-gray-500 flex items-center gap-2">
+                      <Icon icon="mdi:chart-line" class="text-purple-500" />
+                      完成进度
+                    </span>
+                    <span class="font-medium text-gray-900">{{ action.progress }}%</span>
+                  </div>
+                </div>
+
+                <div class="mb-4">
+                  <div class="flex justify-between text-xs text-gray-600 mb-1">
+                    <span>执行进度</span>
+                    <span>{{ action.completedSteps }}/{{ action.totalSteps }} 步骤</span>
+                  </div>
+                  <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      class="h-full bg-linear-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-300"
+                      :style="{ width: action.progress + '%' }"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 pt-4 border-t border-gray-200">
+                  <el-button type="primary" link size="small" class="flex-1" @click="viewActionDetail(action.id)">
+                    <template #icon><Icon icon="mdi:eye" /></template>
+                    查看详情
+                  </el-button>
+                  <el-button type="warning" link size="small" @click="pauseAction(action.id)">
+                    <template #icon><Icon icon="mdi:pause" /></template>
+                    暂停
+                  </el-button>
+                  <el-button type="danger" link size="small" @click="stopAction(action.id)">
+                    <template #icon><Icon icon="mdi:stop" /></template>
+                    停止
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 监控数据 -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div class="bg-white rounded-2xl p-6 shadow-lg border border-red-100">
             <h3 class="text-lg font-bold text-gray-900 mb-6">当前行动状态</h3>
@@ -402,6 +492,39 @@ export default {
         { text: '网络安全威胁', type: 'primary' },
         { text: '新兴技术', type: 'success' },
         { text: '市场趋势', type: 'warning' }
+      ],
+      loadingRunningActions: false,
+      runningActions: [
+        {
+          id: 'action-001',
+          name: '社交媒体舆情监控',
+          description: '监控Twitter、Reddit等平台的技术讨论趋势和热点话题',
+          startTime: new Date(Date.now() - 2 * 3600 * 1000),
+          duration: 2 * 3600 * 1000,
+          progress: 45,
+          completedSteps: 5,
+          totalSteps: 11
+        },
+        {
+          id: 'action-002',
+          name: '技术论坛情报收集',
+          description: '收集Stack Overflow、GitHub等平台的技术漏洞和安全信息',
+          startTime: new Date(Date.now() - 5 * 3600 * 1000),
+          duration: 5 * 3600 * 1000,
+          progress: 78,
+          completedSteps: 7,
+          totalSteps: 9
+        },
+        {
+          id: 'action-003',
+          name: '新闻媒体事件追踪',
+          description: '追踪全球主要新闻媒体的网络安全相关报道和事件',
+          startTime: new Date(Date.now() - 30 * 60 * 1000),
+          duration: 30 * 60 * 1000,
+          progress: 12,
+          completedSteps: 1,
+          totalSteps: 8
+        }
       ],
       commonTemplates: [
         {
@@ -623,6 +746,60 @@ export default {
 
     viewSteps(templateId) {
       this.$message.error(`[尚未实现] 查看步骤: ${templateId}`)
+    },
+
+    formatTime(date) {
+      if (!date) return '未知'
+      const d = new Date(date)
+      return d.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    },
+
+    formatDuration(ms) {
+      if (!ms) return '0分钟'
+      const seconds = Math.floor(ms / 1000)
+      const minutes = Math.floor(seconds / 60)
+      const hours = Math.floor(minutes / 60)
+      
+      if (hours > 0) {
+        return `${hours}小时${minutes % 60}分钟`
+      } else if (minutes > 0) {
+        return `${minutes}分钟`
+      } else {
+        return `${seconds}秒`
+      }
+    },
+
+    viewActionDetail(actionId) {
+      this.$message.info(`查看行动详情: ${actionId}`)
+    },
+
+    pauseAction(actionId) {
+      this.$confirm('确定要暂停此行动吗？', '确认暂停', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        this.$message.success('行动已暂停')
+      }).catch(() => {
+        this.$message.info('已取消暂停')
+      })
+    },
+
+    stopAction(actionId) {
+      this.$confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
+        confirmButtonText: '确定停止',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        this.$message.success('行动已停止')
+      }).catch(() => {
+        this.$message.info('已取消停止')
+      })
     },
   },
   

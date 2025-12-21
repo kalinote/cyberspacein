@@ -7,6 +7,7 @@ import Platform from '../views/details/PlatformDetail.vue'
 import VideoEditor from '../views/VideoEditor.vue'
 import NewAction from '../views/action/NewAction.vue'
 import ActionResourceConfig from '../views/action/ActionResourceConfig.vue'
+import ActionHistory from '../views/action/ActionHistory.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 
 const router = createRouter({
@@ -39,6 +40,12 @@ const router = createRouter({
       path: '/action/resource-config',
       name: 'action-resource-config',
       component: ActionResourceConfig
+    },
+    {
+      // 历史行动
+      path: '/action/history',
+      name: 'action-history',
+      component: ActionHistory
     },
     {
       // 告警信息
