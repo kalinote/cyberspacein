@@ -340,9 +340,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+const router = useRouter()
 
 const loading = ref(false)
 const viewMode = ref('card')
@@ -561,7 +564,7 @@ const handlePageSizeChange = (pageSize) => {
 }
 
 const viewActionDetail = (actionId) => {
-  ElMessage.info(`查看行动详情: ${actionId}`)
+  router.push(`/action/${actionId}`)
 }
 
 const rerunAction = (actionId) => {

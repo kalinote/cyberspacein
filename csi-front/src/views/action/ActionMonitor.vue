@@ -775,7 +775,7 @@ export default {
     },
 
     viewActionDetail(actionId) {
-      this.$message.info(`查看行动详情: ${actionId}`)
+      this.$router.push(`/action/${actionId}`)
     },
 
     pauseAction(actionId) {

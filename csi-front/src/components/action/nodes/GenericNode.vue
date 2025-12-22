@@ -1,8 +1,14 @@
 <template>
     <div 
-        class="generic-node p-4 bg-white rounded-lg shadow-sm border border-gray-200 relative"
-        :class="{ 'pl-16': hasLeftHandles, 'pr-16': hasRightHandles }"
-        :style="computedNodeStyle"
+        class="generic-node p-4 bg-white rounded-lg shadow-sm relative"
+        :class="{ 
+            'pl-16': hasLeftHandles, 
+            'pr-16': hasRightHandles
+        }"
+        :style="{
+            ...computedNodeStyle,
+            border: executionStatusBorderColor ? `1.5px solid ${executionStatusBorderColor}` : '1px solid #e5e7eb'
+        }"
     >
         <template v-if="showHandle && nodeConfig">
             <HandleRenderer
@@ -88,6 +94,17 @@ const { updateNodeData } = useVueFlow()
 
 const nodeConfig = computed(() => props.data?.config || null)
 const socketTypeConfigs = computed(() => props.data?.socketTypeConfigs || [])
+const executionStatus = computed(() => props.data?.executionStatus || null)
+const executionStatusBorderColor = computed(() => {
+    if (!executionStatus.value) return null
+    const status = executionStatus.value.status
+    const colorMap = {
+        'completed': '#10b981',
+        'running': '#eab308',
+        'failed': '#ef4444'
+    }
+    return colorMap[status] || null
+})
 
 const defaultNodeStyle = {
     minWidth: '250px',
