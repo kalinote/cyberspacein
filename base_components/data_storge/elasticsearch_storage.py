@@ -100,3 +100,56 @@ class ElasticsearchStorage:
             logger.error(f"Elasticsearch批量操作失败: {e}")
             raise
 
+    def query_documents(self, index_name: str, query: Dict[str, Any], batch_size: int = 0) -> List[Dict[str, Any]]:
+        if not self.client:
+            self.connect()
+
+        try:
+            search_params = {
+                "index": index_name,
+                "body": {
+                    "query": query
+                }
+            }
+            
+            if batch_size > 0:
+                search_params["size"] = batch_size
+            
+            response = self.client.search(**search_params)
+            
+            documents = []
+            for hit in response['hits']['hits']:
+                doc = hit['_source'].copy()
+                if '_id' in hit:
+                    doc['_id'] = hit['_id']
+                documents.append(doc)
+            
+            if batch_size <= 0:
+                total = response['hits']['total']['value'] if isinstance(response['hits']['total'], dict) else response['hits']['total']
+                scroll_size = len(documents)
+                
+                while scroll_size > 0 and len(documents) < total:
+                    scroll_id = response.get('_scroll_id')
+                    if not scroll_id:
+                        break
+                    
+                    response = self.client.scroll(
+                        scroll_id=scroll_id,
+                        scroll='2m'
+                    )
+                    
+                    scroll_size = len(response['hits']['hits'])
+                    for hit in response['hits']['hits']:
+                        doc = hit['_source'].copy()
+                        if '_id' in hit:
+                            doc['_id'] = hit['_id']
+                        documents.append(doc)
+            
+            return documents
+        except RequestError as e:
+            logger.error(f"Elasticsearch查询文档失败: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Elasticsearch查询操作失败: {e}")
+            raise
+

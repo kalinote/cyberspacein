@@ -91,3 +91,29 @@ class MongoDBStorage:
             logger.error(f"MongoDB批量操作失败: {e}")
             raise
 
+    def query_documents(self, collection_name: str, query: Dict[str, Any], batch_size: int = 0) -> List[Dict[str, Any]]:
+        if self.db is None:
+            self.connect()
+
+        try:
+            collection = self.db[collection_name]
+            cursor = collection.find(query)
+            
+            if batch_size > 0:
+                cursor = cursor.limit(batch_size)
+            
+            documents = []
+            for doc in cursor:
+                doc_dict = dict(doc)
+                if '_id' in doc_dict:
+                    doc_dict['_id'] = str(doc_dict['_id'])
+                documents.append(doc_dict)
+            
+            return documents
+        except OperationFailure as e:
+            logger.error(f"MongoDB查询文档失败: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"MongoDB查询操作失败: {e}")
+            raise
+

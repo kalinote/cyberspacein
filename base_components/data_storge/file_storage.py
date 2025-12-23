@@ -61,3 +61,31 @@ class FileStorage:
             logger.error(f"追加文件失败: {e}")
             raise
 
+    def query_documents(self, file_path: str, filter_func=None, batch_size: int = 0) -> List[Dict[str, Any]]:
+        try:
+            normalized_path = self._normalize_path(file_path)
+            
+            if not normalized_path.exists():
+                logger.warning(f"文件不存在: {normalized_path}")
+                return []
+            
+            with open(normalized_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if not isinstance(data, list):
+                    data = [data]
+            
+            documents = data
+            if filter_func:
+                documents = [doc for doc in documents if filter_func(doc)]
+            
+            if batch_size > 0 and len(documents) > batch_size:
+                documents = documents[:batch_size]
+            
+            return documents
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"文件JSON解析失败: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"读取文件失败: {e}")
+            raise
+

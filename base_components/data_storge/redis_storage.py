@@ -91,3 +91,40 @@ class RedisStorage:
             logger.error(f"Redis批量操作失败: {e}")
             raise
 
+    def query_documents(self, key_prefix: str, filter_func=None, batch_size: int = 0) -> List[Dict[str, Any]]:
+        if self.client is None:
+            self.connect()
+
+        try:
+            pattern = f"{key_prefix}:*"
+            documents = []
+            
+            cursor = 0
+            while True:
+                cursor, keys = self.client.scan(cursor, match=pattern, count=100)
+                
+                for key in keys:
+                    value = self.client.get(key)
+                    if value:
+                        try:
+                            doc = json.loads(value.decode('utf-8'))
+                            if filter_func is None or filter_func(doc):
+                                documents.append(doc)
+                        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                            logger.warning(f"Redis键 {key} 的值解析失败: {e}")
+                            continue
+                
+                if cursor == 0:
+                    break
+            
+            if batch_size > 0 and len(documents) > batch_size:
+                documents = documents[:batch_size]
+            
+            return documents
+        except RedisError as e:
+            logger.error(f"Redis查询文档失败: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Redis查询操作失败: {e}")
+            raise
+

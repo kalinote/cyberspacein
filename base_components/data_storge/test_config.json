@@ -5,7 +5,15 @@
     },
     "config": {
         "target": "rabbitmq",
-        "target_name": "target_queue"
+        "target_name": "target_queue",
+        "batch_size": 100,
+        "conditions": [
+            {
+                "field": "field_name",
+                "operator": "eq",
+                "value": "value"
+            }
+        ]
     },
     "inputs": {
         "data_in": {
@@ -14,9 +22,13 @@
         }
     },
     "outputs": {
-        "data_out": {
+        "direct_out": {
             "type": "reference",
             "value": ["tmp_queue_3"]
+        },
+        "data_out": {
+            "type": "reference",
+            "value": ["tmp_queue_4"]
         }
     }
 }
