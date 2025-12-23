@@ -1,7 +1,12 @@
-from typing import Generic, TypeVar, List
+from typing import Generic, TypeVar, List, Any
 from pydantic import BaseModel, Field
 
 T = TypeVar('T')
+
+
+class DictModel(BaseModel):
+    key: str
+    value: Any
 
 
 class PageParams(BaseModel):

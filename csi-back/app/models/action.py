@@ -2,6 +2,7 @@ from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
 from beanie import Document
 from pydantic import BaseModel, Field
+from app.schemas.general import DictModel
 
 
 class ActionNodeHandleModel(BaseModel):
@@ -12,7 +13,7 @@ class ActionNodeHandleModel(BaseModel):
     socket_type: str
     allowed_socket_types: Optional[List[str]] = None
     label: str
-    custom_style: Optional[Dict[str, Any]] = None
+    custom_style: Optional[List[DictModel]] = None
 
 
 class ActionNodeInputModel(BaseModel):
@@ -25,8 +26,8 @@ class ActionNodeInputModel(BaseModel):
     required: bool
     default: Any
     options: Optional[List[Dict[str, str]]] = None
-    custom_style: Optional[Dict[str, Any]] = None
-    custom_props: Optional[Dict[str, Any]] = None
+    custom_style: Optional[List[DictModel]] = None
+    custom_props: Optional[List[DictModel]] = None
 
 
 class ActionNodeModel(Document):
@@ -37,6 +38,7 @@ class ActionNodeModel(Document):
     version: str
     handles: List[ActionNodeHandleModel]
     inputs: List[ActionNodeInputModel]
+    default_configs: Optional[List[DictModel]] = None
     related_components: List[str]
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

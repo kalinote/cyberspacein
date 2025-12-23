@@ -10,6 +10,7 @@ from app.schemas.response import ApiResponse
 from app.schemas.enum import ActionNodeTypeEnum
 from app.utils.id_lib import generate_id
 from app.models.action import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
+from app.utils.dict_helper import pack_dict, unpack_dict
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ async def get_actions():
                 socket_type=handle.socket_type,
                 allowed_socket_types=handle.allowed_socket_types,
                 label=handle.label,
-                custom_style=handle.custom_style
+                custom_style=unpack_dict(handle.custom_style)
             ))
 
         inputs_response = []
@@ -55,8 +56,8 @@ async def get_actions():
                 required=input_item.required,
                 default=input_item.default,
                 options=options,
-                custom_style=input_item.custom_style,
-                custom_props=input_item.custom_props
+                custom_style=unpack_dict(input_item.custom_style),
+                custom_props=unpack_dict(input_item.custom_props)
             ))
 
         results.append(ActionNodeResponse(
@@ -91,7 +92,11 @@ async def create_node(data: ActionNode):
             "id": handle_id
         }
         handles_with_id.append(handle_dict)
-        handle_models.append(ActionNodeHandleModel(**handle_dict))
+        
+        handle_db_dict = handle_dict.copy()
+        if "custom_style" in handle_db_dict:
+            handle_db_dict["custom_style"] = pack_dict(handle_db_dict.get("custom_style"))
+        handle_models.append(ActionNodeHandleModel(**handle_db_dict))
 
     inputs_with_id = []
     input_models = []
@@ -105,7 +110,13 @@ async def create_node(data: ActionNode):
             input_dict["options"] = [opt.model_dump()
                                      for opt in input_item.options]
         inputs_with_id.append(input_dict)
-        input_models.append(ActionNodeInputModel(**input_dict))
+
+        input_db_dict = input_dict.copy()
+        if "custom_style" in input_db_dict:
+            input_db_dict["custom_style"] = pack_dict(input_db_dict.get("custom_style"))
+        if "custom_props" in input_db_dict:
+            input_db_dict["custom_props"] = pack_dict(input_db_dict.get("custom_props"))
+        input_models.append(ActionNodeInputModel(**input_db_dict))
 
     node_model = ActionNodeModel(
         id=node_id,
@@ -115,6 +126,7 @@ async def create_node(data: ActionNode):
         version=data.version,
         handles=handle_models,
         inputs=input_models,
+        default_configs=pack_dict(data.default_configs),
         related_components=data.related_components
     )
 

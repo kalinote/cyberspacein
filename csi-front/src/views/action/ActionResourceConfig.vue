@@ -106,20 +106,20 @@
                 <div class="flex items-start gap-4 flex-1">
                   <div 
                     class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                    :style="{ backgroundColor: getNodeColorWithOpacity(node) }"
+                    :class="getNodeBgClass(node)"
                   >
                     <div 
                       class="w-6 h-6 rounded-full"
-                      :style="{ backgroundColor: getNodeColor(node) }"
+                      :class="getNodeColorClass(node)"
                     ></div>
                   </div>
                   <div class="flex-1">
                     <div class="flex items-center gap-3 mb-2">
                       <h3 class="text-lg font-bold text-gray-900">{{ node.name }}</h3>
                       <el-tag 
-                        :type="getNodeTypeTagType(node.type)" 
                         size="small"
                         class="border-0"
+                        :class="getNodeTagClass(node)"
                       >
                         {{ node.type }}
                       </el-tag>
@@ -689,31 +689,31 @@ const getResourceCount = (tabKey) => {
   return 0
 }
 
-const getNodeColor = (node) => {
-  if (!node) return '#909399'
-  if (node.handles && node.handles.length > 0) {
-    const firstHandle = node.handles[0]
-    const socketConfig = socketTypeConfigs.value.find(
-      s => s.socket_type === firstHandle.socket_type
-    )
-    return socketConfig?.color || '#909399'
-  }
-  return '#909399'
+const nodeTypeColorMap = {
+  'construct': { bg: 'bg-blue-100!', color: 'bg-blue-500!', tag: 'bg-blue-100! text-blue-700!' },
+  'crawler': { bg: 'bg-green-100!', color: 'bg-green-500!', tag: 'bg-green-100! text-green-700!' },
+  'storage': { bg: 'bg-purple-100!', color: 'bg-purple-500!', tag: 'bg-purple-100! text-purple-700!' },
+  'middleware': { bg: 'bg-orange-100!', color: 'bg-orange-500!', tag: 'bg-orange-100! text-orange-700!' },
+  'processor': { bg: 'bg-red-100!', color: 'bg-red-500!', tag: 'bg-red-100 text-red-700' },
+  'logic': { bg: 'bg-indigo-100!', color: 'bg-indigo-500!', tag: 'bg-indigo-100! text-indigo-700!' },
+  'simple_operation': { bg: 'bg-yellow-100!', color: 'bg-yellow-500!', tag: 'bg-yellow-100! text-yellow-700!' },
+  'output': { bg: 'bg-teal-100!', color: 'bg-teal-500!', tag: 'bg-teal-100! text-teal-700!' },
+  'input': { bg: 'bg-pink-100!', color: 'bg-pink-500!', tag: 'bg-pink-100! text-pink-700!' }
 }
 
-const getNodeColorWithOpacity = (node) => {
-  const color = getNodeColor(node)
-  return color + '20'
+const getNodeColorClass = (node) => {
+  if (!node || !node.type) return 'bg-gray-400'
+  return nodeTypeColorMap[node.type]?.color || 'bg-gray-400'
 }
 
-const getNodeTypeTagType = (type) => {
-  const typeMap = {
-    'input': 'primary',
-    'crawler': 'success',
-    'output': 'warning',
-    'processor': 'info'
-  }
-  return typeMap[type] || ''
+const getNodeBgClass = (node) => {
+  if (!node || !node.type) return 'bg-gray-100'
+  return nodeTypeColorMap[node.type]?.bg || 'bg-gray-100'
+}
+
+const getNodeTagClass = (node) => {
+  if (!node || !node.type) return 'bg-gray-100! text-gray-700!'
+  return nodeTypeColorMap[node.type]?.tag || 'bg-gray-100! text-gray-700!'
 }
 
 const handleAdd = (tabKey) => {
