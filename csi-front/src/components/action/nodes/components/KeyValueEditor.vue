@@ -67,6 +67,18 @@ const updatePairsFromModel = () => {
         keyValuePairs.value = []
         return
     }
+
+    const currentObj = {}
+    keyValuePairs.value.forEach(pair => {
+        if (pair.key && pair.key.trim()) {
+            currentObj[pair.key.trim()] = pair.value || ''
+        }
+    })
+
+    if (JSON.stringify(currentObj) === JSON.stringify(props.modelValue)) {
+        return
+    }
+
     keyValuePairs.value = Object.entries(props.modelValue).map(([key, value]) => ({
         key,
         value: String(value)

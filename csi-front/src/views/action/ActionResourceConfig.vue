@@ -357,6 +357,9 @@
               />
             </el-select>
           </el-form-item>
+          <el-form-item label="默认配置" prop="default_configs">
+            <KeyValueEditor v-model="formData.default_configs" />
+          </el-form-item>
         </div>
 
         <!-- Handles -->
@@ -590,6 +593,7 @@ const formData = ref({
   type: '',
   version: '1.0.0',
   related_components: [],
+  default_configs: {},
   handles: [],
   inputs: []
 })
@@ -741,6 +745,7 @@ const resetForm = () => {
     type: '',
     version: '1.0.0',
     related_components: [],
+    default_configs: {},
     handles: [],
     inputs: []
   }
@@ -817,6 +822,7 @@ const handleSubmit = async () => {
       type: formData.value.type,
       version: formData.value.version,
       related_components: formData.value.related_components || [],
+      default_configs: formData.value.default_configs || {},
       handles: formData.value.handles.map(handle => {
         const handleData = {
           name: handle.name,

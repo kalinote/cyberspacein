@@ -44,6 +44,7 @@ class ActionNode(BaseModel):
     version: str = Field(description="节点版本")
     handles: List[ActionNodeHandle] = Field(description="连接点列表")
     inputs: List[ActionNodeInput] = Field(description="输入配置列表")
+    default_configs: Dict[str, Any] = Field(default={}, description="默认配置")
     related_components: List[str] = Field(description="相关组件列表")
 
 class ActionNodeResponse(ActionNode):
