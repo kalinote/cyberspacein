@@ -575,7 +575,7 @@ const socketTypeConfigs = ref([
 ])
 
 // TODO: 这里类型还需要进一步确认
-const inputTypes = ref(['int', 'string', 'textarea', 'select', 'checkbox', 'checkbox-group', 'radio-group', 'boolean', 'datetime', 'tags'])
+const inputTypes = ref(['int', 'string', 'textarea', 'select', 'checkbox', 'checkbox-group', 'radio-group', 'boolean', 'datetime', 'tags', 'conditions'])
 
 const validateName = (rule, value, callback) => {
   if (!value) {

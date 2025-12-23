@@ -24,7 +24,7 @@ class ActionNodeHandleResponse(ActionNodeHandle):
 
 class ActionNodeInput(BaseModel):
     name: str = Field(description="输入项名称")
-    type: Literal['int', 'string', 'textarea', 'select', 'checkbox', 'checkbox-group', 'radio-group', 'boolean', 'datetime', 'tags'] = Field(description="输入项类型")
+    type: Literal['int', 'string', 'textarea', 'select', 'checkbox', 'checkbox-group', 'radio-group', 'boolean', 'datetime', 'tags', 'conditions'] = Field(description="输入项类型")
     position: Literal["left", "right", "top", "bottom", "center"] = Field(description="输入项位置")
     label: str = Field(description="输入项标签")
     description: str = Field(description="输入项描述")

@@ -9,6 +9,7 @@
         "batch_size": 100,
         "conditions": [
             {
+                
                 "field": "field_name",
                 "operator": "eq",
                 "value": "value"

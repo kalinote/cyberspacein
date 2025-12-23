@@ -103,6 +103,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import TagInput from './TagInput.vue'
+import ConditionInput from './ConditionInput.vue'
 
 // TODO: 这里还需要优化规范一下，比如考虑是否把boolean和switch统一起来
 const INPUT_TYPE_MAP = {
@@ -115,7 +116,8 @@ const INPUT_TYPE_MAP = {
     'radio-group': 'el-radio-group',
     'boolean': 'el-switch',
     'datetime': 'el-date-picker',
-    'tags': TagInput
+    'tags': TagInput,
+    'conditions': ConditionInput
 }
 
 const INPUT_DEFAULT_PROPS = {
@@ -127,7 +129,7 @@ const INPUT_DEFAULT_PROPS = {
     'datetime': { type: 'datetime', valueFormat: 'YYYY-MM-DD HH:mm:ss' }
 }
 
-const MULTI_LINE_TYPES = ['textarea', 'checkbox-group', 'radio-group', 'tags']
+const MULTI_LINE_TYPES = ['textarea', 'checkbox-group', 'radio-group', 'tags', 'conditions']
 
 const props = defineProps({
     inputConfig: {

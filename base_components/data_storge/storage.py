@@ -535,6 +535,7 @@ def main():
         if data_output_queues:
             logger.info("开始从存储读取数据")
             
+            ## TODO: 条件后续使用handle输入，以便于构建复杂条件
             conditions = config.get('conditions', [])
             batch_size = config.get('batch_size', 0)
             

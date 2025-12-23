@@ -226,7 +226,8 @@ const INPUT_TYPE_DEFAULTS = {
     'radio-group': null,
     'boolean': false,
     'datetime': null,
-    'tags': []
+    'tags': [],
+    'conditions': []
 }
 
 const normalizeDefaultValue = (type, value) => {
@@ -245,6 +246,7 @@ const normalizeDefaultValue = (type, value) => {
             
         case 'tags':
         case 'checkbox-group':
+        case 'conditions':
             return Array.isArray(value) ? value : []
             
         case 'string':
