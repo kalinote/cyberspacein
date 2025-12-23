@@ -9,10 +9,8 @@
     },
     "inputs": {},
     "outputs": {
-        "data_out": [
-            {
-                "type": "value"
-            }
-        ]
+        "data_out": {
+            "type": "value"
+        }
     }
 }

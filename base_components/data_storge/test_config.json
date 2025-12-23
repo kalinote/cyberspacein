@@ -1,0 +1,22 @@
+{
+    "meta": {
+        "node_id": "test_node_001",
+        "action_id": "694251b96d9534925bd9f6f3"
+    },
+    "config": {
+        "target": "redis",
+        "target_name": "target_queue"
+    },
+    "inputs": {
+        "data_in": {
+            "type": "reference",
+            "value": ["tmp_queue_2"]
+        }
+    },
+    "outputs": {
+        "data_out": {
+            "type": "reference",
+            "value": ["tmp_queue_4"]
+        }
+    }
+}
