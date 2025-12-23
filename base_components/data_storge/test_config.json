@@ -4,19 +4,19 @@
         "action_id": "694251b96d9534925bd9f6f3"
     },
     "config": {
-        "target": "redis",
+        "target": "rabbitmq",
         "target_name": "target_queue"
     },
     "inputs": {
         "data_in": {
             "type": "reference",
-            "value": ["tmp_queue_2"]
+            "value": ["tmp_queue_1"]
         }
     },
     "outputs": {
         "data_out": {
             "type": "reference",
-            "value": ["tmp_queue_4"]
+            "value": ["tmp_queue_3"]
         }
     }
 }

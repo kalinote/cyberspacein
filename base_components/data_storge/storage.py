@@ -10,6 +10,7 @@ from rabbitmq import RabbitMQReader, RabbitMQWriter
 from mongodb import MongoDBStorage
 from elasticsearch_storage import ElasticsearchStorage
 from redis_storage import RedisStorage
+from file_storage import FileStorage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -135,6 +136,11 @@ def process_messages(
             finally:
                 storage.close()
         
+        elif target == 'file':
+            storage = FileStorage()
+            storage.append_documents(target_name, message_bodies)
+            success_count = len(message_bodies)
+        
         else:
             logger.warning(f"未知的目标类型: {target}")
             error_count = len(message_bodies)
@@ -190,6 +196,11 @@ def process_messages(
                         success_count += 1
                     finally:
                         storage.close()
+                
+                elif target == 'file':
+                    storage = FileStorage()
+                    storage.append_documents(target_name, [message_body])
+                    success_count += 1
                 
                 if output_queues:
                     writer = RabbitMQWriter(**rabbitmq_config)
