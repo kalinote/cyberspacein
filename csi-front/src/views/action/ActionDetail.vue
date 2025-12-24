@@ -277,6 +277,7 @@ import { ElMessage } from 'element-plus'
 import {
   SOCKET_TYPE_CONFIGS,
   normalizeDefaultValue,
+  getDefaultData,
   formatDateTime,
   formatDuration,
   formatJSON,
@@ -331,7 +332,7 @@ const fetchNodeConfigs = async () => {
     }
 }
 
-const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
+const socketTypeConfigs = SOCKET_TYPE_CONFIGS
 
 const StatusAwareNode = {
     components: { GenericNode },
@@ -343,25 +344,32 @@ const StatusAwareNode = {
         const isSelected = computed(() => props.selected)
 
         return () => {
+            const borderWidth = executionStatus.value?.status === 'running' ? 1.5 : 1
+            const progressWidth = `calc((100% - ${borderWidth * 2}px) * ${progress.value} / 100)`
+            
             return h('div', {
-                class: isSelected.value ? 'ring-2 ring-blue-500 ring-offset-2' : '',
-                style: {
-                    position: 'relative'
-                }
+                class: [
+                    isSelected.value ? 'ring-2 ring-blue-500 ring-offset-2' : '',
+                    'relative'
+                ].filter(Boolean).join(' '),
             }, [
-                nodeStatus.value === 'running' ? h('div', {
-                    class: 'absolute top-0 left-0 h-0.5 bg-green-500 transition-all duration-300 z-10',
-                    style: { 
-                        width: progress.value + '%',
-                        borderRadius: '8px 8px 0 0'
-                    }
-                }) : null,
                 h(GenericNode, {
                     id: props.id,
                     data: props.data,
                     disabled: true,
                     showHandle: true
-                })
+                }),
+                nodeStatus.value === 'running' ? h('div', {
+                    class: 'absolute bg-gradient-to-r from-green-500 via-emerald-400 to-green-500 transition-all duration-300 z-[1]',
+                    style: { 
+                        top: '0px',
+                        left: '0px',
+                        height: `${borderWidth + 6}px`,
+                        width: `${progress.value}%`,
+                        maxWidth: '100%',
+                        borderRadius: progress.value >= 100 ? '1rem 1rem 0 0' : '1rem 0 0 0'
+                    }
+                }) : null
             ])
         }
     }
@@ -486,10 +494,9 @@ const scrollToNode = (nodeId) => {
 
 const getNodeName = (nodeId) => {
     const detail = actionData.value.node_details[nodeId]
-    if (detail) return detail.name
+    if (detail?.name) return detail.name
     const node = elements.value.find(el => el.id === nodeId && !el.source)
-    if (node?.data?.config) return node.data.config.name
-    return nodeId
+    return node?.data?.config?.name || nodeId
 }
 
 
@@ -711,16 +718,15 @@ const loadActionData = () => {
             config = fallbackConfig
         }
         
-        const nodeData = {
-            config: config,
-            socketTypeConfigs: socketTypeConfigs.value,
-            executionStatus: mockData.node_execution_status[node.id] || null
-        }
+        const nodeData = getDefaultData(config, socketTypeConfigs)
+        nodeData.executionStatus = mockData.node_execution_status[node.id] || null
         
         if (config.inputs) {
             config.inputs.forEach(input => {
                 const formDataValue = node.data.form_data?.[input.name]
-                nodeData[input.id] = normalizeDefaultValue(input.type, formDataValue)
+                if (formDataValue !== undefined && formDataValue !== null) {
+                    nodeData[input.id] = normalizeDefaultValue(input.type, formDataValue)
+                }
             })
         }
         
@@ -757,7 +763,7 @@ const loadActionData = () => {
             }
             
             if (sourceHandle) {
-                edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs.value)
+                edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs)
             }
         }
         
