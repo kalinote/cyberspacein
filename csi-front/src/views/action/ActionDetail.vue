@@ -1,5 +1,6 @@
 <template>
     <div class="h-screen flex flex-col bg-white">
+        <!-- TODO: 此页面尚未完成，暂时用于功能和布局展示 -->
         <Header />
 
         <div class="px-5 py-3 bg-white border-b border-gray-200 flex items-center shrink-0">
@@ -656,13 +657,43 @@ const loadActionData = () => {
     
     actionData.value = mockData
     
+    const findNodeConfigByFormData = (formData, nodeType) => {
+        if (!formData || !nodeTypeConfigs.value.length) return null
+        
+        const formDataKeys = Object.keys(formData)
+        if (formDataKeys.length === 0) return null
+        
+        let bestMatch = null
+        let maxMatchCount = 0
+        
+        const candidates = nodeTypeConfigs.value.filter(c => c.type === nodeType)
+        
+        for (const candidate of candidates) {
+            if (!candidate.inputs || candidate.inputs.length === 0) continue
+            
+            const inputNames = candidate.inputs.map(input => input.name || input.id).filter(Boolean)
+            const matchCount = formDataKeys.filter(key => inputNames.includes(key)).length
+            
+            if (matchCount > maxMatchCount) {
+                maxMatchCount = matchCount
+                bestMatch = candidate
+            }
+        }
+        
+        return maxMatchCount > 0 ? bestMatch : null
+    }
+    
     const processedNodes = mockData.graph.nodes.map(node => {
         let config = null
+        
         if (node.data?.definition_id) {
             config = nodeTypeConfigs.value.find(c => c.id === node.data.definition_id)
         }
         if (!config) {
             config = nodeTypeConfigs.value.find(c => c.id === node.type)
+        }
+        if (!config && node.data?.form_data) {
+            config = findNodeConfigByFormData(node.data.form_data, node.type)
         }
         if (!config) {
             config = nodeTypeConfigs.value.find(c => c.type === node.type)
@@ -704,21 +735,53 @@ const loadActionData = () => {
     
     const processedEdges = mockData.graph.edges.map(edge => {
         const sourceNode = processedNodes.find(n => n.id === edge.source)
+        const targetNode = processedNodes.find(n => n.id === edge.target)
         
         let edgeColor = '#909399'
+        let finalSourceHandle = edge.sourceHandle || null
+        let finalTargetHandle = edge.targetHandle || null
+        
         if (sourceNode && sourceNode.data?.config?.handles) {
-            const sourceHandle = sourceNode.data.config.handles.find(h => h.id === edge.sourceHandle)
+            let sourceHandle = sourceNode.data.config.handles.find(h => h.id === edge.sourceHandle)
+            
+            if (!sourceHandle && targetNode && targetNode.data?.config?.handles) {
+                const targetHandle = targetNode.data.config.handles.find(h => h.id === edge.targetHandle)
+                if (targetHandle) {
+                    sourceHandle = sourceNode.data.config.handles.find(h => 
+                        h.socket_type === targetHandle.socket_type && h.position === 'right'
+                    )
+                    if (sourceHandle) {
+                        finalSourceHandle = sourceHandle.id
+                    }
+                }
+            }
+            
             if (sourceHandle) {
                 edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs.value)
+            }
+        }
+        
+        if (targetNode && targetNode.data?.config?.handles) {
+            let targetHandle = targetNode.data.config.handles.find(h => h.id === edge.targetHandle)
+            if (!targetHandle && sourceNode && sourceNode.data?.config?.handles) {
+                const sourceHandle = sourceNode.data.config.handles.find(h => h.id === finalSourceHandle)
+                if (sourceHandle) {
+                    targetHandle = targetNode.data.config.handles.find(h => 
+                        h.socket_type === sourceHandle.socket_type && h.position === 'left'
+                    )
+                    if (targetHandle) {
+                        finalTargetHandle = targetHandle.id
+                    }
+                }
             }
         }
         
         return {
             id: edge.id,
             source: edge.source,
-            sourceHandle: edge.sourceHandle || null,
+            sourceHandle: finalSourceHandle,
             target: edge.target,
-            targetHandle: edge.targetHandle || null,
+            targetHandle: finalTargetHandle,
             style: {
                 stroke: edgeColor,
                 strokeWidth: 3
