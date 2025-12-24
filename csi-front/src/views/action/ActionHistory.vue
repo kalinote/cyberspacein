@@ -202,7 +202,7 @@
                       <Icon icon="mdi:clock-outline" class="text-purple-500" />
                       执行时长
                     </span>
-                    <span class="font-medium text-gray-900">{{ formatDuration(action.duration) }}</span>
+                    <span class="font-medium text-gray-900">{{ formatDuration(action.duration, 'milliseconds') }}</span>
                   </div>
                 </div>
 
@@ -344,6 +344,13 @@ import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  formatDateTime,
+  formatDuration,
+  getStatusText,
+  getStatusTagType,
+  getStatusDotClass
+} from '@/utils/action'
 
 const router = useRouter()
 
@@ -479,68 +486,6 @@ const filteredActions = computed(() => {
   return result.slice(start, end)
 })
 
-const getStatusText = (status) => {
-  const statusMap = {
-    'running': '执行中',
-    'completed': '已完成',
-    'paused': '已暂停',
-    'stopped': '已停止',
-    'failed': '失败'
-  }
-  return statusMap[status] || status
-}
-
-const getStatusTagType = (status) => {
-  const typeMap = {
-    'running': 'primary',
-    'completed': 'success',
-    'paused': 'warning',
-    'stopped': 'info',
-    'failed': 'danger'
-  }
-  return typeMap[status] || ''
-}
-
-const getStatusDotClass = (status) => {
-  const classMap = {
-    'running': 'bg-blue-500 animate-pulse',
-    'completed': 'bg-green-500',
-    'paused': 'bg-amber-500',
-    'stopped': 'bg-gray-500',
-    'failed': 'bg-red-500'
-  }
-  return classMap[status] || 'bg-gray-400'
-}
-
-const formatDateTime = (date) => {
-  if (!date) return '-'
-  const d = new Date(date)
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-const formatDuration = (ms) => {
-  if (!ms) return '-'
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-
-  if (days > 0) {
-    return `${days}天${hours % 24}小时`
-  } else if (hours > 0) {
-    return `${hours}小时${minutes % 60}分钟`
-  } else if (minutes > 0) {
-    return `${minutes}分钟`
-  } else {
-    return `${seconds}秒`
-  }
-}
 
 const handleFilterChange = () => {
   pagination.value.page = 1

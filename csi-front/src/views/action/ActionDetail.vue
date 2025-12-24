@@ -68,7 +68,7 @@
                             </div>
                             <div>
                                 <label class="text-xs text-gray-500">创建时间</label>
-                                <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.createTime) }}</p>
+                                <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.createTime, { includeSecond: true }) }}</p>
                             </div>
                             <div>
                                 <label class="text-xs text-gray-500">执行期限</label>
@@ -105,11 +105,11 @@
                             </div>
                             <div v-if="actionData.startTime">
                                 <label class="text-xs text-gray-500">开始时间</label>
-                                <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.startTime) }}</p>
+                                <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.startTime, { includeSecond: true }) }}</p>
                             </div>
                             <div v-if="actionData.endTime">
                                 <label class="text-xs text-gray-500">结束时间</label>
-                                <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.endTime) }}</p>
+                                <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.endTime, { includeSecond: true }) }}</p>
                             </div>
                             <div v-if="actionData.current_executing_node">
                                 <label class="text-xs text-gray-500">当前执行节点</label>
@@ -171,11 +171,11 @@
                                 </div>
                                 <div v-if="selectedNodeDetail.startTime">
                                     <label class="text-xs text-gray-500">开始时间</label>
-                                    <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(selectedNodeDetail.startTime) }}</p>
+                                    <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(selectedNodeDetail.startTime, { includeSecond: true }) }}</p>
                                 </div>
                                 <div v-if="selectedNodeDetail.endTime">
                                     <label class="text-xs text-gray-500">结束时间</label>
-                                    <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(selectedNodeDetail.endTime) }}</p>
+                                    <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(selectedNodeDetail.endTime, { includeSecond: true }) }}</p>
                                 </div>
                             </div>
                         </div>
@@ -273,6 +273,19 @@ import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
+import {
+  SOCKET_TYPE_CONFIGS,
+  normalizeDefaultValue,
+  formatDateTime,
+  formatDuration,
+  formatJSON,
+  formatLogTime,
+  getStatusText,
+  getStatusTagType,
+  getLogLevelClass,
+  getLogLevelTextClass,
+  getEdgeColor
+} from '@/utils/action'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -317,16 +330,7 @@ const fetchNodeConfigs = async () => {
     }
 }
 
-const socketTypeConfigs = ref([
-    { socket_type: 'basic_type_boolean', color: '#409eff', custom_style: {} },
-    { socket_type: 'platform', color: '#409eff', custom_style: {} },
-    { socket_type: 'keywords', color: '#f56c6c', custom_style: {} },
-    { socket_type: 'crawler_results', color: '#67c23a', custom_style: {} },
-    { socket_type: 'generic_data', color: '#ff69b4', custom_style: {} },
-    { socket_type: 'rabbitmq_data', color: '#ff9800', custom_style: {} },
-    { socket_type: 'es_data', color: '#722ed1', custom_style: {} },
-    { socket_type: 'mongo_data', color: '#13c2c2', custom_style: {} }
-])
+const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
 
 const StatusAwareNode = {
     components: { GenericNode },
@@ -487,134 +491,6 @@ const getNodeName = (nodeId) => {
     return nodeId
 }
 
-const formatDateTime = (dateStr) => {
-    if (!dateStr) return '-'
-    const date = new Date(dateStr)
-    return date.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    })
-}
-
-const formatDuration = (seconds) => {
-    if (!seconds) return '-'
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    if (hours > 0) {
-        return `${hours}小时${minutes}分钟`
-    }
-    return `${minutes}分钟`
-}
-
-const formatJSON = (obj) => {
-    if (!obj) return '无'
-    try {
-        return JSON.stringify(obj, null, 2)
-    } catch {
-        return String(obj)
-    }
-}
-
-const formatLogTime = (timestamp) => {
-    if (!timestamp) return ''
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    })
-}
-
-const getStatusText = (status) => {
-    const statusMap = {
-        'pending': '待执行',
-        'running': '执行中',
-        'completed': '已完成',
-        'failed': '失败',
-        'paused': '已暂停',
-        'stopped': '已停止'
-    }
-    return statusMap[status] || status
-}
-
-const getStatusTagType = (status) => {
-    const typeMap = {
-        'running': 'primary',
-        'completed': 'success',
-        'paused': 'warning',
-        'stopped': 'info',
-        'failed': 'danger',
-        'pending': 'info'
-    }
-    return typeMap[status] || 'info'
-}
-
-const getLogLevelClass = (level) => {
-    const classMap = {
-        'info': 'bg-blue-50',
-        'error': 'bg-red-50',
-        'warning': 'bg-yellow-50',
-        'debug': 'bg-gray-50'
-    }
-    return classMap[level] || 'bg-gray-50'
-}
-
-const getLogLevelTextClass = (level) => {
-    const classMap = {
-        'info': 'text-blue-600',
-        'error': 'text-red-600',
-        'warning': 'text-yellow-600',
-        'debug': 'text-gray-600'
-    }
-    return classMap[level] || 'text-gray-600'
-}
-
-const INPUT_TYPE_DEFAULTS = {
-    'int': null,
-    'string': '',
-    'textarea': '',
-    'select': null,
-    'checkbox': false,
-    'checkbox-group': [],
-    'radio-group': null,
-    'boolean': false,
-    'datetime': null,
-    'tags': []
-}
-
-const normalizeDefaultValue = (type, value) => {
-    if (value === undefined || value === null) {
-        return INPUT_TYPE_DEFAULTS[type] ?? null
-    }
-    
-    switch (type) {
-        case 'int':
-            const numValue = Number(value)
-            return isNaN(numValue) ? null : numValue
-            
-        case 'boolean':
-        case 'checkbox':
-            return Boolean(value)
-            
-        case 'tags':
-        case 'checkbox-group':
-            return Array.isArray(value) ? value : []
-            
-        case 'string':
-        case 'textarea':
-        case 'select':
-        case 'radio-group':
-        case 'datetime':
-            return value
-            
-        default:
-            return value
-    }
-}
 
 const loadActionData = () => {
     if (nodeTypeConfigs.value.length === 0) {
@@ -833,8 +709,7 @@ const loadActionData = () => {
         if (sourceNode && sourceNode.data?.config?.handles) {
             const sourceHandle = sourceNode.data.config.handles.find(h => h.id === edge.sourceHandle)
             if (sourceHandle) {
-                const socketConfig = socketTypeConfigs.value.find(s => s.socket_type === sourceHandle.socket_type)
-                edgeColor = socketConfig?.color || '#909399'
+                edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs.value)
             }
         }
         

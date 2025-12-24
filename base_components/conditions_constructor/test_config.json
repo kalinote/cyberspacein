@@ -1,0 +1,15 @@
+{
+    "meta": {
+        "node_id": "test_node_001",
+        "action_id": "694251b96d9534925bd9f6f3"
+    },
+    "config": {
+        "conditions": ["age__gt=18", "status=active,pending", "name__contains=admin"]
+    },
+    "inputs": {},
+    "outputs": {
+        "conditions": {
+            "type": "value"
+        }
+    }
+}

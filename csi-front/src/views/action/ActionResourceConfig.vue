@@ -223,7 +223,7 @@
                         <div class="flex items-center gap-2">
                           <Icon icon="mdi:calendar-clock" class="text-purple-500" />
                           <span class="text-gray-600">最后运行:</span>
-                          <span class="font-medium text-gray-900">{{ formatDateTime(component.last_run_at) }}</span>
+                          <span class="font-medium text-gray-900">{{ formatDateTime(component.last_run_at, { defaultValue: '未运行' }) }}</span>
                         </div>
                         <div class="flex items-center gap-2">
                           <Icon icon="mdi:identifier" class="text-orange-500" />
@@ -533,6 +533,7 @@ import SocketTypeTagSelect from '@/components/action/nodes/components/SocketType
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
+import { SOCKET_TYPE_CONFIGS, INPUT_TYPES, formatDateTime } from '@/utils/action'
 
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
@@ -563,19 +564,8 @@ const nodeList = ref([])
 
 const componentList = ref([])
 
-const socketTypeConfigs = ref([
-  { socket_type: 'basic_type_boolean', color: '#409eff', custom_style: {} },
-  { socket_type: 'platform', color: '#409eff', custom_style: {} },
-  { socket_type: 'keywords', color: '#f56c6c', custom_style: {} },
-  { socket_type: 'crawler_results', color: '#67c23a', custom_style: {} },
-  { socket_type: 'generic_data', color: '#ff69b4', custom_style: {} },
-  { socket_type: 'rabbitmq_data', color: '#ff9800', custom_style: {} },
-  { socket_type: 'es_data', color: '#722ed1', custom_style: {} },
-  { socket_type: 'mongo_data', color: '#13c2c2', custom_style: {} }
-])
-
-// TODO: 这里类型还需要进一步确认
-const inputTypes = ref(['int', 'string', 'textarea', 'select', 'checkbox', 'checkbox-group', 'radio-group', 'boolean', 'datetime', 'tags', 'conditions'])
+const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
+const inputTypes = ref(INPUT_TYPES)
 
 const validateName = (rule, value, callback) => {
   if (!value) {
@@ -949,30 +939,6 @@ const getComponentStatusBgClass = (status) => {
   return classMap[status] || 'bg-gray-100'
 }
 
-const formatDateTime = (dateStr) => {
-  if (!dateStr) return '未运行'
-  
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now - date
-  
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  if (days < 7) return `${days}天前`
-  
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
 
 const handleRunComponent = (component) => {
   if (component.status === 'running') {

@@ -172,6 +172,12 @@ import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
+import {
+  SOCKET_TYPE_CONFIGS,
+  getDefaultData,
+  getNodeColor,
+  getEdgeColor
+} from '@/utils/action'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -216,131 +222,17 @@ const fetchNodeConfigs = async () => {
     }
 }
 
-const INPUT_TYPE_DEFAULTS = {
-    'int': null,
-    'string': '',
-    'textarea': '',
-    'select': null,
-    'checkbox': false,
-    'checkbox-group': [],
-    'radio-group': null,
-    'boolean': false,
-    'datetime': null,
-    'tags': [],
-    'conditions': []
-}
-
-const normalizeDefaultValue = (type, value) => {
-    if (value === undefined || value === null) {
-        return INPUT_TYPE_DEFAULTS[type] ?? null
-    }
-    
-    switch (type) {
-        case 'int':
-            const numValue = Number(value)
-            return isNaN(numValue) ? null : numValue
-            
-        case 'boolean':
-        case 'checkbox':
-            return Boolean(value)
-            
-        case 'tags':
-        case 'checkbox-group':
-        case 'conditions':
-            return Array.isArray(value) ? value : []
-            
-        case 'string':
-        case 'textarea':
-        case 'select':
-        case 'radio-group':
-        case 'datetime':
-            return value
-            
-        default:
-            return value
-    }
-}
-
-const socketTypeConfigs = ref([
-    // 基本数据类型
-    {
-        socket_type: 'basic_type_boolean',
-        color: '#409eff',
-        custom_style: {}
-    },
-    // 扩展数据类型
-    {
-        socket_type: 'platform',
-        color: '#409eff',
-        custom_style: {}
-    },
-    {
-        socket_type: 'keywords',
-        color: '#f56c6c',
-        custom_style: {}
-    },
-    {
-        socket_type: 'crawler_results',
-        color: '#67c23a',
-        custom_style: {}
-    },
-    {
-        socket_type: 'generic_data',
-        color: '#ff69b4',
-        custom_style: {}
-    },
-    {
-        socket_type: 'rabbitmq_data',
-        color: '#ff9800',
-        custom_style: {}
-    },
-    {
-        socket_type: 'es_data',
-        color: '#722ed1',
-        custom_style: {}
-    },
-    {
-        socket_type: 'mongo_data',
-        color: '#13c2c2',
-        custom_style: {}
-    }
-])
-
-const getDefaultData = (config) => {
-    const data = {
-        config: config,
-        socketTypeConfigs: socketTypeConfigs.value
-    }
-    
-    if (config.inputs) {
-        config.inputs.forEach(input => {
-            data[input.id] = normalizeDefaultValue(input.type, input.default)
-        })
-    }
-    
-    return data
-}
-
-const getNodeColor = (config) => {
-    if (config.handles && config.handles.length > 0) {
-        const firstHandle = config.handles[0]
-        const socketConfig = socketTypeConfigs.value.find(
-            s => s.socket_type === firstHandle.socket_type
-        )
-        return socketConfig?.color || '#909399'
-    }
-    return '#909399'
-}
+const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
 
 const sidebarNodes = computed(() => {
     return nodeTypeConfigs.value.map(config => ({
         key: config.id,
         label: config.name,
         type: config.type,
-        color: getNodeColor(config),
+        color: getNodeColor(config, socketTypeConfigs.value),
         description: config.description,
         component: markRaw(GenericNode),
-        data: getDefaultData(config)
+        data: getDefaultData(config, socketTypeConfigs.value)
     }))
 })
 
@@ -415,7 +307,7 @@ const createNodeFromConfig = (configId, position) => {
         id: `node-${Date.now()}`,
         type: config.id,
         position: position,
-        data: getDefaultData(config)
+        data: getDefaultData(config, socketTypeConfigs.value)
     }
 }
 
@@ -557,8 +449,7 @@ onConnect((params) => {
         return
     }
     
-    const socketConfig = socketTypeConfigs.value.find(s => s.socket_type === sourceHandle.socket_type)
-    const edgeColor = socketConfig?.color || '#909399'
+    const edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs.value)
     
     const edgeWithStyle = {
         ...params,
