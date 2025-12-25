@@ -1,15 +1,17 @@
 import logging
 from typing import Dict, Any, List
 from fastapi import APIRouter, Depends
-from app.schemas.action import ActionNode
+from app.schemas.action.node import ActionNode
 
 from app.curd.action import get_components_by_project_id, get_components_project_by_name
-from app.schemas.action import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
+from app.schemas.action.node import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
 from app.schemas.general import PageParams, PageResponse
 from app.schemas.response import ApiResponse
 from app.schemas.enum import ActionNodeTypeEnum
 from app.utils.id_lib import generate_id
-from app.models.action import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
+from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
+from app.models.action.blueprint import ActionBlueprintModel, PositionModel, NodeDataModel, GraphNodeModel, GraphEdgeModel, ViewportModel, GraphModel
+from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintResponse
 from app.utils.dict_helper import pack_dict, unpack_dict
 
 logger = logging.getLogger(__name__)
@@ -19,6 +21,86 @@ router = APIRouter(
     tags=["action"],
 )
 
+@router.post("/blueprint", response_model=ApiResponse[ActionBlueprintResponse])
+async def create_blueprint(data: ActionBlueprint):
+    blueprint_id = generate_id(data.name + data.version + str(len(data.graph.nodes)) + str(len(data.graph.edges)))
+    
+    existing_blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
+    if existing_blueprint:
+        return ApiResponse.error(code=400, message=f"蓝图已存在，ID: {blueprint_id}")
+    
+    nodes_models = []
+    for node in data.graph.nodes:
+        node_data_model = NodeDataModel(
+            definition_id=node.data.definition_id,
+            version=node.data.version,
+            form_data=pack_dict(node.data.form_data)
+        )
+        
+        position_model = PositionModel(
+            x=node.position.x,
+            y=node.position.y
+        )
+        
+        node_model = GraphNodeModel(
+            id=node.id,
+            type=node.type,
+            position=position_model,
+            data=node_data_model
+        )
+        nodes_models.append(node_model)
+    
+    edges_models = []
+    for edge in data.graph.edges:
+        edge_model = GraphEdgeModel(
+            id=edge.id,
+            source=edge.source,
+            sourceHandle=edge.sourceHandle,
+            target=edge.target,
+            targetHandle=edge.targetHandle
+        )
+        edges_models.append(edge_model)
+    
+    viewport_model = ViewportModel(
+        x=data.graph.viewport.x,
+        y=data.graph.viewport.y,
+        zoom=data.graph.viewport.zoom
+    )
+    
+    graph_model = GraphModel(
+        nodes=nodes_models,
+        edges=edges_models,
+        viewport=viewport_model
+    )
+    
+    blueprint_model = ActionBlueprintModel(
+        id=blueprint_id,
+        name=data.name,
+        version=data.version,
+        description=data.description,
+        target=data.target,
+        implementation_period=data.implementation_period,
+        resource=data.resource,
+        graph=graph_model
+    )
+    
+    await blueprint_model.insert()
+    logger.info(f"成功创建蓝图: {blueprint_id}")
+    
+    response_data = ActionBlueprintResponse(
+        id=blueprint_id,
+        name=data.name,
+        version=data.version,
+        description=data.description,
+        target=data.target,
+        implementation_period=data.implementation_period,
+        resource=data.resource,
+        graph=data.graph,
+        created_at=blueprint_model.created_at,
+        updated_at=blueprint_model.updated_at
+    )
+    
+    return ApiResponse.success(data=response_data)
 
 @router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]])
 async def get_actions():

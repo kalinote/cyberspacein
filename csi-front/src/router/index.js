@@ -5,7 +5,7 @@ import ActionMonitor from '../views/action/ActionMonitor.vue'
 import Alert from '../views/Alert.vue'
 import Platform from '../views/details/PlatformDetail.vue'
 import VideoEditor from '../views/VideoEditor.vue'
-import NewAction from '../views/action/NewAction.vue'
+import NewActionBlueprint from '../views/action/NewActionBlueprint.vue'
 import ActionResourceConfig from '../views/action/ActionResourceConfig.vue'
 import ActionHistory from '../views/action/ActionHistory.vue'
 import ActionDetail from '../views/action/ActionDetail.vue'
@@ -31,10 +31,10 @@ const router = createRouter({
       component: ActionMonitor
     },
     {
-      // 新建行动
+      // 新建行动蓝图
       path: '/action/new',
-      name: 'new-action',
-      component: NewAction
+      name: 'new-action-blueprint',
+      component: NewActionBlueprint
     },
     {
       // 行动资源配置

@@ -44,7 +44,7 @@
             <div class="space-y-4">
               <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2" @click="$router.push('/action/new')">
                 <Icon icon="mdi:rocket-launch-outline" />
-                <span>新建标准行动</span>
+                <span>新建标准行动蓝图</span>
               </button>
               <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/action/resource-config')">
                 <Icon icon="mdi:server-network" />
@@ -60,34 +60,33 @@
       </div>
     </section>
 
-    <!-- 常用行动模板 -->
+    <!-- 常用行动蓝图 -->
     <section class="py-12 bg-linear-to-b from-white to-gray-50">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center mb-8">
           <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
             <Icon icon="mdi:file-document-multiple" class="text-blue-600 text-2xl" />
-            <span><span class="text-blue-500">常用行动</span>模板</span>
+            <span><span class="text-blue-500">行动</span>蓝图</span>
           </h2>
           <el-button type="primary" link>
             <template #icon><Icon icon="mdi:arrow-right" /></template>
-            查看全部
+            查看全部蓝图
           </el-button>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
           <div 
-            v-for="(template, index) in commonTemplates" 
+            v-for="(blueprint, index) in commonBlueprints" 
             :key="index"
             class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow flex flex-col"
           >
           <div class="mb-4">
-            <h3 class="text-xl font-bold text-gray-900 mb-4">{{ template.title }}</h3>
+            <h3 class="text-xl font-bold text-gray-900 mb-4">{{ blueprint.title }}</h3>
             <el-tag 
               class="border-0" 
-              :style="{ backgroundColor: template.taskTypeTagColor, color: template.taskTypeTagTextColor }" 
-              size="medium"
+              :style="{ backgroundColor: blueprint.taskTypeTagColor, color: blueprint.taskTypeTagTextColor }"
             >
-              {{ template.taskType }}
+              {{ blueprint.taskType }}
             </el-tag>
           </div>
 
@@ -96,7 +95,7 @@
                 <Icon icon="mdi:target" class="text-blue-500 text-lg mt-0.5 shrink-0" />
                 <div class="flex-1">
                   <p class="text-sm text-gray-500 mb-1">任务目标</p>
-                  <p class="text-sm font-medium text-gray-900">{{ template.taskGoal }}</p>
+                  <p class="text-sm font-medium text-gray-900">{{ blueprint.taskGoal }}</p>
                 </div>
               </div>
 
@@ -104,7 +103,7 @@
                 <Icon icon="mdi:server-network" class="text-green-500 text-lg mt-0.5 shrink-0" />
                 <div class="flex-1">
                   <p class="text-sm text-gray-500 mb-1">资源分配</p>
-                  <p class="text-sm font-medium text-gray-900">{{ template.resourceAllocation }}</p>
+                  <p class="text-sm font-medium text-gray-900">{{ blueprint.resourceAllocation }}</p>
                 </div>
               </div>
 
@@ -114,8 +113,8 @@
                   <p class="text-sm text-gray-500 mb-1">步骤数</p>
                   
                   <div class="flex items-center flex-wrap gap-2 text-sm font-medium text-gray-900">
-                    <span>{{ template.branchCount }} 个分支，共{{ template.stepCount }} 个步骤</span>
-                    <div @click="viewSteps(template.id)" class="text-blue-500 cursor-pointer hover:text-blue-600 transition-colors">
+                    <span>{{ blueprint.branchCount }} 个分支，共{{ blueprint.stepCount }} 个步骤</span>
+                    <div @click="viewSteps(blueprint.id)" class="text-blue-500 cursor-pointer hover:text-blue-600 transition-colors">
                       查看
                     </div>
                   </div>
@@ -126,7 +125,7 @@
                 <Icon icon="mdi:calendar-clock" class="text-amber-500 text-lg mt-0.5 shrink-0" />
                 <div class="flex-1">
                   <p class="text-sm text-gray-500 mb-1">执行期限</p>
-                  <p class="text-sm font-medium text-gray-900">{{ template.executionDeadline }}</p>
+                  <p class="text-sm font-medium text-gray-900">{{ blueprint.executionDeadline }}</p>
                 </div>
               </div>
             </div>
@@ -135,18 +134,26 @@
               <el-button 
                 type="primary" 
                 class="w-full ml-0!" 
-                @click="createActionFromTemplate(template)"
+                @click="createActionFromBlueprint(blueprint)"
               >
                 <template #icon><Icon icon="mdi:rocket-launch" /></template>
-                从此模板创建行动
+                立即执行行动
+              </el-button>
+              <el-button 
+                plain 
+                class="w-full ml-0!" 
+                @click="createBranchVersion(blueprint)"
+              >
+                <template #icon><Icon icon="mdi:source-branch" /></template>
+                从此蓝图创建分支
               </el-button>
               <el-button 
                 plain 
                 class="w-full ml-0! text-red-500! border-red-500! " 
-                @click="removeFromCommonTemplates(index)"
+                @click="removeFromCommonBlueprints(index)"
               >
                 <template #icon><Icon icon="mdi:delete-outline" /></template>
-                从常用模板删除
+                从常用蓝图删除
               </el-button>
             </div>
           </div>
@@ -526,7 +533,7 @@ export default {
           totalSteps: 8
         }
       ],
-      commonTemplates: [
+      commonBlueprints: [
         {
           id: 1,
           title: '社交媒体舆情监控',
@@ -727,25 +734,29 @@ export default {
       this.keywords.splice(index, 1)
     },
     
-    createActionFromTemplate(template) {
-      this.$message.success(`正在从模板"${template.title}"创建行动...`)
+    createActionFromBlueprint(blueprint) {
+      this.$message.success(`正在从蓝图"${blueprint.title}"创建行动...`)
     },
     
-    removeFromCommonTemplates(index) {
-      this.$confirm('确定要从常用模板中删除此模板吗？', '确认删除', {
+    createBranchVersion(blueprint) {
+      this.$message.info(`创建分支版本功能开发中...`)
+    },
+    
+    removeFromCommonBlueprints(index) {
+      this.$confirm('确定要从常用蓝图中删除此蓝图吗？', '确认删除', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
       }).then(() => {
-        this.commonTemplates.splice(index, 1)
-        this.$message.success('已从常用模板中删除')
+        this.commonBlueprints.splice(index, 1)
+        this.$message.success('已从常用蓝图中删除')
       }).catch(() => {
         this.$message.info('已取消删除')
       })
     },
 
-    viewSteps(templateId) {
-      this.$message.error(`[尚未实现] 查看步骤: ${templateId}`)
+    viewSteps(blueprintId) {
+      this.$message.error(`[尚未实现] 查看步骤: ${blueprintId}`)
     },
 
     formatTime(date) {

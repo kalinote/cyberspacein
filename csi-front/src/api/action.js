@@ -10,4 +10,7 @@ export const actionApi = {
   createNode(data) {
     return request.post('/action/resource_management/nodes', data)
   },
+  createActionBlueprint(data) {
+    return request.post('/action/blueprint', data)
+  },
 }

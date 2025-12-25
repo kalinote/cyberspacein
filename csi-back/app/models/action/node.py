@@ -6,6 +6,9 @@ from app.schemas.general import DictModel
 
 
 class ActionNodeHandleModel(BaseModel):
+    """
+    行动节点连接点模型
+    """
     id: str
     name: str
     type: str
@@ -17,6 +20,9 @@ class ActionNodeHandleModel(BaseModel):
 
 
 class ActionNodeInputModel(BaseModel):
+    """
+    行动节点输入项模型
+    """
     id: str
     name: str
     type: str
@@ -31,6 +37,9 @@ class ActionNodeInputModel(BaseModel):
 
 
 class ActionNodeModel(Document):
+    """
+    行动节点模型
+    """
     id: str = Field(alias="_id")
     name: str
     description: str

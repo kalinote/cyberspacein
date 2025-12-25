@@ -12,68 +12,47 @@
             </el-button>
 
             <!-- 标题 -->
-            <span class="text-xl font-bold text-gray-800 ml-4">创建标准行动</span>
+            <span class="text-xl font-bold text-gray-800 ml-4">创建标准行动蓝图</span>
         </div>
 
         <div class="flex-1 flex overflow-hidden">
             <!-- 左侧边栏 -->
-            <div 
-                class="bg-white flex flex-col border-r border-white relative shrink-0 group"
-                :style="{ width: sidebarWidth + 'px' }"
-            >
+            <div class="bg-white flex flex-col border-r border-white relative shrink-0 group"
+                :style="{ width: sidebarWidth + 'px' }">
                 <div class="px-4 pt-4 pb-2 border-b border-gray-200 shrink-0">
                     <h3 class="text-base font-semibold text-gray-800 text-center">节点列表</h3>
                 </div>
-                <div class="flex flex-col select-none overflow-y-auto flex-1 overflow-x-hidden min-h-0" v-loading="loadingNodeConfigs" :element-loading-text="'加载节点配置中...'">
-                    <div 
-                        v-for="category in nodeCategories" 
-                        :key="category.type"
-                        class="border-b border-gray-100 last:border-b-0"
-                    >
-                        <div 
-                            class="px-4 py-2 bg-gray-50 hover:bg-gray-100 cursor-pointer flex items-center justify-between transition-colors"
-                            @click="toggleCategory(category.type)"
-                        >
+                <div class="flex flex-col select-none overflow-y-auto flex-1 overflow-x-hidden min-h-0"
+                    v-loading="loadingNodeConfigs" :element-loading-text="'加载节点配置中...'">
+                    <div v-for="category in nodeCategories" :key="category.type"
+                        class="border-b border-gray-100 last:border-b-0">
+                        <div class="px-4 py-2 bg-gray-50 hover:bg-gray-100 cursor-pointer flex items-center justify-between transition-colors"
+                            @click="toggleCategory(category.type)">
                             <div class="flex items-center gap-2">
-                                <Icon 
-                                    :icon="categoryCollapsed[category.type] === true ? 'mdi:chevron-right' : 'mdi:chevron-down'" 
-                                    class="text-gray-500 text-sm transition-transform"
-                                />
+                                <Icon
+                                    :icon="categoryCollapsed[category.type] === true ? 'mdi:chevron-right' : 'mdi:chevron-down'"
+                                    class="text-gray-500 text-sm transition-transform" />
                                 <span class="text-sm font-medium text-gray-700">{{ category.label }}</span>
                                 <span class="text-xs text-gray-400">({{ category.nodes.length }})</span>
                             </div>
                         </div>
-                        <div 
-                            v-show="!(categoryCollapsed[category.type] === true)"
-                            class="p-4 flex flex-col gap-3"
-                        >
-                            <el-tooltip
-                                v-for="node in category.nodes" 
-                                :key="node.key"
-                                :content="node.description"
-                                placement="right"
-                                :show-after="300"
-                            >
-                                <div 
-                                    class="cursor-grab active:cursor-grabbing origin-top-left transition-transform duration-75"
-                                    draggable="true" 
-                                    @dragstart="onDragStart($event, node.key)"
-                                    :style="getNodeWrapperStyle"
-                                >
+                        <div v-show="!(categoryCollapsed[category.type] === true)" class="p-4 flex flex-col gap-3">
+                            <el-tooltip v-for="node in category.nodes" :key="node.key" :content="node.description"
+                                placement="right" :show-after="300">
+                                <div class="cursor-grab active:cursor-grabbing origin-top-left transition-transform duration-75"
+                                    draggable="true" @dragstart="onDragStart($event, node.key)"
+                                    :style="getNodeWrapperStyle">
                                     <div class="pointer-events-none w-full">
-                                        
-                                        <div v-if="isCompact" class="flex items-center p-3 bg-white rounded-lg border border-gray-200 shadow-sm hover:border-blue-400 transition-colors">
-                                            <div class="w-1.5 h-3 rounded-full mr-2" :style="{ backgroundColor: node.color || '#909399' }"></div>
-                                            <span class="text-sm text-gray-700 font-medium truncate">{{ node.label }}</span>
+                                        <div v-if="isCompact"
+                                            class="flex items-center p-3 bg-white rounded-lg border border-gray-200 shadow-sm hover:border-blue-400 transition-colors">
+                                            <div class="w-1.5 h-3 rounded-full mr-2"
+                                                :style="{ backgroundColor: node.color || '#909399' }"></div>
+                                            <span class="text-sm text-gray-700 font-medium truncate">{{ node.label
+                                                }}</span>
                                         </div>
 
-                                        <component 
-                                            v-else
-                                            :is="node.component"
-                                            :id="`sidebar-${node.key}-preview`" 
-                                            :data="node.data" 
-                                            :show-handle="false"
-                                        />
+                                        <component v-else :is="node.component" :id="`sidebar-${node.key}-preview`"
+                                            :data="node.data" :show-handle="false" />
                                     </div>
                                 </div>
                             </el-tooltip>
@@ -81,81 +60,87 @@
                     </div>
                 </div>
 
-                <div 
-                    class="absolute top-0 bottom-0 -right-1 w-2 cursor-col-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
-                    @mousedown.prevent="startLeftResize"
-                >
-                    <div class="w-px h-full bg-gray-200 group-hover:bg-blue-400 transition-colors" :class="{ 'bg-blue-600!': isResizing }"></div>
+                <div class="absolute top-0 bottom-0 -right-1 w-2 cursor-col-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
+                    @mousedown.prevent="startLeftResize">
+                    <div class="w-px h-full bg-gray-200 group-hover:bg-blue-400 transition-colors"
+                        :class="{ 'bg-blue-600!': isResizing }"></div>
                 </div>
             </div>
 
             <!-- 流程图 -->
             <div class="flex-1 h-full relative bg-gray-50" @drop="onDrop" @dragover="onDragOver">
-                <VueFlow 
-                    v-model="elements" 
-                    :node-types="nodeTypes"
-                    :default-zoom="1.5" 
-                    :min-zoom="0.2" 
-                    :max-zoom="4" 
-                    fit-view-on-init
-                    class="h-full w-full"
-                >
+                <VueFlow v-model="elements" :node-types="nodeTypes" :default-zoom="1.5" :min-zoom="0.2" :max-zoom="4"
+                    fit-view-on-init class="h-full w-full">
                     <Background pattern-color="#aaa" :gap="18" />
                     <Controls />
                 </VueFlow>
             </div>
 
             <!-- 右侧边栏 -->
-            <div 
-                class="bg-white flex flex-col border-l border-gray-200 relative shrink-0 group"
-                :style="{ width: rightSidebarWidth + 'px' }"
-            >
+            <div class="bg-white flex flex-col border-l border-gray-200 relative shrink-0 group"
+                :style="{ width: rightSidebarWidth + 'px' }">
                 <div class="px-4 pt-4 pb-2 border-b border-gray-200 shrink-0">
                     <h3 class="text-base font-semibold text-gray-800 text-center">行动属性</h3>
                 </div>
-                <div class="p-4 flex flex-col gap-4 flex-1 overflow-hidden">
+                <el-form ref="actionFormRef" :model="actionForm" :rules="actionFormRules"
+                    class="p-4 flex flex-col gap-4 flex-1 overflow-y-auto" label-width="auto" label-position="top">
                     <!-- 标题输入框 -->
-                    <div class="flex flex-col gap-2 shrink-0">
-                        <label class="text-sm font-medium text-gray-700">标题</label>
-                        <el-input
-                            v-model="actionTitle"
-                            placeholder="请输入行动标题"
-                            clearable
-                        />
-                    </div>
+                    <el-form-item prop="title" class="shrink-0 mb-0">
+                        <template #label>
+                            <span class="text-sm font-medium text-gray-700">标题</span>
+                        </template>
+                        <el-input v-model="actionForm.title" placeholder="请输入行动标题" clearable />
+                    </el-form-item>
+
+                    <!-- 版本号输入框 -->
+                    <el-form-item prop="version" class="shrink-0 mb-0">
+                        <template #label>
+                            <span class="text-sm font-medium text-gray-700">版本号</span>
+                        </template>
+                        <el-input v-model="actionForm.version" placeholder="请输入版本号" clearable />
+                    </el-form-item>
+
+                    <!-- 执行期限输入框 -->
+                    <el-form-item prop="implementation_period" class="shrink-0 mb-0">
+                        <template #label>
+                            <span class="text-sm font-medium text-gray-700">执行期限(秒)</span>
+                        </template>
+                        <el-input-number v-model="actionForm.implementation_period" :min="1" placeholder="请输入执行期限" class="w-full" />
+                    </el-form-item>
 
                     <!-- 详细信息输入框 -->
-                    <div class="flex flex-col gap-2 flex-1 min-h-0">
-                        <label class="text-sm font-medium text-gray-700">详细信息</label>
-                        <el-input
-                            v-model="actionDescription"
-                            type="textarea"
-                            placeholder="请输入行动详细信息"
-                            resize="vertical"
-                            class="flex-1"
-                        />
-                    </div>
+                    <el-form-item prop="description" class="shrink-0 mb-0">
+                        <template #label>
+                            <span class="text-sm font-medium text-gray-700">详细信息</span>
+                        </template>
+                        <el-input v-model="actionForm.description" type="textarea" placeholder="请输入行动详细信息"
+                            resize="vertical" :autosize="{ minRows: 3, maxRows: 10 }" />
+                    </el-form-item>
+
+                    <!-- 任务目标输入框 -->
+                    <el-form-item prop="target" class="shrink-0 mb-0 -mt-2">
+                        <template #label>
+                            <span class="text-sm font-medium text-gray-700">任务目标</span>
+                        </template>
+                        <el-input v-model="actionForm.target" type="textarea" placeholder="请输入任务目标" resize="vertical"
+                            :autosize="{ minRows: 3, maxRows: 10 }" />
+                    </el-form-item>
 
                     <!-- TODO: 期限、资源配置设置 -->
-                </div>
+                </el-form>
 
                 <!-- 底部保存按钮 -->
                 <div class="p-4 border-t border-gray-200 shrink-0">
-                <el-button 
-                        type="primary" 
-                        class="w-full"
-                        @click="handleSaveAction"
-                    >
-                        保存行动
+                    <el-button type="primary" class="w-full" @click="handleSaveAction">
+                        保存行动蓝图
                     </el-button>
                 </div>
 
                 <!-- 调整大小手柄 -->
-                <div 
-                    class="absolute top-0 bottom-0 -left-1 w-2 cursor-col-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
-                    @mousedown.prevent="startRightResize"
-                >
-                    <div class="w-px h-full bg-gray-200 group-hover:bg-blue-400 transition-colors" :class="{ 'bg-blue-600!': isRightResizing }"></div>
+                <div class="absolute top-0 bottom-0 -left-1 w-2 cursor-col-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
+                    @mousedown.prevent="startRightResize">
+                    <div class="w-px h-full bg-gray-200 group-hover:bg-blue-400 transition-colors"
+                        :class="{ 'bg-blue-600!': isRightResizing }"></div>
                 </div>
             </div>
         </div>
@@ -164,6 +149,7 @@
 
 <script setup>
 import { ref, computed, onUnmounted, onMounted, markRaw } from 'vue'
+import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
 import { VueFlow, useVueFlow } from "@vue-flow/core"
@@ -173,14 +159,16 @@ import GenericNode from "@/components/action/nodes/GenericNode.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
 import {
-  SOCKET_TYPE_CONFIGS,
-  getDefaultData,
-  getNodeColor,
-  getEdgeColor
+    SOCKET_TYPE_CONFIGS,
+    getDefaultData,
+    getNodeColor,
+    getEdgeColor
 } from '@/utils/action'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
+
+const router = useRouter()
 
 const nodeTypeConfigs = ref([])
 const loadingNodeConfigs = ref(false)
@@ -193,21 +181,21 @@ const fetchNodeConfigs = async () => {
             const nodes = response.data || []
             nodeTypeConfigs.value = nodes.map(node => {
                 const processedNode = { ...node }
-                
+
                 if (processedNode.handles) {
                     processedNode.handles = processedNode.handles.map(handle => ({
                         ...handle,
                         id: handle.id || handle.name
                     }))
                 }
-                
+
                 if (processedNode.inputs) {
                     processedNode.inputs = processedNode.inputs.map(input => ({
                         ...input,
                         id: input.id || input.name
                     }))
                 }
-                
+
                 return processedNode
             })
         } else {
@@ -238,7 +226,7 @@ const sidebarNodes = computed(() => {
 
 const nodeCategories = computed(() => {
     const categories = {}
-    
+
     sidebarNodes.value.forEach(node => {
         if (!categories[node.type]) {
             categories[node.type] = {
@@ -249,7 +237,7 @@ const nodeCategories = computed(() => {
         }
         categories[node.type].nodes.push(node)
     })
-    
+
     return Object.values(categories)
 })
 
@@ -273,36 +261,36 @@ const { addEdges, addNodes, onConnect, screenToFlowCoordinate, onNodesInitialize
 isValidConnection.value = (connection) => {
     const sourceNode = elements.value.find(el => el.id === connection.source)
     const targetNode = elements.value.find(el => el.id === connection.target)
-    
+
     if (!sourceNode || !targetNode) return false
-    
+
     const sourceConfig = nodeTypeConfigs.value.find(c => c.id === sourceNode.type)
     const targetConfig = nodeTypeConfigs.value.find(c => c.id === targetNode.type)
-    
+
     if (!sourceConfig || !targetConfig) return false
-    
+
     const sourceHandle = sourceConfig.handles.find(h => h.id === connection.sourceHandle)
     const targetHandle = targetConfig.handles.find(h => h.id === connection.targetHandle)
-    
+
     if (!sourceHandle || !targetHandle) return false
-    
+
     // 如果源接口或目标接口是 generic_data 类型，允许连接到任意类型
     if (sourceHandle.socket_type === 'generic_data' || targetHandle.socket_type === 'generic_data') {
         return true
     }
-    
+
     // 如果目标接口的 allowed_socket_types 包含 generic_data，允许任意类型连接
     if (targetHandle.allowed_socket_types.includes('generic_data')) {
         return true
     }
-    
+
     return targetHandle.allowed_socket_types.includes(sourceHandle.socket_type)
 }
 
 const createNodeFromConfig = (configId, position) => {
     const config = nodeTypeConfigs.value.find(c => c.id === configId)
     if (!config) return null
-    
+
     return {
         id: `node-${Date.now()}`,
         type: config.id,
@@ -324,8 +312,26 @@ const minRightSidebarWidth = 300
 const maxRightSidebarWidth = 800
 
 // 行动表单数据
-const actionTitle = ref('')
-const actionDescription = ref('')
+const actionFormRef = ref(null)
+const actionForm = ref({
+    title: '',
+    version: '1.0.0',
+    implementation_period: 3600,
+    description: '',
+    target: ''
+})
+
+const actionFormRules = {
+    title: [
+        { required: true, message: '请输入行动标题', trigger: 'blur' }
+    ],
+    version: [
+        { required: true, message: '请输入版本号', trigger: 'blur' }
+    ],
+    target: [
+        { required: true, message: '请输入任务目标', trigger: 'blur' }
+    ]
+}
 
 // 配置常量
 const BASE_NODE_WIDTH = 300   // 节点组件的最小设计宽度
@@ -342,7 +348,7 @@ const getNodeWrapperStyle = computed(() => {
     }
 
     const availableWidth = sidebarWidth.value - SIDEBAR_PADDING
-    
+
     //节点拉伸
     if (availableWidth >= BASE_NODE_WIDTH) {
         return {
@@ -436,21 +442,21 @@ onConnect((params) => {
         addEdges(params)
         return
     }
-    
+
     const sourceConfig = nodeTypeConfigs.value.find(c => c.id === sourceNode.type)
     if (!sourceConfig) {
         addEdges(params)
         return
     }
-    
+
     const sourceHandle = sourceConfig.handles.find(h => h.id === params.sourceHandle)
     if (!sourceHandle) {
         addEdges(params)
         return
     }
-    
+
     const edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs.value)
-    
+
     const edgeWithStyle = {
         ...params,
         style: {
@@ -458,7 +464,7 @@ onConnect((params) => {
             strokeWidth: 3
         }
     }
-    
+
     addEdges([edgeWithStyle])
 })
 
@@ -483,9 +489,9 @@ const onDrop = (event) => {
         if (!newNode) return
         const { off } = onNodesInitialized(() => {
             updateNode(newNode.id, (node) => ({
-                position: { 
-                    x: node.position.x - node.dimensions.width / 2, 
-                    y: node.position.y - node.dimensions.height / 2 
+                position: {
+                    x: node.position.x - node.dimensions.width / 2,
+                    y: node.position.y - node.dimensions.height / 2
                 },
             }))
             off()
@@ -494,34 +500,37 @@ const onDrop = (event) => {
     }
 }
 
-const handleSaveAction = () => {
-    if (!actionTitle.value || actionTitle.value.trim() === '') {
-        ElMessage.error('请输入行动标题')
+const handleSaveAction = async () => {
+    if (!actionFormRef.value) return
+
+    try {
+        await actionFormRef.value.validate()
+    } catch {
         return
     }
-    
+
     const nodes = getNodes.value
     const edges = getEdges.value
     const viewport = getViewport()
-    
+
     if (!nodes || nodes.length === 0) {
         ElMessage.error('请至少添加一个节点')
         return
     }
-    
+
     const processedNodes = nodes.map(node => {
         const config = node.data?.config
         if (!config) {
             return null
         }
-        
+
         const formData = {}
         if (config.inputs && config.inputs.length > 0) {
             config.inputs.forEach(input => {
                 formData[input.name] = node.data[input.id]
             })
         }
-        
+
         return {
             id: node.id,
             type: config.type,
@@ -536,7 +545,7 @@ const handleSaveAction = () => {
             }
         }
     }).filter(node => node !== null)
-    
+
     const processedEdges = edges.map(edge => ({
         id: edge.id,
         source: edge.source,
@@ -544,11 +553,13 @@ const handleSaveAction = () => {
         target: edge.target,
         targetHandle: edge.targetHandle
     }))
-    
+
     const actionData = {
-        name: actionTitle.value,
-        description: actionDescription.value || '',
-        implementation_period: 3600,
+        name: actionForm.value.title,
+        version: actionForm.value.version,
+        description: actionForm.value.description || '',
+        target: actionForm.value.target,
+        implementation_period: actionForm.value.implementation_period,
         resource: {},
         graph: {
             nodes: processedNodes,
@@ -560,11 +571,19 @@ const handleSaveAction = () => {
             }
         }
     }
-    
-    console.log('===== 保存行动数据 =====')
-    console.log(JSON.stringify(actionData, null, 2))
-    console.log('=======================')
-    
-    ElMessage.success('数据已构造完成，请在控制台查看')
+
+    // console.log('===== 保存行动数据 =====')
+    // console.log(JSON.stringify(actionData, null, 2))
+    // console.log('=======================')
+
+    // ElMessage.success('数据已构造完成，请在控制台查看')
+
+    const response = await actionApi.createActionBlueprint(actionData)
+    if (response.code === 0) {
+        ElMessage.success('新增行动蓝图成功')
+        router.push('/action')
+    } else {
+        ElMessage.error(`新增行动蓝图失败: ${response.message}`)
+    }
 }
 </script>
