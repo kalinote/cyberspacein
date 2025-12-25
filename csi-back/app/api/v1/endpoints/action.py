@@ -11,7 +11,7 @@ from app.schemas.enum import ActionNodeTypeEnum
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
 from app.models.action.blueprint import ActionBlueprintModel, PositionModel, NodeDataModel, GraphNodeModel, GraphEdgeModel, ViewportModel, GraphModel
-from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintResponse
+from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintDetailResponse
 from app.utils.dict_helper import pack_dict, unpack_dict
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ router = APIRouter(
     tags=["action"],
 )
 
-@router.post("/blueprint", response_model=ApiResponse[ActionBlueprintResponse])
+@router.post("/blueprint", response_model=ApiResponse[ActionBlueprintDetailResponse])
 async def create_blueprint(data: ActionBlueprint):
     blueprint_id = generate_id(data.name + data.version + str(len(data.graph.nodes)) + str(len(data.graph.edges)))
     
@@ -87,7 +87,7 @@ async def create_blueprint(data: ActionBlueprint):
     await blueprint_model.insert()
     logger.info(f"成功创建蓝图: {blueprint_id}")
     
-    response_data = ActionBlueprintResponse(
+    response_data = ActionBlueprintDetailResponse(
         id=blueprint_id,
         name=data.name,
         version=data.version,
@@ -101,6 +101,11 @@ async def create_blueprint(data: ActionBlueprint):
     )
     
     return ApiResponse.success(data=response_data)
+
+@router.get("/blueprint/list", response_model=ApiResponse[List[ActionBlueprintDetailResponse]])
+async def get_blueprints():
+    """获取蓝图列表，用于monitor页面的行动蓝图一栏"""
+    pass
 
 @router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]])
 async def get_actions():

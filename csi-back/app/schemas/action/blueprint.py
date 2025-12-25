@@ -54,14 +54,27 @@ class ActionBlueprint(BaseModel):
     description: str = Field(description="蓝图描述")
     version: str = Field(description="蓝图版本")
     target: str = Field(description="行动目标")
-    implementation_period: int = Field(description="实施周期（秒）")
+    implementation_period: int = Field(description="执行期限(秒)")
     resource: Optional[Dict[str, Any]] = Field(default=None, description="资源信息")
     graph: Graph = Field(description="图结构")
 
 
-class ActionBlueprintResponse(ActionBlueprint):
+class ActionBlueprintDetailResponse(ActionBlueprint):
     """行动蓝图响应"""
     id: str = Field(description="蓝图ID")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
 
+class ActionBlueprintBaseInfoResponse(BaseModel):
+    """行动蓝图基础信息响应"""
+    id: str = Field(description="蓝图ID")
+    name: str = Field(description="蓝图名称")
+    version: str = Field(description="蓝图版本")
+    description: str = Field(description="蓝图描述")
+    target: str = Field(description="行动目标")
+    implementation_period: int = Field(description="执行期限(秒)")
+    created_at: datetime = Field(description="创建时间")
+    updated_at: datetime = Field(description="更新时间")
+    steps: int = Field(description="总步骤数量")
+    branches: int = Field(description="总分支数量")
+    
