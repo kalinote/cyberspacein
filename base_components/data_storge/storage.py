@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import sys
@@ -94,151 +93,197 @@ def get_data_output_queues(outputs: Dict[str, Any]) -> List[str]:
     return []
 
 
-def build_elasticsearch_query(conditions: List[Dict[str, Any]]) -> Dict[str, Any]:
+def get_conditions_from_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    conditions = inputs.get('conditions', {})
+    if isinstance(conditions, dict):
+        return conditions
+    return {}
+
+
+def _build_elasticsearch_condition(condition: Dict[str, Any]) -> Dict[str, Any]:
+    if '$and' in condition:
+        clauses = []
+        for item in condition['$and']:
+            clause = _build_elasticsearch_condition(item)
+            if clause:
+                clauses.append(clause)
+        if clauses:
+            return {"bool": {"must": clauses}}
+        return None
+    elif '$or' in condition:
+        clauses = []
+        for item in condition['$or']:
+            clause = _build_elasticsearch_condition(item)
+            if clause:
+                clauses.append(clause)
+        if clauses:
+            return {"bool": {"should": clauses, "minimum_should_match": 1}}
+        return None
+    else:
+        field = condition.get('field', '')
+        op = condition.get('op', '')
+        value = condition.get('value')
+        
+        if not field or op not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
+            return None
+        
+        if op == 'eq':
+            return {"term": {field: value}}
+        elif op == 'ne':
+            return {"bool": {"must_not": [{"term": {field: value}}]}}
+        elif op == 'gt':
+            return {"range": {field: {"gt": value}}}
+        elif op == 'lt':
+            return {"range": {field: {"lt": value}}}
+        elif op == 'gte':
+            return {"range": {field: {"gte": value}}}
+        elif op == 'lte':
+            return {"range": {field: {"lte": value}}}
+        elif op == 'in':
+            if isinstance(value, list):
+                return {"terms": {field: value}}
+            else:
+                return {"term": {field: value}}
+        elif op == 'contains':
+            return {"match": {field: value}}
+    
+    return None
+
+
+def build_elasticsearch_query(conditions: Dict[str, Any] = None) -> Dict[str, Any]:
     if not conditions:
         return {"match_all": {}}
     
-    must_clauses = []
-    must_not_clauses = []
-    
-    for condition in conditions:
+    query = _build_elasticsearch_condition(conditions)
+    if query:
+        return query
+    return {"match_all": {}}
+
+
+def _build_mongodb_condition(condition: Dict[str, Any]) -> Dict[str, Any]:
+    if '$and' in condition:
+        clauses = []
+        for item in condition['$and']:
+            clause = _build_mongodb_condition(item)
+            if clause:
+                clauses.append(clause)
+        if clauses:
+            return {"$and": clauses}
+        return {}
+    elif '$or' in condition:
+        clauses = []
+        for item in condition['$or']:
+            clause = _build_mongodb_condition(item)
+            if clause:
+                clauses.append(clause)
+        if clauses:
+            return {"$or": clauses}
+        return {}
+    else:
         field = condition.get('field', '')
-        operator = condition.get('operator', '')
+        op = condition.get('op', '')
         value = condition.get('value')
         
-        if not field or operator not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
-            continue
+        if not field or op not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
+            return {}
         
-        if operator == 'eq':
-            must_clauses.append({"term": {field: value}})
-        elif operator == 'ne':
-            must_not_clauses.append({"term": {field: value}})
-        elif operator == 'gt':
-            must_clauses.append({"range": {field: {"gt": value}}})
-        elif operator == 'lt':
-            must_clauses.append({"range": {field: {"lt": value}}})
-        elif operator == 'gte':
-            must_clauses.append({"range": {field: {"gte": value}}})
-        elif operator == 'lte':
-            must_clauses.append({"range": {field: {"lte": value}}})
-        elif operator == 'in':
+        if op == 'eq':
+            return {field: value}
+        elif op == 'ne':
+            return {field: {"$ne": value}}
+        elif op == 'gt':
+            return {field: {"$gt": value}}
+        elif op == 'lt':
+            return {field: {"$lt": value}}
+        elif op == 'gte':
+            return {field: {"$gte": value}}
+        elif op == 'lte':
+            return {field: {"$lte": value}}
+        elif op == 'in':
             if isinstance(value, list):
-                must_clauses.append({"terms": {field: value}})
+                return {field: {"$in": value}}
             else:
-                must_clauses.append({"term": {field: value}})
-        elif operator == 'contains':
-            must_clauses.append({"match": {field: value}})
+                return {field: value}
+        elif op == 'contains':
+            return {field: {"$regex": str(value), "$options": "i"}}
     
-    query = {}
-    if must_clauses or must_not_clauses:
-        bool_query = {}
-        if must_clauses:
-            bool_query["must"] = must_clauses
-        if must_not_clauses:
-            bool_query["must_not"] = must_not_clauses
-        query = {"bool": bool_query}
-    else:
-        query = {"match_all": {}}
-    
-    return query
+    return {}
 
 
-def build_mongodb_query(conditions: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_mongodb_query(conditions: Dict[str, Any] = None) -> Dict[str, Any]:
     if not conditions:
         return {}
     
-    query = {}
-    
-    for condition in conditions:
-        field = condition.get('field', '')
-        operator = condition.get('operator', '')
-        value = condition.get('value')
-        
-        if not field or operator not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
-            continue
-        
-        if operator == 'eq':
-            query[field] = value
-        elif operator == 'ne':
-            query[field] = {"$ne": value}
-        elif operator == 'gt':
-            if field not in query:
-                query[field] = {}
-            query[field]["$gt"] = value
-        elif operator == 'lt':
-            if field not in query:
-                query[field] = {}
-            query[field]["$lt"] = value
-        elif operator == 'gte':
-            if field not in query:
-                query[field] = {}
-            query[field]["$gte"] = value
-        elif operator == 'lte':
-            if field not in query:
-                query[field] = {}
-            query[field]["$lte"] = value
-        elif operator == 'in':
-            if isinstance(value, list):
-                query[field] = {"$in": value}
-            else:
-                query[field] = value
-        elif operator == 'contains':
-            query[field] = {"$regex": str(value), "$options": "i"}
-    
+    query = _build_mongodb_condition(conditions)
     return query
 
 
-def build_redis_filter(conditions: List[Dict[str, Any]]):
+def _evaluate_condition(doc: Dict[str, Any], condition: Dict[str, Any]) -> bool:
+    if '$and' in condition:
+        for item in condition['$and']:
+            if not _evaluate_condition(doc, item):
+                return False
+        return True
+    elif '$or' in condition:
+        for item in condition['$or']:
+            if _evaluate_condition(doc, item):
+                return True
+        return False
+    else:
+        field = condition.get('field', '')
+        op = condition.get('op', '')
+        value = condition.get('value')
+        
+        if not field or op not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
+            return True
+        
+        doc_value = doc.get(field)
+        
+        if op == 'eq':
+            return doc_value == value
+        elif op == 'ne':
+            return doc_value != value
+        elif op == 'gt':
+            return isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value > value
+        elif op == 'lt':
+            return isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value < value
+        elif op == 'gte':
+            return isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value >= value
+        elif op == 'lte':
+            return isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value <= value
+        elif op == 'in':
+            if isinstance(value, list):
+                return doc_value in value
+            else:
+                return doc_value == value
+        elif op == 'contains':
+            return isinstance(doc_value, str) and isinstance(value, str) and value in doc_value
+        
+        return True
+
+
+def build_redis_filter(conditions: Dict[str, Any]):
     if not conditions:
         return None
     
     def filter_func(doc: Dict[str, Any]) -> bool:
-        for condition in conditions:
-            field = condition.get('field', '')
-            operator = condition.get('operator', '')
-            value = condition.get('value')
-            
-            if not field or operator not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
-                continue
-            
-            doc_value = doc.get(field)
-            
-            if operator == 'eq':
-                if doc_value != value:
-                    return False
-            elif operator == 'ne':
-                if doc_value == value:
-                    return False
-            elif operator == 'gt':
-                if not (isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value > value):
-                    return False
-            elif operator == 'lt':
-                if not (isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value < value):
-                    return False
-            elif operator == 'gte':
-                if not (isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value >= value):
-                    return False
-            elif operator == 'lte':
-                if not (isinstance(doc_value, (int, float)) and isinstance(value, (int, float)) and doc_value <= value):
-                    return False
-            elif operator == 'in':
-                if isinstance(value, list):
-                    if doc_value not in value:
-                        return False
-                else:
-                    if doc_value != value:
-                        return False
-            elif operator == 'contains':
-                if not (isinstance(doc_value, str) and isinstance(value, str) and value in doc_value):
-                    return False
-        
-        return True
+        return _evaluate_condition(doc, conditions)
     
     return filter_func
 
 
-def build_file_filter(conditions: List[Dict[str, Any]]):
+def build_file_filter(conditions: Dict[str, Any]):
     return build_redis_filter(conditions)
+
+
+def filter_documents(documents: List[Dict[str, Any]], conditions: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not conditions:
+        return documents
+    
+    filter_func = build_redis_filter(conditions)
+    if filter_func:
+        return [doc for doc in documents if filter_func(doc)]
+    return documents
 
 
 def process_messages(
@@ -246,7 +291,9 @@ def process_messages(
     messages: List[Dict[str, Any]],
     target: str,
     target_name: str,
-    output_queues: List[str]
+    output_queues: List[str],
+    conditions: Dict[str, Any] = None,
+    storage_filter: bool = False
 ):
     rabbitmq_config = get_rabbitmq_config()
     mongodb_config = get_mongodb_config()
@@ -256,6 +303,9 @@ def process_messages(
     success_count = 0
     error_count = 0
     message_bodies = [msg_data['body'] for msg_data in messages]
+    
+    if storage_filter and conditions:
+        message_bodies = filter_documents(message_bodies, conditions)
     
     try:
         if target == 'rabbitmq':
@@ -319,6 +369,10 @@ def process_messages(
             try:
                 message_body = msg_data['body']
                 
+                if storage_filter and conditions:
+                    if not _evaluate_condition(message_body, conditions):
+                        continue
+                
                 if target == 'rabbitmq':
                     writer = RabbitMQWriter(**rabbitmq_config)
                     try:
@@ -380,16 +434,13 @@ def process_messages(
 def read_from_storage(
     target: str,
     target_name: str,
-    conditions: List[Dict[str, Any]] = None,
+    conditions: Dict[str, Any] = None,
     batch_size: int = 0
 ) -> List[Dict[str, Any]]:
     rabbitmq_config = get_rabbitmq_config()
     mongodb_config = get_mongodb_config()
     elasticsearch_config = get_elasticsearch_config()
     redis_config = get_redis_config()
-    
-    if conditions is None:
-        conditions = []
     
     documents = []
     
@@ -414,7 +465,7 @@ def read_from_storage(
             storage = MongoDBStorage(**mongodb_config)
             try:
                 storage.connect()
-                query = build_mongodb_query(conditions) if conditions else {}
+                query = build_mongodb_query(conditions)
                 documents = storage.query_documents(target_name, query, batch_size)
             finally:
                 storage.close()
@@ -423,7 +474,7 @@ def read_from_storage(
             storage = ElasticsearchStorage(**elasticsearch_config)
             try:
                 storage.connect()
-                query = build_elasticsearch_query(conditions) if conditions else build_elasticsearch_query([])
+                query = build_elasticsearch_query(conditions)
                 documents = storage.query_documents(target_name, query, batch_size)
             finally:
                 storage.close()
@@ -432,7 +483,7 @@ def read_from_storage(
             storage = RedisStorage(**redis_config)
             try:
                 storage.connect()
-                filter_func = build_redis_filter(conditions) if conditions else None
+                filter_func = None
                 documents = storage.query_documents(target_name, filter_func, batch_size)
             finally:
                 storage.close()
@@ -440,8 +491,7 @@ def read_from_storage(
         elif target == 'file':
             storage = FileStorage()
             filter_func = None
-            actual_batch_size = 0
-            documents = storage.query_documents(target_name, filter_func, actual_batch_size)
+            documents = storage.query_documents(target_name, filter_func, batch_size)
         
         else:
             logger.warning(f"未知的目标类型: {target}")
@@ -473,6 +523,8 @@ def main():
         input_queues = get_input_queues(inputs)
         direct_output_queues = get_output_queues(outputs)
         data_output_queues = get_data_output_queues(outputs)
+        conditions = get_conditions_from_inputs(inputs)
+        storage_filter = config.get('storage_filter', False)
         
         logger.info(f"目标类型: {target}, 目标名称: {target_name}")
         if input_queues:
@@ -481,6 +533,10 @@ def main():
             logger.info(f"直接输出队列: {direct_output_queues}")
         if data_output_queues:
             logger.info(f"数据输出队列: {data_output_queues}")
+        if conditions:
+            logger.info(f"查询条件已配置")
+        if storage_filter:
+            logger.info(f"存储过滤已启用")
         
         total_processed = 0
         total_success = 0
@@ -513,13 +569,15 @@ def main():
                             messages,
                             target,
                             target_name,
-                            direct_output_queues
+                            direct_output_queues,
+                            conditions if conditions else None,
+                            storage_filter
                         )
                         
                         delivery_tags = [msg['delivery_tag'] for msg in messages]
                         reader.acknowledge_messages(delivery_tags)
                         
-                        total_processed += len(messages)
+                        total_processed += success_count + error_count
                         total_success += success_count
                         total_errors += error_count
                         
@@ -534,21 +592,21 @@ def main():
         
         if data_output_queues:
             logger.info("开始从存储读取数据")
-            
-            ## TODO: 条件后续使用handle输入，以便于构建复杂条件
-            conditions = config.get('conditions', [])
+
             batch_size = config.get('batch_size', 0)
             
-            if target in ['rabbitmq', 'file']:
-                logger.info(f"目标类型 {target} 不支持条件查询和数量限制，将读取全部数据")
-                conditions = []
-                batch_size = 0
+            query_conditions = None
+            if conditions and target in ['mongodb', 'elasticsearch']:
+                query_conditions = conditions
+            elif target in ['rabbitmq', 'redis', 'file']:
+                logger.info(f"目标类型 {target} 不支持条件查询，将读取全部数据")
+                query_conditions = None
             
             try:
                 documents = read_from_storage(
                     target,
                     target_name,
-                    conditions if conditions else None,
+                    query_conditions,
                     batch_size if batch_size > 0 else 0
                 )
                 

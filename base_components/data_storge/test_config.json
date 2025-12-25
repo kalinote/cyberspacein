@@ -7,29 +7,56 @@
         "target": "rabbitmq",
         "target_name": "target_queue",
         "batch_size": 100,
-        "conditions": [
-            {
-                
-                "field": "field_name",
-                "operator": "eq",
-                "value": "value"
-            }
-        ]
+        "storage_filter": false
     },
     "inputs": {
         "data_in": {
             "type": "reference",
-            "value": ["tmp_queue_1"]
+            "value": [
+                "tmp_queue_4"
+            ]
+        },
+        "conditions": {
+            "$and": [
+                {
+                    "field": "age",
+                    "op": "gt",
+                    "value": 18
+                },
+                {
+                    "$or": [
+                        {
+                            "field": "status",
+                            "op": "eq",
+                            "value": "active"
+                        },
+                        {
+                            "field": "status",
+                            "op": "eq",
+                            "value": "pending"
+                        }
+                    ]
+                },
+                {
+                    "field": "name",
+                    "op": "contains",
+                    "value": "admin"
+                }
+            ]
         }
     },
     "outputs": {
         "direct_out": {
             "type": "reference",
-            "value": ["tmp_queue_3"]
+            "value": [
+                "tmp_queue_1"
+            ]
         },
         "data_out": {
             "type": "reference",
-            "value": ["tmp_queue_4"]
+            "value": [
+                "tmp_queue_2"
+            ]
         }
     }
 }
