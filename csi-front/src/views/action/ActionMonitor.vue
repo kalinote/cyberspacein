@@ -24,7 +24,7 @@
                   <Icon icon="mdi:target" class="text-green-600 text-xl" />
                 </div>
                 <div>
-                  <p class="text-sm text-gray-500">执行中目标</p>
+                  <p class="text-sm text-gray-500">执行中行动</p>
                   <p class="text-xl font-bold text-gray-900">12</p>
                 </div>
               </div>
@@ -33,7 +33,7 @@
                   <Icon icon="mdi:timeline-clock" class="text-amber-600 text-xl" />
                 </div>
                 <div>
-                  <p class="text-sm text-gray-500">今日完成行动</p>
+                  <p class="text-sm text-gray-500">已完成行动</p>
                   <p class="text-xl font-bold text-gray-900">47</p>
                 </div>
               </div>
@@ -115,11 +115,11 @@
                   
                   <div class="flex items-center flex-wrap gap-2 text-sm font-medium text-gray-900">
                     <span>{{ blueprint.branchCount }} 个分支，共{{ blueprint.stepCount }} 个步骤</span>
-                    <div @click="viewSteps(blueprint.id)" class="text-blue-500 cursor-pointer hover:text-blue-600 transition-colors">
+                    <div @click="viewBlueprint(blueprint)" class="text-blue-500 cursor-pointer hover:text-blue-600 transition-colors">
                       查看
                     </div>
                   </div>
-                  </div>
+                </div>
               </div>
 
               <div class="flex items-start space-x-3">
@@ -485,6 +485,12 @@
         </div>
       </div>
     </section>
+
+    <!-- 蓝图流程图弹窗 -->
+    <BlueprintFlowDialog
+      v-model="blueprintDialogVisible"
+      :blueprint-id="selectedBlueprintId"
+    />
   </div>
 </template>
 
@@ -492,6 +498,7 @@
 import { Icon } from '@iconify/vue'
 import * as echarts from 'echarts'
 import Header from '@/components/Header.vue'
+import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
 
@@ -499,10 +506,13 @@ export default {
   name: 'Action',
   components: {
     Header,
-    Icon
+    Icon,
+    BlueprintFlowDialog
   },
   data() {
     return {
+      blueprintDialogVisible: false,
+      selectedBlueprintId: null,
       intelligenceTypes: ['social'],
       newKeyword: '',
       keywords: [
@@ -815,6 +825,23 @@ export default {
       }).catch(() => {
         this.$message.info('已取消停止')
       })
+    },
+
+    handleBlueprintDialogOpen() {
+      this.blueprintDialogVisible = true
+    },
+
+    handleBlueprintDialogClose() {
+      this.blueprintDialogVisible = false
+    },
+
+    async viewBlueprint(blueprint) {
+      if (!blueprint || !blueprint.id) {
+        this.$message.error('蓝图ID不存在')
+        return
+      }
+      this.selectedBlueprintId = blueprint.id
+      this.blueprintDialogVisible = true
     },
   },
   

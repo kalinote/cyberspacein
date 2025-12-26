@@ -11,7 +11,7 @@ from app.schemas.enum import ActionNodeTypeEnum
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
 from app.models.action.blueprint import ActionBlueprintModel, PositionModel, NodeDataModel, GraphNodeModel, GraphEdgeModel, ViewportModel, GraphModel
-from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintBaseInfoResponse, ActionBlueprintDetailResponse
+from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintBaseInfoResponse, ActionBlueprintDetailResponse, GraphNode, GraphEdge, Position, NodeData, Graph, Viewport
 from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.workflow import count_workflow_paths
 
@@ -136,6 +136,76 @@ async def get_blueprints(
     
     return PageResponse.create(results, total, params.page, params.page_size)
     
+@router.get("/blueprint/{blueprint_id}", response_model=ApiResponse[ActionBlueprintDetailResponse])
+async def get_blueprint(blueprint_id: str):
+    """
+    获取蓝图详情
+    
+    注意这个接口应该放到list后面
+    """
+    blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
+    if not blueprint:
+        return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {blueprint_id}")
+    
+    nodes = []
+    for node_model in blueprint.graph.nodes:
+        form_data = unpack_dict(node_model.data.form_data) or {}
+        node_data = NodeData(
+            definition_id=node_model.data.definition_id,
+            version=node_model.data.version,
+            form_data=form_data
+        )
+        
+        position = Position(
+            x=node_model.position.x,
+            y=node_model.position.y
+        )
+        
+        node = GraphNode(
+            id=node_model.id,
+            type=node_model.type,
+            position=position,
+            data=node_data
+        )
+        nodes.append(node)
+    
+    edges = []
+    for edge_model in blueprint.graph.edges:
+        edge = GraphEdge(
+            id=edge_model.id,
+            source=edge_model.source,
+            sourceHandle=edge_model.sourceHandle,
+            target=edge_model.target,
+            targetHandle=edge_model.targetHandle
+        )
+        edges.append(edge)
+    
+    viewport = Viewport(
+        x=blueprint.graph.viewport.x,
+        y=blueprint.graph.viewport.y,
+        zoom=blueprint.graph.viewport.zoom
+    )
+    
+    graph = Graph(
+        nodes=nodes,
+        edges=edges,
+        viewport=viewport
+    )
+    
+    response_data = ActionBlueprintDetailResponse(
+        id=blueprint.id,
+        name=blueprint.name,
+        version=blueprint.version,
+        description=blueprint.description,
+        target=blueprint.target,
+        implementation_period=blueprint.implementation_period,
+        resource=blueprint.resource,
+        graph=graph,
+        created_at=blueprint.created_at,
+        updated_at=blueprint.updated_at
+    )
+    
+    return ApiResponse.success(data=response_data)
 
 @router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]])
 async def get_actions():

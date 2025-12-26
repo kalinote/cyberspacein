@@ -344,9 +344,6 @@ const StatusAwareNode = {
         const isSelected = computed(() => props.selected)
 
         return () => {
-            const borderWidth = executionStatus.value?.status === 'running' ? 1.5 : 1
-            const progressWidth = `calc((100% - ${borderWidth * 2}px) * ${progress.value} / 100)`
-            
             return h('div', {
                 class: [
                     isSelected.value ? 'ring-2 ring-blue-500 ring-offset-2' : '',
@@ -362,12 +359,11 @@ const StatusAwareNode = {
                 nodeStatus.value === 'running' ? h('div', {
                     class: 'absolute bg-gradient-to-r from-green-500 via-emerald-400 to-green-500 transition-all duration-300 z-[1]',
                     style: { 
-                        top: '0px',
-                        left: '0px',
-                        height: `${borderWidth + 6}px`,
-                        width: `${progress.value}%`,
-                        maxWidth: '100%',
-                        borderRadius: progress.value >= 100 ? '1rem 1rem 0 0' : '1rem 0 0 0'
+                        top: '12px',
+                        left: '12px',
+                        height: '2px',
+                        width: `calc(${progress.value}% - 24px)`,
+                        borderRadius: '2px'
                     }
                 }) : null
             ])

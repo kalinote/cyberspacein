@@ -58,7 +58,6 @@ class ActionBlueprint(BaseModel):
     resource: Optional[Dict[str, Any]] = Field(default=None, description="资源信息")
     graph: Graph = Field(description="图结构")
 
-
 class ActionBlueprintDetailResponse(ActionBlueprint):
     """行动蓝图响应"""
     id: str = Field(description="蓝图ID")
@@ -74,7 +73,7 @@ class ActionBlueprintBaseInfoResponse(BaseModel):
     target: str = Field(description="行动目标")
     type: str = Field(default="尚未实现", description="蓝图类型")
     type_tag_color: str = Field(default="#dbeafe", description="蓝图分类tag颜色") # TODO: 后续改为可配置
-    type_text_color: str = Field(default="#1e40af", description="蓝图分类tag文字颜色")
+    type_text_color: str = Field(default="#1e40af", description="蓝图分类tag文字颜色") # TODO: 后续改为可配置
     implementation_period: int = Field(description="执行期限(秒)")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
