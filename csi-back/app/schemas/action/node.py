@@ -46,6 +46,8 @@ class ActionNode(BaseModel):
     inputs: List[ActionNodeInput] = Field(description="输入配置列表")
     default_configs: Dict[str, Any] = Field(default={}, description="默认配置")
     related_components: List[str] = Field(description="相关组件列表")
+    command: str = Field(description="执行命令")
+    command_args: List[str] = Field(default=[], description="自定义执行命令参数")
 
 class ActionNodeResponse(ActionNode):
     id: str = Field(description="节点类型ID")

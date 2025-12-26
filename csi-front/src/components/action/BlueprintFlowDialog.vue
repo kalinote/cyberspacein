@@ -37,8 +37,13 @@
         </template>
 
         <template #footer>
-            <div class="text-sm text-gray-500">
-                更新于：{{ formatDateTime(blueprintData?.updated_at) }}
+            <div class="flex items-center justify-between w-full">
+                <div class="text-sm text-gray-500">
+                    蓝图ID：{{ blueprintData?.id || '-' }}
+                </div>
+                <div class="text-sm text-gray-500">
+                    更新于：{{ formatDateTime(blueprintData?.updated_at) }}
+                </div>
             </div>
         </template>
     </el-dialog>

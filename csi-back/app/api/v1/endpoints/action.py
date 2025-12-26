@@ -255,7 +255,9 @@ async def get_actions():
             version=node.version,
             handles=handles_response,
             inputs=inputs_response,
-            related_components=node.related_components
+            related_components=node.related_components,
+            command=node.command,
+            command_args=node.command_args
         ))
 
     return ApiResponse.success(data=results)
@@ -314,7 +316,9 @@ async def create_node(data: ActionNode):
         handles=handle_models,
         inputs=input_models,
         default_configs=pack_dict(data.default_configs),
-        related_components=data.related_components
+        related_components=data.related_components,
+        command=data.command,
+        command_args=data.command_args
     )
 
     await node_model.insert()
@@ -328,7 +332,9 @@ async def create_node(data: ActionNode):
         version=data.version,
         handles=handles_with_id,
         inputs=inputs_with_id,
-        related_components=data.related_components
+        related_components=data.related_components,
+        command=data.command,
+        command_args=data.command_args
     )
 
     return ApiResponse.success(data=response_data)

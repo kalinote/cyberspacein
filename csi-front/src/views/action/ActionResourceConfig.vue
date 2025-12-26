@@ -144,6 +144,11 @@
                         <span class="text-gray-600">节点ID:</span>
                         <span class="font-mono text-xs text-gray-900">{{ node.id }}</span>
                       </div>
+                      <div class="flex items-center gap-2">
+                        <Icon icon="mdi:terminal" class="text-gray-900" />
+                        <span class="text-gray-600">运行命令:</span>
+                        <span class="font-mono text-xs text-gray-900">{{ node.command }} {{ node.command_args.join(' ') }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -356,6 +361,16 @@
                 :value="component.id"
               />
             </el-select>
+          </el-form-item>
+          <el-form-item label="运行命令" prop="command">
+            <el-input v-model="formData.command" placeholder="请输入运行命令" />
+          </el-form-item>
+          <el-form-item label="运行参数" prop="command_args">
+            <TagInput
+              v-model="formData.command_args"
+              placeholder="输入参数后按回车或点击添加"
+              :show-count="true"
+            />
           </el-form-item>
           <el-form-item label="默认配置" prop="default_configs">
             <KeyValueEditor v-model="formData.default_configs" />
@@ -582,6 +597,8 @@ const formData = ref({
   description: '',
   type: '',
   version: '1.0.0',
+  command: '',
+  command_args: [],
   related_components: [],
   default_configs: {},
   handles: [],
@@ -597,6 +614,22 @@ const formRules = {
   ],
   version: [
     { required: true, message: '请输入版本号', trigger: 'blur' }
+  ],
+  command: [
+    { required: true, message: '请输入运行命令', trigger: 'blur' }
+  ],
+  related_components: [
+    { 
+      required: true, 
+      validator: (rule, value, callback) => {
+        if (!value || value.length === 0) {
+          callback(new Error('请至少选择一个关联组件'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change' 
+    }
   ]
 }
 
@@ -734,6 +767,8 @@ const resetForm = () => {
     description: '',
     type: '',
     version: '1.0.0',
+    command: '',
+    command_args: [],
     related_components: [],
     default_configs: {},
     handles: [],
@@ -811,6 +846,8 @@ const handleSubmit = async () => {
       description: formData.value.description || '',
       type: formData.value.type,
       version: formData.value.version,
+      command: formData.value.command || '',
+      command_args: formData.value.command_args || [],
       related_components: formData.value.related_components || [],
       default_configs: formData.value.default_configs || {},
       handles: formData.value.handles.map(handle => {

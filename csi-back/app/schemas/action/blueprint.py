@@ -1,7 +1,6 @@
 from typing import List, Optional, Any, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field
-from app.schemas.general import DictModel
 
 
 class Position(BaseModel):

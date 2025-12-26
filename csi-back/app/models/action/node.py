@@ -49,6 +49,8 @@ class ActionNodeModel(Document):
     inputs: List[ActionNodeInputModel]
     default_configs: Optional[List[DictModel]] = None
     related_components: List[str]
+    command: str
+    command_args: List[str]
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
