@@ -60,7 +60,7 @@
       </div>
     </section>
 
-    <!-- 常用行动蓝图 -->
+    <!-- 最新行动蓝图 -->
     <section class="py-12 bg-linear-to-b from-white to-gray-50">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center mb-8">
@@ -74,12 +74,13 @@
           </el-button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-          <div 
-            v-for="(blueprint, index) in commonBlueprints" 
-            :key="index"
-            class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow flex flex-col"
-          >
+        <div v-loading="loadingBlueprints" :element-loading-text="'加载中...'" class="min-h-[200px]">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+            <div 
+              v-for="(blueprint, index) in commonBlueprints" 
+              :key="index"
+              class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow flex flex-col"
+            >
           <div class="mb-4">
             <h3 class="text-xl font-bold text-gray-900 mb-4">{{ blueprint.title }}</h3>
             <el-tag 
@@ -153,9 +154,16 @@
                 @click="removeFromCommonBlueprints(index)"
               >
                 <template #icon><Icon icon="mdi:delete-outline" /></template>
-                从常用蓝图删除
+                删除该蓝图
               </el-button>
             </div>
+          </div>
+          </div>
+
+          <div v-if="!loadingBlueprints && commonBlueprints.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
+            <Icon icon="mdi:file-document-outline" class="text-6xl text-gray-300 mb-4" />
+            <p class="text-gray-500 text-lg mb-2">暂无行动蓝图</p>
+            <p class="text-gray-400 text-sm">创建新蓝图后，将显示在这里</p>
           </div>
         </div>
       </div>
@@ -484,6 +492,8 @@
 import { Icon } from '@iconify/vue'
 import * as echarts from 'echarts'
 import Header from '@/components/Header.vue'
+import { actionApi } from '@/api/action'
+import { getPaginatedData } from '@/utils/request'
 
 export default {
   name: 'Action',
@@ -501,6 +511,7 @@ export default {
         { text: '市场趋势', type: 'warning' }
       ],
       loadingRunningActions: false,
+      loadingBlueprints: false,
       runningActions: [
         {
           id: 'action-001',
@@ -533,67 +544,7 @@ export default {
           totalSteps: 8
         }
       ],
-      commonBlueprints: [
-        {
-          id: 1,
-          title: '社交媒体舆情监控',
-          taskType: '情报收集',
-          taskTypeTagColor: '#dbeafe',
-          taskTypeTagTextColor: '#1e40af',
-          taskGoal: '监控Twitter、Reddit等平台的技术讨论趋势和热点话题',
-          resourceAllocation: '代理网络: 25节点 | 采集账号: 8个 | 沙盒容器: 3个',
-          executionDeadline: '7天',
-          branchCount: 3,
-          stepCount: 10
-        },
-        {
-          id: 2,
-          title: '技术论坛情报收集',
-          taskType: '深度挖掘',
-          taskTypeTagColor: '#d1fae5',
-          taskTypeTagTextColor: '#065f46',
-          taskGoal: '收集Stack Overflow、GitHub等平台的技术漏洞和安全信息',
-          resourceAllocation: '代理网络: 18节点 | 采集账号: 5个 | 沙盒容器: 2个',
-          executionDeadline: '5天',
-          branchCount: 2,
-          stepCount: 8
-        },
-        {
-          id: 3,
-          title: '新闻媒体事件追踪',
-          taskType: '实时监控',
-          taskTypeTagColor: '#fef3c7',
-          taskTypeTagTextColor: '#92400e',
-          taskGoal: '追踪全球主要新闻媒体的网络安全相关报道和事件',
-          resourceAllocation: '代理网络: 15节点 | 采集账号: 6个 | 沙盒容器: 2个',
-          executionDeadline: '3天',
-          branchCount: 1,
-          stepCount: 5
-        },
-        {
-          id: 4,
-          title: '网络安全事件分析',
-          taskType: '深度分析',
-          taskTypeTagColor: '#fee2e2',
-          taskTypeTagTextColor: '#991b1b',
-          taskGoal: '分析网络安全事件的成因和趋势',
-          resourceAllocation: '代理网络: 10节点 | 采集账号: 4个 | 沙盒容器: 1个',
-          executionDeadline: '2天',
-          branchCount: 1,
-          stepCount: 3
-        },{
-          id: 5,
-          title: '原神相关图像采集',
-          taskType: '资源探测',
-          taskTypeTagColor: '#e9d5ff',
-          taskTypeTagTextColor: '#6b21a8',
-          taskGoal: '采集Pixiv、Twitter等平台上的原神相关二创图',
-          resourceAllocation: '代理网络: 10节点 | 采集账号: 4个 | 沙盒容器: 1个',
-          executionDeadline: '1天',
-          branchCount: 1,
-          stepCount: 1
-        }
-      ],
+      commonBlueprints: [],
       
       treeData: {
         name: '行动方案',
@@ -743,13 +694,13 @@ export default {
     },
     
     removeFromCommonBlueprints(index) {
-      this.$confirm('确定要从常用蓝图中删除此蓝图吗？', '确认删除', {
+      this.$confirm('确定要删除此蓝图吗？', '确认删除', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
       }).then(() => {
         this.commonBlueprints.splice(index, 1)
-        this.$message.success('已从常用蓝图中删除')
+        this.$message.success('已删除')
       }).catch(() => {
         this.$message.info('已取消删除')
       })
@@ -757,6 +708,59 @@ export default {
 
     viewSteps(blueprintId) {
       this.$message.error(`[尚未实现] 查看步骤: ${blueprintId}`)
+    },
+
+    formatImplementationPeriod(seconds) {
+      if (!seconds || seconds <= 0) {
+        return '未设置'
+      }
+      
+      const oneDay = 24 * 3600
+      const oneHour = 3600
+      const oneMinute = 60
+      
+      if (seconds >= oneDay) {
+        const days = Math.floor(seconds / oneDay)
+        return `${days}天`
+      } else if (seconds >= oneHour) {
+        const hours = Math.floor(seconds / oneHour)
+        return `${hours}小时`
+      } else if (seconds >= oneMinute) {
+        const minutes = Math.floor(seconds / oneMinute)
+        return `${minutes}分钟`
+      } else {
+        return `${seconds}秒`
+      }
+    },
+
+    async fetchCommonBlueprints() {
+      this.loadingBlueprints = true
+      try {
+        const result = await getPaginatedData(
+          actionApi.getBlueprintsBaseInfo,
+          { page: 1, page_size: 6 }
+        )
+        
+        this.commonBlueprints = (result.items || []).map(item => {
+          return {
+            id: item.id,
+            title: item.name || '',
+            taskType: item.type || '尚未实现',
+            taskTypeTagColor: item.type_tag_color || '#dbeafe',
+            taskTypeTagTextColor: item.type_text_color || '#1e40af',
+            taskGoal: item.target || '',
+            resourceAllocation: '未配置',
+            executionDeadline: this.formatImplementationPeriod(item.implementation_period),
+            branchCount: item.branches || 0,
+            stepCount: item.steps || 0
+          }
+        })
+      } catch (error) {
+        this.$message.error('获取行动蓝图失败')
+        this.commonBlueprints = []
+      } finally {
+        this.loadingBlueprints = false
+      }
     },
 
     formatTime(date) {
@@ -816,6 +820,7 @@ export default {
   
   mounted() {
     this.initTreeChart()
+    this.fetchCommonBlueprints()
   }
 }
 </script>

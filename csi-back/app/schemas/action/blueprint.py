@@ -72,6 +72,9 @@ class ActionBlueprintBaseInfoResponse(BaseModel):
     version: str = Field(description="蓝图版本")
     description: str = Field(description="蓝图描述")
     target: str = Field(description="行动目标")
+    type: str = Field(default="尚未实现", description="蓝图类型")
+    type_tag_color: str = Field(default="#dbeafe", description="蓝图分类tag颜色") # TODO: 后续改为可配置
+    type_text_color: str = Field(default="#1e40af", description="蓝图分类tag文字颜色")
     implementation_period: int = Field(description="执行期限(秒)")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")

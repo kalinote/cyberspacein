@@ -13,4 +13,7 @@ export const actionApi = {
   createActionBlueprint(data) {
     return request.post('/action/blueprint', data)
   },
+  getBlueprintsBaseInfo(params = {page: 1, page_size: 10}) {
+    return request.get('/action/blueprint/list', params)
+  },
 }

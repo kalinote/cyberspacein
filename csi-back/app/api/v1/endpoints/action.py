@@ -11,8 +11,9 @@ from app.schemas.enum import ActionNodeTypeEnum
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
 from app.models.action.blueprint import ActionBlueprintModel, PositionModel, NodeDataModel, GraphNodeModel, GraphEdgeModel, ViewportModel, GraphModel
-from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintDetailResponse
+from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintBaseInfoResponse, ActionBlueprintDetailResponse
 from app.utils.dict_helper import pack_dict, unpack_dict
+from app.utils.workflow import count_workflow_paths
 
 logger = logging.getLogger(__name__)
 
@@ -102,10 +103,39 @@ async def create_blueprint(data: ActionBlueprint):
     
     return ApiResponse.success(data=response_data)
 
-@router.get("/blueprint/list", response_model=ApiResponse[List[ActionBlueprintDetailResponse]])
-async def get_blueprints():
+@router.get("/blueprint/list", response_model=PageResponse[ActionBlueprintBaseInfoResponse])
+async def get_blueprints(
+    params: PageParams = Depends()
+):
     """获取蓝图列表，用于monitor页面的行动蓝图一栏"""
-    pass
+    skip = (params.page - 1) * params.page_size
+    
+    total = await ActionBlueprintModel.find_all().count()
+    blueprints = await ActionBlueprintModel.find_all().skip(skip).limit(params.page_size).to_list()
+    
+    results = []
+    for blueprint in blueprints:
+        steps = len(blueprint.graph.nodes)
+        
+        graph_dict = blueprint.graph.model_dump()
+        workflow_data = {"graph": graph_dict}
+        branches = count_workflow_paths(workflow_data)
+        
+        results.append(ActionBlueprintBaseInfoResponse(
+            id=blueprint.id,
+            name=blueprint.name,
+            version=blueprint.version,
+            description=blueprint.description,
+            target=blueprint.target,
+            implementation_period=blueprint.implementation_period,
+            created_at=blueprint.created_at,
+            updated_at=blueprint.updated_at,
+            steps=steps,
+            branches=branches
+        ))
+    
+    return PageResponse.create(results, total, params.page, params.page_size)
+    
 
 @router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]])
 async def get_actions():
