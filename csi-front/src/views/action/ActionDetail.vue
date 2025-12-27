@@ -594,7 +594,7 @@ const loadActionData = () => {
         },
         node_details: {
             'node-1766409613714': {
-                name: '爬虫节点',
+                name: '爬虫节点',       // TODO: 节点没有名称数据，使用界面标题
                 status: 'running',
                 startTime: '2024-01-20T10:05:00Z',
                 endTime: null,
@@ -607,6 +607,7 @@ const loadActionData = () => {
                 outputData: null,
                 errorMessage: null,
                 logs: [
+                    // TODO: 日志应该通过专门的接口获取
                     { timestamp: '2024-01-20T10:05:00Z', level: 'info', message: '开始执行爬虫任务...' },
                     { timestamp: '2024-01-20T10:05:05Z', level: 'info', message: '连接到目标平台...' },
                     { timestamp: '2024-01-20T10:05:10Z', level: 'info', message: '正在获取数据，进度 30%...' },

@@ -2,3 +2,4 @@ aiohttp
 requests
 setuptools
 wheel
+crawlab-sdk

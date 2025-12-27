@@ -1,9 +1,11 @@
 import argparse
+from datetime import datetime
 import json
 import sys
 import logging
 import os
 from typing import Optional, Dict, Any
+from crawlab import save_item
 import requests
 
 logging.basicConfig(
@@ -37,6 +39,8 @@ class BaseComponent:
         
         # 运行模式标记
         self.is_remote = bool(self.action_node_id and self.api_base_url)
+        
+        self.created_at = datetime.now()
 
     def _parse_args(self):
         parser = argparse.ArgumentParser(description="CSI Base Components SDK (Sync)")
@@ -149,6 +153,14 @@ class BaseComponent:
         """
         提交最终结果
         """
+        save_item({
+            'action_node_id': self.action_node_id,
+            'status': 'success',
+            'message': '运行成功',
+            'outputs': json.dumps(outputs, ensure_ascii=False),
+            'created_at': self.created_at,
+            'finished_at': datetime.now(),
+        })
         if self.is_remote:
             try:
                 url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/result"
@@ -168,6 +180,13 @@ class BaseComponent:
         """
         主动上报任务失败
         """
+        save_item({
+            'action_node_id': self.action_node_id,
+            'status': 'failed',
+            'message': error_msg,
+            'created_at': self.created_at,
+            'finished_at': datetime.now(),
+        })
         if self.is_remote:
             try:
                 url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/result"
