@@ -158,8 +158,8 @@ class BaseComponent:
             'status': 'success',
             'message': '运行成功',
             'outputs': json.dumps(outputs, ensure_ascii=False),
-            'created_at': self.created_at,
-            'finished_at': datetime.now(),
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'finished_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         })
         if self.is_remote:
             try:
@@ -184,8 +184,8 @@ class BaseComponent:
             'action_node_id': self.action_node_id,
             'status': 'failed',
             'message': error_msg,
-            'created_at': self.created_at,
-            'finished_at': datetime.now(),
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'finished_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         })
         if self.is_remote:
             try:

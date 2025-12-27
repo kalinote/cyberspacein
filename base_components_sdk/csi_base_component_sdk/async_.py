@@ -2,9 +2,11 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import datetime
 import logging
 import os
 from typing import Optional, Dict, Any
+from crawlab import save_item
 import aiohttp
 
 logging.basicConfig(
@@ -150,6 +152,14 @@ class AsyncBaseComponent:
         """
         提交最终结果
         """
+        save_item({
+            'action_node_id': self.action_node_id,
+            'status': 'success',
+            'message': '运行成功',
+            'outputs': json.dumps(outputs, ensure_ascii=False),
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'finished_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        })
         if self.is_remote:
             try:
                 url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/result"
@@ -169,6 +179,13 @@ class AsyncBaseComponent:
         """
         主动上报任务失败
         """
+        save_item({
+            'action_node_id': self.action_node_id,
+            'status': 'failed',
+            'message': error_msg,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'finished_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        })
         if self.is_remote:
             try:
                 url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/result"
