@@ -4,7 +4,6 @@ import random
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 import logging
 from app.schemas.enum import ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
-from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id
 from app.utils.workflow import find_start_nodes
 from app.models.action.blueprint import ActionBlueprintModel
@@ -41,7 +40,8 @@ class ActionInstance:
         action_instance = ActionInstanceModel(
             id=self.action_id,
             blueprint_id=self.blueprint_id,
-            status=ActionFlowStatusEnum.READY
+            status=ActionFlowStatusEnum.READY,
+            nodes_id=[node.id for node in blueprint.graph.nodes]
         )
         await action_instance.insert()
         for node in blueprint.graph.nodes:
@@ -68,6 +68,9 @@ class ActionInstance:
         if not action:
             logger.error(f"行动启动失败，ID不存在: {self.action_id}")
             return
+        action.status = ActionFlowStatusEnum.RUNNING
+        action.start_at = datetime.now()
+        await action.save()
         
         blueprint = await ActionBlueprintModel.find_one({"_id": action.blueprint_id})
         start_nodes = find_start_nodes(blueprint)

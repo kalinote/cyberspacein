@@ -3,7 +3,7 @@
     <Header />
     
     <section class="bg-linear-to-br from-blue-50 to-white py-6 border-b border-gray-200">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-6">
             <el-button type="primary" link @click="$router.back()" class="shrink-0">
@@ -24,7 +24,7 @@
       </div>
     </section>
 
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 筛选栏 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -154,7 +154,7 @@
               <p class="text-gray-400 text-sm">创建新行动后，历史记录将显示在这里</p>
             </div>
 
-            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               <div
                 v-for="action in filteredActions"
                 :key="action.id"
@@ -339,6 +339,8 @@ import {
   getStatusTagType,
   getStatusDotClass
 } from '@/utils/action'
+import { actionApi } from '@/api/action'
+import { getPaginatedData } from '@/utils/request'
 
 const router = useRouter()
 
@@ -364,80 +366,7 @@ const statistics = ref({
   failed: 0
 })
 
-const actions = ref([
-  {
-    id: 'action-001',
-    name: '社交媒体舆情监控',
-    description: '监控Twitter、Reddit等平台的技术讨论趋势和热点话题',
-    status: 'completed',
-    startTime: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 3600 * 1000),
-    endTime: new Date(Date.now() - 6 * 24 * 3600 * 1000),
-    duration: 23 * 3600 * 1000,
-    progress: 100,
-    completedSteps: 11,
-    totalSteps: 11
-  },
-  {
-    id: 'action-002',
-    name: '技术论坛情报收集',
-    description: '收集Stack Overflow、GitHub等平台的技术漏洞和安全信息',
-    status: 'running',
-    startTime: new Date(Date.now() - 2 * 24 * 3600 * 1000 + 2 * 3600 * 1000),
-    endTime: null,
-    duration: null,
-    progress: 78,
-    completedSteps: 7,
-    totalSteps: 9
-  },
-  {
-    id: 'action-003',
-    name: '新闻媒体事件追踪',
-    description: '追踪全球主要新闻媒体的网络安全相关报道和事件',
-    status: 'completed',
-    startTime: new Date(Date.now() - 5 * 24 * 3600 * 1000 + 30 * 60 * 1000),
-    endTime: new Date(Date.now() - 4 * 24 * 3600 * 1000),
-    duration: 20 * 3600 * 1000,
-    progress: 100,
-    completedSteps: 8,
-    totalSteps: 8
-  },
-  {
-    id: 'action-004',
-    name: '网络安全事件分析',
-    description: '分析网络安全事件的成因和趋势',
-    status: 'failed',
-    startTime: new Date(Date.now() - 3 * 24 * 3600 * 1000 + 1 * 3600 * 1000),
-    endTime: new Date(Date.now() - 3 * 24 * 3600 * 1000 + 2 * 3600 * 1000),
-    duration: 1 * 3600 * 1000,
-    progress: 35,
-    completedSteps: 2,
-    totalSteps: 6
-  },
-  {
-    id: 'action-005',
-    name: '原神相关图像采集',
-    description: '采集Pixiv、Twitter等平台上的原神相关二创图',
-    status: 'paused',
-    startTime: new Date(Date.now() - 1 * 24 * 3600 * 1000 + 3 * 3600 * 1000),
-    endTime: null,
-    duration: null,
-    progress: 45,
-    completedSteps: 3,
-    totalSteps: 7
-  },
-  {
-    id: 'action-006',
-    name: '深度数据挖掘任务',
-    description: '对已收集的数据进行深度分析和挖掘',
-    status: 'completed',
-    startTime: new Date(Date.now() - 10 * 24 * 3600 * 1000 + 1 * 3600 * 1000),
-    endTime: new Date(Date.now() - 9 * 24 * 3600 * 1000),
-    duration: 24 * 3600 * 1000,
-    progress: 100,
-    completedSteps: 15,
-    totalSteps: 15
-  }
-])
+const actions = ref([])
 
 const filteredActions = computed(() => {
   let result = [...actions.value]
@@ -454,16 +383,44 @@ const filteredActions = computed(() => {
     result = result.filter(action => action.status === filters.value.status)
   }
 
-  const start = (pagination.value.page - 1) * pagination.value.pageSize
-  const end = start + pagination.value.pageSize
-  pagination.value.total = result.length
-  return result.slice(start, end)
+  return result
 })
 
+const fetchActions = async () => {
+  loading.value = true
+  try {
+    const params = {
+      page: pagination.value.page,
+      page_size: pagination.value.pageSize
+    }
+    
+    const result = await getPaginatedData(actionApi.getActionHistory, params)
+    
+    actions.value = (result.items || []).map(item => ({
+      ...item,
+      startTime: item.start_at || null,
+      endTime: item.finished_at || null,
+      completedSteps: item.completed_steps || 0,
+      totalSteps: item.total_steps || 0,
+      duration: item.duration ? item.duration * 1000 : 0
+    }))
+    
+    pagination.value.total = result.pagination.total
+    pagination.value.page = result.pagination.page
+    pagination.value.pageSize = result.pagination.pageSize
+    
+    updateStatistics()
+  } catch (error) {
+    console.error('获取行动历史失败:', error)
+    actions.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
 const handleFilterChange = () => {
   pagination.value.page = 1
-  updateStatistics()
+  fetchActions()
 }
 
 const updateStatistics = () => {
@@ -475,11 +432,13 @@ const updateStatistics = () => {
 
 const handlePageChange = (page) => {
   pagination.value.page = page
+  fetchActions()
 }
 
 const handlePageSizeChange = (pageSize) => {
   pagination.value.pageSize = pageSize
   pagination.value.page = 1
+  fetchActions()
 }
 
 const viewActionDetail = (actionId) => {
@@ -524,6 +483,6 @@ const deleteAction = (actionId) => {
 }
 
 onMounted(() => {
-  updateStatistics()
+  fetchActions()
 })
 </script>

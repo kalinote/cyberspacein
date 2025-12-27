@@ -1,21 +1,26 @@
 // 状态文本映射
 const STATUS_TEXT_MAP = {
-  'pending': '待执行',
+  'unready': '未就绪',
+  'ready': '已就绪',
   'running': '执行中',
   'completed': '已完成',
   'failed': '失败',
+  'cancelled': '已取消',
+  'timeout': '超时',
   'paused': '已暂停',
-  'stopped': '已停止'
 }
 
 // 状态标签类型映射
+// TODO: 这里后续改成通过接口获取tag和文字颜色
 const STATUS_TAG_TYPE_MAP = {
+  'unready': 'info',
+  'ready': 'success',
   'running': 'primary',
   'completed': 'success',
   'paused': 'warning',
-  'stopped': 'info',
+  'cancelled': 'danger',
+  'timeout': 'danger',
   'failed': 'danger',
-  'pending': 'info'
 }
 
 // 获取状态文本

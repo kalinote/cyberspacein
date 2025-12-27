@@ -19,4 +19,7 @@ export const actionApi = {
   getBlueprintsBaseInfo(params = {page: 1, page_size: 10}) {
     return request.get('/action/blueprint/list', params)
   },
+  getActionHistory(params = {page: 1, page_size: 10}) {
+    return request.get('/action/list', params)
+  },
 }

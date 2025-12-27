@@ -4,7 +4,7 @@ import random
 from typing import Dict, Any, List
 from fastapi import APIRouter, BackgroundTasks, Depends
 from app.models.action.action import ActionInstanceModel
-from app.schemas.action.action import StartActionRequest, StartActionResponse
+from app.schemas.action.action import ActionInstanceBaseInfoResponse, StartActionRequest, StartActionResponse
 from app.schemas.action.node import ActionNode
 
 from app.curd.action import get_components_by_project_id, get_components_project_by_name
@@ -43,6 +43,39 @@ async def start_action(
     background_tasks.add_task(action_instance.start)
     
     return ApiResponse.success(data=StartActionResponse(action_id=action_instance.action_id))
+
+@router.get("/list", response_model=PageResponse[ActionInstanceBaseInfoResponse], summary="获取行动列表")
+async def get_action_instances(
+    params: PageParams = Depends()
+):
+    skip = (params.page - 1) * params.page_size
+    total = await ActionInstanceModel.find_all().count()
+    action_instances = await ActionInstanceModel.find_all().skip(skip).limit(params.page_size).to_list()
+    
+    results = []
+    for action_instance in action_instances:
+        blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
+        if not blueprint:
+            continue
+        
+        completed_steps = len(action_instance.finished_nodes_id) if action_instance.finished_nodes_id else 0
+        total_steps = len(action_instance.nodes_id) if action_instance.nodes_id else 0
+        
+        results.append(ActionInstanceBaseInfoResponse(
+            id=action_instance.id,
+            name=blueprint.name,
+            description=blueprint.description,
+            status=action_instance.status,
+            start_at=action_instance.start_at,
+            finished_at=action_instance.finished_at,
+            duration=action_instance.duration,
+            progress=action_instance.progress,
+            completed_steps=completed_steps,
+            total_steps=total_steps
+        ))
+    
+    return PageResponse.create(results, total, params.page, params.page_size)
+
 
 @router.post("/blueprint", response_model=ApiResponse[ActionBlueprintDetailResponse], summary="创建蓝图")
 async def create_blueprint(data: ActionBlueprint):
@@ -377,10 +410,10 @@ async def get_base_components(
             id=component["_id"],
             name=component["name"],
             description=component["description"],
-            status=component["stat"]["last_task"].get("status", "unknown"),
-            last_run_at=component["stat"]["last_task"].get("create_ts", None),
-            total_runs=component["stat"]["tasks"],
-            average_runtime=component["stat"]["average_total_duration"],
+            status=component["stat"].get("last_task", {}).get("status", "unknown"),
+            last_run_at=component["stat"].get("last_task", {}).get("create_ts", None),
+            total_runs=component["stat"].get("tasks", None),
+            average_runtime=component["stat"].get("average_total_duration", None),
         ))
 
     return PageResponse.create(results, len(components), params.page, params.page_size)
