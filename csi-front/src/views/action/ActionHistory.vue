@@ -176,13 +176,6 @@
                 </div>
 
                 <div class="space-y-2 mb-4">
-                  <div class="flex items-center justify-between text-sm">
-                    <span class="text-gray-500 flex items-center gap-2">
-                      <Icon icon="mdi:calendar" class="text-blue-500" />
-                      创建时间
-                    </span>
-                    <span class="font-medium text-gray-900">{{ formatDateTime(action.createTime) }}</span>
-                  </div>
                   <div v-if="action.startTime" class="flex items-center justify-between text-sm">
                     <span class="text-gray-500 flex items-center gap-2">
                       <Icon icon="mdi:play-circle" class="text-green-500" />
@@ -262,11 +255,6 @@
                   <el-tag :type="getStatusTagType(row.status)" size="small" class="border-0">
                     {{ getStatusText(row.status) }}
                   </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="createTime" label="创建时间" width="180">
-                <template #default="{ row }">
-                  {{ formatDateTime(row.createTime) }}
                 </template>
               </el-table-column>
               <el-table-column prop="startTime" label="开始时间" width="180">
@@ -382,7 +370,6 @@ const actions = ref([
     name: '社交媒体舆情监控',
     description: '监控Twitter、Reddit等平台的技术讨论趋势和热点话题',
     status: 'completed',
-    createTime: new Date(Date.now() - 7 * 24 * 3600 * 1000),
     startTime: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 3600 * 1000),
     endTime: new Date(Date.now() - 6 * 24 * 3600 * 1000),
     duration: 23 * 3600 * 1000,
@@ -395,7 +382,6 @@ const actions = ref([
     name: '技术论坛情报收集',
     description: '收集Stack Overflow、GitHub等平台的技术漏洞和安全信息',
     status: 'running',
-    createTime: new Date(Date.now() - 2 * 24 * 3600 * 1000),
     startTime: new Date(Date.now() - 2 * 24 * 3600 * 1000 + 2 * 3600 * 1000),
     endTime: null,
     duration: null,
@@ -408,7 +394,6 @@ const actions = ref([
     name: '新闻媒体事件追踪',
     description: '追踪全球主要新闻媒体的网络安全相关报道和事件',
     status: 'completed',
-    createTime: new Date(Date.now() - 5 * 24 * 3600 * 1000),
     startTime: new Date(Date.now() - 5 * 24 * 3600 * 1000 + 30 * 60 * 1000),
     endTime: new Date(Date.now() - 4 * 24 * 3600 * 1000),
     duration: 20 * 3600 * 1000,
@@ -421,7 +406,6 @@ const actions = ref([
     name: '网络安全事件分析',
     description: '分析网络安全事件的成因和趋势',
     status: 'failed',
-    createTime: new Date(Date.now() - 3 * 24 * 3600 * 1000),
     startTime: new Date(Date.now() - 3 * 24 * 3600 * 1000 + 1 * 3600 * 1000),
     endTime: new Date(Date.now() - 3 * 24 * 3600 * 1000 + 2 * 3600 * 1000),
     duration: 1 * 3600 * 1000,
@@ -434,7 +418,6 @@ const actions = ref([
     name: '原神相关图像采集',
     description: '采集Pixiv、Twitter等平台上的原神相关二创图',
     status: 'paused',
-    createTime: new Date(Date.now() - 1 * 24 * 3600 * 1000),
     startTime: new Date(Date.now() - 1 * 24 * 3600 * 1000 + 3 * 3600 * 1000),
     endTime: null,
     duration: null,
@@ -447,7 +430,6 @@ const actions = ref([
     name: '深度数据挖掘任务',
     description: '对已收集的数据进行深度分析和挖掘',
     status: 'completed',
-    createTime: new Date(Date.now() - 10 * 24 * 3600 * 1000),
     startTime: new Date(Date.now() - 10 * 24 * 3600 * 1000 + 1 * 3600 * 1000),
     endTime: new Date(Date.now() - 9 * 24 * 3600 * 1000),
     duration: 24 * 3600 * 1000,
@@ -470,14 +452,6 @@ const filteredActions = computed(() => {
 
   if (filters.value.status) {
     result = result.filter(action => action.status === filters.value.status)
-  }
-
-  if (filters.value.dateRange && filters.value.dateRange.length === 2) {
-    const [start, end] = filters.value.dateRange
-    result = result.filter(action => {
-      const createTime = new Date(action.createTime)
-      return createTime >= start && createTime <= end
-    })
   }
 
   const start = (pagination.value.page - 1) * pagination.value.pageSize

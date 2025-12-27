@@ -1,13 +1,18 @@
+from datetime import datetime
 import logging
+import random
 from typing import Dict, Any, List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
+from app.models.action.action import ActionInstanceModel
+from app.schemas.action.action import StartActionRequest, StartActionResponse
 from app.schemas.action.node import ActionNode
 
 from app.curd.action import get_components_by_project_id, get_components_project_by_name
 from app.schemas.action.node import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
 from app.schemas.general import PageParams, PageResponse
 from app.schemas.response import ApiResponse
-from app.schemas.enum import ActionNodeTypeEnum
+from app.schemas.enum import ActionFlowStatusEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
+from app.service.action import action_instance_manager
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
 from app.models.action.blueprint import ActionBlueprintModel, PositionModel, NodeDataModel, GraphNodeModel, GraphEdgeModel, ViewportModel, GraphModel
@@ -22,7 +27,24 @@ router = APIRouter(
     tags=["action"],
 )
 
-@router.post("/blueprint", response_model=ApiResponse[ActionBlueprintDetailResponse])
+@router.post("/start", response_model=ApiResponse[StartActionResponse], summary="开始行动")
+async def start_action(
+    data: StartActionRequest,
+    background_tasks: BackgroundTasks
+):
+    blueprint = await ActionBlueprintModel.find_one({"_id": data.blueprint_id})
+    if not blueprint:
+        return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {data.blueprint_id}")
+    
+    action_instance = action_instance_manager.new(data.blueprint_id)
+    result, message = await action_instance.init()
+    if not result:
+        return ApiResponse.error(code=500, message=message)
+    background_tasks.add_task(action_instance.start)
+    
+    return ApiResponse.success(data=StartActionResponse(action_id=action_instance.action_id))
+
+@router.post("/blueprint", response_model=ApiResponse[ActionBlueprintDetailResponse], summary="创建蓝图")
 async def create_blueprint(data: ActionBlueprint):
     blueprint_id = generate_id(data.name + data.version + str(len(data.graph.nodes)) + str(len(data.graph.edges)))
     
@@ -103,11 +125,15 @@ async def create_blueprint(data: ActionBlueprint):
     
     return ApiResponse.success(data=response_data)
 
-@router.get("/blueprint/list", response_model=PageResponse[ActionBlueprintBaseInfoResponse])
+@router.get("/blueprint/list", response_model=PageResponse[ActionBlueprintBaseInfoResponse], summary="获取蓝图列表")
 async def get_blueprints(
     params: PageParams = Depends()
 ):
-    """获取蓝图列表，用于monitor页面的行动蓝图一栏"""
+    """
+    # 获取蓝图列表
+    
+    用于monitor页面的行动蓝图一栏
+    """
     skip = (params.page - 1) * params.page_size
     
     total = await ActionBlueprintModel.find_all().count()
@@ -117,9 +143,7 @@ async def get_blueprints(
     for blueprint in blueprints:
         steps = len(blueprint.graph.nodes)
         
-        graph_dict = blueprint.graph.model_dump()
-        workflow_data = {"graph": graph_dict}
-        branches = count_workflow_paths(workflow_data)
+        branches = count_workflow_paths(blueprint)
         
         results.append(ActionBlueprintBaseInfoResponse(
             id=blueprint.id,
@@ -136,10 +160,10 @@ async def get_blueprints(
     
     return PageResponse.create(results, total, params.page, params.page_size)
     
-@router.get("/blueprint/{blueprint_id}", response_model=ApiResponse[ActionBlueprintDetailResponse])
+@router.get("/blueprint/{blueprint_id}", response_model=ApiResponse[ActionBlueprintDetailResponse], summary="获取蓝图详情")
 async def get_blueprint(blueprint_id: str):
     """
-    获取蓝图详情
+    # 获取蓝图详情
     
     注意这个接口应该放到list后面
     """
@@ -207,7 +231,7 @@ async def get_blueprint(blueprint_id: str):
     
     return ApiResponse.success(data=response_data)
 
-@router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]])
+@router.get("/resource_management/nodes", response_model=ApiResponse[List[ActionNodeResponse]], summary="获取节点列表")
 async def get_actions():
     nodes = await ActionNodeModel.find_all().to_list()
 
@@ -263,7 +287,7 @@ async def get_actions():
     return ApiResponse.success(data=results)
 
 
-@router.post("/resource_management/nodes", response_model=ApiResponse[ActionNodeResponse])
+@router.post("/resource_management/nodes", response_model=ApiResponse[ActionNodeResponse], summary="创建节点")
 async def create_node(data: ActionNode):
     node_id = generate_id(data.name + data.type.value + data.version)
 
@@ -340,7 +364,7 @@ async def create_node(data: ActionNode):
     return ApiResponse.success(data=response_data)
 
 
-@router.get("/resource_management/base_components", response_model=PageResponse[BaseComponent])
+@router.get("/resource_management/base_components", response_model=PageResponse[BaseComponent], summary="获取基础组件列表")
 async def get_base_components(
     params: PageParams = Depends()
 ):
@@ -362,8 +386,13 @@ async def get_base_components(
     return PageResponse.create(results, len(components), params.page, params.page_size)
 
 
-@router.get("/node_config/{node_id}/init", response_model=ApiResponse[Dict[str, Any]])
+@router.get("/node_config/{node_id}/init", response_model=ApiResponse[Dict[str, Any]], summary="获取节点配置初始化")
 async def get_node_config_init(node_id: str):
+    """
+    # 获取节点配置初始化
+    
+    用于基础构建SDK获取基本节点参数配置
+    """
     logger.info(f"获取节点配置初始化: {node_id}")
     return ApiResponse.success(data={
         "meta": {
@@ -401,12 +430,12 @@ async def get_node_config_init(node_id: str):
         }
     })
 
-@router.post("/node_config/{node_id}/result", response_model=ApiResponse[Dict[str, Any]])
+@router.post("/node_config/{node_id}/result", response_model=ApiResponse[Dict[str, Any]], summary="上报节点配置结果")
 async def report_action_node_result(node_id: str, data: Dict[str, Any]):
     logger.info(f"上报节点配置结果: {node_id}, {data}")
     return ApiResponse.success(data={})
 
-@router.post("/node_config/{node_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]])
+@router.post("/node_config/{node_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]], summary="上报节点心跳")
 async def report_action_node_heartbeat(node_id: str, data: Dict[str, Any]):
     logger.info(f"上报节点心跳: {node_id}, {data}")
     return ApiResponse.success(data={})

@@ -1,5 +1,5 @@
-from typing import List, Optional, Any, Dict
-from datetime import datetime, timezone
+from typing import Any
+from datetime import datetime
 from beanie import Document
 from pydantic import BaseModel, Field
 from app.schemas.general import DictModel
@@ -14,9 +14,9 @@ class ActionNodeHandleModel(BaseModel):
     type: str
     position: str
     socket_type: str
-    allowed_socket_types: Optional[List[str]] = None
+    allowed_socket_types: list[str] | None = None
     label: str
-    custom_style: Optional[List[DictModel]] = None
+    custom_style: list[DictModel] | None = None
 
 
 class ActionNodeInputModel(BaseModel):
@@ -31,9 +31,9 @@ class ActionNodeInputModel(BaseModel):
     description: str
     required: bool
     default: Any
-    options: Optional[List[Dict[str, str]]] = None
-    custom_style: Optional[List[DictModel]] = None
-    custom_props: Optional[List[DictModel]] = None
+    options: list[dict[str, str]] | None = None
+    custom_style: list[DictModel] | None = None
+    custom_props: list[DictModel] | None = None
 
 
 class ActionNodeModel(Document):
@@ -45,15 +45,15 @@ class ActionNodeModel(Document):
     description: str
     type: str
     version: str
-    handles: List[ActionNodeHandleModel]
-    inputs: List[ActionNodeInputModel]
-    default_configs: Optional[List[DictModel]] = None
-    related_components: List[str]
+    handles: list[ActionNodeHandleModel]
+    inputs: list[ActionNodeInputModel]
+    default_configs: list[DictModel] | None = None
+    related_components: list[str]
     command: str
-    command_args: List[str]
+    command_args: list[str]
     
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now())
+    updated_at: datetime = Field(default_factory=lambda: datetime.now())
     
     class Settings:
         name = "action_nodes"

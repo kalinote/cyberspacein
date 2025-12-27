@@ -1,32 +1,59 @@
 from collections import defaultdict
 
+from app.models.action.blueprint import ActionBlueprintModel, GraphNodeModel
 
-def count_workflow_paths(json_data: dict) -> int:
-    """计算工作流路径数量"""
-    nodes = json_data.get("graph", {}).get("nodes", [])
-    edges = json_data.get("graph", {}).get("edges", [])
+
+def find_start_nodes(action_blueprint: ActionBlueprintModel) -> list[GraphNodeModel]:
+    """查找起始节点（入度为0的节点）"""
+    nodes = action_blueprint.graph.nodes
+    edges = action_blueprint.graph.edges
 
     adj_list = defaultdict(list)
     in_degree = defaultdict(int)
 
     all_node_ids = set()
     for node in nodes:
-        all_node_ids.add(node['id'])
-        in_degree[node['id']] = 0
+        all_node_ids.add(node.id)
+        in_degree[node.id] = 0
 
     for edge in edges:
-        source = edge['source']
-        target = edge['target']
+        source = edge.source
+        target = edge.target
 
         adj_list[source].append(target)
         in_degree[target] += 1
 
     start_nodes = [
-        node_id for node_id in all_node_ids if in_degree[node_id] == 0]
+        node for node in nodes if in_degree[node.id] == 0]
 
-    memo = {}
+    return start_nodes
 
-    def get_paths_from(node_id):
+
+def count_workflow_paths(action_blueprint: ActionBlueprintModel) -> int:
+    """计算工作流路径数量"""
+    nodes = action_blueprint.graph.nodes
+    edges = action_blueprint.graph.edges
+
+    adj_list = defaultdict(list)
+    in_degree = defaultdict(int)
+
+    all_node_ids = set()
+    for node in nodes:
+        all_node_ids.add(node.id)
+        in_degree[node.id] = 0
+
+    for edge in edges:
+        source = edge.source
+        target = edge.target
+
+        adj_list[source].append(target)
+        in_degree[target] += 1
+
+    start_nodes = find_start_nodes(action_blueprint)
+
+    memo: dict[str, int] = {}
+
+    def get_paths_from(node_id: str) -> int:
         if node_id in memo:
             return memo[node_id]
 
@@ -44,7 +71,7 @@ def count_workflow_paths(json_data: dict) -> int:
 
     total_count = 0
     for start_node in start_nodes:
-        path_count = get_paths_from(start_node)
+        path_count = get_paths_from(start_node.id)
         total_count += path_count
 
     return total_count

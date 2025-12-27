@@ -1,5 +1,5 @@
-from typing import List, Optional, Any, Dict
-from datetime import datetime, timezone
+from typing import Any
+from datetime import datetime
 from beanie import Document
 from pydantic import BaseModel, Field
 from app.schemas.general import DictModel
@@ -19,7 +19,7 @@ class NodeDataModel(BaseModel):
     """
     definition_id: str
     version: str
-    form_data: List[DictModel]
+    form_data: list[DictModel]
 
 
 class GraphNodeModel(BaseModel):
@@ -56,8 +56,8 @@ class GraphModel(BaseModel):
     """
     图结构模型
     """
-    nodes: List[GraphNodeModel]
-    edges: List[GraphEdgeModel]
+    nodes: list[GraphNodeModel]
+    edges: list[GraphEdgeModel]
     viewport: ViewportModel
 
 
@@ -71,11 +71,11 @@ class ActionBlueprintModel(Document):
     description: str
     target: str
     implementation_period: int
-    resource: Optional[Dict[str, Any]] = None
+    resource: dict[str, Any] | None = None
     graph: GraphModel
     
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now())
+    updated_at: datetime = Field(default_factory=lambda: datetime.now())
     
     class Settings:
         name = "action_blueprints"
