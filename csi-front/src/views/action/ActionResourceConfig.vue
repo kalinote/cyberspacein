@@ -41,7 +41,7 @@
     </section>
 
     <div class="flex-1 flex overflow-hidden">
-      <div class="bg-white w-64 border-r border-gray-200 shrink-0 overflow-y-auto">
+      <div class="bg-white w-72 border-r border-gray-200 shrink-0 overflow-y-auto">
         <div class="p-4">
           <h3 class="text-sm font-semibold text-gray-500 uppercase mb-3">资源类型</h3>
           <div class="space-y-1">
@@ -318,6 +318,96 @@
             </div>
           </div>
 
+          <!-- 节点接口配置列表 -->
+          <div v-else-if="activeTab === 'nodeHandles'" class="space-y-4">
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+              <div
+                v-for="(handle, index) in filteredHandleList"
+                :key="index"
+                class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex items-start gap-4 flex-1">
+                    <div 
+                      class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-blue-100"
+                    >
+                      <div 
+                        class="w-6 h-6 rounded-full"
+                        :style="{ backgroundColor: handle.color || '#409EFF' }"
+                      ></div>
+                    </div>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-lg font-bold text-gray-900">{{ handle.handle_name }}</h3>
+                        <el-tag 
+                          :type="handle.type === 'value' ? 'success' : 'primary'"
+                          size="small"
+                          class="border-0"
+                        >
+                          {{ handle.type === 'value' ? '值类型' : '引用类型' }}
+                        </el-tag>
+                      </div>
+                      <p class="text-sm text-gray-600 mb-3">{{ handle.label }}</p>
+                      <div class="flex items-center gap-6 text-sm flex-wrap">
+                        <div class="flex items-center gap-2">
+                          <Icon icon="mdi:palette" class="text-blue-500" />
+                          <span class="text-gray-600">颜色:</span>
+                          <div 
+                            class="w-4 h-4 rounded border border-gray-300"
+                            :style="{ backgroundColor: handle.color || '#409EFF' }"
+                          ></div>
+                          <span class="font-mono text-xs text-gray-900">{{ handle.color || '#409EFF' }}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <Icon icon="mdi:identifier" class="text-purple-500" />
+                          <span class="text-gray-600">接口ID:</span>
+                          <span class="font-mono text-xs text-gray-900">{{ handle.id }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 ml-4">
+                    <el-button type="primary" link @click="handleViewHandle(handle)">
+                      <template #icon>
+                        <Icon icon="mdi:eye" />
+                      </template>
+                      查看
+                    </el-button>
+                    <el-button type="primary" link @click="handleEditHandle(handle)">
+                      <template #icon>
+                        <Icon icon="mdi:pencil" />
+                      </template>
+                      编辑
+                    </el-button>
+                    <el-button type="danger" link @click="handleDeleteHandle(handle)">
+                      <template #icon>
+                        <Icon icon="mdi:delete" />
+                      </template>
+                      删除
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="!loading && filteredHandleList.length === 0" class="flex flex-col items-center justify-center py-16">
+                <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
+                <p class="text-gray-500">暂无数据</p>
+              </div>
+            </div>
+
+            <div v-if="!searchKeyword && handleList.length > 0" class="flex justify-center mt-6">
+              <el-pagination
+                v-model:current-page="handlePagination.page"
+                v-model:page-size="handlePagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="handlePagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="handleHandlePageChange"
+                @size-change="handleHandlePageSizeChange"
+              />
+            </div>
+          </div>
+
           <div v-else class="flex flex-col items-center justify-center py-16">
             <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
             <p class="text-gray-500 text-lg mb-2">功能开发中</p>
@@ -563,11 +653,67 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 新增节点接口弹窗 -->
+    <el-dialog
+      v-model="handleDialogVisible"
+      title="新增节点接口"
+      width="600px"
+      :close-on-click-modal="false"
+      @open="handleHandleDialogOpen"
+      @close="handleHandleDialogClose"
+    >
+      <el-form
+        ref="handleFormRef"
+        :model="handleFormData"
+        :rules="handleFormRules"
+        label-width="120px"
+      >
+        <el-form-item label="接口名称" prop="handle_name">
+          <el-input 
+            v-model="handleFormData.handle_name" 
+            placeholder="请输入接口名称，必须是英文字母开头，只能包含字母、数字和下划线" 
+          />
+        </el-form-item>
+        <el-form-item label="接口类型" prop="type">
+          <el-select v-model="handleFormData.type" placeholder="请选择接口类型" class="w-full">
+            <el-option label="值类型" value="value" />
+            <el-option label="引用类型" value="reference" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="标签" prop="label">
+          <el-input v-model="handleFormData.label" placeholder="请输入标签" />
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-color-picker 
+            v-model="handleFormData.color" 
+            format="hex"
+            :predefine="[
+              '#409EFF',
+              '#67C23A',
+              '#E6A23C',
+              '#F56C6C',
+              '#909399'
+            ]"
+          />
+        </el-form-item>
+        <el-form-item label="自定义样式">
+          <KeyValueEditor v-model="handleFormData.custom_style" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <el-button @click="handleDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleSubmitHandle" :loading="handleSubmitting">确定</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
@@ -598,7 +744,8 @@ const pagination = ref({
 
 const resourceTabs = [
   { key: 'nodes', label: '行动节点', icon: 'mdi:chart-tree', children: [
-    { key: 'baseComponents', label: '基础组件', icon: 'mdi:cog' }
+    { key: 'baseComponents', label: '基础组件', icon: 'mdi:cog' },
+    { key: 'nodeHandles', label: '节点接口配置', icon: 'mdi:link-variant' }
   ]},
   { key: 'proxy', label: '代理网络', icon: 'mdi:server-network' },
   { key: 'accounts', label: '采集账号', icon: 'mdi:account-key' },
@@ -608,6 +755,24 @@ const resourceTabs = [
 const nodeList = ref([])
 
 const componentList = ref([])
+
+const handleList = ref([])
+const handlePagination = ref({
+  page: 1,
+  pageSize: 10,
+  total: 0,
+  totalPages: 0
+})
+const handleDialogVisible = ref(false)
+const handleFormRef = ref(null)
+const handleSubmitting = ref(false)
+const handleFormData = ref({
+  handle_name: '',
+  type: '',
+  label: '',
+  color: '#409EFF',
+  custom_style: {}
+})
 
 const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
 const inputTypes = ref(INPUT_TYPES)
@@ -696,6 +861,18 @@ const inputRules = {
   ]
 }
 
+const handleFormRules = {
+  handle_name: [
+    { required: true, validator: validateName, trigger: 'blur' }
+  ],
+  type: [
+    { required: true, message: '请选择接口类型', trigger: 'change' }
+  ],
+  label: [
+    { required: true, message: '请输入标签', trigger: 'blur' }
+  ]
+}
+
 const filteredNodeList = computed(() => {
   if (!searchKeyword.value.trim()) {
     return nodeList.value
@@ -719,6 +896,19 @@ const filteredComponentList = computed(() => {
     component.description.toLowerCase().includes(keyword) ||
     component.id.toLowerCase().includes(keyword) ||
     component.status.toLowerCase().includes(keyword)
+  )
+})
+
+const filteredHandleList = computed(() => {
+  if (!searchKeyword.value.trim()) {
+    return handleList.value
+  }
+  const keyword = searchKeyword.value.toLowerCase()
+  return handleList.value.filter(handle => 
+    handle.handle_name?.toLowerCase().includes(keyword) ||
+    handle.type?.toLowerCase().includes(keyword) ||
+    handle.label?.toLowerCase().includes(keyword) ||
+    handle.id?.toLowerCase().includes(keyword)
   )
 })
 
@@ -767,6 +957,9 @@ const getResourceCount = (tabKey) => {
   if (tabKey === 'baseComponents') {
     return componentList.value.length
   }
+  if (tabKey === 'nodeHandles') {
+    return handleList.value.length
+  }
   return 0
 }
 
@@ -805,6 +998,8 @@ const handleAdd = (tabKey) => {
   }
   if (tabKey === 'nodes') {
     dialogVisible.value = true
+  } else if (tabKey === 'nodeHandles') {
+    handleDialogVisible.value = true
   } else {
     ElMessage.info(`新增${tabKey}功能开发中`)
   }
@@ -1098,8 +1293,126 @@ const handlePageSizeChange = (pageSize) => {
   fetchComponentList()
 }
 
+const fetchHandleList = async () => {
+  loading.value = true
+  try {
+    const result = await getPaginatedData(
+      actionApi.getNodeHandles,
+      {
+        page: handlePagination.value.page,
+        page_size: handlePagination.value.pageSize
+      }
+    )
+    
+    handleList.value = result.items
+    handlePagination.value = {
+      ...handlePagination.value,
+      ...result.pagination
+    }
+  } catch (error) {
+    ElMessage.error('获取节点接口列表失败')
+    handleList.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleHandlePageChange = (page) => {
+  handlePagination.value.page = page
+  fetchHandleList()
+}
+
+const handleHandlePageSizeChange = (pageSize) => {
+  handlePagination.value.pageSize = pageSize
+  handlePagination.value.page = 1
+  fetchHandleList()
+}
+
+const resetHandleForm = () => {
+  handleFormData.value = {
+    handle_name: '',
+    type: '',
+    label: '',
+    color: '#409EFF',
+    custom_style: {}
+  }
+  if (handleFormRef.value) {
+    handleFormRef.value.clearValidate()
+  }
+}
+
+const handleHandleDialogOpen = () => {
+  resetHandleForm()
+}
+
+const handleHandleDialogClose = () => {
+  resetHandleForm()
+}
+
+const handleSubmitHandle = async () => {
+  if (!handleFormRef.value) return
+  
+  try {
+    await handleFormRef.value.validate()
+    
+    handleSubmitting.value = true
+    
+    const submitData = {
+      handle_name: handleFormData.value.handle_name,
+      type: handleFormData.value.type,
+      label: handleFormData.value.label
+    }
+    
+    if (handleFormData.value.color) {
+      submitData.color = handleFormData.value.color
+    }
+    
+    if (handleFormData.value.custom_style && Object.keys(handleFormData.value.custom_style).length > 0) {
+      submitData.custom_style = handleFormData.value.custom_style
+    }
+    
+    const response = await actionApi.createNodeHandle(submitData)
+    
+    if (response.code === 0) {
+      ElMessage.success('新增节点接口成功')
+      handleDialogVisible.value = false
+      await fetchHandleList()
+    } else {
+      ElMessage.error(`新增节点接口失败: ${response.message}`)
+    }
+  } catch (error) {
+    ElMessage.error(`新增节点接口失败: ${error.message}`)
+  } finally {
+    handleSubmitting.value = false
+  }
+}
+
+const handleViewHandle = (handle) => {
+  ElMessage.info(`查看接口: ${handle.handle_name}`)
+}
+
+const handleEditHandle = (handle) => {
+  ElMessage.info(`编辑接口: ${handle.handle_name}`)
+}
+
+const handleDeleteHandle = (handle) => {
+  ElMessage.info(`删除接口: ${handle.handle_name}`)
+}
+
+watch(activeTab, (newTab) => {
+  if (newTab === 'nodeHandles') {
+    fetchHandleList()
+  } else if (newTab === 'baseComponents') {
+    fetchComponentList()
+  }
+})
+
 onMounted(() => {
   fetchNodeList()
-  fetchComponentList()
+  if (activeTab.value === 'baseComponents') {
+    fetchComponentList()
+  } else if (activeTab.value === 'nodeHandles') {
+    fetchHandleList()
+  }
 })
 </script>

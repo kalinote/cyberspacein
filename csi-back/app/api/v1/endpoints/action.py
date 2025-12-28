@@ -493,9 +493,13 @@ async def report_action_node_heartbeat(node_instance_id: str, data: Dict[str, An
 #endregion
 
 #region 节点配置相关接口
-@router.get("/configs/handles", response_model=ApiResponse[List[ActionNodesHandleConfigResponse]], summary="获取节点配置handle列表")
-async def get_node_configs_handles():
-    handles = await ActionNodesHandleConfigModel.find_all().to_list()
+@router.get("/configs/handles", response_model=PageResponse[ActionNodesHandleConfigResponse], summary="获取节点配置handle列表")
+async def get_node_configs_handles(
+    params: PageParams = Depends()
+):
+    skip = (params.page - 1) * params.page_size
+    total = await ActionNodesHandleConfigModel.find_all().count()
+    handles = await ActionNodesHandleConfigModel.find_all().skip(skip).limit(params.page_size).to_list()
     results = []
     for handle in handles:
         results.append(ActionNodesHandleConfigResponse(
@@ -506,7 +510,7 @@ async def get_node_configs_handles():
             color=handle.color,
             custom_style=unpack_dict(handle.custom_style)
         ))
-    return ApiResponse.success(data=results)
+    return PageResponse.create(results, total, params.page, params.page_size)
 
 @router.post("/configs/handles", response_model=ApiResponse[ActionNodesHandleConfigResponse], summary="创建节点配置handle")
 async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
