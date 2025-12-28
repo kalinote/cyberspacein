@@ -18,6 +18,7 @@ class ActionFlowStatusEnum(str, Enum):
     """
     行动实例化流程状态枚举
     """
+    UNKNOWN = "unknown"
     UNREADY = "unready"
     READY = "ready"
     RUNNING = "running"
@@ -31,6 +32,7 @@ class ActionInstanceNodeStatusEnum(str, Enum):
     """
     行动实例节点状态枚举
     """
+    UNKNOWN = "unknown"
     UNREADY = "unready"
     READY = "ready"
     RUNNING = "running"
@@ -39,3 +41,11 @@ class ActionInstanceNodeStatusEnum(str, Enum):
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
     PAUSED = "paused"
+    
+class ActionConfigIOTypeEnum(str, Enum):
+    """
+    节点配置输入输出数据类型枚举
+    """
+    VALUE = "value"
+    REFERENCE = "reference"
+    

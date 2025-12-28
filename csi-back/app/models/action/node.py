@@ -51,6 +51,7 @@ class ActionNodeModel(Document):
     related_components: list[str]
     command: str
     command_args: list[str]
+    is_deleted: bool = Field(default=False, description="是否已删除")
     
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     updated_at: datetime = Field(default_factory=lambda: datetime.now())

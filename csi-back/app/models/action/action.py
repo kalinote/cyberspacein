@@ -1,6 +1,6 @@
 from datetime import datetime
 from beanie import Document
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from app.schemas.enum import ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 from app.schemas.general import DictModel
@@ -11,6 +11,7 @@ class ActionInstanceModel(Document):
     """
     id: str = Field(alias="_id")
     blueprint_id: str = Field(description="蓝图ID")
+    is_deleted: bool = Field(default=False, description="是否已删除")
 
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")
@@ -37,15 +38,17 @@ class ActionInstanceNodeModel(Document):
     TODO: 尚不完善
     """
     id: str = Field(alias="_id")
-    action_id: str
-    node_id: str
-    status: ActionInstanceNodeStatusEnum
+    action_id: str = Field(description="行动ID")
+    node_id: str = Field(description="节点ID")
+    definition_id: str = Field(description="行动节点定义ID")
+    status: ActionInstanceNodeStatusEnum = Field(default=ActionInstanceNodeStatusEnum.UNREADY, description="节点状态")
     
     start_at: datetime | None = Field(default=None, description="节点执行开始时间")
     finished_at: datetime | None = Field(default=None, description="节点执行结束时间")
     duration: int = Field(default=0, description="节点执行时长(秒)")
     
     progress: int = Field(default=0, description="节点执行进度(%)")
+    configs: list[DictModel] = Field(default_factory=list, description="节点配置")
     
     class Settings:
         name = "action_instance_nodes"

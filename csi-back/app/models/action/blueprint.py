@@ -73,6 +73,7 @@ class ActionBlueprintModel(Document):
     implementation_period: int
     resource: dict[str, Any] | None = None
     graph: GraphModel
+    is_deleted: bool = Field(default=False, description="是否已删除")
     
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     updated_at: datetime = Field(default_factory=lambda: datetime.now())

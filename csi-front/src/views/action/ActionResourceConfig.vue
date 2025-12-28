@@ -45,24 +45,52 @@
         <div class="p-4">
           <h3 class="text-sm font-semibold text-gray-500 uppercase mb-3">资源类型</h3>
           <div class="space-y-1">
-            <div
-              v-for="tab in resourceTabs"
-              :key="tab.key"
-              class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
-              :class="activeTab === tab.key 
-                ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200' 
-                : 'text-gray-600 hover:bg-gray-50'"
-              @click="activeTab = tab.key"
-            >
-              <Icon :icon="tab.icon" class="text-xl" />
-              <span>{{ tab.label }}</span>
-              <span 
-                class="ml-auto text-xs px-2 py-0.5 rounded-full"
-                :class="activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+            <template v-for="tab in resourceTabs" :key="tab.key">
+              <div
+                class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
+                :class="activeTab === tab.key 
+                  ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200' 
+                  : 'text-gray-600 hover:bg-gray-50'"
+                @click="activeTab = tab.key"
               >
-                {{ getResourceCount(tab.key) }}
-              </span>
-            </div>
+                <Icon 
+                  v-if="tab.children && tab.children.length > 0"
+                  :icon="expandedTabs.has(tab.key) ? 'mdi:chevron-down' : 'mdi:chevron-right'"
+                  class="text-sm cursor-pointer shrink-0"
+                  @click.stop="toggleExpand(tab.key)"
+                />
+                <span v-else class="w-5"></span>
+                <Icon :icon="tab.icon" class="text-xl shrink-0" />
+                <span>{{ tab.label }}</span>
+                <span 
+                  class="ml-auto text-xs px-2 py-0.5 rounded-full"
+                  :class="activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+                >
+                  {{ getResourceCount(tab.key) }}
+                </span>
+              </div>
+              <div v-if="tab.children && tab.children.length > 0 && expandedTabs.has(tab.key)" class="ml-4 space-y-1">
+                <div
+                  v-for="child in tab.children"
+                  :key="child.key"
+                  class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
+                  :class="activeTab === child.key 
+                    ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200' 
+                    : 'text-gray-600 hover:bg-gray-50'"
+                  @click="activeTab = child.key"
+                >
+                  <span class="w-5"></span>
+                  <Icon :icon="child.icon" class="text-xl shrink-0" />
+                  <span>{{ child.label }}</span>
+                  <span 
+                    class="ml-auto text-xs px-2 py-0.5 rounded-full"
+                    :class="activeTab === child.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+                  >
+                    {{ getResourceCount(child.key) }}
+                  </span>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -553,6 +581,7 @@ import { SOCKET_TYPE_CONFIGS, INPUT_TYPES, formatDateTime } from '@/utils/action
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
 const loading = ref(false)
+const expandedTabs = ref(new Set(['nodes']))
 
 const dialogVisible = ref(false)
 const formRef = ref(null)
@@ -568,8 +597,9 @@ const pagination = ref({
 })
 
 const resourceTabs = [
-  { key: 'nodes', label: '行动节点', icon: 'mdi:chart-tree' },
-  { key: 'baseComponents', label: '基础组件', icon: 'mdi:cog' },
+  { key: 'nodes', label: '行动节点', icon: 'mdi:chart-tree', children: [
+    { key: 'baseComponents', label: '基础组件', icon: 'mdi:cog' }
+  ]},
   { key: 'proxy', label: '代理网络', icon: 'mdi:server-network' },
   { key: 'accounts', label: '采集账号', icon: 'mdi:account-key' },
   { key: 'containers', label: '沙盒容器', icon: 'mdi:cube-outline' }
@@ -693,13 +723,41 @@ const filteredComponentList = computed(() => {
 })
 
 const getCurrentTabIcon = () => {
-  const tab = resourceTabs.find(t => t.key === activeTab.value)
-  return tab?.icon || 'mdi:help'
+  for (const tab of resourceTabs) {
+    if (tab.key === activeTab.value) {
+      return tab.icon || 'mdi:help'
+    }
+    if (tab.children) {
+      const child = tab.children.find(c => c.key === activeTab.value)
+      if (child) {
+        return child.icon || 'mdi:help'
+      }
+    }
+  }
+  return 'mdi:help'
 }
 
 const getCurrentTabLabel = () => {
-  const tab = resourceTabs.find(t => t.key === activeTab.value)
-  return tab?.label || ''
+  for (const tab of resourceTabs) {
+    if (tab.key === activeTab.value) {
+      return tab.label || ''
+    }
+    if (tab.children) {
+      const child = tab.children.find(c => c.key === activeTab.value)
+      if (child) {
+        return child.label || ''
+      }
+    }
+  }
+  return ''
+}
+
+const toggleExpand = (tabKey) => {
+  if (expandedTabs.value.has(tabKey)) {
+    expandedTabs.value.delete(tabKey)
+  } else {
+    expandedTabs.value.add(tabKey)
+  }
 }
 
 const getResourceCount = (tabKey) => {

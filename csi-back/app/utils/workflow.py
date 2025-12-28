@@ -1,6 +1,8 @@
 from collections import defaultdict
 
-from app.models.action.blueprint import ActionBlueprintModel, GraphNodeModel
+from app.models.action.blueprint import ActionBlueprintModel, GraphNodeModel, GraphModel
+from app.schemas.action.blueprint import Graph, GraphNode, GraphEdge, Position, NodeData, Viewport
+from app.utils.dict_helper import unpack_dict
 
 
 def find_start_nodes(action_blueprint: ActionBlueprintModel) -> list[GraphNodeModel]:
@@ -75,3 +77,53 @@ def count_workflow_paths(action_blueprint: ActionBlueprintModel) -> int:
         total_count += path_count
 
     return total_count
+
+
+def graph_model2schemas(graph_model: GraphModel) -> Graph:
+    """将 GraphModel 转换为 Graph schema"""
+    nodes = []
+    for node_model in graph_model.nodes:
+        form_data = unpack_dict(node_model.data.form_data) or {}
+        node_data = NodeData(
+            definition_id=node_model.data.definition_id,
+            version=node_model.data.version,
+            form_data=form_data
+        )
+        
+        position = Position(
+            x=node_model.position.x,
+            y=node_model.position.y
+        )
+        
+        node = GraphNode(
+            id=node_model.id,
+            type=node_model.type,
+            position=position,
+            data=node_data
+        )
+        nodes.append(node)
+    
+    edges = []
+    for edge_model in graph_model.edges:
+        edge = GraphEdge(
+            id=edge_model.id,
+            source=edge_model.source,
+            sourceHandle=edge_model.sourceHandle,
+            target=edge_model.target,
+            targetHandle=edge_model.targetHandle
+        )
+        edges.append(edge)
+    
+    viewport = Viewport(
+        x=graph_model.viewport.x,
+        y=graph_model.viewport.y,
+        zoom=graph_model.viewport.zoom
+    )
+    
+    graph = Graph(
+        nodes=nodes,
+        edges=edges,
+        viewport=viewport
+    )
+    
+    return graph

@@ -16,10 +16,10 @@
         <div class="flex-1 flex overflow-hidden">
             <!-- 流程图区域 -->
             <div class="flex-1 h-full relative bg-gray-50">
-                <div v-if="loadingNodeConfigs" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
+                <div v-if="loadingNodeConfigs || loadingActionData" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
                     <div class="text-center">
                         <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin mb-2" />
-                        <p class="text-gray-600">加载节点配置中...</p>
+                        <p class="text-gray-600">{{ loadingNodeConfigs ? '加载节点配置中...' : '加载行动数据中...' }}</p>
                     </div>
                 </div>
                 <VueFlow 
@@ -38,7 +38,7 @@
                     <Background pattern-color="#aaa" :gap="18" />
                     <Controls />
                 </VueFlow>
-                <div v-if="elements.length === 0 && !loadingNodeConfigs" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
+                <div v-if="elements.length === 0 && !loadingNodeConfigs && !loadingActionData" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
                     <div class="text-center text-gray-400">
                         <Icon icon="mdi:graph-outline" class="text-6xl mb-4" />
                         <p>暂无节点数据</p>
@@ -68,12 +68,8 @@
                                 <p class="text-sm text-gray-700 mt-1">{{ actionData.description || '无' }}</p>
                             </div>
                             <div>
-                                <label class="text-xs text-gray-500">创建时间</label>
-                                <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.createTime, { includeSecond: true }) }}</p>
-                            </div>
-                            <div>
                                 <label class="text-xs text-gray-500">执行期限</label>
-                                <p class="text-sm text-gray-700 mt-1">{{ formatDuration(actionData.implementation_period) }}</p>
+                                <p class="text-sm text-gray-700 mt-1">{{ formatDuration(actionData.implementationPeriod) }}</p>
                             </div>
                         </div>
                     </div>
@@ -112,10 +108,25 @@
                                 <label class="text-xs text-gray-500">结束时间</label>
                                 <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(actionData.endTime, { includeSecond: true }) }}</p>
                             </div>
-                            <div v-if="actionData.current_executing_node">
+                            <div v-if="actionData.duration">
+                                <label class="text-xs text-gray-500">执行时间</label>
+                                <p class="text-sm text-gray-700 mt-1">{{ formatDuration(actionData.duration) }}</p>
+                            </div>
+                            <div v-if="executingNodes.length > 0">
                                 <label class="text-xs text-gray-500">当前执行节点</label>
-                                <p class="text-sm text-blue-600 mt-1 cursor-pointer hover:text-blue-800" @click="scrollToNode(actionData.current_executing_node)">
-                                    {{ getNodeName(actionData.current_executing_node) }}
+                                <p class="text-sm mt-1">
+                                    <span
+                                        v-for="(nodeId, index) in executingNodes"
+                                        :key="nodeId"
+                                    >
+                                        <span
+                                            class="text-blue-600 cursor-pointer hover:text-blue-800"
+                                            @click="scrollToNode(nodeId)"
+                                        >
+                                            {{ getNodeName(nodeId) }}
+                                        </span>
+                                        <span v-if="index < executingNodes.length - 1">, </span>
+                                    </span>
                                 </p>
                             </div>
                         </div>
@@ -160,7 +171,7 @@
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="text-xs text-gray-500">节点名称</label>
-                                    <p class="text-sm font-medium text-gray-900 mt-1">{{ selectedNodeDetail.name }}</p>
+                                    <p class="text-sm font-medium text-gray-900 mt-1">{{ getNodeName(selectedNodeId) }}</p>
                                 </div>
                                 <div>
                                     <label class="text-xs text-gray-500">执行状态</label>
@@ -182,7 +193,7 @@
                         </div>
 
                         <!-- 执行结果 -->
-                        <div v-if="selectedNodeDetail.result || selectedNodeDetail.errorMessage">
+                        <div v-if="selectedNodeDetail.finished || selectedNodeDetail.errorMessage">
                             <h4 class="text-sm font-semibold text-gray-800 mb-3">执行结果</h4>
                             <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                 <div v-if="selectedNodeDetail.errorMessage" class="text-sm text-red-600">
@@ -190,40 +201,55 @@
                                     <span class="font-medium">错误信息：</span>
                                     <p class="mt-1 whitespace-pre-wrap">{{ selectedNodeDetail.errorMessage }}</p>
                                 </div>
-                                <div v-else-if="selectedNodeDetail.result" class="text-sm text-green-600">
+                                <div v-else-if="selectedNodeDetail.finished" class="text-sm text-green-600">
                                     <Icon icon="mdi:check-circle" class="inline mr-2" />
                                     <span class="font-medium">执行成功</span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- 输入参数 -->
-                        <div>
+                        <!-- 配置参数 -->
+                        <div v-if="selectedNodeConfigs">
                             <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between">
-                                <span>输入参数</span>
-                                <el-button type="primary" link size="small" @click="toggleInputParamsCollapsed">
+                                <span>配置参数</span>
+                                <el-button type="primary" link size="small" @click="toggleConfigsCollapsed">
                                     <template #icon>
-                                        <Icon :icon="inputParamsCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
+                                        <Icon :icon="configsCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
                                     </template>
                                 </el-button>
                             </h4>
-                            <div v-show="!inputParamsCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <pre class="text-xs text-gray-700 overflow-x-auto">{{ formatJSON(selectedNodeDetail.inputParams) }}</pre>
+                            <div v-show="!configsCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                <pre class="text-xs overflow-x-auto"><code class="language-json" v-html="highlightJSON(selectedNodeConfigs)"></code></pre>
+                            </div>
+                        </div>
+
+                        <!-- 输入数据 -->
+                        <div v-if="selectedNodeDetail.inputs">
+                            <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between">
+                                <span>输入数据</span>
+                                <el-button type="primary" link size="small" @click="toggleInputsCollapsed">
+                                    <template #icon>
+                                        <Icon :icon="inputsCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
+                                    </template>
+                                </el-button>
+                            </h4>
+                            <div v-show="!inputsCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                <pre class="text-xs overflow-x-auto"><code class="language-json" v-html="highlightJSON(selectedNodeDetail.inputs)"></code></pre>
                             </div>
                         </div>
 
                         <!-- 输出数据 -->
-                        <div v-if="selectedNodeDetail.outputData">
+                        <div v-if="selectedNodeDetail.outputs">
                             <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between">
                                 <span>输出数据</span>
-                                <el-button type="primary" link size="small" @click="toggleOutputDataCollapsed">
+                                <el-button type="primary" link size="small" @click="toggleoutputsCollapsed">
                                     <template #icon>
-                                        <Icon :icon="outputDataCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
+                                        <Icon :icon="outputsCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
                                     </template>
                                 </el-button>
                             </h4>
-                            <div v-show="!outputDataCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <pre class="text-xs text-gray-700 overflow-x-auto">{{ formatJSON(selectedNodeDetail.outputData) }}</pre>
+                            <div v-show="!outputsCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                <pre class="text-xs overflow-x-auto"><code class="language-json" v-html="highlightJSON(selectedNodeDetail.outputs)"></code></pre>
                             </div>
                         </div>
 
@@ -231,23 +257,29 @@
                         <div>
                             <h4 class="text-sm font-semibold text-gray-800 mb-3">执行日志</h4>
                             <div class="bg-gray-50 rounded-lg border border-gray-200 max-h-48 overflow-y-auto">
-                                <div 
-                                    v-for="(log, index) in selectedNodeDetail.logs" 
-                                    :key="index"
-                                    class="px-4 py-2 border-b border-gray-200 last:border-b-0"
-                                    :class="getLogLevelClass(log.level)"
-                                >
-                                    <div class="flex items-start gap-2">
-                                        <span class="text-xs text-gray-500 shrink-0">{{ formatLogTime(log.timestamp) }}</span>
-                                        <span class="text-xs font-medium shrink-0" :class="getLogLevelTextClass(log.level)">
-                                            [{{ log.level.toUpperCase() }}]
-                                        </span>
-                                        <span class="text-xs text-gray-700 flex-1">{{ log.message }}</span>
+                                <div v-if="isLoadingNodeLogs" class="px-4 py-8 text-center text-sm text-gray-400">
+                                    <Icon icon="mdi:loading" class="text-2xl text-blue-500 animate-spin mb-2" />
+                                    <p>加载日志中...</p>
+                                </div>
+                                <template v-else>
+                                    <div 
+                                        v-for="(log, index) in selectedNodeLogs" 
+                                        :key="index"
+                                        class="px-4 py-2 border-b border-gray-200 last:border-b-0"
+                                        :class="getLogLevelClass(log.level)"
+                                    >
+                                        <div class="flex items-start gap-2">
+                                            <span class="text-xs text-gray-500 shrink-0">{{ formatLogTime(log.timestamp) }}</span>
+                                            <span class="text-xs font-medium shrink-0" :class="getLogLevelTextClass(log.level)">
+                                                [{{ log.level.toUpperCase() }}]
+                                            </span>
+                                            <span class="text-xs text-gray-700 flex-1">{{ log.message }}</span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div v-if="!selectedNodeDetail.logs || selectedNodeDetail.logs.length === 0" class="px-4 py-8 text-center text-sm text-gray-400">
-                                    暂无日志
-                                </div>
+                                    <div v-if="!selectedNodeLogs || selectedNodeLogs.length === 0" class="px-4 py-8 text-center text-sm text-gray-400">
+                                        暂无日志
+                                    </div>
+                                </template>
                             </div>
                         </div>
                     </div>
@@ -274,13 +306,18 @@ import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
+import hljs from 'highlight.js/lib/core'
+import json from 'highlight.js/lib/languages/json'
+import 'highlight.js/styles/github.css'
+
+hljs.registerLanguage('json', json)
+
 import {
   SOCKET_TYPE_CONFIGS,
   normalizeDefaultValue,
   getDefaultData,
   formatDateTime,
   formatDuration,
-  formatJSON,
   formatLogTime,
   getStatusText,
   getStatusTagType,
@@ -297,6 +334,7 @@ const actionId = computed(() => route.params.id)
 
 const nodeTypeConfigs = ref([])
 const loadingNodeConfigs = ref(false)
+const loadingActionData = ref(false)
 
 const fetchNodeConfigs = async () => {
     loadingNodeConfigs.value = true
@@ -331,8 +369,6 @@ const fetchNodeConfigs = async () => {
         loadingNodeConfigs.value = false
     }
 }
-
-const socketTypeConfigs = SOCKET_TYPE_CONFIGS
 
 const StatusAwareNode = {
     components: { GenericNode },
@@ -387,7 +423,7 @@ const nodeTypes = computed(() => {
 })
 
 const elements = ref([])
-const { setViewport, getNodes, fitView } = useVueFlow()
+const { setViewport, getNodes, fitView, getViewport } = useVueFlow()
 
 const actionData = ref({
     id: '',
@@ -395,25 +431,27 @@ const actionData = ref({
     description: '',
     status: 'pending',
     progress: 0,
-    createTime: null,
     startTime: null,
     endTime: null,
-    implementation_period: 3600,
+    implementationPeriod: 3600,
     resource: {},
-    current_executing_node: null,
     graph: {
         nodes: [],
         edges: [],
         viewport: { x: 0, y: 0, zoom: 1 }
     },
-    node_execution_status: {},
     node_details: {}
 })
 
 const selectedNodeId = ref(null)
 const nodeDetailCollapsed = ref(false)
-const inputParamsCollapsed = ref(false)
-const outputDataCollapsed = ref(false)
+const configsCollapsed = ref(false)
+const inputsCollapsed = ref(false)
+const outputsCollapsed = ref(false)
+
+const nodeLogs = ref({})
+const loadingNodeLogs = ref({})
+const loadedNodeLogs = ref(new Set())
 
 const nodeDetailExpanded = computed(() => {
     return selectedNodeId.value !== null && !nodeDetailCollapsed.value
@@ -422,6 +460,28 @@ const nodeDetailExpanded = computed(() => {
 const selectedNodeDetail = computed(() => {
     if (!selectedNodeId.value) return null
     return actionData.value.node_details[selectedNodeId.value] || null
+})
+
+const selectedNodeConfigs = computed(() => {
+    if (!selectedNodeId.value || !actionData.value.graph?.nodes) return null
+    const node = actionData.value.graph.nodes.find(n => n.id === selectedNodeId.value)
+    return node?.data?.form_data || null
+})
+
+const selectedNodeLogs = computed(() => {
+    if (!selectedNodeId.value) return []
+    return nodeLogs.value[selectedNodeId.value] || []
+})
+
+const isLoadingNodeLogs = computed(() => {
+    if (!selectedNodeId.value) return false
+    return loadingNodeLogs.value[selectedNodeId.value] || false
+})
+
+const executingNodes = computed(() => {
+    if (!actionData.value.node_details) return []
+    return Object.keys(actionData.value.node_details)
+        .filter(nodeId => actionData.value.node_details[nodeId]?.status === 'running')
 })
 
 const rightSidebarWidth = ref(400)
@@ -457,10 +517,52 @@ const stopRightResize = () => {
     window.removeEventListener('mouseup', stopRightResize)
 }
 
+const fetchNodeLogs = async (nodeId) => {
+    if (loadedNodeLogs.value.has(nodeId)) {
+        return
+    }
+    
+    loadingNodeLogs.value[nodeId] = true
+    
+    try {
+        // TODO: 后续将通过 API 接口获取节点日志
+        // const response = await actionApi.getNodeLogs(actionId.value, nodeId)
+        // if (response.code === 0) {
+        //     nodeLogs.value[nodeId] = response.data || []
+        // }
+        
+        // 生成模拟日志数据
+        const startTime = actionData.value.node_details[nodeId]?.startTime 
+            ? new Date(actionData.value.node_details[nodeId].startTime) 
+            : new Date()
+        
+        const mockLogs = []
+        
+        mockLogs.push(
+                { timestamp: new Date(startTime.getTime() + 0 * 1000).toISOString(), level: 'info', message: '这是一条普通日志' },
+                { timestamp: new Date(startTime.getTime() + 1 * 1000).toISOString(), level: 'warning', message: '这是一条警告日志' },
+                { timestamp: new Date(startTime.getTime() + 2 * 1000).toISOString(), level: 'error', message: '这是一条错误日志' },
+                { timestamp: new Date(startTime.getTime() + 3 * 1000).toISOString(), level: 'debug', message: '这是一条调试输出' }
+            )
+        
+        nodeLogs.value[nodeId] = mockLogs
+        loadedNodeLogs.value.add(nodeId)
+    } catch (error) {
+        console.error('获取节点日志失败:', error)
+        nodeLogs.value[nodeId] = []
+    } finally {
+        loadingNodeLogs.value[nodeId] = false
+    }
+}
+
 const handleNodeClick = (event) => {
     const nodeId = event.node.id
     selectedNodeId.value = nodeId
     nodeDetailCollapsed.value = false
+    
+    if (!loadedNodeLogs.value.has(nodeId)) {
+        fetchNodeLogs(nodeId)
+    }
 }
 
 const handlePaneClick = () => {
@@ -471,12 +573,16 @@ const collapseNodeDetail = () => {
     nodeDetailCollapsed.value = !nodeDetailCollapsed.value
 }
 
-const toggleInputParamsCollapsed = () => {
-    inputParamsCollapsed.value = !inputParamsCollapsed.value
+const toggleConfigsCollapsed = () => {
+    configsCollapsed.value = !configsCollapsed.value
 }
 
-const toggleOutputDataCollapsed = () => {
-    outputDataCollapsed.value = !outputDataCollapsed.value
+const toggleInputsCollapsed = () => {
+    inputsCollapsed.value = !inputsCollapsed.value
+}
+
+const toggleoutputsCollapsed = () => {
+    outputsCollapsed.value = !outputsCollapsed.value
 }
 
 const scrollToNode = (nodeId) => {
@@ -489,177 +595,72 @@ const scrollToNode = (nodeId) => {
 }
 
 const getNodeName = (nodeId) => {
-    const detail = actionData.value.node_details[nodeId]
-    if (detail?.name) return detail.name
     const node = elements.value.find(el => el.id === nodeId && !el.source)
     return node?.data?.config?.name || nodeId
 }
 
+const highlightJSON = (obj) => {
+    if (!obj) return '无'
+    try {
+        const jsonString = JSON.stringify(obj, null, 2)
+        const highlighted = hljs.highlight(jsonString, { language: 'json' })
+        return highlighted.value
+    } catch {
+        return String(obj)
+    }
+}
 
-const loadActionData = () => {
+
+const loadActionData = async () => {
     if (nodeTypeConfigs.value.length === 0) {
         return
     }
     
-    const mockData = {
-        id: actionId.value,
-        name: '测试行动的标题',
-        description: '测试行动的详细信息，这是一个用于测试的行动描述。',
-        status: 'running',
-        progress: 45,
-        createTime: '2024-01-20T10:00:00Z',
-        startTime: '2024-01-20T10:05:00Z',
-        endTime: null,
-        implementation_period: 3600,
-        resource: {},
-        current_executing_node: 'node-1766409613714',
-        graph: {
-            nodes: [
-                {
-                    id: 'node-1766409613714',
-                    type: 'crawler',
-                    position: { x: 776.0293153124745, y: 248.393213519107 },
-                    data: {
-                        definition_id: '4215c71cb06428eaed6ea8c0e2bb8c51',
-                        version: '1.0.0',
-                        form_data: { page: 2 }
-                    }
-                },
-                {
-                    id: 'node-1766409614971',
-                    type: 'construct',
-                    position: { x: 377.5024829894806, y: 130.68347764321777 },
-                    data: {
-                        definition_id: 'cb2e84f0531879570d4127bdaa79bc3d',
-                        version: '1.0.0',
-                        form_data: {
-                            keywords: ['原神', '明日方舟']
-                        }
-                    }
-                },
-                {
-                    id: 'node-1766409619604',
-                    type: 'construct',
-                    position: { x: 384.0443109513752, y: 346.47903965632696 },
-                    data: {
-                        definition_id: 'a39ba2f46e678df78ffc63321f79d371',
-                        version: '1.0.0',
-                        form_data: {
-                            platforms: ['bilibili', '微博']
-                        }
-                    }
-                }
-            ],
-            edges: [
-                {
-                    id: 'vueflow__edge-node-1766409619604c5c840162ee803f90173ef3880dba422-node-1766409613714f79b7a7211a9c06ed8e31badc8a723be',
-                    source: 'node-1766409619604',
-                    sourceHandle: 'c5c840162ee803f90173ef3880dba422',
-                    target: 'node-1766409613714',
-                    targetHandle: 'f79b7a7211a9c06ed8e31badc8a723be'
-                },
-                {
-                    id: 'vueflow__edge-node-17664096149714c125fe2b716968454ccfb65759108f5-node-17664096137143d35d9a35af9b9dda3633be10783001d',
-                    source: 'node-1766409614971',
-                    sourceHandle: '4c125fe2b716968454ccfb65759108f5',
-                    target: 'node-1766409613714',
-                    targetHandle: '3d35d9a35af9b9dda3633be10783001d'
-                }
-            ],
-            viewport: {
-                x: -405.66799728486785,
-                y: 18.0875452553704,
-                zoom: 1.7411011265922482
-            }
-        },
-        node_execution_status: {
-            'node-1766409613714': {
-                status: 'running',
-                progress: 65,
-                startTime: '2024-01-20T10:05:00Z',
-                endTime: null
-            },
-            'node-1766409614971': {
-                status: 'completed',
-                progress: 100,
-                startTime: '2024-01-20T10:05:00Z',
-                endTime: '2024-01-20T10:15:00Z'
-            },
-            'node-1766409619604': {
-                status: 'completed',
-                progress: 100,
-                startTime: '2024-01-20T10:05:00Z',
-                endTime: '2024-01-20T10:12:00Z'
-            }
-        },
-        node_details: {
-            'node-1766409613714': {
-                name: '爬虫节点',       // TODO: 节点没有名称数据，使用界面标题
-                status: 'running',
-                startTime: '2024-01-20T10:05:00Z',
-                endTime: null,
-                result: null,
-                inputParams: {
-                    page: 2,
-                    platforms: ['bilibili', '微博'],
-                    keywords: ['原神', '明日方舟']
-                },
-                outputData: null,
-                errorMessage: null,
-                logs: [
-                    // TODO: 日志应该通过专门的接口获取
-                    { timestamp: '2024-01-20T10:05:00Z', level: 'info', message: '开始执行爬虫任务...' },
-                    { timestamp: '2024-01-20T10:05:05Z', level: 'info', message: '连接到目标平台...' },
-                    { timestamp: '2024-01-20T10:05:10Z', level: 'info', message: '正在获取数据，进度 30%...' },
-                    { timestamp: '2024-01-20T10:05:15Z', level: 'info', message: '正在获取数据，进度 65%...' }
-                ]
-            },
-            'node-1766409614971': {
-                name: '关键词构建节点',
-                status: 'completed',
-                startTime: '2024-01-20T10:05:00Z',
-                endTime: '2024-01-20T10:15:00Z',
-                result: 'success',
-                inputParams: {
-                    keywords: ['原神', '明日方舟']
-                },
-                outputData: {
-                    processed_keywords: ['原神', '明日方舟', 'Genshin Impact', 'Arknights'],
-                    count: 4
-                },
-                errorMessage: null,
-                logs: [
-                    { timestamp: '2024-01-20T10:05:00Z', level: 'info', message: '开始处理关键词...' },
-                    { timestamp: '2024-01-20T10:05:05Z', level: 'info', message: '扩展关键词列表...' },
-                    { timestamp: '2024-01-20T10:15:00Z', level: 'info', message: '关键词处理完成，共生成 4 个关键词' }
-                ]
-            },
-            'node-1766409619604': {
-                name: '平台构建节点',
-                status: 'completed',
-                startTime: '2024-01-20T10:05:00Z',
-                endTime: '2024-01-20T10:12:00Z',
-                result: 'success',
-                inputParams: {
-                    platforms: ['bilibili', '微博']
-                },
-                outputData: {
-                    platform_configs: {
-                        'bilibili': { enabled: true, api_key: '***' },
-                        '微博': { enabled: true, api_key: '***' }
-                    }
-                },
-                errorMessage: null,
-                logs: [
-                    { timestamp: '2024-01-20T10:05:00Z', level: 'info', message: '开始配置平台...' },
-                    { timestamp: '2024-01-20T10:10:00Z', level: 'info', message: '平台配置完成' },
-                    { timestamp: '2024-01-20T10:12:00Z', level: 'info', message: '所有平台已就绪' }
-                ]
-            }
+    loadingActionData.value = true
+    try {
+        const response = await actionApi.getActionDetail(actionId.value)
+        if (response.code !== 0) {
+            ElMessage.error(`获取行动详情失败: ${response.message || '未知错误'}`)
+            return
         }
-    }
-    
-    actionData.value = mockData
+        
+        const apiData = response.data
+        if (!apiData) {
+            ElMessage.error('获取行动详情失败: 数据为空')
+            return
+        }
+        
+        const transformedData = {
+            id: apiData.id,
+            name: apiData.name || '',
+            description: apiData.description || '',
+            status: apiData.status || 'pending',
+            duration: apiData.duration || 0,
+            progress: apiData.progress || 0,
+            startTime: apiData.start_at || null,
+            endTime: apiData.finished_at || null,
+            implementationPeriod: apiData.implementation_period || 3600,
+            resource: apiData.resource || {},
+            graph: apiData.graph || {
+                nodes: [],
+                edges: [],
+                viewport: { x: 0, y: 0, zoom: 1 }
+            },
+            node_details: Object.fromEntries(
+                Object.entries(apiData.node_details || {}).map(([nodeId, detail]) => [
+                    nodeId,
+                    {
+                        ...detail,
+                        startTime: detail.start_at || null,
+                        endTime: detail.finished_at || null,
+                        errorMessage: detail.error_message || null,
+                        finished: detail.status === 'completed' || detail.status === 'failed'
+                    }
+                ])
+            )
+        }
+        
+        actionData.value = transformedData
     
     const findNodeConfigByFormData = (formData, nodeType) => {
         if (!formData || !nodeTypeConfigs.value.length) return null
@@ -687,7 +688,7 @@ const loadActionData = () => {
         return maxMatchCount > 0 ? bestMatch : null
     }
     
-    const processedNodes = mockData.graph.nodes.map(node => {
+    const processedNodes = transformedData.graph.nodes.map(node => {
         let config = null
         
         if (node.data?.definition_id) {
@@ -715,8 +716,18 @@ const loadActionData = () => {
             config = fallbackConfig
         }
         
-        const nodeData = getDefaultData(config, socketTypeConfigs)
-        nodeData.executionStatus = mockData.node_execution_status[node.id] || null
+        const nodeData = getDefaultData(config, SOCKET_TYPE_CONFIGS)
+        const nodeDetail = transformedData.node_details[node.id]
+        if (nodeDetail) {
+            nodeData.executionStatus = {
+                status: nodeDetail.status,
+                progress: nodeDetail.progress || 0,
+                startTime: nodeDetail.startTime,
+                endTime: nodeDetail.endTime
+            }
+        } else {
+            nodeData.executionStatus = null
+        }
         
         if (config.inputs) {
             config.inputs.forEach(input => {
@@ -736,7 +747,7 @@ const loadActionData = () => {
         }
     })
     
-    const processedEdges = mockData.graph.edges.map(edge => {
+    const processedEdges = transformedData.graph.edges.map(edge => {
         const sourceNode = processedNodes.find(n => n.id === edge.source)
         const targetNode = processedNodes.find(n => n.id === edge.target)
         
@@ -760,7 +771,7 @@ const loadActionData = () => {
             }
             
             if (sourceHandle) {
-                edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs)
+                edgeColor = getEdgeColor(sourceHandle.socket_type, SOCKET_TYPE_CONFIGS)
             }
         }
         
@@ -794,12 +805,70 @@ const loadActionData = () => {
     
     elements.value = [...processedNodes, ...processedEdges]
     
-    if (mockData.graph.viewport) {
-        setViewport(mockData.graph.viewport)
+    if (transformedData.graph.viewport) {
+        setViewport(transformedData.graph.viewport)
     } else {
         setTimeout(() => {
             fitView()
         }, 100)
+    }
+    } catch (error) {
+        console.error('获取行动详情失败:', error)
+        ElMessage.error('获取行动详情失败，请稍后重试')
+    } finally {
+        loadingActionData.value = false
+    }
+}
+
+const updateActionData = async () => {
+    if (nodeTypeConfigs.value.length === 0) {
+        return
+    }
+    
+    try {
+        const response = await actionApi.getActionDetail(actionId.value)
+        if (response.code !== 0) {
+            return
+        }
+        
+        const apiData = response.data
+        if (!apiData) {
+            return
+        }
+        
+        const transformedNodeDetails = Object.fromEntries(
+            Object.entries(apiData.node_details || {}).map(([nodeId, detail]) => [
+                nodeId,
+                {
+                    ...detail,
+                    startTime: detail.start_at || null,
+                    endTime: detail.finished_at || null,
+                    errorMessage: detail.error_message || null,
+                    finished: detail.status === 'completed' || detail.status === 'failed'
+                }
+            ])
+        )
+        
+        actionData.value.status = apiData.status || 'pending'
+        actionData.value.progress = apiData.progress || 0
+        actionData.value.duration = apiData.duration || 0
+        actionData.value.startTime = apiData.start_at || null
+        actionData.value.endTime = apiData.finished_at || null
+        actionData.value.node_details = transformedNodeDetails
+        
+        elements.value.forEach(el => {
+            if (el.id && !el.source && transformedNodeDetails[el.id] && el.data) {
+                const nodeDetail = transformedNodeDetails[el.id]
+                el.data.executionStatus = {
+                    status: nodeDetail.status,
+                    progress: nodeDetail.progress || 0,
+                    startTime: nodeDetail.startTime,
+                    endTime: nodeDetail.endTime
+                }
+            }
+        })
+    } catch (error) {
+        console.error('更新行动详情失败:', error)
     }
 }
 
@@ -808,33 +877,11 @@ let pollingInterval = null
 const startPolling = () => {
     if (pollingInterval) return
     
-    pollingInterval = setInterval(() => {
+    pollingInterval = setInterval(async () => {
         if (document.hidden) return
+        if (loadingActionData.value) return
         
-        const mockUpdate = {
-            progress: Math.min(actionData.value.progress + Math.random() * 2, 100),
-            node_execution_status: { ...actionData.value.node_execution_status }
-        }
-        
-        Object.keys(mockUpdate.node_execution_status).forEach(nodeId => {
-            const status = mockUpdate.node_execution_status[nodeId]
-            if (status.status === 'running') {
-                status.progress = Math.min(status.progress + Math.random() * 3, 100)
-                if (status.progress >= 100) {
-                    status.status = 'completed'
-                    status.endTime = new Date().toISOString()
-                }
-            }
-        })
-        
-        actionData.value.progress = mockUpdate.progress
-        actionData.value.node_execution_status = mockUpdate.node_execution_status
-        
-        elements.value.forEach(el => {
-            if (el.id && !el.source && mockUpdate.node_execution_status[el.id] && el.data) {
-                el.data.executionStatus = mockUpdate.node_execution_status[el.id]
-            }
-        })
+        await updateActionData()
     }, 5000)
 }
 
@@ -864,7 +911,7 @@ watch(selectedNodeId, (newId) => {
 onMounted(async () => {
     await fetchNodeConfigs()
     if (nodeTypeConfigs.value.length > 0) {
-        loadActionData()
+        await loadActionData()
         startPolling()
     } else {
         ElMessage.error('节点配置加载失败，请刷新页面重试')

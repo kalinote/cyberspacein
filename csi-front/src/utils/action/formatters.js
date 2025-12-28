@@ -26,14 +26,17 @@ export const formatDuration = (value, unit = 'seconds') => {
     ? Math.floor(value / 1000) 
     : Math.floor(value)
   
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const remainingSeconds = seconds % 60
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 86400 % 3600) / 60)
+  const remainingSeconds = seconds % 86400 % 3600 % 60
   
-  if (hours > 0) {
+  if (days > 0) {
+    return `${days}天${hours}小时${minutes}分钟`
+  } else if (hours > 0) {
     return `${hours}小时${minutes}分钟`
   } else if (minutes > 0) {
-    return `${minutes}分钟`
+    return `${minutes}分钟${remainingSeconds}秒`
   } else {
     return `${remainingSeconds}秒`
   }
@@ -49,14 +52,3 @@ export const formatLogTime = (timestamp) => {
     second: '2-digit'
   })
 }
-
-// 格式化 JSON 对象
-export const formatJSON = (obj) => {
-  if (!obj) return '无'
-  try {
-    return JSON.stringify(obj, null, 2)
-  } catch {
-    return String(obj)
-  }
-}
-

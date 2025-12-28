@@ -8,7 +8,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div class="lg:col-span-2">
             <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">行动</span>部署中心</h1>
-            <p class="text-gray-600 text-lg mb-6">统一管理情报收集行动，从资源调配、目标设定到行动执行的全流程控制平台。</p>
+            <p class="text-gray-600 text-lg mb-6">统一管理信息收集、处理、存储、分析行动，从资源调配、目标设定到行动执行的全流程控制平台。</p>
             <div class="flex flex-wrap gap-4">
               <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
                 <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
