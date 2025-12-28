@@ -695,8 +695,27 @@ export default {
       this.keywords.splice(index, 1)
     },
     
-    createActionFromBlueprint(blueprint) {
-      this.$message.success(`正在从蓝图"${blueprint.title}"创建行动...`)
+    async createActionFromBlueprint(blueprint) {
+      if (!blueprint || !blueprint.id) {
+        this.$message.error('蓝图ID不存在')
+        return
+      }
+
+      try {
+        const response = await actionApi.runAction({
+          blueprint_id: blueprint.id
+        })
+
+        if (response.code === 0 && response.data && response.data.action_id) {
+          this.$message.success('行动已创建并开始执行')
+          this.$router.push(`/action/${response.data.action_id}`)
+        } else {
+          this.$message.error(response.message || '创建行动失败')
+        }
+      } catch (error) {
+        console.error('创建行动失败:', error)
+        this.$message.error(error.message || '创建行动失败，请稍后重试')
+      }
     },
     
     createBranchVersion(blueprint) {

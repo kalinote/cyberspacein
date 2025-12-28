@@ -22,4 +22,7 @@ export const actionApi = {
   getActionHistory(params = {page: 1, page_size: 10}) {
     return request.get('/action/list', params)
   },
+  runAction(data) {
+    return request.post(`/action/start`, data)
+  },
 }

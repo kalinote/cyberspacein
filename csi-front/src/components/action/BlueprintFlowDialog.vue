@@ -3,7 +3,7 @@
         :center="false" :align-center="true" class="blueprint-flow-dialog">
         <template #default>
             <div class="flex flex-col" style="height: 80vh;">
-                <div v-if="loading" class="flex-1 flex items-center justify-center">
+                <div v-if="blueprintLoading" class="flex-1 flex items-center justify-center">
                     <div class="text-center">
                         <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin mb-2" />
                         <p class="text-gray-600">加载中...</p>
@@ -87,7 +87,7 @@ const dialogVisible = computed({
     set: (value) => emit('update:modelValue', value)
 })
 
-const loading = ref(false)
+const blueprintLoading = ref(false)
 const error = ref(null)
 const blueprintData = ref(null)
 const nodeTypeConfigs = ref([])
@@ -145,7 +145,11 @@ const fetchBlueprint = async () => {
         return
     }
 
-    loading.value = true
+    if (blueprintLoading.value) {
+        return
+    }
+
+    blueprintLoading.value = true
     error.value = null
 
     try {
@@ -166,7 +170,7 @@ const fetchBlueprint = async () => {
         ElMessage.error(error.value)
         console.error('获取蓝图数据失败:', err)
     } finally {
-        loading.value = false
+        blueprintLoading.value = false
     }
 }
 
@@ -340,19 +344,15 @@ const handleClose = () => {
     error.value = null
 }
 
-watch(() => props.modelValue, async (newVal) => {
-    if (newVal && props.blueprintId) {
-        await fetchBlueprint()
-    } else if (!newVal) {
+watch([() => props.modelValue, () => props.blueprintId], async ([newModelValue, newBlueprintId], [oldModelValue, oldBlueprintId]) => {
+    if (newModelValue && newBlueprintId) {
+        if (oldModelValue !== newModelValue || oldBlueprintId !== newBlueprintId) {
+            await fetchBlueprint()
+        }
+    } else if (!newModelValue) {
         handleClose()
     }
-})
-
-watch(() => props.blueprintId, async (newVal) => {
-    if (newVal && props.modelValue) {
-        await fetchBlueprint()
-    }
-})
+}, { immediate: false })
 
 onMounted(async () => {
     await fetchNodeConfigs()
