@@ -539,10 +539,12 @@ const fetchNodeLogs = async (nodeId) => {
         const mockLogs = []
         
         mockLogs.push(
-                { timestamp: new Date(startTime.getTime() + 0 * 1000).toISOString(), level: 'info', message: '这是一条普通日志' },
-                { timestamp: new Date(startTime.getTime() + 1 * 1000).toISOString(), level: 'warning', message: '这是一条警告日志' },
-                { timestamp: new Date(startTime.getTime() + 2 * 1000).toISOString(), level: 'error', message: '这是一条错误日志' },
-                { timestamp: new Date(startTime.getTime() + 3 * 1000).toISOString(), level: 'debug', message: '这是一条调试输出' }
+                { timestamp: new Date(startTime.getTime() + 0 * 1000).toISOString(), level: 'fatal', message: '日志功能尚未完成' },
+                { timestamp: new Date(startTime.getTime() + 1 * 1000).toISOString(), level: 'info', message: '这是一条普通日志' },
+                { timestamp: new Date(startTime.getTime() + 3 * 1000).toISOString(), level: 'warning', message: '这是一条警告日志' },
+                { timestamp: new Date(startTime.getTime() + 6 * 1000).toISOString(), level: 'error', message: '这是一条错误日志' },
+                { timestamp: new Date(startTime.getTime() + 10 * 1000).toISOString(), level: 'fatal', message: '这是一条致命日志' },
+                { timestamp: new Date(startTime.getTime() + 30 * 1000).toISOString(), level: 'debug', message: '这是一条调试输出' }
             )
         
         nodeLogs.value[nodeId] = mockLogs

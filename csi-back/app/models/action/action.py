@@ -19,7 +19,7 @@ class ActionInstanceModel(Document):
 
     nodes_id: list[str] = Field(default_factory=list, description="节点ID列表")
     finished_nodes_id: list[str] = Field(default_factory=list, description="已完成的节点ID列表")
-    duration: int = Field(default=0, description="行动执行时长(秒)")
+    duration: float = Field(default=0, description="行动执行时长(秒)")
     
     progress: int = Field(default=0, description="行动实例化流程进度(%)")
 
@@ -42,13 +42,16 @@ class ActionInstanceNodeModel(Document):
     node_id: str = Field(description="节点ID")
     definition_id: str = Field(description="行动节点定义ID")
     status: ActionInstanceNodeStatusEnum = Field(default=ActionInstanceNodeStatusEnum.UNREADY, description="节点状态")
+    error_message: str | None = Field(default=None, description="节点执行错误信息")
     
     start_at: datetime | None = Field(default=None, description="节点执行开始时间")
     finished_at: datetime | None = Field(default=None, description="节点执行结束时间")
-    duration: int = Field(default=0, description="节点执行时长(秒)")
+    duration: float = Field(default=0, description="节点执行时长(秒)")
     
     progress: int = Field(default=0, description="节点执行进度(%)")
     configs: list[DictModel] = Field(default_factory=list, description="节点配置")
+    inputs: list[DictModel] = Field(default_factory=list, description="节点输入配置")
+    outputs: list[DictModel] = Field(default_factory=list, description="节点输出配置")
     
     class Settings:
         name = "action_instance_nodes"

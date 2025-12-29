@@ -49,6 +49,7 @@ export const getStatusDotClass = (status) => {
 // 获取日志级别样式类
 export const getLogLevelClass = (level) => {
   const classMap = {
+    'fatal': 'bg-red-300',
     'info': 'bg-blue-50',
     'error': 'bg-red-50',
     'warning': 'bg-yellow-50',
@@ -60,6 +61,7 @@ export const getLogLevelClass = (level) => {
 // 获取日志级别文本样式类
 export const getLogLevelTextClass = (level) => {
   const classMap = {
+    'fatal': 'text-red-700',
     'info': 'text-blue-600',
     'error': 'text-red-600',
     'warning': 'text-yellow-600',

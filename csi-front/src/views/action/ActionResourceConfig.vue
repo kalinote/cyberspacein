@@ -338,7 +338,7 @@
                     </div>
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
-                        <h3 class="text-lg font-bold text-gray-900">{{ handle.handle_name }}</h3>
+                        <h3 class="text-lg font-bold text-gray-900">{{ handle.label }}</h3>
                         <el-tag 
                           :type="handle.type === 'value' ? 'success' : 'primary'"
                           size="small"
@@ -347,7 +347,7 @@
                           {{ handle.type === 'value' ? '值类型' : '引用类型' }}
                         </el-tag>
                       </div>
-                      <p class="text-sm text-gray-600 mb-3">{{ handle.label }}</p>
+                      <p class="text-sm text-gray-600 mb-3">{{ handle.handle_name }}</p>
                       <div class="flex items-center gap-6 text-sm flex-wrap">
                         <div class="flex items-center gap-2">
                           <Icon icon="mdi:palette" class="text-blue-500" />

@@ -41,16 +41,16 @@ class ActionNodeModel(Document):
     行动节点模型
     """
     id: str = Field(alias="_id")
-    name: str
-    description: str
-    type: str
-    version: str
-    handles: list[ActionNodeHandleModel]
-    inputs: list[ActionNodeInputModel]
-    default_configs: list[DictModel] | None = None
-    related_components: list[str]
-    command: str
-    command_args: list[str]
+    name: str = Field(description="节点名称")
+    description: str = Field(description="节点描述")
+    type: str = Field(description="节点类型")
+    version: str = Field(description="节点版本")
+    handles: list[ActionNodeHandleModel] = Field(description="节点连接点")
+    inputs: list[ActionNodeInputModel] = Field(description="节点输入项")
+    default_configs: list[DictModel] | None = Field(default=None, description="默认配置")
+    related_components: list[str] = Field(description="关联组件")
+    command: str = Field(description="执行命令")
+    command_args: list[str] = Field(description="执行命令参数")
     is_deleted: bool = Field(default=False, description="是否已删除")
     
     created_at: datetime = Field(default_factory=lambda: datetime.now())

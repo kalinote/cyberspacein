@@ -3,18 +3,19 @@ import logging
 import random
 from typing import Dict, Any, List
 from fastapi import APIRouter, BackgroundTasks, Depends
+from app.core.config import settings
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.schemas.action.action import ActionConfigIO, ActionConfigMeta, ActionDetailResponse, ActionInstanceBaseInfoResponse, ActionNodeConfigInitResponse, ActionNodeDetailResponse, StartActionRequest, StartActionResponse
 from app.schemas.action.configs import ActionNodesHandleConfigRequest, ActionNodesHandleConfigResponse
 from app.schemas.action.node import ActionNode
 
-from app.curd.action import get_components_by_project_id, get_components_project_by_name
+from app.service.component import get_components_by_project_id, get_components_project_by_name
 from app.schemas.action.node import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
 from app.schemas.general import PageParams, PageResponse
 from app.schemas.response import ApiResponse
 from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
-from app.service.action import action_instance_manager
+from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
 from app.models.action.blueprint import ActionBlueprintModel, PositionModel, NodeDataModel, GraphNodeModel, GraphEdgeModel, ViewportModel, GraphModel
@@ -38,7 +39,7 @@ async def start_action(
     if not blueprint:
         return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {data.blueprint_id}")
     
-    action_instance = action_instance_manager.new(data.blueprint_id)
+    action_instance = ActionInstanceService(blueprint_id=data.blueprint_id, new=True)
     result, message = await action_instance.init()
     if not result:
         return ApiResponse.error(code=500, message=message)
@@ -119,8 +120,9 @@ async def get_action_detail(action_id: str):
             start_at=node_instance.start_at,
             finished_at=node_instance.finished_at,
             duration=node_instance.duration,
-            inputs={},
-            outputs={},
+            inputs=unpack_dict(node_instance.inputs),
+            outputs=unpack_dict(node_instance.outputs),
+            error_message=node_instance.error_message
         )
     
     return ApiResponse.success(data=ActionDetailResponse(
@@ -455,26 +457,41 @@ async def get_node_config_init(node_instance_id: str):
     
     node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id})
     
+    
+    # response_data = ActionNodeConfigInitResponse(
+    #     meta=ActionConfigMeta(
+    #         node_instance_id=node_instance_id,
+    #         action_id=node_instance.action_id
+    #     ),
+    #     config=unpack_dict(node_instance.configs),
+    #     inputs={
+    #         "keywords": ActionConfigIO(
+    #             type=ActionConfigIOTypeEnum.VALUE,
+    #             value=["黑丝"]
+    #         ),
+    #         "platforms": ActionConfigIO(
+    #             type=ActionConfigIOTypeEnum.VALUE,
+    #             value=["javbus"]
+    #         )
+    #     },
+    #     outputs={
+    #         "data_out": ActionConfigIO(
+    #             type=ActionConfigIOTypeEnum.REFERENCE,
+    #             value=["tmp_queue"]
+    #         )
+    #     }
+    # )
+    
     response_data = ActionNodeConfigInitResponse(
         meta=ActionConfigMeta(
             node_instance_id=node_instance_id,
             action_id=node_instance.action_id
         ),
         config=unpack_dict(node_instance.configs),
-        inputs={
-            "keywords": ActionConfigIO(
-                type=ActionConfigIOTypeEnum.VALUE,
-                value=["黑丝"]
-            ),
-            "platforms": ActionConfigIO(
-                type=ActionConfigIOTypeEnum.VALUE,
-                value=["javbus"]
-            )
-        },
+        inputs={},
         outputs={
             "data_out": ActionConfigIO(
-                type=ActionConfigIOTypeEnum.REFERENCE,
-                value=["tmp_queue"]
+                type=ActionConfigIOTypeEnum.VALUE,
             )
         }
     )
@@ -483,7 +500,31 @@ async def get_node_config_init(node_instance_id: str):
 
 @router.post("/node_config/{node_instance_id}/result", response_model=ApiResponse[Dict[str, Any]], summary="上报节点配置结果")
 async def report_action_node_result(node_instance_id: str, data: Dict[str, Any]):
-    logger.info(f"上报节点配置结果: {node_instance_id}, {data}")
+    logger.info(f"上报节点结果: {node_instance_id}, {data}")
+    
+    node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
+    if not node_instance:
+        logger.error(f"上报节点实例不存在，ID: {node_instance_id}")
+        return ApiResponse.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
+    
+    if data.get("status") == "success":
+        # TODO: 状态变更等放到 ActionInstanceService 类中进行
+        node_instance.status = ActionInstanceNodeStatusEnum.COMPLETED
+        node_instance.finished_at = datetime.now()
+        node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+        node_instance.outputs = pack_dict(data.get("outputs"))
+        await node_instance.save()
+    elif data.get("status") == "failed":
+        node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+        node_instance.error_message = data.get("error_message")
+        node_instance.finished_at = datetime.now()
+        node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+        await node_instance.save()
+    else:
+        node_instance.status = ActionInstanceNodeStatusEnum.UNKNOWN
+        node_instance.finished_at = datetime.now()
+        node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+        await node_instance.save()
     return ApiResponse.success(data={})
 
 @router.post("/node_config/{node_instance_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]], summary="上报节点心跳")

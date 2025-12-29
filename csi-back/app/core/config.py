@@ -1,9 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
+from app.utils.network import get_local_ip
 
 class Settings(BaseSettings):
     API_V1_STR: str
     APP_NAME: str
     DEBUG: bool
+    
+    SERVER_HOST: Optional[str] = None
+    SERVER_PORT: Optional[int] = None
     
     MARIADB_URL: str
     
@@ -27,6 +32,16 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore"
     )
+    
+    @property
+    def api_base_url(self) -> str:
+        """
+        获取完整的 API base URL (http://host:port/api/v1)
+        如果未配置 SERVER_HOST 和 SERVER_PORT，则自动获取本机 IP 并使用默认端口 8080
+        """
+        host = self.SERVER_HOST or get_local_ip()
+        port = self.SERVER_PORT or 8080
+        return f"http://{host}:{port}{self.API_V1_STR}"
 
 settings = Settings()
 

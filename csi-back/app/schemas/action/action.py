@@ -17,7 +17,7 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     status: ActionFlowStatusEnum = Field(description="行动实例化流程状态")
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")
-    duration: int = Field(description="行动执行时长(秒)")
+    duration: float = Field(description="行动执行时长(秒)")
     progress: int = Field(description="行动实例化流程进度(%)")
     completed_steps: int = Field(description="已完成的节点数量")
     total_steps: int = Field(description="总节点数量")
@@ -28,7 +28,7 @@ class ActionNodeDetailResponse(BaseModel):
     progress: int = Field(default=0, description="节点执行进度(%)")
     start_at: datetime | None = Field(default=None, description="节点执行开始时间")
     finished_at: datetime | None = Field(default=None, description="节点执行结束时间")
-    duration: int = Field(default=0, description="节点执行时长(秒)")
+    duration: float = Field(default=0, description="节点执行时长(秒)")
     inputs: dict[str, Any] = Field(default={}, description="节点输入配置")
     outputs: dict[str, Any] = Field(default={}, description="节点输出配置")
     error_message: str | None = Field(default=None, description="节点执行错误信息")
@@ -48,7 +48,7 @@ class ActionConfigMeta(BaseModel):
 
 class ActionConfigIO(BaseModel):
     type: ActionConfigIOTypeEnum = Field(description="数据类型")
-    value: Any = Field(description="数据值")
+    value: Any | None = Field(default=None, description="数据值")
 
 class ActionNodeConfigInitResponse(BaseModel):
     """

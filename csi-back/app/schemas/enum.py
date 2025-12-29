@@ -31,6 +31,16 @@ class ActionFlowStatusEnum(str, Enum):
 class ActionInstanceNodeStatusEnum(str, Enum):
     """
     行动实例节点状态枚举
+    
+    - unknown: 未知状态
+    - unready: 未就绪状态
+    - ready: 就绪状态
+    - running: 运行中状态
+    - completed: 完成状态
+    - failed: 失败状态
+    - cancelled: 取消状态
+    - timeout: 超时状态
+    - paused: 暂停状态
     """
     UNKNOWN = "unknown"
     UNREADY = "unready"
