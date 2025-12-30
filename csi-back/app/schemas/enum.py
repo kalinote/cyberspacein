@@ -33,6 +33,7 @@ class ActionInstanceNodeStatusEnum(str, Enum):
     行动实例节点状态枚举
     
     - unknown: 未知状态
+    - pending: 等待中状态
     - unready: 未就绪状态
     - ready: 就绪状态
     - running: 运行中状态
@@ -43,6 +44,7 @@ class ActionInstanceNodeStatusEnum(str, Enum):
     - paused: 暂停状态
     """
     UNKNOWN = "unknown"
+    PENDING = "pending"
     UNREADY = "unready"
     READY = "ready"
     RUNNING = "running"

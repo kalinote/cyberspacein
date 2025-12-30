@@ -79,7 +79,7 @@ class BaseComponent:
             
             logger.info(f"正在从远程拉取上下文: {self.action_node_id}")
             try:
-                url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/init"
+                url = f"{self.api_base_url}/action/sdk/{self.action_node_id}/init"
                 resp = self.session.get(url, timeout=10)
                 resp.raise_for_status()
                 data = resp.json()
@@ -138,7 +138,7 @@ class BaseComponent:
             return
 
         try:
-            url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/heartbeat"
+            url = f"{self.api_base_url}/action/sdk/{self.action_node_id}/heartbeat"
             payload = {"progress": percentage, "message": message}
             resp = self.session.post(url, json=payload, timeout=5)
             if resp.status_code == 200:
@@ -163,7 +163,7 @@ class BaseComponent:
         })
         if self.is_remote:
             try:
-                url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/result"
+                url = f"{self.api_base_url}/action/sdk/{self.action_node_id}/result"
                 payload = {"status": "success", "outputs": outputs}
                 resp = self.session.post(url, json=payload)
                 resp.raise_for_status()
@@ -189,7 +189,7 @@ class BaseComponent:
         })
         if self.is_remote:
             try:
-                url = f"{self.api_base_url}/action/node_config/{self.action_node_id}/result"
+                url = f"{self.api_base_url}/action/sdk/{self.action_node_id}/result"
                 payload = {"status": "failed", "error": error_msg}
                 resp = self.session.post(url, json=payload)
                 logger.error(f"已上报失败状态: {error_msg}")

@@ -9,6 +9,7 @@ from app.models.action.configs import ActionNodesHandleConfigModel
 from app.schemas.action.action import ActionConfigIO, ActionConfigMeta, ActionDetailResponse, ActionInstanceBaseInfoResponse, ActionNodeConfigInitResponse, ActionNodeDetailResponse, StartActionRequest, StartActionResponse
 from app.schemas.action.configs import ActionNodesHandleConfigRequest, ActionNodesHandleConfigResponse
 from app.schemas.action.node import ActionNode
+from app.schemas.action.sdk import SDKResultRequest
 
 from app.service.component import get_components_by_project_id, get_components_project_by_name
 from app.schemas.action.node import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
@@ -39,13 +40,12 @@ async def start_action(
     if not blueprint:
         return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {data.blueprint_id}")
     
-    action_instance = ActionInstanceService(blueprint_id=data.blueprint_id, new=True)
-    result, message = await action_instance.init()
+    result, message = await ActionInstanceService.init(data.blueprint_id)
     if not result:
         return ApiResponse.error(code=500, message=message)
-    background_tasks.add_task(action_instance.start)
+    background_tasks.add_task(ActionInstanceService.start, message)
     
-    return ApiResponse.success(data=StartActionResponse(action_id=action_instance.action_id))
+    return ApiResponse.success(data=StartActionResponse(action_id=message))
 
 @router.get("/list", response_model=PageResponse[ActionInstanceBaseInfoResponse], summary="获取行动列表")
 async def get_action_instances(
@@ -443,7 +443,7 @@ async def get_base_components(
 #endregion
 
 #region SDK相关接口
-@router.get("/node_config/{node_instance_id}/init", response_model=ApiResponse[ActionNodeConfigInitResponse], summary="获取节点配置初始化")
+@router.get("/sdk/{node_instance_id}/init", response_model=ApiResponse[ActionNodeConfigInitResponse], summary="获取节点配置初始化")
 async def get_node_config_init(node_instance_id: str):
     """
     # 获取节点配置初始化
@@ -498,39 +498,19 @@ async def get_node_config_init(node_instance_id: str):
     
     return ApiResponse.success(data=response_data)
 
-@router.post("/node_config/{node_instance_id}/result", response_model=ApiResponse[Dict[str, Any]], summary="上报节点配置结果")
-async def report_action_node_result(node_instance_id: str, data: Dict[str, Any]):
-    logger.info(f"上报节点结果: {node_instance_id}, {data}")
-    
-    node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
-    if not node_instance:
-        logger.error(f"上报节点实例不存在，ID: {node_instance_id}")
-        return ApiResponse.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
-    
-    if data.get("status") == "success":
-        # TODO: 状态变更等放到 ActionInstanceService 类中进行
-        node_instance.status = ActionInstanceNodeStatusEnum.COMPLETED
-        node_instance.finished_at = datetime.now()
-        node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-        node_instance.outputs = pack_dict(data.get("outputs"))
-        await node_instance.save()
-    elif data.get("status") == "failed":
-        node_instance.status = ActionInstanceNodeStatusEnum.FAILED
-        node_instance.error_message = data.get("error_message")
-        node_instance.finished_at = datetime.now()
-        node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-        await node_instance.save()
-    else:
-        node_instance.status = ActionInstanceNodeStatusEnum.UNKNOWN
-        node_instance.finished_at = datetime.now()
-        node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-        await node_instance.save()
-    return ApiResponse.success(data={})
+@router.post("/sdk/{node_instance_id}/result", response_model=ApiResponse[Dict[str, Any]], summary="上报节点配置结果")
+async def report_action_node_result(
+    node_instance_id: str, 
+    result: SDKResultRequest
+):
+    logger.info(f"上报节点结果: {node_instance_id}, {result}")
+    await ActionInstanceService.finish_node(node_instance_id, result)
+    return ApiResponse.success()
 
-@router.post("/node_config/{node_instance_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]], summary="上报节点心跳")
+@router.post("/sdk/{node_instance_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]], summary="上报节点心跳")
 async def report_action_node_heartbeat(node_instance_id: str, data: Dict[str, Any]):
     logger.info(f"上报节点心跳: {node_instance_id}, {data}")
-    return ApiResponse.success(data={})
+    return ApiResponse.success()
 #endregion
 
 #region 节点配置相关接口

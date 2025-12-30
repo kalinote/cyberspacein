@@ -6,8 +6,10 @@ from app.core.config import settings
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 import logging
 from app.models.action.node import ActionNodeModel
+from app.schemas.action.sdk import SDKResultRequest
 from app.schemas.enum import ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 from app.service.component import run_component
+from app.utils.dict_helper import pack_dict
 from app.utils.id_lib import generate_id
 from app.utils.workflow import find_start_nodes
 from app.models.action.blueprint import ActionBlueprintModel
@@ -17,37 +19,22 @@ from beanie.operators import In
 logger = logging.getLogger(__name__)
 
 class ActionInstanceService:
-    def __init__(self, action_id: str | None = None, blueprint_id: str | None = None, new: bool = False):
-        if new and blueprint_id:
-            self.blueprint_id = blueprint_id
-            self.action_id = generate_id(self.blueprint_id + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
-            self.is_initialized = False
-        elif action_id:
-            self.blueprint_id = blueprint_id
-            self.action_id = action_id
-            self.is_initialized = True
-        else:
-            logger.error(f"行动实例初始化失败，参数错误，新建实例必须提供蓝图id，已创建实例必须提供行动id")
-
-    async def init(self):
+    @staticmethod
+    async def init(blueprint_id: str) -> tuple[bool, str]:
         """
         初始化行动实例
+        
+        return: tuple[bool, str] - 返回初始化是否成功和行动实例ID
         """
-        if self.is_initialized:
-            if not self.blueprint_id:
-                action = await ActionInstanceModel.find_one({"_id": self.action_id})
-                if not action:
-                    logger.error(f"行动实例初始化失败，行动不存在: {self.action_id}")
-                    return False
-                self.blueprint_id = action.blueprint_id
-            return True, f"行动实例已初始化，ID: {self.action_id}"
-        blueprint = await ActionBlueprintModel.find_one({"_id": self.blueprint_id})
+        action_id = generate_id(blueprint_id + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
+        
+        blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
         if not blueprint:
-            logger.error(f"行动实例初始化失败，蓝图不存在: {self.blueprint_id}")
-            return False, f"行动实例初始化失败，蓝图不存在: {self.blueprint_id}"
+            logger.error(f"行动实例初始化失败，蓝图不存在: {blueprint_id}")
+            return False, f"行动实例初始化失败，蓝图不存在: {blueprint_id}"
         action_instance = ActionInstanceModel(
-            id=self.action_id,
-            blueprint_id=self.blueprint_id,
+            id=action_id,
+            blueprint_id=blueprint_id,
             status=ActionFlowStatusEnum.READY,
             nodes_id=[node.id for node in blueprint.graph.nodes]
         )
@@ -65,10 +52,10 @@ class ActionInstanceService:
                 default_configs = node_definition.default_configs or []
                 
             action_instance_node = ActionInstanceNodeModel(
-                id=generate_id(self.action_id + node.id),
-                action_id=self.action_id,
+                id=generate_id(action_id + node.id),
+                action_id=action_id,
                 node_id=node.id,
-                status=ActionInstanceNodeStatusEnum.UNREADY,
+                status=ActionInstanceNodeStatusEnum.PENDING,
                 configs=(node.data.form_data or []) + default_configs,
                 definition_id=node.data.definition_id
             )
@@ -76,25 +63,21 @@ class ActionInstanceService:
         
         start_nodes = find_start_nodes(blueprint)
         if not start_nodes:
-            logger.warning(f"没有找到起始节点: {self.action_id}")
+            logger.warning(f"没有找到起始节点: {action_id}")
         
         for node in start_nodes:
-            await self.set_node_status(node.id, ActionInstanceNodeStatusEnum.READY)
+            await ActionInstanceService.set_node_status(node.id, action_id, ActionInstanceNodeStatusEnum.READY)
         
-        self.is_initialized = True
-        return True, f"行动实例初始化成功，ID: {self.action_id}"
+        return True, action_id
 
-    async def start(self):
+    @staticmethod
+    async def start(action_id: str):
         """
         开始某个行动
-        """
-        if not self.is_initialized:
-            logger.error(f"行动实例未初始化，ID: {self.action_id}")
-            return False
-        
-        action = await ActionInstanceModel.find_one({"_id": self.action_id})
+        """        
+        action = await ActionInstanceModel.find_one({"_id": action_id})
         if not action:
-            logger.error(f"行动启动失败，ID不存在: {self.action_id}")
+            logger.error(f"行动启动失败，ID不存在: {action_id}")
             return
         action.status = ActionFlowStatusEnum.RUNNING
         action.start_at = datetime.now()
@@ -102,9 +85,11 @@ class ActionInstanceService:
 
         ready_nodes = await ActionInstanceNodeModel.find({"action_id": action.id, "status": ActionInstanceNodeStatusEnum.READY}).to_list()
         for node in ready_nodes:
-            await self.run_node(node.id)
+            await ActionInstanceService.run_node(node.id, action_id)
 
-    async def run_node(self, node_instance_id):
+
+    @staticmethod
+    async def run_node(node_instance_id: str, action_id: str):
         """
         运行指定行动的指定节点
         
@@ -113,7 +98,7 @@ class ActionInstanceService:
         logger.info(f"运行节点: {node_instance_id}")
         node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
         if not node_instance:
-            logger.error(f"未找到节点，Action ID: {self.action_id}，Node Instance ID: {node_instance_id}")
+            logger.error(f"未找到节点，Action ID: {action_id}，Node Instance ID: {node_instance_id}")
             return False
         
         node_instance.status = ActionInstanceNodeStatusEnum.RUNNING
@@ -137,15 +122,41 @@ class ActionInstanceService:
 
         return True
 
-    async def finish_node(self, node_instance_id, outputs: dict[str, Any]):
+    @staticmethod
+    async def finish_node(node_instance_id: str, result: SDKResultRequest):
         """
         TODO: 完成指定行动的指定节点，并检查和准备运行下一个节点
         """
-
-    async def set_node_status(self, node_id, status: ActionInstanceNodeStatusEnum):
-        node_instance = await ActionInstanceNodeModel.find_one({"node_id": node_id, "action_id": self.action_id})
+        node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
         if not node_instance:
-            logger.error(f"未找到节点，Action ID: {self.action_id}，Node ID: {node_id}")
+            logger.error(f"上报节点实例不存在，ID: {node_instance_id}")
+            return False
+        
+        if result.status == "success":
+            node_instance.status = ActionInstanceNodeStatusEnum.COMPLETED
+            node_instance.finished_at = datetime.now()
+            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            node_instance.outputs = pack_dict(result.outputs)
+            await node_instance.save()
+        elif result.status == "failed":
+            node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+            node_instance.error_message = result.error
+            node_instance.finished_at = datetime.now()
+            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            await node_instance.save()
+        else:
+            node_instance.status = ActionInstanceNodeStatusEnum.UNKNOWN
+            node_instance.finished_at = datetime.now()
+            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            await node_instance.save()
+            
+        return True
+
+    @staticmethod
+    async def set_node_status(node_id: str, action_id: str, status: ActionInstanceNodeStatusEnum):
+        node_instance = await ActionInstanceNodeModel.find_one({"node_id": node_id, "action_id": action_id})
+        if not node_instance:
+            logger.error(f"未找到节点，Action ID: {action_id}，Node ID: {node_id}")
             return False
         
         node_instance.status = status

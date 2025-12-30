@@ -1,6 +1,8 @@
 // 状态文本映射
 const STATUS_TEXT_MAP = {
+  'unknown': '未知',
   'unready': '未就绪',
+  'pending': '待执行',
   'ready': '已就绪',
   'running': '执行中',
   'completed': '已完成',
@@ -14,6 +16,7 @@ const STATUS_TEXT_MAP = {
 // TODO: 这里后续改成通过接口获取tag和文字颜色
 const STATUS_TAG_TYPE_MAP = {
   'unready': 'info',
+  'pending': 'info',
   'ready': 'success',
   'running': 'primary',
   'completed': 'success',

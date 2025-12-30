@@ -99,14 +99,16 @@ const executionStatusBorderColor = computed(() => {
     if (!executionStatus.value) return null
     const status = executionStatus.value.status
     const colorMap = {
+        // TODO: 这里的颜色可能需要进一步优化
         'unknown': '#9ca3af',
-        'unready': '#94a3b8',
+        'unready': '#f97316',
+        'pending': '#6b7280',
         'ready': '#3b82f6',
         'running': '#eab308',
         'completed': '#10b981',
         'failed': '#ef4444',
-        'cancelled': '#6b7280',
-        'timeout': '#f97316',
+        'cancelled': '#fecaca',
+        'timeout': '#f59e0b',
         'paused': '#06b6d4'
     }
     return colorMap[status] || null
