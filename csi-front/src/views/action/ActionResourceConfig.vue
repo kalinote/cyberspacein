@@ -697,6 +697,23 @@
             ]"
           />
         </el-form-item>
+        <el-form-item label="其他兼容接口">
+          <el-select
+            v-model="handleFormData.other_compatible_interfaces"
+            multiple
+            placeholder="请选择其他兼容接口"
+            class="w-full"
+            :loading="allNodeHandlesLoading"
+            clearable
+          >
+            <el-option
+              v-for="handle in allNodeHandles"
+              :key="handle.id"
+              :label="handle.label"
+              :value="handle.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="自定义样式">
           <KeyValueEditor v-model="handleFormData.custom_style" />
         </el-form-item>
@@ -766,12 +783,15 @@ const handlePagination = ref({
 const handleDialogVisible = ref(false)
 const handleFormRef = ref(null)
 const handleSubmitting = ref(false)
+const allNodeHandles = ref([])
+const allNodeHandlesLoading = ref(false)
 const handleFormData = ref({
   handle_name: '',
   type: '',
   label: '',
   color: '#409EFF',
-  custom_style: {}
+  custom_style: {},
+  other_compatible_interfaces: []
 })
 
 const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
@@ -1328,21 +1348,41 @@ const handleHandlePageSizeChange = (pageSize) => {
   fetchHandleList()
 }
 
+const fetchAllNodeHandles = async () => {
+  allNodeHandlesLoading.value = true
+  try {
+    const response = await actionApi.getAllNodeHandles()
+    if (response.code === 0) {
+      allNodeHandles.value = response.data || []
+    } else {
+      ElMessage.error(`获取节点接口选项失败: ${response.message}`)
+      allNodeHandles.value = []
+    }
+  } catch (error) {
+    ElMessage.error('获取节点接口选项失败')
+    allNodeHandles.value = []
+  } finally {
+    allNodeHandlesLoading.value = false
+  }
+}
+
 const resetHandleForm = () => {
   handleFormData.value = {
     handle_name: '',
     type: '',
     label: '',
     color: '#409EFF',
-    custom_style: {}
+    custom_style: {},
+    other_compatible_interfaces: []
   }
   if (handleFormRef.value) {
     handleFormRef.value.clearValidate()
   }
 }
 
-const handleHandleDialogOpen = () => {
+const handleHandleDialogOpen = async () => {
   resetHandleForm()
+  await fetchAllNodeHandles()
 }
 
 const handleHandleDialogClose = () => {
@@ -1369,6 +1409,10 @@ const handleSubmitHandle = async () => {
     
     if (handleFormData.value.custom_style && Object.keys(handleFormData.value.custom_style).length > 0) {
       submitData.custom_style = handleFormData.value.custom_style
+    }
+    
+    if (handleFormData.value.other_compatible_interfaces.length > 0) {
+      submitData.other_compatible_interfaces = handleFormData.value.other_compatible_interfaces
     }
     
     const response = await actionApi.createNodeHandle(submitData)

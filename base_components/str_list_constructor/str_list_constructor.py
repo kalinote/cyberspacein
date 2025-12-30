@@ -17,5 +17,5 @@ if not field:
     base_component.fail("配置数据中未找到必需的field字段")
 
 base_component.finish({
-    "data_out": base_component.get_config(field)
+    field: base_component.get_config(field)
 })

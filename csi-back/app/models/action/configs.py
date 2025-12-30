@@ -10,6 +10,7 @@ class ActionNodesHandleConfigModel(Document):
     type: ActionConfigIOTypeEnum = Field(description="接口类型")
     label: str = Field(description="标签")
     color: str = Field(description="颜色代码")
+    other_compatible_interfaces: list[str] = Field(default=[], description="其他兼容接口id列表")
     custom_style: list[DictModel] | None = None
 
     class Settings:

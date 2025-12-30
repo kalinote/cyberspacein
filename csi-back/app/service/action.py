@@ -150,7 +150,40 @@ class ActionInstanceService:
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             await node_instance.save()
             
+        action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
+        if not action:
+            logger.error(f"未找到行动，Action ID: {node_instance.action_id}")
+            return False
+            
+        next_nodes_id= await ActionInstanceService.find_next_node(action.blueprint_id, node_instance.node_id)
+        # TODO: 设置下游节点的inputs，需要合并已存在的(其他节点设置的)inputs
+        # TODO: 需要判断该节点的结果是值还是引用
+        node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id})
+        if not node_definition:
+            logger.error(f"未找到节点定义，Node Instance ID: {node_instance.id}")
+            return False
+        
+        
+
+        next_nodes_instances = await ActionInstanceNodeModel.find(In(ActionInstanceNodeModel.node_id, next_nodes_id)).to_list()
+        next_nodes_instances_map = {node.node_id: node for node in next_nodes_instances}
+        
+        
         return True
+    
+    @staticmethod
+    async def find_next_node(blueprint_id: str, node_id: str):
+        blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
+        if not blueprint:
+            logger.error(f"未找到蓝图，Blueprint ID: {blueprint_id}")
+            return False
+        
+        next_nodes = []
+        for edge in blueprint.graph.edges:
+            if edge.source == node_id:
+                next_nodes.append(edge.target)
+        
+        return next_nodes
 
     @staticmethod
     async def set_node_status(node_id: str, action_id: str, status: ActionInstanceNodeStatusEnum):

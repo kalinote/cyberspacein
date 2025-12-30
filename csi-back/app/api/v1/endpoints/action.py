@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.schemas.action.action import ActionConfigIO, ActionConfigMeta, ActionDetailResponse, ActionInstanceBaseInfoResponse, ActionNodeConfigInitResponse, ActionNodeDetailResponse, StartActionRequest, StartActionResponse
-from app.schemas.action.configs import ActionNodesHandleConfigRequest, ActionNodesHandleConfigResponse
+from app.schemas.action.configs import ActionNodesHandleConfigAllResponse, ActionNodesHandleConfigRequest, ActionNodesHandleConfigResponse
 from app.schemas.action.node import ActionNode
 from app.schemas.action.sdk import SDKResultRequest
 
@@ -455,32 +455,13 @@ async def get_node_config_init(node_instance_id: str):
     if not node_instance:
         return ApiResponse.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
     
+    node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
+    if not node_instance:
+        return ApiResponse.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
+    
     node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id})
-    
-    
-    # response_data = ActionNodeConfigInitResponse(
-    #     meta=ActionConfigMeta(
-    #         node_instance_id=node_instance_id,
-    #         action_id=node_instance.action_id
-    #     ),
-    #     config=unpack_dict(node_instance.configs),
-    #     inputs={
-    #         "keywords": ActionConfigIO(
-    #             type=ActionConfigIOTypeEnum.VALUE,
-    #             value=["黑丝"]
-    #         ),
-    #         "platforms": ActionConfigIO(
-    #             type=ActionConfigIOTypeEnum.VALUE,
-    #             value=["javbus"]
-    #         )
-    #     },
-    #     outputs={
-    #         "data_out": ActionConfigIO(
-    #             type=ActionConfigIOTypeEnum.REFERENCE,
-    #             value=["tmp_queue"]
-    #         )
-    #     }
-    # )
+    if not node_definition:
+        return ApiResponse.error(code=404, message=f"节点定义不存在，ID: {node_instance.definition_id}")
     
     response_data = ActionNodeConfigInitResponse(
         meta=ActionConfigMeta(
@@ -501,10 +482,11 @@ async def get_node_config_init(node_instance_id: str):
 @router.post("/sdk/{node_instance_id}/result", response_model=ApiResponse[Dict[str, Any]], summary="上报节点配置结果")
 async def report_action_node_result(
     node_instance_id: str, 
-    result: SDKResultRequest
+    result: SDKResultRequest,
+    background_tasks: BackgroundTasks
 ):
     logger.info(f"上报节点结果: {node_instance_id}, {result}")
-    await ActionInstanceService.finish_node(node_instance_id, result)
+    background_tasks.add_task(ActionInstanceService.finish_node, node_instance_id, result)
     return ApiResponse.success()
 
 @router.post("/sdk/{node_instance_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]], summary="上报节点心跳")
@@ -514,6 +496,17 @@ async def report_action_node_heartbeat(node_instance_id: str, data: Dict[str, An
 #endregion
 
 #region 节点配置相关接口
+@router.get("/configs/handles/all", response_model=ApiResponse[List[ActionNodesHandleConfigAllResponse]], summary="获取所有节点配置handle列表")
+async def get_all_node_configs_handles():
+    handles = await ActionNodesHandleConfigModel.find_all().to_list()
+    results = []
+    for handle in handles:
+        results.append(ActionNodesHandleConfigAllResponse(
+            id=handle.id,
+            label=handle.label
+        ))
+    return ApiResponse.success(data=results)
+
 @router.get("/configs/handles", response_model=PageResponse[ActionNodesHandleConfigResponse], summary="获取节点配置handle列表")
 async def get_node_configs_handles(
     params: PageParams = Depends()

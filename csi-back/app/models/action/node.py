@@ -8,8 +8,11 @@ from app.schemas.general import DictModel
 class ActionNodeHandleModel(BaseModel):
     """
     行动节点连接点模型
+    
+    TODO: 改成id和relabel
     """
     id: str
+    # relabel: str
     name: str
     type: str
     position: str

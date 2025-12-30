@@ -11,6 +11,8 @@ class ActionNodeOption(BaseModel):
 
 
 class ActionNodeHandle(BaseModel):
+    # TODO: 改成id和relabel
+    id: str = Field(description="连接点ID")
     name: str = Field(description="连接点名称")
     type: Literal["source", "target"] = Field(description="连接点类型")
     position: Literal["left", "right", "top", "bottom"] = Field(description="连接点位置")

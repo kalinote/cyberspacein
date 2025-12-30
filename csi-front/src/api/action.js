@@ -44,5 +44,9 @@ export const actionApi = {
   // 创建行动节点接口
   createNodeHandle(data) {
     return request.post(`/action/configs/handles`, data)
+  },
+  // 获取所有节点接口列表
+  getAllNodeHandles() {
+    return request.get(`/action/configs/handles/all`)
   }
 }
