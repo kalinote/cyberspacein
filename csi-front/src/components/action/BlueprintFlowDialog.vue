@@ -59,10 +59,8 @@ import GenericNode from '@/components/action/nodes/GenericNode.vue'
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
 import {
-    SOCKET_TYPE_CONFIGS,
     normalizeDefaultValue,
     getDefaultData,
-    getEdgeColor,
     formatDateTime
 } from '@/utils/action'
 
@@ -240,7 +238,7 @@ const loadBlueprintData = () => {
             config = fallbackConfig
         }
 
-        const nodeData = getDefaultData(config, SOCKET_TYPE_CONFIGS)
+        const nodeData = getDefaultData(config)
 
         if (config.inputs) {
             config.inputs.forEach(input => {
@@ -275,7 +273,7 @@ const loadBlueprintData = () => {
                 const targetHandle = targetNode.data.config.handles.find(h => h.id === edge.targetHandle)
                 if (targetHandle) {
                     sourceHandle = sourceNode.data.config.handles.find(h =>
-                        h.socket_type === targetHandle.socket_type && h.position === 'right'
+                        h.handle_name === targetHandle.handle_name && h.position === 'right'
                     )
                     if (sourceHandle) {
                         finalSourceHandle = sourceHandle.id
@@ -284,7 +282,7 @@ const loadBlueprintData = () => {
             }
 
             if (sourceHandle) {
-                edgeColor = getEdgeColor(sourceHandle.socket_type, SOCKET_TYPE_CONFIGS)
+                edgeColor = sourceHandle.color || '#909399'
             }
         }
 
@@ -294,7 +292,7 @@ const loadBlueprintData = () => {
                 const sourceHandle = sourceNode.data.config.handles.find(h => h.id === finalSourceHandle)
                 if (sourceHandle) {
                     targetHandle = targetNode.data.config.handles.find(h =>
-                        h.socket_type === sourceHandle.socket_type && h.position === 'left'
+                        h.handle_name === sourceHandle.handle_name && h.position === 'left'
                     )
                     if (targetHandle) {
                         finalTargetHandle = targetHandle.id

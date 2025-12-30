@@ -313,7 +313,6 @@ import 'highlight.js/styles/github.css'
 hljs.registerLanguage('json', json)
 
 import {
-  SOCKET_TYPE_CONFIGS,
   normalizeDefaultValue,
   getDefaultData,
   formatDateTime,
@@ -322,8 +321,7 @@ import {
   getStatusText,
   getStatusTagType,
   getLogLevelClass,
-  getLogLevelTextClass,
-  getEdgeColor
+  getLogLevelTextClass
 } from '@/utils/action'
 
 import '@vue-flow/core/dist/style.css'
@@ -718,7 +716,7 @@ const loadActionData = async () => {
             config = fallbackConfig
         }
         
-        const nodeData = getDefaultData(config, SOCKET_TYPE_CONFIGS)
+        const nodeData = getDefaultData(config)
         const nodeDetail = transformedData.node_details[node.id]
         if (nodeDetail) {
             nodeData.executionStatus = {
@@ -764,7 +762,7 @@ const loadActionData = async () => {
                 const targetHandle = targetNode.data.config.handles.find(h => h.id === edge.targetHandle)
                 if (targetHandle) {
                     sourceHandle = sourceNode.data.config.handles.find(h => 
-                        h.socket_type === targetHandle.socket_type && h.position === 'right'
+                        h.handle_name === targetHandle.handle_name && h.position === 'right'
                     )
                     if (sourceHandle) {
                         finalSourceHandle = sourceHandle.id
@@ -773,7 +771,7 @@ const loadActionData = async () => {
             }
             
             if (sourceHandle) {
-                edgeColor = getEdgeColor(sourceHandle.socket_type, SOCKET_TYPE_CONFIGS)
+                edgeColor = sourceHandle.color || '#909399'
             }
         }
         
@@ -783,7 +781,7 @@ const loadActionData = async () => {
                 const sourceHandle = sourceNode.data.config.handles.find(h => h.id === finalSourceHandle)
                 if (sourceHandle) {
                     targetHandle = targetNode.data.config.handles.find(h => 
-                        h.socket_type === sourceHandle.socket_type && h.position === 'left'
+                        h.handle_name === sourceHandle.handle_name && h.position === 'left'
                     )
                     if (targetHandle) {
                         finalTargetHandle = targetHandle.id

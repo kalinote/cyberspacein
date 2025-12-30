@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from datetime import datetime
 from beanie import Document
 from pydantic import BaseModel, Field
@@ -11,15 +11,11 @@ class ActionNodeHandleModel(BaseModel):
     
     TODO: 改成id和relabel
     """
-    id: str
-    # relabel: str
-    name: str
-    type: str
-    position: str
-    socket_type: str
-    allowed_socket_types: list[str] | None = None
-    label: str
-    custom_style: list[DictModel] | None = None
+    id: str = Field(description="连接点ID")
+    relabel: str | None = Field(default=None, description="连接点重命名标签")
+    type: Literal["source", "target"] = Field(description="连接点类型")
+    position: Literal["left", "right", "top", "bottom"] = Field(description="连接点位置")
+    custom_style: list[DictModel] | None = Field(default=[], description="自定义样式")
 
 
 class ActionNodeInputModel(BaseModel):
@@ -34,9 +30,9 @@ class ActionNodeInputModel(BaseModel):
     description: str
     required: bool
     default: Any
-    options: list[dict[str, str]] | None = None
-    custom_style: list[DictModel] | None = None
-    custom_props: list[DictModel] | None = None
+    options: list[dict[str, str]] | None = Field(default=[], description="选项列表，仅select类型有效")
+    custom_style: list[DictModel] | None = Field(default=[], description="自定义样式")
+    custom_props: list[DictModel] | None = Field(default=[], description="自定义属性")
 
 
 class ActionNodeModel(Document):

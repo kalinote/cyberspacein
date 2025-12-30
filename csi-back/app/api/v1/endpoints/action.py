@@ -3,7 +3,7 @@ import logging
 import random
 from typing import Dict, Any, List
 from fastapi import APIRouter, BackgroundTasks, Depends
-from app.core.config import settings
+from beanie.operators import In
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.schemas.action.action import ActionConfigIO, ActionConfigMeta, ActionDetailResponse, ActionInstanceBaseInfoResponse, ActionNodeConfigInitResponse, ActionNodeDetailResponse, StartActionRequest, StartActionResponse
@@ -15,7 +15,7 @@ from app.service.component import get_components_by_project_id, get_components_p
 from app.schemas.action.node import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
 from app.schemas.general import PageParams, PageResponse
 from app.schemas.response import ApiResponse
-from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
+from app.schemas.enum import ActionConfigIOTypeEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
 from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
@@ -293,17 +293,27 @@ async def get_actions():
 
     results = []
     for node in nodes:
+        handle_ids = [handle.id for handle in node.handles]
+        handle_configs = await ActionNodesHandleConfigModel.find(In(ActionNodesHandleConfigModel.id, handle_ids)).to_list()
+        handle_config_map = {handle.id: handle for handle in handle_configs}
+        
         handles_response = []
         for handle in node.handles:
+            handle_config = handle_config_map.get(handle.id)
+            custom_style = unpack_dict(handle_config.custom_style)
+            custom_style.update(unpack_dict(handle.custom_style))
+            
             handles_response.append(ActionNodeHandleResponse(
                 id=handle.id,
-                name=handle.name,
+                relabel=handle.relabel,
                 type=handle.type,
                 position=handle.position,
-                socket_type=handle.socket_type,
-                allowed_socket_types=handle.allowed_socket_types,
-                label=handle.label,
-                custom_style=unpack_dict(handle.custom_style)
+                custom_style=custom_style,
+                handle_name=handle_config.handle_name,
+                data_type=handle_config.type,
+                label=handle_config.label,
+                color=handle_config.color,
+                other_compatible_interfaces=handle_config.other_compatible_interfaces,
             ))
 
         inputs_response = []
@@ -351,21 +361,15 @@ async def create_node(data: ActionNode):
     if existing_node:
         return ApiResponse.error(code=400, message=f"节点已存在，ID: {node_id}")
 
-    handles_with_id = []
-    handle_models = []
+    handle_models: list[ActionNodeHandleModel] = []
     for handle in data.handles:
-        handle_id = generate_id(
-            handle.type + handle.socket_type + handle.name)
-        handle_dict = {
-            **handle.model_dump(),
-            "id": handle_id
-        }
-        handles_with_id.append(handle_dict)
-        
-        handle_db_dict = handle_dict.copy()
-        if "custom_style" in handle_db_dict:
-            handle_db_dict["custom_style"] = pack_dict(handle_db_dict.get("custom_style"))
-        handle_models.append(ActionNodeHandleModel(**handle_db_dict))
+        handle_models.append(ActionNodeHandleModel(
+            id=handle.id,
+            relabel=handle.relabel,
+            type=handle.type,
+            position=handle.position,
+            custom_style=pack_dict(handle.custom_style)
+        ))
 
     inputs_with_id = []
     input_models = []
@@ -404,13 +408,36 @@ async def create_node(data: ActionNode):
     await node_model.insert()
     logger.info(f"成功创建节点: {node_id}")
 
+    handle_ids = [handle.id for handle in handle_models]
+    handle_configs = await ActionNodesHandleConfigModel.find(In(ActionNodesHandleConfigModel.id, handle_ids)).to_list()
+    handle_config_map = {handle.id: handle for handle in handle_configs}
+    
+    handle_responses = []
+    for handle in handle_models:
+        handle_config = handle_config_map.get(handle.id)
+        custom_style = unpack_dict(handle_config.custom_style)
+        custom_style.update(unpack_dict(handle.custom_style))
+        
+        handle_responses.append(ActionNodeHandleResponse(
+            id=handle.id,
+            relabel=handle.relabel,
+            type=handle.type,
+            position=handle.position,
+            custom_style=custom_style,
+            handle_name=handle_config.handle_name,
+            data_type=handle_config.type,
+            label=handle_config.label,
+            color=handle_config.color,
+            other_compatible_interfaces=handle_config.other_compatible_interfaces,
+        ))
+
     response_data = ActionNodeResponse(
         id=node_id,
         name=data.name,
         description=data.description,
         type=data.type,
         version=data.version,
-        handles=handles_with_id,
+        handles=handle_responses,
         inputs=inputs_with_id,
         related_components=data.related_components,
         command=data.command,
@@ -529,12 +556,17 @@ async def get_node_configs_handles(
 @router.post("/configs/handles", response_model=ApiResponse[ActionNodesHandleConfigResponse], summary="创建节点配置handle")
 async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
     handle_id = generate_id(data.handle_name + data.type.value)
+    
+    if await ActionNodesHandleConfigModel.find_one({"_id": handle_id}):
+        return ApiResponse.error(code=400, message=f"节点配置handle已存在，ID: {handle_id}")
+    
     handle_model = ActionNodesHandleConfigModel(
         id=handle_id,
         handle_name=data.handle_name,
         type=data.type,
         label=data.label,
         color=data.color,
+        other_compatible_interfaces=data.other_compatible_interfaces,
         custom_style=pack_dict(data.custom_style)
     )
     await handle_model.insert()
@@ -545,6 +577,7 @@ async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
         type=data.type,
         label=data.label,
         color=data.color,
+        other_compatible_interfaces=data.other_compatible_interfaces,
         custom_style=unpack_dict(data.custom_style)
     ))
 #endregion

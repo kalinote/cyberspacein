@@ -33,10 +33,9 @@ export const normalizeDefaultValue = (type, value) => {
 }
 
 // 获取节点默认数据
-export const getDefaultData = (config, socketTypeConfigs) => {
+export const getDefaultData = (config) => {
   const data = {
-    config: config,
-    socketTypeConfigs: socketTypeConfigs
+    config: config
   }
   
   if (config.inputs) {
@@ -49,22 +48,12 @@ export const getDefaultData = (config, socketTypeConfigs) => {
 }
 
 // 根据节点配置获取节点颜色
-export const getNodeColor = (config, socketTypeConfigs) => {
+export const getNodeColor = (config) => {
   if (config.handles && config.handles.length > 0) {
     const firstHandle = config.handles[0]
-    const socketConfig = socketTypeConfigs.find(
-      s => s.socket_type === firstHandle.socket_type
-    )
-    return socketConfig?.color || '#909399'
+    return firstHandle.color || '#909399'
   }
   return '#909399'
 }
 
-// 根据 socket_type 获取连接线颜色
-export const getEdgeColor = (socketType, socketTypeConfigs) => {
-  const socketConfig = socketTypeConfigs.find(
-    s => s.socket_type === socketType
-  )
-  return socketConfig?.color || '#909399'
-}
 

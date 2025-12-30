@@ -15,7 +15,6 @@
                 v-for="(handle, index) in leftHandles"
                 :key="handle.id"
                 :handle-config="handle"
-                :socket-type-configs="socketTypeConfigs"
                 :handle-index="index"
                 :total-handles="leftHandles.length"
             />
@@ -24,7 +23,6 @@
                 v-for="(handle, index) in rightHandles"
                 :key="handle.id"
                 :handle-config="handle"
-                :socket-type-configs="socketTypeConfigs"
                 :handle-index="index"
                 :total-handles="rightHandles.length"
             />
@@ -33,7 +31,6 @@
                 v-for="(handle, index) in topHandles"
                 :key="handle.id"
                 :handle-config="handle"
-                :socket-type-configs="socketTypeConfigs"
                 :handle-index="index"
                 :total-handles="topHandles.length"
             />
@@ -42,7 +39,6 @@
                 v-for="(handle, index) in bottomHandles"
                 :key="handle.id"
                 :handle-config="handle"
-                :socket-type-configs="socketTypeConfigs"
                 :handle-index="index"
                 :total-handles="bottomHandles.length"
             />
@@ -93,7 +89,6 @@ const props = defineProps({
 const { updateNodeData } = useVueFlow()
 
 const nodeConfig = computed(() => props.data?.config || null)
-const socketTypeConfigs = computed(() => props.data?.socketTypeConfigs || [])
 const executionStatus = computed(() => props.data?.executionStatus || null)
 const executionStatusBorderColor = computed(() => {
     if (!executionStatus.value) return null

@@ -519,46 +519,37 @@
                 删除
               </el-button>
             </div>
-            <el-form-item label="接口名称" :prop="`handles.${index}.name`" :rules="handleRules.name">
-              <el-input v-model="handle.name" placeholder="请输入接口名称，必须是英文字母开头，只能包含字母、数字和下划线" />
+            <el-form-item label="接口" :prop="`handles.${index}.id`" :rules="handleRules.id">
+              <el-select 
+                v-model="handle.id" 
+                placeholder="请选择接口" 
+                class="w-full"
+                :loading="nodeHandlesLoading"
+              >
+                <el-option
+                  v-for="nodeHandle in nodeHandlesForSelect"
+                  :key="nodeHandle.id"
+                  :label="nodeHandle.label"
+                  :value="nodeHandle.id"
+                />
+              </el-select>
             </el-form-item>
-            <el-form-item :label="`类型`" :prop="`handles.${index}.type`" :rules="handleRules.type">
-              <el-select v-model="handle.type" placeholder="请选择类型" class="w-full">
+            <el-form-item label="类型" :prop="`handles.${index}.type`" :rules="handleRules.type">
+              <el-select v-model="handle.type" placeholder="请选择接口类型" class="w-full">
                 <el-option label="输出接口" value="source" />
                 <el-option label="输入接口" value="target" />
               </el-select>
             </el-form-item>
-            <el-form-item :label="`位置`" :prop="`handles.${index}.position`" :rules="handleRules.position">
+            <el-form-item label="重新命名" :prop="`handles.${index}.relabel`">
+              <el-input v-model="handle.relabel" placeholder="请输入重新命名（可选）" />
+            </el-form-item>
+            <el-form-item label="位置" :prop="`handles.${index}.position`" :rules="handleRules.position">
               <el-select v-model="handle.position" placeholder="请选择位置" class="w-full">
                 <el-option label="left" value="left" />
                 <el-option label="right" value="right" />
                 <el-option label="top" value="top" />
                 <el-option label="bottom" value="bottom" />
               </el-select>
-            </el-form-item>
-            <el-form-item :label="`接口类型`" :prop="`handles.${index}.socket_type`" :rules="handleRules.socket_type">
-              <el-select v-model="handle.socket_type" placeholder="请选择接口类型，记得点确定" class="w-full">
-                <el-option
-                  v-for="socketType in socketTypeConfigs"
-                  :key="socketType.socket_type"
-                  :label="socketType.socket_type"
-                  :value="socketType.socket_type"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item
-              v-if="handle.type === 'target'"
-              :label="`允许的接口类型`"
-              :prop="`handles.${index}.allowed_socket_types`"
-            >
-              <SocketTypeTagSelect
-                v-model="handle.allowed_socket_types"
-                :socket-types="socketTypeConfigs"
-                placeholder="请选择允许的接口类型"
-              />
-            </el-form-item>
-            <el-form-item :label="`接口标签`" :prop="`handles.${index}.label`" :rules="handleRules.label">
-              <el-input v-model="handle.label" placeholder="请输入接口标签" />
             </el-form-item>
             <el-form-item label="自定义样式">
               <KeyValueEditor v-model="handle.custom_style" />
@@ -735,11 +726,10 @@ import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
-import SocketTypeTagSelect from '@/components/action/nodes/components/SocketTypeTagSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
-import { SOCKET_TYPE_CONFIGS, INPUT_TYPES, formatDateTime } from '@/utils/action'
+import { INPUT_TYPES, formatDateTime } from '@/utils/action'
 
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
@@ -751,6 +741,8 @@ const formRef = ref(null)
 const submitting = ref(false)
 const componentsLoading = ref(false)
 const componentListForSelect = ref([])
+const nodeHandlesForSelect = ref([])
+const nodeHandlesLoading = ref(false)
 
 const pagination = ref({
   page: 1,
@@ -794,7 +786,6 @@ const handleFormData = ref({
   other_compatible_interfaces: []
 })
 
-const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
 const inputTypes = ref(INPUT_TYPES)
 
 const validateName = (rule, value, callback) => {
@@ -849,20 +840,14 @@ const formRules = {
 }
 
 const handleRules = {
-  name: [
-    { required: true, validator: validateName, trigger: 'blur' }
+  id: [
+    { required: true, message: '请选择接口', trigger: 'change' }
   ],
   type: [
     { required: true, message: '请选择接口类型', trigger: 'change' }
   ],
   position: [
     { required: true, message: '请选择接口位置', trigger: 'change' }
-  ],
-  socket_type: [
-    { required: true, message: '请选择接口类型', trigger: 'change' }
-  ],
-  label: [
-    { required: true, message: '请输入接口标签', trigger: 'blur' }
   ]
 }
 
@@ -1027,7 +1012,10 @@ const handleAdd = (tabKey) => {
 
 const handleDialogOpen = async () => {
   resetForm()
-  await fetchComponentsForSelect()
+  await Promise.all([
+    fetchComponentsForSelect(),
+    fetchNodeHandlesForSelect()
+  ])
 }
 
 const handleDialogClose = () => {
@@ -1052,6 +1040,24 @@ const resetForm = () => {
   }
 }
 
+const fetchNodeHandlesForSelect = async () => {
+  nodeHandlesLoading.value = true
+  try {
+    const response = await actionApi.getAllNodeHandles()
+    if (response.code === 0) {
+      nodeHandlesForSelect.value = response.data || []
+    } else {
+      ElMessage.error(`获取节点接口列表失败: ${response.message}`)
+      nodeHandlesForSelect.value = []
+    }
+  } catch (error) {
+    ElMessage.error('获取节点接口列表失败')
+    nodeHandlesForSelect.value = []
+  } finally {
+    nodeHandlesLoading.value = false
+  }
+}
+
 const fetchComponentsForSelect = async () => {
   componentsLoading.value = true
   try {
@@ -1073,12 +1079,10 @@ const fetchComponentsForSelect = async () => {
 
 const addHandle = () => {
   formData.value.handles.push({
-    name: '',
+    id: '',
     type: '',
+    relabel: '',
     position: '',
-    socket_type: '',
-    allowed_socket_types: [],
-    label: '',
     custom_style: {}
   })
 }
@@ -1125,15 +1129,15 @@ const handleSubmit = async () => {
       default_configs: formData.value.default_configs || {},
       handles: formData.value.handles.map(handle => {
         const handleData = {
-          name: handle.name,
+          id: handle.id,
           type: handle.type,
-          position: handle.position,
-          socket_type: handle.socket_type,
-          label: handle.label,
-          custom_style: handle.custom_style || {}
+          position: handle.position
         }
-        if (handle.type === 'target' && handle.allowed_socket_types && handle.allowed_socket_types.length > 0) {
-          handleData.allowed_socket_types = handle.allowed_socket_types
+        if (handle.relabel && handle.relabel.trim()) {
+          handleData.relabel = handle.relabel.trim()
+        }
+        if (handle.custom_style && Object.keys(handle.custom_style).length > 0) {
+          handleData.custom_style = handle.custom_style
         }
         return handleData
       }),
@@ -1411,8 +1415,10 @@ const handleSubmitHandle = async () => {
       submitData.custom_style = handleFormData.value.custom_style
     }
     
-    if (handleFormData.value.other_compatible_interfaces.length > 0) {
+    if (Array.isArray(handleFormData.value.other_compatible_interfaces)) {
       submitData.other_compatible_interfaces = handleFormData.value.other_compatible_interfaces
+    } else {
+      submitData.other_compatible_interfaces = []
     }
     
     const response = await actionApi.createNodeHandle(submitData)

@@ -20,6 +20,7 @@
         
         <div class="add-condition-form">
             <div class="form-row flex gap-2 mb-2">
+                <!-- TODO: 解决字段名不能带下划线的问题 -->
                 <el-input
                     v-model="newCondition.field"
                     placeholder="字段名"

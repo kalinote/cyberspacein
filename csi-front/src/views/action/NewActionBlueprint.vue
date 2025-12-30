@@ -159,10 +159,8 @@ import GenericNode from "@/components/action/nodes/GenericNode.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
 import {
-    SOCKET_TYPE_CONFIGS,
     getDefaultData,
-    getNodeColor,
-    getEdgeColor
+    getNodeColor
 } from '@/utils/action'
 
 import '@vue-flow/core/dist/style.css'
@@ -210,17 +208,15 @@ const fetchNodeConfigs = async () => {
     }
 }
 
-const socketTypeConfigs = ref(SOCKET_TYPE_CONFIGS)
-
 const sidebarNodes = computed(() => {
     return nodeTypeConfigs.value.map(config => ({
         key: config.id,
         label: config.name,
         type: config.type,
-        color: getNodeColor(config, socketTypeConfigs.value),
+        color: getNodeColor(config),
         description: config.description,
         component: markRaw(GenericNode),
-        data: getDefaultData(config, socketTypeConfigs.value)
+        data: getDefaultData(config)
     }))
 })
 
@@ -274,17 +270,17 @@ isValidConnection.value = (connection) => {
 
     if (!sourceHandle || !targetHandle) return false
 
-    // 如果源接口或目标接口是 generic_data 类型，允许连接到任意类型
-    if (sourceHandle.socket_type === 'generic_data' || targetHandle.socket_type === 'generic_data') {
+    const sourceHandleId = sourceHandle.id
+    const targetHandleId = targetHandle.id
+
+    // 如果两者id相同，允许连接
+    if (sourceHandleId === targetHandleId) {
         return true
     }
 
-    // 如果目标接口的 allowed_socket_types 包含 generic_data，允许任意类型连接
-    if (targetHandle.allowed_socket_types.includes('generic_data')) {
-        return true
-    }
-
-    return targetHandle.allowed_socket_types.includes(sourceHandle.socket_type)
+    // 只检查目标handle的other_compatible_interfaces是否包含源handle的id
+    const targetCompatibleInterfaces = targetHandle.other_compatible_interfaces || []
+    return targetCompatibleInterfaces.includes(sourceHandleId)
 }
 
 const createNodeFromConfig = (configId, position) => {
@@ -295,7 +291,7 @@ const createNodeFromConfig = (configId, position) => {
         id: `node-${Date.now()}`,
         type: config.id,
         position: position,
-        data: getDefaultData(config, socketTypeConfigs.value)
+        data: getDefaultData(config)
     }
 }
 
@@ -455,7 +451,7 @@ onConnect((params) => {
         return
     }
 
-    const edgeColor = getEdgeColor(sourceHandle.socket_type, socketTypeConfigs.value)
+    const edgeColor = sourceHandle.color || '#909399'
 
     const edgeWithStyle = {
         ...params,
@@ -571,12 +567,6 @@ const handleSaveAction = async () => {
             }
         }
     }
-
-    // console.log('===== 保存行动数据 =====')
-    // console.log(JSON.stringify(actionData, null, 2))
-    // console.log('=======================')
-
-    // ElMessage.success('数据已构造完成，请在控制台查看')
 
     const response = await actionApi.createActionBlueprint(actionData)
     if (response.code === 0) {

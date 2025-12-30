@@ -10,7 +10,7 @@
             class="absolute text-xs"
             :style="computedLabelStyle"
         >
-            {{ handleConfig.label }}
+            {{ handleConfig.relabel || handleConfig.label }}
         </span>
     </template>
 </template>
@@ -23,10 +23,6 @@ const props = defineProps({
     handleConfig: {
         type: Object,
         required: true
-    },
-    socketTypeConfigs: {
-        type: Array,
-        default: () => []
     },
     handleIndex: {
         type: Number,
@@ -49,18 +45,11 @@ const defaultLabelStyle = {
     fontWeight: '400'
 }
 
-const socketConfig = computed(() => {
-    return props.socketTypeConfigs.find(
-        config => config.socket_type === props.handleConfig.socket_type
-    )
-})
-
 const handleColor = computed(() => {
-    return socketConfig.value?.color || '#909399'
+    return props.handleConfig.color || '#909399'
 })
 
 const computedHandleStyle = computed(() => {
-    const socketCustomStyle = socketConfig.value?.custom_style?.handle_style || {}
     const handleCustomStyle = props.handleConfig.custom_style?.handle_style || {}
     
     const topPosition = props.totalHandles > 1 
@@ -71,13 +60,11 @@ const computedHandleStyle = computed(() => {
         ...defaultHandleStyle,
         backgroundColor: handleColor.value,
         top: topPosition,
-        ...socketCustomStyle,
         ...handleCustomStyle
     }
 })
 
 const computedLabelStyle = computed(() => {
-    const socketCustomStyle = socketConfig.value?.custom_style?.label_style || {}
     const labelCustomStyle = props.handleConfig.custom_style?.label_style || {}
     
     const topPosition = props.totalHandles > 1 
@@ -106,7 +93,6 @@ const computedLabelStyle = computed(() => {
     
     return {
         ...baseStyle,
-        ...socketCustomStyle,
         ...labelCustomStyle
     }
 })
