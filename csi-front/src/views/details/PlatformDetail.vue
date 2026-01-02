@@ -69,12 +69,12 @@
                     <div
                         class="bg-linear-to-br from-green-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
                         <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                            <Icon icon="mdi:download" class="text-green-600 text-2xl" />
+                            <Icon icon="mdi:run" class="text-green-600 text-2xl" />
                         </div>
                         <div>
-                            <p class="text-sm text-gray-500">采集次数</p>
+                            <p class="text-sm text-gray-500">关联行动</p>
                             <p class="text-2xl font-bold text-gray-900">
-                                {{ statistics.collectionCount.toLocaleString() }}
+                                {{ statistics.related_actions.toLocaleString() }}
                             </p>
                         </div>
                     </div>
@@ -518,7 +518,7 @@ export default {
             // TODO: 从接口获取平台统计信息（数据总量、采集次数、最后更新、今日新增）
             statistics: {
                 totalData: 125430,
-                collectionCount: 3420,
+                related_actions: 3420,
                 lastUpdate: "2小时前",
                 todayNew: 1250,
             },
