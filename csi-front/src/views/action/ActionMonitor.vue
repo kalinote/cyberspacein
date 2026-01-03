@@ -111,7 +111,7 @@
               <div class="flex items-start space-x-3">
                 <Icon icon="mdi:format-list-numbered" class="text-purple-500 text-lg mt-0.5 shrink-0" />
                 <div class="flex-1">
-                  <p class="text-sm text-gray-500 mb-1">步骤数</p>
+                  <p class="text-sm text-gray-500 mb-1">行动步骤</p>
                   
                   <div class="flex items-center flex-wrap gap-2 text-sm font-medium text-gray-900">
                     <span>{{ blueprint.branchCount }} 个分支，共{{ blueprint.stepCount }} 个步骤</span>

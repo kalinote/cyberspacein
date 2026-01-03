@@ -8,9 +8,5 @@
         "keywords": ["黑丝", "白丝"]
     },
     "inputs": {},
-    "outputs": {
-        "data_out": {
-            "type": "value"
-        }
-    }
+    "outputs": {}
 }

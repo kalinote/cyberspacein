@@ -1,8 +1,9 @@
 from datetime import datetime
+from typing import Any
 from beanie import Document
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from app.schemas.enum import ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 from app.schemas.general import DictModel
 
 class ActionInstanceModel(Document):
@@ -30,6 +31,7 @@ class ActionInstanceModel(Document):
             "blueprint_id",
             "status",
         ]
+
         
 class ActionInstanceNodeModel(Document):
     """
@@ -50,8 +52,8 @@ class ActionInstanceNodeModel(Document):
     
     progress: int = Field(default=0, description="节点执行进度(%)")
     configs: list[DictModel] = Field(default_factory=list, description="节点配置")
-    inputs: list[DictModel] = Field(default_factory=list, description="节点输入配置")
-    outputs: list[DictModel] = Field(default_factory=list, description="节点输出配置")
+    inputs: dict[str, DictModel] = Field(default_factory=dict, description="节点输入配置，key是handle_id，value是数据")
+    outputs: dict[str, DictModel] = Field(default_factory=dict, description="节点输出配置，key是handle_id，value是数据")
     
     class Settings:
         name = "action_instance_nodes"

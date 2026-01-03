@@ -8,7 +8,8 @@ import logging
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
 from app.schemas.action.sdk import SDKResultRequest
-from app.schemas.enum import ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.general import DictModel
 from app.service.component import run_component
 from app.utils.dict_helper import pack_dict
 from app.utils.id_lib import generate_id
@@ -20,10 +21,13 @@ from beanie.operators import In
 logger = logging.getLogger(__name__)
 
 class ActionInstanceService:
-    # TODO: 缓存节点定义和蓝图，使用缓存避免重复查询数据库，但是需要考虑如何更新缓存
+    # TODO: 缓存节点定义和蓝图，使用缓存避免重复查询数据库
+    # TODO: 后续换成redis缓存，设置10分钟过期时间，同时在数据库更新时清理缓存
     blueprints: dict[str, ActionBlueprintModel] = {}
     node_definitions: dict[str, ActionNodeModel] = {}
     handle_definitions: dict[str, ActionNodesHandleConfigModel] = {}
+    handle_name_to_id: dict[str, str] = {}
+    
 
     @staticmethod
     async def get_blueprint(blueprint_id: str) -> ActionBlueprintModel:
@@ -41,8 +45,24 @@ class ActionInstanceService:
     async def get_handle_definition(handle_definition_id: str) -> ActionNodesHandleConfigModel:
         if handle_definition_id not in ActionInstanceService.handle_definitions:
             ActionInstanceService.handle_definitions[handle_definition_id] = await ActionNodesHandleConfigModel.find_one({"_id": handle_definition_id})
+        
         return ActionInstanceService.handle_definitions[handle_definition_id]
 
+    @staticmethod
+    async def get_handle_definition_by_name(handle_name: str) -> ActionNodesHandleConfigModel:
+        if handle_name in ActionInstanceService.handle_name_to_id:
+            handle_id = ActionInstanceService.handle_name_to_id[handle_name]
+            return await ActionInstanceService.get_handle_definition(handle_id)
+        
+        handle = await ActionNodesHandleConfigModel.find_one({"handle_name": handle_name})
+        if handle:
+            ActionInstanceService.handle_name_to_id[handle_name] = handle.id
+            ActionInstanceService.handle_definitions[handle.id] = handle
+        
+        return handle
+
+
+    
     @staticmethod
     async def init(blueprint_id: str) -> tuple[bool, str]:
         """
@@ -155,7 +175,12 @@ class ActionInstanceService:
             node_instance.status = ActionInstanceNodeStatusEnum.COMPLETED
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-            node_instance.outputs = pack_dict(result.outputs)
+            for handle_name, value in result.outputs.items():
+                handle_definition = await ActionInstanceService.get_handle_definition_by_name(handle_name)
+                if not handle_definition:
+                    logger.error(f"未找到连接点定义，Handle Name: {handle_name}")
+                    continue
+                node_instance.outputs[handle_definition.id] = DictModel(key=handle_name, value=value)
             await node_instance.save()
         elif result.status == "failed":
             node_instance.status = ActionInstanceNodeStatusEnum.FAILED
@@ -163,11 +188,13 @@ class ActionInstanceService:
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             await node_instance.save()
+            return False
         else:
             node_instance.status = ActionInstanceNodeStatusEnum.UNKNOWN
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             await node_instance.save()
+            return False
             
         action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
         if not action:
@@ -181,25 +208,59 @@ class ActionInstanceService:
             logger.error(f"未找到节点定义，Node Instance ID: {node_instance.id}")
             return False
         
-        next_nodes = await ActionInstanceService.find_next_node(action.blueprint_id, node_instance.node_id)
-        for target_node_id, handle_ids in next_nodes.items():
-            pass
+        next_nodes = await ActionInstanceService.find_next_node(action.id, node_instance.node_id)
+        if not next_nodes:
+            logger.error(f"未找到下一个节点，Action ID: {action.id}，Node ID: {node_instance.node_id}，行动中断")
+            return False
         
+        # 1. 搬运数据 2. 检查下一个节点是否全部就绪
+        for target_node_id, handle_ids in next_nodes.items():
+            next_node_instance = await ActionInstanceNodeModel.find_one({"_id": target_node_id})
+            if not next_node_instance:
+                logger.error(f"未找到下一个节点实例，Node Instance ID: {target_node_id}")
+                continue
+            
+            for handle_id in handle_ids:
+                handle_definition = await ActionInstanceService.get_handle_definition(handle_id)
+                if not handle_definition:
+                    logger.error(f"未找到连接点定义，Handle ID: {handle_id}")
+                    continue
+                
+                if handle_definition.type == ActionConfigIOTypeEnum.VALUE:
+                    pass
+                elif handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
+                    pass
+            await next_node_instance.save()
         
         return True
     
     @staticmethod
-    async def find_next_node(blueprint_id: str, node_id: str):
-        blueprint = await ActionInstanceService.get_blueprint(blueprint_id)
+    async def check_node_instance_dependencies(node_instance_id: str):
+        """
+        检查所有前置节点是否全部完成
+        """
+    
+    @staticmethod
+    async def find_next_node(action_id: str, node_id: str):
+        """
+        查找下一个节点的实例ID列表以及对应的连接点ID列表
+        """
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if not action:
+            logger.error(f"未找到行动，Action ID: {action_id}")
+            return False
+        
+        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
         if not blueprint:
-            logger.error(f"未找到蓝图，Blueprint ID: {blueprint_id}")
+            logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
             return False
         
         # 键是目标节点ID，值是连接点ID列表
         next_nodes = {}
         for edge in blueprint.graph.edges:
             if edge.source == node_id:
-                next_nodes[edge.target] = next_nodes.get(edge.target, []) + [edge.targetHandle]
+                instance_id = generate_id(action_id + edge.target)
+                next_nodes[instance_id] = next_nodes.get(edge.target, []) + [edge.targetHandle]
         
         return next_nodes
 

@@ -120,8 +120,8 @@ async def get_action_detail(action_id: str):
             start_at=node_instance.start_at,
             finished_at=node_instance.finished_at,
             duration=node_instance.duration,
-            inputs=unpack_dict(node_instance.inputs),
-            outputs=unpack_dict(node_instance.outputs),
+            inputs=node_instance.inputs,
+            outputs=node_instance.outputs,
             error_message=node_instance.error_message
         )
     
@@ -497,11 +497,7 @@ async def get_node_config_init(node_instance_id: str):
         ),
         config=unpack_dict(node_instance.configs),
         inputs={},
-        outputs={
-            "data_out": ActionConfigIO(
-                type=ActionConfigIOTypeEnum.VALUE,
-            )
-        }
+        outputs={}
     )
     
     return ApiResponse.success(data=response_data)
