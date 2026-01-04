@@ -254,6 +254,7 @@
                         </div>
 
                         <!-- 执行日志 -->
+                         <!-- TODO: 添加分页 -->
                         <div>
                             <h4 class="text-sm font-semibold text-gray-800 mb-3">执行日志</h4>
                             <div class="bg-gray-50 rounded-lg border border-gray-200 max-h-48 overflow-y-auto">

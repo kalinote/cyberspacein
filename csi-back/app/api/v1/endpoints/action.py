@@ -489,15 +489,29 @@ async def get_node_config_init(node_instance_id: str):
     node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id})
     if not node_definition:
         return ApiResponse.error(code=404, message=f"节点定义不存在，ID: {node_instance.definition_id}")
-    
+        
+    inputs = {}
+    for value in node_instance.inputs.values():
+        inputs[value.key] = {
+            "type": value.type.value,
+            "value": value.value
+        }
+        
+    outputs = {}
+    for value in node_instance.outputs.values():
+        outputs[value.key] = {
+            "type": value.type.value,
+            "value": value.value
+        }
+        
     response_data = ActionNodeConfigInitResponse(
         meta=ActionConfigMeta(
             node_instance_id=node_instance_id,
             action_id=node_instance.action_id
         ),
         config=unpack_dict(node_instance.configs),
-        inputs={},
-        outputs={}
+        inputs=inputs,
+        outputs=outputs
     )
     
     return ApiResponse.success(data=response_data)

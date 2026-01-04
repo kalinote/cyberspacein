@@ -3,7 +3,7 @@ from datetime import datetime
 import random
 from typing import Any
 from app.core.config import settings
-from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
+from app.models.action.action import ActionConfigIOModel, ActionInstanceModel, ActionInstanceNodeModel
 import logging
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
@@ -131,8 +131,6 @@ class ActionInstanceService:
     async def run_node(node_instance_id: str, action_id: str):
         """
         运行指定行动的指定节点
-        
-        TODO: 检查前置节点是否运行完成，如果未完成则设置状态为unready
         """
         logger.info(f"运行节点: {node_instance_id}")
         node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
@@ -140,15 +138,53 @@ class ActionInstanceService:
             logger.error(f"未找到节点，Action ID: {action_id}，Node Instance ID: {node_instance_id}")
             return False
         
-        node_instance.status = ActionInstanceNodeStatusEnum.RUNNING
-        node_instance.start_at = datetime.now()
-        await node_instance.save()
-        
         node_definition = await ActionInstanceService.get_node_definition(node_instance.definition_id)
         if not node_definition:
             logger.error(f"未找到节点定义，Node Instance ID: {node_instance_id}")
             return False
         
+        # 检查前置节点是否全部完成
+        all_previous_nodes = await ActionInstanceService.find_all_previous_nodes(action_id, node_instance.node_id)
+        previous_node_instances = await ActionInstanceNodeModel.find(In(ActionInstanceNodeModel.node_id, all_previous_nodes)).to_list()
+        for prev_node in previous_node_instances:
+            if prev_node.status != ActionInstanceNodeStatusEnum.COMPLETED:
+                logger.info(f"前置节点未完成({prev_node.node_id})，等待中，当前节点: {node_instance.id}，前置节点: {prev_node.id}")
+                node_instance.status = ActionInstanceNodeStatusEnum.UNREADY
+                await node_instance.save()
+                return False
+        
+        # 所有前置节点检查通过，设置为运行状态
+        node_instance.status = ActionInstanceNodeStatusEnum.RUNNING
+        node_instance.start_at = datetime.now()
+        await node_instance.save()
+            
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if not action:
+            logger.error(f"未找到行动，Action ID: {action_id}")
+            return False
+        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
+        if not blueprint:
+            logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
+            return False
+        
+        for edge in blueprint.graph.edges:
+            if edge.source == node_instance.node_id:
+                handle_definition = await ActionInstanceService.get_handle_definition(edge.sourceHandle)
+                if not handle_definition:
+                    # logger.error(f"未找到连接点定义，Handle ID: {edge.sourceHandle}")
+                    continue
+                
+                if handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
+                    # 生成队列名
+                    queue_name = generate_id(action_id + edge.target + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
+                    node_instance.outputs[edge.sourceHandle] = ActionConfigIOModel(
+                        key=handle_definition.handle_name, 
+                        value=queue_name,
+                        type=handle_definition.type
+                    )
+                    await node_instance.save()
+        
+        # 这里是开始运行，在此之前应该做好全部准备工作
         command = node_definition.command
         command_args = ["--api-base-url", settings.api_base_url, "--action-node-id", node_instance.id] + node_definition.command_args
         related_components = node_definition.related_components
@@ -156,15 +192,20 @@ class ActionInstanceService:
         for component in related_components:
             result = await run_component(component, command, command_args)
             if not result:
-                logger.error(f"运行组件失败，Component ID: {component}")
-                # TODO: 做运行失败的处理
+                logger.error(f"运行组件失败，调度平台无结果返回，Component ID: {component}")
+                node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+                node_instance.error_message = f"运行组件失败，调度平台无结果返回"
+                node_instance.finished_at = datetime.now()
+                node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+                await node_instance.save()
+                return False
 
         return True
 
     @staticmethod
     async def finish_node(node_instance_id: str, result: SDKResultRequest):
         """
-        TODO: 完成指定行动的指定节点，并检查和准备运行下一个节点
+        TODO: reference类型的数据需要在节点运行完成后清理inputs队列
         """
         node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
         if not node_instance:
@@ -180,7 +221,12 @@ class ActionInstanceService:
                 if not handle_definition:
                     logger.error(f"未找到连接点定义，Handle Name: {handle_name}")
                     continue
-                node_instance.outputs[handle_definition.id] = DictModel(key=handle_name, value=value)
+                node_instance.outputs[handle_definition.id] = ActionConfigIOModel(
+                    key=handle_name, 
+                    value=value,
+                    type=handle_definition.type
+                )
+                
             await node_instance.save()
         elif result.status == "failed":
             node_instance.status = ActionInstanceNodeStatusEnum.FAILED
@@ -195,14 +241,12 @@ class ActionInstanceService:
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             await node_instance.save()
             return False
-            
+        
         action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
         if not action:
             logger.error(f"未找到行动，Action ID: {node_instance.action_id}")
             return False
             
-        # TODO: 设置下游节点的inputs，需要合并已存在的(其他节点设置的)inputs
-        # TODO: 需要判断该节点的结果是值还是引用
         node_definition = await ActionInstanceService.get_node_definition(node_instance.definition_id)
         if not node_definition:
             logger.error(f"未找到节点定义，Node Instance ID: {node_instance.id}")
@@ -210,40 +254,73 @@ class ActionInstanceService:
         
         next_nodes = await ActionInstanceService.find_next_node(action.id, node_instance.node_id)
         if not next_nodes:
-            logger.error(f"未找到下一个节点，Action ID: {action.id}，Node ID: {node_instance.node_id}，行动中断")
+            # 蓝图错误或行动完成，后续添加检查是否所有节点已完成，现在先暂时不做
             return False
         
-        # 1. 搬运数据 2. 检查下一个节点是否全部就绪
-        for target_node_id, handle_ids in next_nodes.items():
+        # 1. 搬运数据 2. 运行下一个节点
+        for target_node_id, edge_mappings in next_nodes.items():
             next_node_instance = await ActionInstanceNodeModel.find_one({"_id": target_node_id})
             if not next_node_instance:
                 logger.error(f"未找到下一个节点实例，Node Instance ID: {target_node_id}")
                 continue
             
-            for handle_id in handle_ids:
-                handle_definition = await ActionInstanceService.get_handle_definition(handle_id)
-                if not handle_definition:
-                    logger.error(f"未找到连接点定义，Handle ID: {handle_id}")
+            for source_handle_id, target_handle_id in edge_mappings:
+                if source_handle_id not in node_instance.outputs:
+                    logger.error(f"未找到源连接点的输出数据，Source Handle ID: {source_handle_id}")
                     continue
                 
-                if handle_definition.type == ActionConfigIOTypeEnum.VALUE:
-                    pass
-                elif handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
-                    pass
+                source_output = node_instance.outputs[source_handle_id]
+                
+                target_handle_definition = await ActionInstanceService.get_handle_definition(target_handle_id)
+                if not target_handle_definition:
+                    logger.error(f"未找到目标连接点定义，Target Handle ID: {target_handle_id}")
+                    continue
+                
+                next_node_instance.inputs[target_handle_id] = ActionConfigIOModel(
+                    key=target_handle_definition.handle_name,
+                    value=source_output.value,
+                    type=source_output.type
+                )
+
             await next_node_instance.save()
+            
+            # 运行下一个节点
+            await ActionInstanceService.run_node(next_node_instance.id, action.id)
         
         return True
     
     @staticmethod
-    async def check_node_instance_dependencies(node_instance_id: str):
-        """
-        检查所有前置节点是否全部完成
-        """
-    
-    @staticmethod
     async def find_next_node(action_id: str, node_id: str):
         """
-        查找下一个节点的实例ID列表以及对应的连接点ID列表
+        查找下一个节点的实例ID列表以及对应的连接点映射
+        返回结构：{目标节点实例ID: [(sourceHandle, targetHandle), ...]}
+        """
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if not action:
+            logger.error(f"未找到行动，Action ID: {action_id}")
+            return {}
+        
+        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
+        if not blueprint:
+            logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
+            return {}
+        
+        next_nodes = {}
+        for edge in blueprint.graph.edges:
+            if edge.source == node_id:
+                instance_id = generate_id(action_id + edge.target)
+                edge_mapping = (edge.sourceHandle, edge.targetHandle)
+                if instance_id in next_nodes:
+                    next_nodes[instance_id].append(edge_mapping)
+                else:
+                    next_nodes[instance_id] = [edge_mapping]
+        
+        return next_nodes
+
+    @staticmethod
+    async def find_all_previous_nodes(action_id: str, node_id: str):
+        """
+        获取所有前置节点实例ID列表
         """
         action = await ActionInstanceModel.find_one({"_id": action_id})
         if not action:
@@ -255,14 +332,12 @@ class ActionInstanceService:
             logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
             return False
         
-        # 键是目标节点ID，值是连接点ID列表
-        next_nodes = {}
+        previous_nodes = []
         for edge in blueprint.graph.edges:
-            if edge.source == node_id:
-                instance_id = generate_id(action_id + edge.target)
-                next_nodes[instance_id] = next_nodes.get(edge.target, []) + [edge.targetHandle]
+            if edge.target == node_id:
+                previous_nodes.append(edge.source)
         
-        return next_nodes
+        return previous_nodes
 
     @staticmethod
     async def set_node_status(node_id: str, action_id: str, status: ActionInstanceNodeStatusEnum):

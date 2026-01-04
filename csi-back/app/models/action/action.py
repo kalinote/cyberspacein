@@ -32,6 +32,10 @@ class ActionInstanceModel(Document):
             "status",
         ]
 
+class ActionConfigIOModel(BaseModel):
+    type: ActionConfigIOTypeEnum = Field(description="数据类型")
+    key: str = Field(description="接口名")
+    value: Any = Field(description="数据值")
         
 class ActionInstanceNodeModel(Document):
     """
@@ -52,8 +56,8 @@ class ActionInstanceNodeModel(Document):
     
     progress: int = Field(default=0, description="节点执行进度(%)")
     configs: list[DictModel] = Field(default_factory=list, description="节点配置")
-    inputs: dict[str, DictModel] = Field(default_factory=dict, description="节点输入配置，key是handle_id，value是数据")
-    outputs: dict[str, DictModel] = Field(default_factory=dict, description="节点输出配置，key是handle_id，value是数据")
+    inputs: dict[str, ActionConfigIOModel] = Field(default_factory=dict, description="节点输入配置，key是handle_id，value是数据")
+    outputs: dict[str, ActionConfigIOModel] = Field(default_factory=dict, description="节点输出配置，key是handle_id，value是数据")
     
     class Settings:
         name = "action_instance_nodes"
