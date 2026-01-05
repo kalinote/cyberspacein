@@ -2,6 +2,7 @@ from app.db.mariadb import get_db_session, init_mariadb, close_mariadb
 from app.db.mongodb import get_mongodb, init_mongodb, close_mongodb
 from app.db.redis import get_redis, init_redis, close_redis
 from app.db.elasticsearch import get_es, init_elasticsearch, close_elasticsearch
+from app.db.rabbitmq import init_rabbitmq, close_rabbitmq, delete_queue
 
 __all__ = [
     "get_db_session",
@@ -16,4 +17,7 @@ __all__ = [
     "get_es",
     "init_elasticsearch",
     "close_elasticsearch",
+    "init_rabbitmq",
+    "close_rabbitmq",
+    "delete_queue",
 ]

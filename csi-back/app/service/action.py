@@ -17,11 +17,11 @@ from app.utils.workflow import find_start_nodes
 from app.models.action.blueprint import ActionBlueprintModel
 from app.utils.async_fetch import async_post
 from beanie.operators import In
+from app.db.rabbitmq import delete_queue
 
 logger = logging.getLogger(__name__)
 
 class ActionInstanceService:
-    # TODO: 缓存节点定义和蓝图，使用缓存避免重复查询数据库
     # TODO: 后续换成redis缓存，设置10分钟过期时间，同时在数据库更新时清理缓存
     blueprints: dict[str, ActionBlueprintModel] = {}
     node_definitions: dict[str, ActionNodeModel] = {}
@@ -202,9 +202,6 @@ class ActionInstanceService:
 
     @staticmethod
     async def finish_node(node_instance_id: str, result: SDKResultRequest):
-        """
-        TODO: reference类型的数据需要在节点运行完成后清理inputs队列
-        """
         node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
         if not node_instance:
             logger.error(f"上报节点实例不存在，ID: {node_instance_id}")
@@ -227,6 +224,13 @@ class ActionInstanceService:
                 )
                 
             await node_instance.save()
+            
+            for input_handle_id, input_data in node_instance.inputs.items():
+                if input_data.type == ActionConfigIOTypeEnum.REFERENCE:
+                    try:
+                        await delete_queue(input_data.value)
+                    except Exception as e:
+                        logger.error(f"清理inputs队列失败，节点实例ID: {node_instance_id}, 队列名: {input_data.value}, 错误: {str(e)}")
             
             action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
             action.finished_nodes_instance.append(node_instance.id)

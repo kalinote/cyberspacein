@@ -12,7 +12,8 @@ from app.db import (
     init_mariadb, close_mariadb,
     init_mongodb, close_mongodb,
     init_redis, close_redis,
-    init_elasticsearch, close_elasticsearch
+    init_elasticsearch, close_elasticsearch,
+    init_rabbitmq, close_rabbitmq
 )
 
 logging.basicConfig(
@@ -39,9 +40,11 @@ async def lifespan(app: FastAPI):
     await init_mongodb()
     await init_redis()
     await init_elasticsearch()
+    await init_rabbitmq()
     
     yield
     
+    await close_rabbitmq()
     await close_mariadb()
     await close_mongodb()
     await close_redis()

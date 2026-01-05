@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     ELASTICSEARCH_USER: str
     ELASTICSEARCH_PASSWORD: str
 
+    RABBITMQ_HOST: str
+    RABBITMQ_PORT: int
+    RABBITMQ_USERNAME: str
+    RABBITMQ_PASSWORD: str
+    RABBITMQ_VHOST: str = "/"
+
     CRAWLAB_BASE_URL: str
     CRAWLAB_TOKEN: str
 
