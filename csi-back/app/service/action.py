@@ -263,6 +263,11 @@ class ActionInstanceService:
         next_nodes = await ActionInstanceService.find_next_node(action.id, node_instance.node_id)
         if not next_nodes:
             # TODO: 蓝图错误或行动完成，后续添加检查是否所有节点已完成
+            if await ActionInstanceService.check_action_finished(action.id):
+                await ActionInstanceService.finish_action(action.id)
+                return True
+            else:
+                logger.warning(f"行动未完成，但无法找到下一个节点，Action ID: {action.id}, Node Instance ID: {node_instance.id}")
             return False
         
         # 1. 搬运数据 2. 运行下一个节点
@@ -359,9 +364,42 @@ class ActionInstanceService:
         return True
 
     @staticmethod
+    async def finish_action(action_id: str):
+        """
+        完成行动
+        """
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if not action:
+            logger.error(f"未找到行动，Action ID: {action_id}")
+            return False
+        action.status = ActionFlowStatusEnum.COMPLETED
+        action.finished_at = datetime.now()
+        action.duration = (datetime.now() - action.start_at).total_seconds()
+        await action.save()
+        return True
+    
+    @staticmethod
+    async def fail_action(action_id: str, error_message: str):
+        """
+        失败行动
+        """
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if not action:
+            logger.error(f"未找到行动，Action ID: {action_id}")
+            return False
+        action.status = ActionFlowStatusEnum.FAILED
+        action.error_message = error_message
+        action.finished_at = datetime.now()
+        action.duration = (datetime.now() - action.start_at).total_seconds()
+        await action.save()
+        return True
+
+    @staticmethod
     async def check_action_finished(action_id: str):
         """
         判断行动是否所有节点全部完成
+        
+        TODO: 暂时直接判断节点列表和已完成节点列表是否数量一致，后续考虑引入封装、分支和循环时的判断方法
         """
         
         action = await ActionInstanceModel.find_one({"_id": action_id})

@@ -142,6 +142,7 @@ async def get_action_detail(action_id: str):
             node_details=node_details
         ))
 
+#region 蓝图相关接口
 @router.post("/blueprint", response_model=ApiResponse[ActionBlueprintDetailResponse], summary="创建蓝图")
 async def create_blueprint(data: ActionBlueprint):
     blueprint_id = generate_id(data.name + data.version + str(len(data.graph.nodes)) + str(len(data.graph.edges)))
@@ -285,6 +286,7 @@ async def get_blueprint(blueprint_id: str):
     )
     
     return ApiResponse.success(data=response_data)
+#endregion
 
 #region 资源相关接口
 @router.get("/resource/nodes", response_model=ApiResponse[List[ActionNodeResponse]], summary="获取节点列表")
