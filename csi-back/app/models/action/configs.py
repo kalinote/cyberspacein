@@ -19,3 +19,4 @@ class ActionNodesHandleConfigModel(Document):
             "handle_name",
             "type",
         ]
+        

@@ -61,7 +61,7 @@ async def get_action_instances(
         if not blueprint:
             continue
         
-        completed_steps = len(action_instance.finished_nodes_id) if action_instance.finished_nodes_id else 0
+        completed_steps = len(action_instance.finished_nodes_instance) if action_instance.finished_nodes_instance else 0
         total_steps = len(action_instance.nodes_id) if action_instance.nodes_id else 0
         
         results.append(ActionInstanceBaseInfoResponse(
@@ -89,7 +89,7 @@ async def get_action_detail(action_id: str):
     if not blueprint:
         return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
     
-    completed_steps = len(action_instance.finished_nodes_id) if action_instance.finished_nodes_id else 0
+    completed_steps = len(action_instance.finished_nodes_instance) if action_instance.finished_nodes_instance else 0
     total_steps = len(action_instance.nodes_id) if action_instance.nodes_id else 0
     
     graph = graph_model2schemas(blueprint.graph)
@@ -527,8 +527,12 @@ async def report_action_node_result(
     return ApiResponse.success()
 
 @router.post("/sdk/{node_instance_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]], summary="上报节点心跳")
-async def report_action_node_heartbeat(node_instance_id: str, data: Dict[str, Any]):
+async def report_action_node_heartbeat(
+    node_instance_id: str, data: Dict[str, Any],
+    background_tasks: BackgroundTasks
+):
     logger.info(f"上报节点心跳: {node_instance_id}, {data}")
+    background_tasks.add_task(ActionInstanceService.update_progress, node_instance_id, data.get("progress", 0))
     return ApiResponse.success()
 #endregion
 

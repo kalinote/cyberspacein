@@ -883,7 +883,7 @@ const startPolling = () => {
         if (loadingActionData.value) return
         
         await updateActionData()
-    }, 5000)
+    }, 1500)
 }
 
 const stopPolling = () => {

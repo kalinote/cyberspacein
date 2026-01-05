@@ -60,8 +60,6 @@ class ActionInstanceService:
             ActionInstanceService.handle_definitions[handle.id] = handle
         
         return handle
-
-
     
     @staticmethod
     async def init(blueprint_id: str) -> tuple[bool, str]:
@@ -214,12 +212,13 @@ class ActionInstanceService:
         
         if result.status == "success":
             node_instance.status = ActionInstanceNodeStatusEnum.COMPLETED
+            node_instance.progress = 100
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             for handle_name, value in result.outputs.items():
                 handle_definition = await ActionInstanceService.get_handle_definition_by_name(handle_name)
                 if not handle_definition:
-                    logger.error(f"未找到连接点定义，Handle Name: {handle_name}")
+                    # logger.error(f"未找到连接点定义，Handle Name: {handle_name}")
                     continue
                 node_instance.outputs[handle_definition.id] = ActionConfigIOModel(
                     key=handle_name, 
@@ -228,6 +227,11 @@ class ActionInstanceService:
                 )
                 
             await node_instance.save()
+            
+            action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
+            action.finished_nodes_instance.append(node_instance.id)
+            action.progress = int(len(action.finished_nodes_instance) / len(action.nodes_id)) * 100
+            await action.save()
         elif result.status == "failed":
             node_instance.status = ActionInstanceNodeStatusEnum.FAILED
             node_instance.error_message = result.error
@@ -254,7 +258,7 @@ class ActionInstanceService:
         
         next_nodes = await ActionInstanceService.find_next_node(action.id, node_instance.node_id)
         if not next_nodes:
-            # 蓝图错误或行动完成，后续添加检查是否所有节点已完成，现在先暂时不做
+            # TODO: 蓝图错误或行动完成，后续添加检查是否所有节点已完成
             return False
         
         # 1. 搬运数据 2. 运行下一个节点
@@ -349,3 +353,41 @@ class ActionInstanceService:
         node_instance.status = status
         await node_instance.save()
         return True
+
+    @staticmethod
+    async def check_action_finished(action_id: str):
+        """
+        判断行动是否所有节点全部完成
+        """
+        
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if not action:
+            logger.error(f"未找到行动，Action ID: {action_id}")
+            return False
+        
+        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
+        if not blueprint:
+            logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
+            return False
+        
+        return len(action.finished_nodes_instance) == len(blueprint.graph.nodes)
+    
+    @staticmethod
+    async def update_progress(node_instance_id: str, progress: float):
+        """
+        更新节点运行进度
+        """
+        if progress > 100:
+            progress = 100
+        if progress < 0:
+            progress = 0
+        
+        node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
+        if not node_instance:
+            logger.error(f"未找到节点实例，Node Instance ID: {node_instance_id}")
+            return False
+        
+        node_instance.progress = progress
+        await node_instance.save()
+        return True
+    
