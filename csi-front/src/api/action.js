@@ -48,5 +48,9 @@ export const actionApi = {
   // 获取所有节点接口列表
   getAllNodeHandles() {
     return request.get(`/action/configs/handles/all`)
+  },
+  // 获取资源统计数据
+  getStatistics() {
+    return request.get('/action/configs/statistics')
   }
 }

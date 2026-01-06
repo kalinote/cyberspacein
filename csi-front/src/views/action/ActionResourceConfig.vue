@@ -25,14 +25,14 @@
               <Icon icon="mdi:chart-tree" class="text-blue-600 text-xl" />
               <div>
                 <p class="text-xs text-gray-500">行动节点</p>
-                <p class="text-lg font-bold text-gray-900">{{ nodeList.length }}</p>
+                <p class="text-lg font-bold text-gray-900">{{ statistics.node_count }}</p>
               </div>
             </div>
             <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-green-100 flex items-center gap-3">
               <Icon icon="mdi:cog" class="text-green-600 text-xl" />
               <div>
                 <p class="text-xs text-gray-500">基础组件</p>
-                <p class="text-lg font-bold text-gray-900">{{ componentList.length }}</p>
+                <p class="text-lg font-bold text-gray-900">{{ statistics.base_component_count }}</p>
               </div>
             </div>
           </div>
@@ -736,6 +736,15 @@ const searchKeyword = ref('')
 const loading = ref(false)
 const expandedTabs = ref(new Set(['nodes']))
 
+const statistics = ref({
+  node_count: 0,
+  base_component_count: 0,
+  handle_count: 0,
+  proxy_count: 0,
+  account_count: 0,
+  container_count: 0
+})
+
 const dialogVisible = ref(false)
 const formRef = ref(null)
 const submitting = ref(false)
@@ -956,16 +965,15 @@ const toggleExpand = (tabKey) => {
 }
 
 const getResourceCount = (tabKey) => {
-  if (tabKey === 'nodes') {
-    return nodeList.value.length
+  const countMap = {
+    'nodes': statistics.value.node_count,
+    'baseComponents': statistics.value.base_component_count,
+    'nodeHandles': statistics.value.handle_count,
+    'proxy': statistics.value.proxy_count,
+    'accounts': statistics.value.account_count,
+    'containers': statistics.value.container_count
   }
-  if (tabKey === 'baseComponents') {
-    return componentList.value.length
-  }
-  if (tabKey === 'nodeHandles') {
-    return handleList.value.length
-  }
-  return 0
+  return countMap[tabKey] || 0
 }
 
 const nodeTypeColorMap = {
@@ -1166,6 +1174,7 @@ const handleSubmit = async () => {
       ElMessage.success('新增行动节点成功')
       dialogVisible.value = false
       await fetchNodeList()
+      await fetchStatistics()
     } else {
       ElMessage.error(`新增行动节点失败: ${response.message}`)
     }
@@ -1427,6 +1436,7 @@ const handleSubmitHandle = async () => {
       ElMessage.success('新增节点接口成功')
       handleDialogVisible.value = false
       await fetchHandleList()
+      await fetchStatistics()
     } else {
       ElMessage.error(`新增节点接口失败: ${response.message}`)
     }
@@ -1449,6 +1459,19 @@ const handleDeleteHandle = (handle) => {
   ElMessage.info(`删除接口: ${handle.handle_name}`)
 }
 
+const fetchStatistics = async () => {
+  try {
+    const response = await actionApi.getStatistics()
+    if (response.code === 0) {
+      statistics.value = response.data
+    } else {
+      ElMessage.error(`获取统计数据失败: ${response.message}`)
+    }
+  } catch (error) {
+    ElMessage.error('获取统计数据失败')
+  }
+}
+
 watch(activeTab, (newTab) => {
   if (newTab === 'nodeHandles') {
     fetchHandleList()
@@ -1458,6 +1481,7 @@ watch(activeTab, (newTab) => {
 })
 
 onMounted(() => {
+  fetchStatistics()
   fetchNodeList()
   if (activeTab.value === 'baseComponents') {
     fetchComponentList()

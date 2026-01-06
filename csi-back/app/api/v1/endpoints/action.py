@@ -7,7 +7,7 @@ from beanie.operators import In
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.schemas.action.action import ActionConfigIO, ActionConfigMeta, ActionDetailResponse, ActionInstanceBaseInfoResponse, ActionNodeConfigInitResponse, ActionNodeDetailResponse, StartActionRequest, StartActionResponse
-from app.schemas.action.configs import ActionNodesHandleConfigAllResponse, ActionNodesHandleConfigRequest, ActionNodesHandleConfigResponse
+from app.schemas.action.configs import ActionConfigsStatisticsResponse, ActionNodesHandleConfigAllResponse, ActionNodesHandleConfigRequest, ActionNodesHandleConfigResponse
 from app.schemas.action.node import ActionNode
 from app.schemas.action.sdk import SDKResultRequest
 
@@ -539,6 +539,23 @@ async def report_action_node_heartbeat(
 #endregion
 
 #region 节点配置相关接口
+@router.get("/configs/statistics", response_model=ApiResponse[ActionConfigsStatisticsResponse], summary="获取节点配置统计信息")
+async def get_node_configs_statistics():
+    """
+    # 获取节点配置统计信息
+    
+    用于节点配置页面左侧栏和顶部栏的资源数量统计
+    """
+    node_count = await ActionNodeModel.find_all().count()
+    handle_count = await ActionNodesHandleConfigModel.find_all().count()
+    
+    statistics = ActionConfigsStatisticsResponse(
+        node_count=node_count,
+        handle_count=handle_count
+    )
+    
+    return ApiResponse.success(data=statistics)
+
 @router.get("/configs/handles/all", response_model=ApiResponse[List[ActionNodesHandleConfigAllResponse]], summary="获取所有节点配置handle列表")
 async def get_all_node_configs_handles():
     handles = await ActionNodesHandleConfigModel.find_all().to_list()
