@@ -10,6 +10,7 @@ import ActionResourceConfig from '../views/action/ActionResourceConfig.vue'
 import ActionHistory from '../views/action/ActionHistory.vue'
 import ActionDetail from '../views/action/ActionDetail.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
+import TargetManagement from '../views/target/TargetManagement.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -59,6 +60,12 @@ const router = createRouter({
       path: '/alert',
       name: 'alert',
       component: Alert
+    },
+    {
+      // 目标管理
+      path: '/target',
+      name: 'target-management',
+      component: TargetManagement
     },
     {
       // 智能体

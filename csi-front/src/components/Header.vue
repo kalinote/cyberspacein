@@ -10,22 +10,23 @@
             <span class="text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
           </div>
 
-          <nav class="hidden md:flex ml-10 space-x-8">
+          <nav class="hidden md:flex ml-10 space-x-6">
             <router-link to="/" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">概览</router-link>
             <router-link to="/search" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">信息检索</router-link>
             <router-link to="/action" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">行动部署</router-link>
+            <router-link to="/target" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">目标管理</router-link>
             <router-link to="/agent" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">智能体</router-link>
             <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
             <router-link to="/alert" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">告警信息</router-link>
           </nav>
         </div>
 
-        <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-10">
           <div class="hidden md:block">
             <el-input
               placeholder="快速检索..."
               :prefix-icon="'Search'"
-              style="width: 260px"
+              style="width: 200px"
               clearable
             />
           </div>
