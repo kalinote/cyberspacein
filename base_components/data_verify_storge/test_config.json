@@ -1,0 +1,16 @@
+{
+    "meta": {
+        "node_id": "test_node_001",
+        "action_id": "694251b96d9534925bd9f6f3"
+    },
+    "config": {},
+    "inputs": {
+        "data_in": {
+            "type": "reference",
+            "value": [
+                "tmp_queue_4"
+            ]
+        }
+    },
+    "outputs": {}
+}
