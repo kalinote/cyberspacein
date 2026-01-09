@@ -173,14 +173,12 @@ class ActionInstanceService:
                     continue
                 
                 if handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
-                    # 生成队列名
                     queue_name = generate_id(action_id + edge.target + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
-                    node_instance.outputs[edge.sourceHandle] = ActionConfigIOModel(
-                        key=handle_definition.handle_name, 
-                        value=queue_name,
-                        type=handle_definition.type
-                    )
-                    await node_instance.save()
+                    node_instance.reference_queues[edge.target] = queue_name
+                    logger.info(f"为节点 {node_instance.node_id} -> {edge.target} 生成队列: {queue_name}")
+        
+        if node_instance.reference_queues:
+            await node_instance.save()
         
         # 这里是开始运行，在此之前应该做好全部准备工作
         command = node_definition.command
@@ -217,6 +215,10 @@ class ActionInstanceService:
                 if not handle_definition:
                     # logger.error(f"未找到连接点定义，Handle Name: {handle_name}")
                     continue
+                
+                if handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
+                    continue
+                
                 node_instance.outputs[handle_definition.id] = ActionConfigIOModel(
                     key=handle_name, 
                     value=value,
@@ -224,13 +226,6 @@ class ActionInstanceService:
                 )
                 
             await node_instance.save()
-            
-            for input_handle_id, input_data in node_instance.inputs.items():
-                if input_data.type == ActionConfigIOTypeEnum.REFERENCE:
-                    try:
-                        await delete_queue(input_data.value)
-                    except Exception as e:
-                        logger.error(f"清理inputs队列失败，节点实例ID: {node_instance_id}, 队列名: {input_data.value}, 错误: {str(e)}")
             
             action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
             action.finished_nodes_instance.append(node_instance.id)
@@ -278,22 +273,37 @@ class ActionInstanceService:
                 continue
             
             for source_handle_id, target_handle_id in edge_mappings:
-                if source_handle_id not in node_instance.outputs:
-                    logger.error(f"未找到源连接点的输出数据，Source Handle ID: {source_handle_id}")
+                source_handle_definition = await ActionInstanceService.get_handle_definition(source_handle_id)
+                if not source_handle_definition:
+                    logger.error(f"未找到源连接点定义，Source Handle ID: {source_handle_id}")
                     continue
-                
-                source_output = node_instance.outputs[source_handle_id]
                 
                 target_handle_definition = await ActionInstanceService.get_handle_definition(target_handle_id)
                 if not target_handle_definition:
                     logger.error(f"未找到目标连接点定义，Target Handle ID: {target_handle_id}")
                     continue
                 
-                next_node_instance.inputs[target_handle_id] = ActionConfigIOModel(
-                    key=target_handle_definition.handle_name,
-                    value=source_output.value,
-                    type=source_output.type
-                )
+                if source_handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
+                    if next_node_instance.node_id in node_instance.reference_queues:
+                        queue_name = node_instance.reference_queues[next_node_instance.node_id]
+                        next_node_instance.inputs[target_handle_id] = ActionConfigIOModel(
+                            key=target_handle_definition.handle_name,
+                            value=queue_name,
+                            type=ActionConfigIOTypeEnum.REFERENCE
+                        )
+                        logger.info(f"传递队列 {queue_name} 给节点 {next_node_instance.node_id}")
+                    else:
+                        logger.error(f"未找到目标节点的队列映射，Target Node ID: {next_node_instance.node_id}")
+                else:
+                    if source_handle_id in node_instance.outputs:
+                        source_output = node_instance.outputs[source_handle_id]
+                        next_node_instance.inputs[target_handle_id] = ActionConfigIOModel(
+                            key=target_handle_definition.handle_name,
+                            value=source_output.value,
+                            type=source_output.type
+                        )
+                    else:
+                        logger.error(f"未找到源连接点的输出数据，Source Handle ID: {source_handle_id}")
 
             await next_node_instance.save()
             
@@ -364,6 +374,24 @@ class ActionInstanceService:
         return True
 
     @staticmethod
+    async def cleanup_action_queues(action_id: str):
+        """
+        清理行动相关的所有临时队列
+        """
+        queue_names = set()
+        node_instances = await ActionInstanceNodeModel.find({"action_id": action_id}).to_list()
+        for node_instance in node_instances:
+            for queue_name in node_instance.reference_queues.values():
+                queue_names.add(queue_name)
+        
+        for queue_name in queue_names:
+            try:
+                await delete_queue(queue_name)
+                logger.info(f"已清理队列: {queue_name}")
+            except Exception as e:
+                logger.error(f"清理队列失败，队列名: {queue_name}, 错误: {str(e)}")
+    
+    @staticmethod
     async def finish_action(action_id: str):
         """
         完成行动
@@ -372,6 +400,9 @@ class ActionInstanceService:
         if not action:
             logger.error(f"未找到行动，Action ID: {action_id}")
             return False
+        
+        await ActionInstanceService.cleanup_action_queues(action_id)
+        
         action.status = ActionFlowStatusEnum.COMPLETED
         action.finished_at = datetime.now()
         action.duration = (datetime.now() - action.start_at).total_seconds()
@@ -387,6 +418,9 @@ class ActionInstanceService:
         if not action:
             logger.error(f"未找到行动，Action ID: {action_id}")
             return False
+        
+        await ActionInstanceService.cleanup_action_queues(action_id)
+        
         action.status = ActionFlowStatusEnum.FAILED
         action.error_message = error_message
         action.finished_at = datetime.now()

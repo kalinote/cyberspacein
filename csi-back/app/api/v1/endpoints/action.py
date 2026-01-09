@@ -114,6 +114,20 @@ async def get_action_detail(action_id: str):
             continue
 
         node_instance = node_instance_map[node_id]
+        
+        combined_outputs = dict(node_instance.outputs)
+        for target_node_id, queue_name in node_instance.reference_queues.items():
+            for edge in blueprint.graph.edges:
+                if edge.source == node_id and edge.target == target_node_id:
+                    handle_config = await ActionNodesHandleConfigModel.find_one({"_id": edge.sourceHandle})
+                    if handle_config:
+                        combined_outputs[edge.sourceHandle] = {
+                            "type": "reference",
+                            "key": handle_config.handle_name,
+                            "value": queue_name
+                        }
+                    break
+        
         node_details[node_id] = ActionNodeDetailResponse(
             status=node_instance.status,
             progress=node_instance.progress,
@@ -121,7 +135,7 @@ async def get_action_detail(action_id: str):
             finished_at=node_instance.finished_at,
             duration=node_instance.duration,
             inputs=node_instance.inputs,
-            outputs=node_instance.outputs,
+            outputs=combined_outputs,
             error_message=node_instance.error_message
         )
     
@@ -498,13 +512,39 @@ async def get_node_config_init(node_instance_id: str):
             "type": value.type.value,
             "value": value.value
         }
-        
+    
+    action_instance = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
+    if not action_instance:
+        return ApiResponse.error(code=404, message=f"行动实例不存在，ID: {node_instance.action_id}")
+    
+    blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
+    if not blueprint:
+        return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
+    
     outputs = {}
+    handle_queues = {}
+    for edge in blueprint.graph.edges:
+        if edge.source == node_instance.node_id:
+            if edge.target in node_instance.reference_queues:
+                queue_name = node_instance.reference_queues[edge.target]
+                if edge.sourceHandle not in handle_queues:
+                    handle_queues[edge.sourceHandle] = []
+                handle_queues[edge.sourceHandle].append(queue_name)
+    
+    for handle_id, queue_names in handle_queues.items():
+        handle_config = await ActionNodesHandleConfigModel.find_one({"_id": handle_id})
+        if handle_config:
+            outputs[handle_config.handle_name] = {
+                "type": "reference",
+                "value": queue_names
+            }
+    
     for value in node_instance.outputs.values():
-        outputs[value.key] = {
-            "type": value.type.value,
-            "value": value.value
-        }
+        if value.type != ActionConfigIOTypeEnum.REFERENCE:
+            outputs[value.key] = {
+                "type": value.type.value,
+                "value": value.value
+            }
         
     response_data = ActionNodeConfigInitResponse(
         meta=ActionConfigMeta(
