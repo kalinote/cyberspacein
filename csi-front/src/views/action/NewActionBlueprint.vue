@@ -255,22 +255,50 @@ const nodeTypes = computed(() => {
 const elements = ref([])
 const { addEdges, addNodes, onConnect, screenToFlowCoordinate, onNodesInitialized, updateNode, isValidConnection, getNodes, getEdges, getViewport } = useVueFlow()
 
+/**
+ * 验证节点连接是否有效
+ * 规则：
+ * 1. source handle 只能连接 target handle
+ * 2. 每个 target handle 只能接受一个上游连接
+ * 3. 每个 source handle 可以连接多个下游 target handle
+ * 4. handle 必须兼容（ID相同或在兼容列表中）
+ */
 isValidConnection.value = (connection) => {
+    // 1. 基础验证：节点是否存在
     const sourceNode = elements.value.find(el => el.id === connection.source)
     const targetNode = elements.value.find(el => el.id === connection.target)
 
     if (!sourceNode || !targetNode) return false
 
+    // 2. 获取节点配置
     const sourceConfig = nodeTypeConfigs.value.find(c => c.id === sourceNode.type)
     const targetConfig = nodeTypeConfigs.value.find(c => c.id === targetNode.type)
 
     if (!sourceConfig || !targetConfig) return false
 
+    // 3. 获取 handle 配置
     const sourceHandle = sourceConfig.handles.find(h => h.id === connection.sourceHandle)
     const targetHandle = targetConfig.handles.find(h => h.id === connection.targetHandle)
 
     if (!sourceHandle || !targetHandle) return false
 
+    // 4. 类型验证：source 只能连接 target
+    if (sourceHandle.type !== 'source' || targetHandle.type !== 'target') {
+        return false
+    }
+
+    // 5. 检查 target handle 是否已被连接（每个输入只能有一个连接）
+    const existingConnection = elements.value.find(el => 
+        el.source && // 是边（edge），不是节点
+        el.target === connection.target && 
+        el.targetHandle === connection.targetHandle
+    )
+    
+    if (existingConnection) {
+        return false // target handle 已有连接，不允许重复连接
+    }
+
+    // 6. Handle 兼容性检查
     const sourceHandleId = sourceHandle.id
     const targetHandleId = targetHandle.id
 
@@ -279,7 +307,7 @@ isValidConnection.value = (connection) => {
         return true
     }
 
-    // 只检查目标handle的other_compatible_interfaces是否包含源handle的id
+    // 检查目标handle的other_compatible_interfaces是否包含源handle的id
     const targetCompatibleInterfaces = targetHandle.other_compatible_interfaces || []
     return targetCompatibleInterfaces.includes(sourceHandleId)
 }
