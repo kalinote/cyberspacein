@@ -1,6 +1,5 @@
 <template>
     <div class="h-screen flex flex-col bg-white">
-        <!-- TODO: 此页面尚未完成，暂时用于功能和布局展示 -->
         <Header />
 
         <div class="px-5 py-3 bg-white border-b border-gray-200 flex items-center shrink-0">
@@ -156,11 +155,11 @@
                             {{ getStatusText(selectedNodeDetail.status) }}
                         </el-tag>
                     </div>
-                    <el-button type="primary" link size="small" @click="collapseNodeDetail">
+                    <el-button type="primary" link size="small" @click="toggleCollapse('nodeDetail')">
                         <template #icon>
-                            <Icon :icon="nodeDetailCollapsed ? 'mdi:chevron-up' : 'mdi:chevron-down'" />
+                            <Icon :icon="collapsedState.nodeDetail ? 'mdi:chevron-up' : 'mdi:chevron-down'" />
                         </template>
-                        {{ nodeDetailCollapsed ? '展开' : '折叠' }}
+                        {{ collapsedState.nodeDetail ? '展开' : '折叠' }}
                     </el-button>
                 </div>
                 <div v-if="selectedNodeDetail" class="flex-1 overflow-y-auto p-6">
@@ -212,13 +211,13 @@
                         <div v-if="selectedNodeConfigs">
                             <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between">
                                 <span>配置参数</span>
-                                <el-button type="primary" link size="small" @click="toggleConfigsCollapsed">
+                                <el-button type="primary" link size="small" @click="toggleCollapse('configs')">
                                     <template #icon>
-                                        <Icon :icon="configsCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
+                                        <Icon :icon="collapsedState.configs ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
                                     </template>
                                 </el-button>
                             </h4>
-                            <div v-show="!configsCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <div v-show="!collapsedState.configs" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                 <pre class="text-xs overflow-x-auto"><code class="language-json" v-html="highlightJSON(selectedNodeConfigs)"></code></pre>
                             </div>
                         </div>
@@ -227,13 +226,13 @@
                         <div v-if="selectedNodeDetail.inputs">
                             <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between">
                                 <span>输入数据</span>
-                                <el-button type="primary" link size="small" @click="toggleInputsCollapsed">
+                                <el-button type="primary" link size="small" @click="toggleCollapse('inputs')">
                                     <template #icon>
-                                        <Icon :icon="inputsCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
+                                        <Icon :icon="collapsedState.inputs ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
                                     </template>
                                 </el-button>
                             </h4>
-                            <div v-show="!inputsCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <div v-show="!collapsedState.inputs" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                 <pre class="text-xs overflow-x-auto"><code class="language-json" v-html="highlightJSON(selectedNodeDetail.inputs)"></code></pre>
                             </div>
                         </div>
@@ -242,13 +241,13 @@
                         <div v-if="selectedNodeDetail.outputs">
                             <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between">
                                 <span>输出数据</span>
-                                <el-button type="primary" link size="small" @click="toggleoutputsCollapsed">
+                                <el-button type="primary" link size="small" @click="toggleCollapse('outputs')">
                                     <template #icon>
-                                        <Icon :icon="outputsCollapsed ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
+                                        <Icon :icon="collapsedState.outputs ? 'mdi:chevron-down' : 'mdi:chevron-up'" />
                                     </template>
                                 </el-button>
                             </h4>
-                            <div v-show="!outputsCollapsed" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <div v-show="!collapsedState.outputs" class="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                 <pre class="text-xs overflow-x-auto"><code class="language-json" v-html="highlightJSON(selectedNodeDetail.outputs)"></code></pre>
                             </div>
                         </div>
@@ -324,6 +323,7 @@ import {
   getLogLevelClass,
   getLogLevelTextClass
 } from '@/utils/action'
+import { useSidebarResize } from '@/utils/action/useSidebarResize'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -443,17 +443,21 @@ const actionData = ref({
 })
 
 const selectedNodeId = ref(null)
-const nodeDetailCollapsed = ref(false)
-const configsCollapsed = ref(false)
-const inputsCollapsed = ref(false)
-const outputsCollapsed = ref(false)
+
+// 统一管理折叠状态
+const collapsedState = ref({
+  nodeDetail: false,
+  configs: false,
+  inputs: false,
+  outputs: false
+})
 
 const nodeLogs = ref({})
 const loadingNodeLogs = ref({})
 const loadedNodeLogs = ref(new Set())
 
 const nodeDetailExpanded = computed(() => {
-    return selectedNodeId.value !== null && !nodeDetailCollapsed.value
+    return selectedNodeId.value !== null && !collapsedState.value.nodeDetail
 })
 
 const selectedNodeDetail = computed(() => {
@@ -483,38 +487,12 @@ const executingNodes = computed(() => {
         .filter(nodeId => actionData.value.node_details[nodeId]?.status === 'running')
 })
 
-const rightSidebarWidth = ref(400)
-const isRightResizing = ref(false)
-const minRightSidebarWidth = 300
-const maxRightSidebarWidth = 800
-
-const startRightResize = () => {
-    isRightResizing.value = true
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('mousemove', onRightResize)
-    window.addEventListener('mouseup', stopRightResize)
-}
-
-const onRightResize = (event) => {
-    if (!isRightResizing.value) return
-    const newWidth = window.innerWidth - event.clientX
-    if (newWidth < minRightSidebarWidth) {
-        rightSidebarWidth.value = minRightSidebarWidth
-    } else if (newWidth > maxRightSidebarWidth) {
-        rightSidebarWidth.value = maxRightSidebarWidth
-    } else {
-        rightSidebarWidth.value = newWidth
-    }
-}
-
-const stopRightResize = () => {
-    isRightResizing.value = false
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    window.removeEventListener('mousemove', onRightResize)
-    window.removeEventListener('mouseup', stopRightResize)
-}
+// 右侧边栏调整
+const { 
+    sidebarWidth: rightSidebarWidth, 
+    isResizing: isRightResizing, 
+    startResize: startRightResize 
+} = useSidebarResize(400, 300, 800, 'right')
 
 const fetchNodeLogs = async (nodeId) => {
     if (loadedNodeLogs.value.has(nodeId)) {
@@ -559,7 +537,7 @@ const fetchNodeLogs = async (nodeId) => {
 const handleNodeClick = (event) => {
     const nodeId = event.node.id
     selectedNodeId.value = nodeId
-    nodeDetailCollapsed.value = false
+    collapsedState.value.nodeDetail = false
     
     if (!loadedNodeLogs.value.has(nodeId)) {
         fetchNodeLogs(nodeId)
@@ -570,20 +548,12 @@ const handlePaneClick = () => {
     selectedNodeId.value = null
 }
 
-const collapseNodeDetail = () => {
-    nodeDetailCollapsed.value = !nodeDetailCollapsed.value
-}
-
-const toggleConfigsCollapsed = () => {
-    configsCollapsed.value = !configsCollapsed.value
-}
-
-const toggleInputsCollapsed = () => {
-    inputsCollapsed.value = !inputsCollapsed.value
-}
-
-const toggleoutputsCollapsed = () => {
-    outputsCollapsed.value = !outputsCollapsed.value
+/**
+ * 统一的折叠状态切换方法
+ * @param {string} key - 要切换的折叠状态键名
+ */
+const toggleCollapse = (key) => {
+    collapsedState.value[key] = !collapsedState.value[key]
 }
 
 const scrollToNode = (nodeId) => {
@@ -591,7 +561,7 @@ const scrollToNode = (nodeId) => {
     const node = nodes.find(n => n.id === nodeId)
     if (node) {
         selectedNodeId.value = nodeId
-        nodeDetailCollapsed.value = false
+        collapsedState.value.nodeDetail = false
     }
 }
 
@@ -662,23 +632,34 @@ const loadActionData = async () => {
         }
         
         actionData.value = transformedData
-    
+    /**
+     * 临时方案：通过formData的key来匹配节点配置
+     * 
+     * 说明：由于后端返回的节点数据中可能缺少明确的definition_id，
+     * 这个函数通过比较formData的key和节点配置的inputs来"猜测"最匹配的节点配置。
+     * 
+     * TODO: 后端应该在返回数据时明确提供definition_id，避免这种猜测式匹配
+     * 
+     * @param {Object} formData - 表单数据对象
+     * @param {string} nodeType - 节点类型
+     * @returns {Object|null} 最匹配的节点配置，如果没有找到则返回null
+     */
     const findNodeConfigByFormData = (formData, nodeType) => {
         if (!formData || !nodeTypeConfigs.value.length) return null
         
         const formDataKeys = Object.keys(formData)
         if (formDataKeys.length === 0) return null
         
+        // 获取候选节点配置（相同类型的所有配置）
+        const candidates = nodeTypeConfigs.value.filter(c => c.type === nodeType)
+        if (candidates.length === 0) return null
+        
+        // 查找最佳匹配：formData的key和inputs的name匹配最多的配置
         let bestMatch = null
         let maxMatchCount = 0
         
-        const candidates = nodeTypeConfigs.value.filter(c => c.type === nodeType)
-        
         for (const candidate of candidates) {
-            if (!candidate.inputs || candidate.inputs.length === 0) continue
-            
-            const inputNames = candidate.inputs.map(input => input.name || input.id).filter(Boolean)
-            const matchCount = formDataKeys.filter(key => inputNames.includes(key)).length
+            const matchCount = calculateMatchScore(formDataKeys, candidate)
             
             if (matchCount > maxMatchCount) {
                 maxMatchCount = matchCount
@@ -687,6 +668,19 @@ const loadActionData = async () => {
         }
         
         return maxMatchCount > 0 ? bestMatch : null
+    }
+    
+    /**
+     * 计算formData的key和节点配置的inputs的匹配分数
+     */
+    const calculateMatchScore = (formDataKeys, config) => {
+        if (!config.inputs || config.inputs.length === 0) return 0
+        
+        const inputNames = config.inputs
+            .map(input => input.name || input.id)
+            .filter(Boolean)
+        
+        return formDataKeys.filter(key => inputNames.includes(key)).length
     }
     
     const processedNodes = transformedData.graph.nodes.map(node => {
@@ -748,57 +742,94 @@ const loadActionData = async () => {
         }
     })
     
-    const processedEdges = transformedData.graph.edges.map(edge => {
-        const sourceNode = processedNodes.find(n => n.id === edge.source)
-        const targetNode = processedNodes.find(n => n.id === edge.target)
-        
-        let edgeColor = '#909399'
+    /**
+     * 查找节点的handle配置
+     */
+    const findHandle = (node, handleId) => {
+        return node?.data?.config?.handles?.find(h => h.id === handleId)
+    }
+    
+    /**
+     * 根据handle名称和位置查找匹配的handle
+     */
+    const findHandleByNameAndPosition = (node, handleName, position) => {
+        return node?.data?.config?.handles?.find(h => 
+            h.handle_name === handleName && h.position === position
+        )
+    }
+    
+    /**
+     * 解析并修复边缘的handle连接
+     * 如果handle ID不匹配，尝试通过handle名称来查找正确的handle
+     */
+    const resolveEdgeHandles = (edge, sourceNode, targetNode) => {
         let finalSourceHandle = edge.sourceHandle || null
         let finalTargetHandle = edge.targetHandle || null
+        let edgeColor = '#909399'
         
-        if (sourceNode && sourceNode.data?.config?.handles) {
-            let sourceHandle = sourceNode.data.config.handles.find(h => h.id === edge.sourceHandle)
-            
-            if (!sourceHandle && targetNode && targetNode.data?.config?.handles) {
-                const targetHandle = targetNode.data.config.handles.find(h => h.id === edge.targetHandle)
-                if (targetHandle) {
-                    sourceHandle = sourceNode.data.config.handles.find(h => 
-                        h.handle_name === targetHandle.handle_name && h.position === 'right'
-                    )
-                    if (sourceHandle) {
-                        finalSourceHandle = sourceHandle.id
-                    }
+        // 查找source handle
+        let sourceHandle = findHandle(sourceNode, edge.sourceHandle)
+        
+        // 如果source handle不存在，尝试通过target handle来匹配
+        if (!sourceHandle && targetNode) {
+            const targetHandle = findHandle(targetNode, edge.targetHandle)
+            if (targetHandle) {
+                sourceHandle = findHandleByNameAndPosition(
+                    sourceNode, 
+                    targetHandle.handle_name, 
+                    'right'
+                )
+                if (sourceHandle) {
+                    finalSourceHandle = sourceHandle.id
                 }
-            }
-            
-            if (sourceHandle) {
-                edgeColor = sourceHandle.color || '#909399'
             }
         }
         
-        if (targetNode && targetNode.data?.config?.handles) {
-            let targetHandle = targetNode.data.config.handles.find(h => h.id === edge.targetHandle)
-            if (!targetHandle && sourceNode && sourceNode.data?.config?.handles) {
-                const sourceHandle = sourceNode.data.config.handles.find(h => h.id === finalSourceHandle)
-                if (sourceHandle) {
-                    targetHandle = targetNode.data.config.handles.find(h => 
-                        h.handle_name === sourceHandle.handle_name && h.position === 'left'
-                    )
-                    if (targetHandle) {
-                        finalTargetHandle = targetHandle.id
-                    }
-                }
+        // 获取边缘颜色
+        if (sourceHandle) {
+            edgeColor = sourceHandle.color || '#909399'
+        }
+        
+        // 查找target handle
+        let targetHandle = findHandle(targetNode, edge.targetHandle)
+        
+        // 如果target handle不存在，尝试通过source handle来匹配
+        if (!targetHandle && sourceNode && sourceHandle) {
+            targetHandle = findHandleByNameAndPosition(
+                targetNode,
+                sourceHandle.handle_name,
+                'left'
+            )
+            if (targetHandle) {
+                finalTargetHandle = targetHandle.id
             }
         }
         
         return {
+            sourceHandle: finalSourceHandle,
+            targetHandle: finalTargetHandle,
+            color: edgeColor
+        }
+    }
+    
+    const processedEdges = transformedData.graph.edges.map(edge => {
+        const sourceNode = processedNodes.find(n => n.id === edge.source)
+        const targetNode = processedNodes.find(n => n.id === edge.target)
+        
+        const { sourceHandle, targetHandle, color } = resolveEdgeHandles(
+            edge,
+            sourceNode,
+            targetNode
+        )
+        
+        return {
             id: edge.id,
             source: edge.source,
-            sourceHandle: finalSourceHandle,
+            sourceHandle,
             target: edge.target,
-            targetHandle: finalTargetHandle,
+            targetHandle,
             style: {
-                stroke: edgeColor,
+                stroke: color,
                 strokeWidth: 3
             }
         }
@@ -923,8 +954,6 @@ onMounted(async () => {
 onUnmounted(() => {
     stopPolling()
     document.removeEventListener('visibilitychange', handleVisibilityChange)
-    window.removeEventListener('mousemove', onRightResize)
-    window.removeEventListener('mouseup', stopRightResize)
 })
 </script>
 

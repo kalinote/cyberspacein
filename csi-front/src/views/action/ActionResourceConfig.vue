@@ -449,7 +449,7 @@
           </el-form-item>
           <el-form-item label="节点类型" prop="type">
             <el-select v-model="formData.type" placeholder="请选择节点类型" class="w-full">
-              <!-- TODO: 通过接口获取 -->
+              <!-- 占位数据：硬编码的节点类型选项，TODO: 通过后端接口动态获取 -->
               <el-option label="构造器" value="construct" />
               <el-option label="采集节点" value="crawler" />
               <el-option label="存储节点" value="storage" />
@@ -976,7 +976,8 @@ const getResourceCount = (tabKey) => {
   return countMap[tabKey] || 0
 }
 
-const nodeTypeColorMap = {
+// 节点类型样式配置
+const NODE_TYPE_STYLES = {
   'construct': { bg: 'bg-blue-100!', color: 'bg-blue-500!', tag: 'bg-blue-100! text-blue-700!' },
   'crawler': { bg: 'bg-green-100!', color: 'bg-green-500!', tag: 'bg-green-100! text-green-700!' },
   'storage': { bg: 'bg-purple-100!', color: 'bg-purple-500!', tag: 'bg-purple-100! text-purple-700!' },
@@ -988,20 +989,23 @@ const nodeTypeColorMap = {
   'input': { bg: 'bg-pink-100!', color: 'bg-pink-500!', tag: 'bg-pink-100! text-pink-700!' }
 }
 
-const getNodeColorClass = (node) => {
-  if (!node || !node.type) return 'bg-gray-400'
-  return nodeTypeColorMap[node.type]?.color || 'bg-gray-400'
+// 默认节点样式
+const DEFAULT_NODE_STYLES = {
+  bg: 'bg-gray-100',
+  color: 'bg-gray-400',
+  tag: 'bg-gray-100! text-gray-700!'
 }
 
-const getNodeBgClass = (node) => {
-  if (!node || !node.type) return 'bg-gray-100'
-  return nodeTypeColorMap[node.type]?.bg || 'bg-gray-100'
+// 通用的节点样式获取函数
+const getNodeStyle = (node, styleKey) => {
+  if (!node || !node.type) return DEFAULT_NODE_STYLES[styleKey]
+  return NODE_TYPE_STYLES[node.type]?.[styleKey] || DEFAULT_NODE_STYLES[styleKey]
 }
 
-const getNodeTagClass = (node) => {
-  if (!node || !node.type) return 'bg-gray-100! text-gray-700!'
-  return nodeTypeColorMap[node.type]?.tag || 'bg-gray-100! text-gray-700!'
-}
+// 保留向后兼容的简化函数
+const getNodeColorClass = (node) => getNodeStyle(node, 'color')
+const getNodeBgClass = (node) => getNodeStyle(node, 'bg')
+const getNodeTagClass = (node) => getNodeStyle(node, 'tag')
 
 const handleAdd = (tabKey) => {
   if (tabKey === 'baseComponents') {
@@ -1185,10 +1189,12 @@ const handleSubmit = async () => {
   } 
 }
 
+// 占位方法：查看节点详情，等待功能实现
 const handleView = (node) => {
   ElMessage.info(`查看节点: ${node.name}`)
 }
 
+// 占位方法：编辑节点，等待功能实现
 const handleEdit = (node) => {
   ElMessage.info(`编辑节点: ${node.name}`)
 }
@@ -1212,57 +1218,62 @@ const handleDelete = (item) => {
     })
 }
 
-const getComponentStatusText = (status) => {
-  const statusMap = {
-    'finished': '成功',
-    'running': '运行中',
-    'error': '失败',
-    'unknown': '未知'
+// 组件状态配置
+const COMPONENT_STATUS_CONFIG = {
+  'finished': {
+    text: '成功',
+    tagType: 'success',
+    icon: 'mdi:check-circle',
+    iconClass: 'text-green-600',
+    bgClass: 'bg-green-100'
+  },
+  'running': {
+    text: '运行中',
+    tagType: 'primary',
+    icon: 'mdi:loading',
+    iconClass: 'text-blue-600',
+    bgClass: 'bg-blue-100'
+  },
+  'error': {
+    text: '失败',
+    tagType: 'danger',
+    icon: 'mdi:alert-circle',
+    iconClass: 'text-red-600',
+    bgClass: 'bg-red-100'
+  },
+  'unknown': {
+    text: '未知',
+    tagType: 'info',
+    icon: 'mdi:clock-outline',
+    iconClass: 'text-gray-600',
+    bgClass: 'bg-gray-100'
   }
-  return statusMap[status] || status
 }
 
-const getComponentStatusTagType = (status) => {
-  const typeMap = {
-    'finished': 'success',
-    'running': 'primary',
-    'error': 'danger',
-    'unknown': 'info'
-  }
-  return typeMap[status] || ''
+// 默认组件状态配置
+const DEFAULT_COMPONENT_STATUS = {
+  text: '',
+  tagType: '',
+  icon: 'mdi:help-circle',
+  iconClass: 'text-gray-600',
+  bgClass: 'bg-gray-100'
 }
 
-const getComponentStatusIcon = (status) => {
-  const iconMap = {
-    'finished': 'mdi:check-circle',
-    'running': 'mdi:loading',
-    'error': 'mdi:alert-circle',
-    'unknown': 'mdi:clock-outline'
-  }
-  return iconMap[status] || 'mdi:help-circle'
+// 通用的组件状态获取函数
+const getComponentStatusConfig = (status, configKey) => {
+  const config = COMPONENT_STATUS_CONFIG[status] || DEFAULT_COMPONENT_STATUS
+  return configKey ? config[configKey] : config
 }
 
-const getComponentStatusIconClass = (status) => {
-  const classMap = {
-    'finished': 'text-green-600',
-    'running': 'text-blue-600',
-    'error': 'text-red-600',
-    'unknown': 'text-gray-600'
-  }
-  return classMap[status] || 'text-gray-600'
-}
-
-const getComponentStatusBgClass = (status) => {
-  const classMap = {
-    'finished': 'bg-green-100',
-    'running': 'bg-blue-100',
-    'error': 'bg-red-100',
-    'unknown': 'bg-gray-100'
-  }
-  return classMap[status] || 'bg-gray-100'
-}
+// 保留向后兼容的简化函数
+const getComponentStatusText = (status) => getComponentStatusConfig(status, 'text') || status
+const getComponentStatusTagType = (status) => getComponentStatusConfig(status, 'tagType')
+const getComponentStatusIcon = (status) => getComponentStatusConfig(status, 'icon')
+const getComponentStatusIconClass = (status) => getComponentStatusConfig(status, 'iconClass')
+const getComponentStatusBgClass = (status) => getComponentStatusConfig(status, 'bgClass')
 
 
+// 占位方法：运行/停止组件，等待后端API完成
 const handleRunComponent = (component) => {
   if (component.status === 'running') {
     ElMessage.info(`停止组件: ${component.name}`)
@@ -1447,14 +1458,17 @@ const handleSubmitHandle = async () => {
   }
 }
 
+// 占位方法：查看接口详情，等待功能实现
 const handleViewHandle = (handle) => {
   ElMessage.info(`查看接口: ${handle.handle_name}`)
 }
 
+// 占位方法：编辑接口，等待功能实现
 const handleEditHandle = (handle) => {
   ElMessage.info(`编辑接口: ${handle.handle_name}`)
 }
 
+// 占位方法：删除接口，等待后端API完成
 const handleDeleteHandle = (handle) => {
   ElMessage.info(`删除接口: ${handle.handle_name}`)
 }

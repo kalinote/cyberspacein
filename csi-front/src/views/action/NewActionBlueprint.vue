@@ -148,7 +148,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted, onMounted, markRaw } from 'vue'
+import { ref, computed, onMounted, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
@@ -162,6 +162,7 @@ import {
     getDefaultData,
     getNodeColor
 } from '@/utils/action'
+import { useSidebarResize } from '@/utils/action/useSidebarResize'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -295,17 +296,19 @@ const createNodeFromConfig = (configId, position) => {
     }
 }
 
-// 左侧边栏拖拽与样式逻辑
-const sidebarWidth = ref(400)
-const isResizing = ref(false)
-const minSidebarWidth = 150
-const maxSidebarWidth = 600
+// 左侧边栏调整
+const { 
+  sidebarWidth, 
+  isResizing, 
+  startResize: startLeftResize 
+} = useSidebarResize(400, 150, 600, 'left')
 
-// 右侧边栏拖拽与样式逻辑
-const rightSidebarWidth = ref(400)
-const isRightResizing = ref(false)
-const minRightSidebarWidth = 300
-const maxRightSidebarWidth = 800
+// 右侧边栏调整
+const { 
+  sidebarWidth: rightSidebarWidth, 
+  isResizing: isRightResizing, 
+  startResize: startRightResize 
+} = useSidebarResize(400, 300, 800, 'right')
 
 // 行动表单数据
 const actionFormRef = ref(null)
@@ -366,70 +369,10 @@ const getNodeWrapperStyle = computed(() => {
     }
 })
 
-// 拖拽调整大小逻辑
-const startLeftResize = () => {
-    isResizing.value = true
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('mousemove', onLeftResize)
-    window.addEventListener('mouseup', stopLeftResize)
-}
-
-const onLeftResize = (event) => {
-    if (!isResizing.value) return
-    let newWidth = event.clientX
-    if (newWidth < minSidebarWidth) newWidth = minSidebarWidth
-    if (newWidth > maxSidebarWidth) newWidth = maxSidebarWidth
-    sidebarWidth.value = newWidth
-}
-
-const stopLeftResize = () => {
-    isResizing.value = false
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    window.removeEventListener('mousemove', onLeftResize)
-    window.removeEventListener('mouseup', stopLeftResize)
-}
-
-// 右侧边栏调整大小逻辑
-const startRightResize = () => {
-    isRightResizing.value = true
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('mousemove', onRightResize)
-    window.addEventListener('mouseup', stopRightResize)
-}
-
-const onRightResize = (event) => {
-    if (!isRightResizing.value) return
-    const newWidth = window.innerWidth - event.clientX
-    if (newWidth < minRightSidebarWidth) {
-        rightSidebarWidth.value = minRightSidebarWidth
-    } else if (newWidth > maxRightSidebarWidth) {
-        rightSidebarWidth.value = maxRightSidebarWidth
-    } else {
-        rightSidebarWidth.value = newWidth
-    }
-}
-
-const stopRightResize = () => {
-    isRightResizing.value = false
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    window.removeEventListener('mousemove', onRightResize)
-    window.removeEventListener('mouseup', stopRightResize)
-}
-
 onMounted(() => {
     fetchNodeConfigs()
 })
 
-onUnmounted(() => {
-    window.removeEventListener('mousemove', onLeftResize)
-    window.removeEventListener('mouseup', stopLeftResize)
-    window.removeEventListener('mousemove', onRightResize)
-    window.removeEventListener('mouseup', stopRightResize)
-})
 
 // 流程图逻辑
 onConnect((params) => {

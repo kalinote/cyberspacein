@@ -445,6 +445,7 @@ const viewActionDetail = (actionId) => {
   router.push(`/action/${actionId}`)
 }
 
+// 占位方法：重新执行行动，等待后端API完成
 const rerunAction = (actionId) => {
   ElMessageBox.confirm(
     '确定要重新执行此行动吗？',
@@ -461,6 +462,7 @@ const rerunAction = (actionId) => {
   })
 }
 
+// 占位方法：删除行动（仅本地删除），等待后端API完成
 const deleteAction = (actionId) => {
   ElMessageBox.confirm(
     '确定要删除此行动吗？此操作不可恢复。',

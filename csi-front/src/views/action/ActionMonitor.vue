@@ -16,6 +16,7 @@
                 </div>
                 <div>
                   <p class="text-sm text-gray-500">活跃资源</p>
+                  <!-- 占位数据，等待后端API完成 -->
                   <p class="text-xl font-bold text-gray-900">328</p>
                 </div>
               </div>
@@ -25,6 +26,7 @@
                 </div>
                 <div>
                   <p class="text-sm text-gray-500">执行中行动</p>
+                  <!-- 占位数据，等待后端API完成 -->
                   <p class="text-xl font-bold text-gray-900">12</p>
                 </div>
               </div>
@@ -34,6 +36,7 @@
                 </div>
                 <div>
                   <p class="text-sm text-gray-500">已完成行动</p>
+                  <!-- 占位数据，等待后端API完成 -->
                   <p class="text-xl font-bold text-gray-900">47</p>
                 </div>
               </div>
@@ -496,7 +499,6 @@
 
 <script>
 import { Icon } from '@iconify/vue'
-import * as echarts from 'echarts'
 import Header from '@/components/Header.vue'
 import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import { actionApi } from '@/api/action'
@@ -513,15 +515,9 @@ export default {
     return {
       blueprintDialogVisible: false,
       selectedBlueprintId: null,
-      intelligenceTypes: ['social'],
-      newKeyword: '',
-      keywords: [
-        { text: '网络安全威胁', type: 'primary' },
-        { text: '新兴技术', type: 'success' },
-        { text: '市场趋势', type: 'warning' }
-      ],
       loadingRunningActions: false,
       loadingBlueprints: false,
+      // 占位数据：模拟正在执行的行动，等待后端API完成
       runningActions: [
         {
           id: 'action-001',
@@ -554,147 +550,11 @@ export default {
           totalSteps: 8
         }
       ],
-      commonBlueprints: [],
-      
-      treeData: {
-        name: '行动方案',
-        children: [
-          {
-            name: '主要方案',
-            value: 100,
-            itemStyle: { color: '#3b82f6' },
-            children: [
-              { name: '公开网络代理', value: 40, itemStyle: { color: '#60a5fa' } },
-              { name: '标准频率采集', value: 30, itemStyle: { color: '#60a5fa' } },
-              { name: '实时数据校验', value: 30, itemStyle: { color: '#60a5fa' } }
-            ]
-          },
-          {
-            name: '应急方案',
-            value: 80,
-            itemStyle: { color: '#f59e0b' },
-            children: [
-              { name: '高隐蔽性模式', value: 40, itemStyle: { color: '#fbbf24' } },
-              { name: '备用代理切换', value: 30, itemStyle: { color: '#fbbf24' } },
-              { name: '降频采集策略', value: 30, itemStyle: { color: '#fbbf24' } }
-            ]
-          },
-          {
-            name: '扩展方案',
-            value: 60,
-            itemStyle: { color: '#10b981' },
-            children: [
-              { name: '多平台并行', value: 40, itemStyle: { color: '#34d399' } },
-              { name: '深度数据挖掘', value: 30, itemStyle: { color: '#34d399' } },
-              { name: 'AI辅助分析', value: 30, itemStyle: { color: '#34d399' } }
-            ]
-          }
-        ]
-      },
-      
-      treeChart: null,
-      zoomLevel: 1
+      commonBlueprints: []
     }
   },
   
   methods: {
-    initTreeChart() {
-      this.$nextTick(() => {
-        const chartDom = document.getElementById('tree-chart')
-        if (!chartDom) return
-        
-        this.treeChart = echarts.init(chartDom)
-        
-        const option = {
-          tooltip: {
-            trigger: 'item',
-            triggerOn: 'mousemove',
-            formatter: (params) => {
-              return `${params.name}<br/>权重: ${params.value}`
-            }
-          },
-          series: [{
-            type: 'tree',
-            data: [this.treeData],
-            top: '10%',
-            left: '15%',
-            bottom: '10%',
-            right: '15%',
-            symbolSize: 10,
-            label: {
-              position: 'left',
-              verticalAlign: 'middle',
-              align: 'right',
-              fontSize: 12,
-              color: '#374151'
-            },
-            leaves: {
-              label: {
-                position: 'right',
-                verticalAlign: 'middle',
-                align: 'left'
-              }
-            },
-            emphasis: {
-              focus: 'descendant'
-            },
-            expandAndCollapse: false,
-            animationDuration: 550,
-            animationDurationUpdate: 750,
-            lineStyle: {
-              color: '#d1d5db',
-              width: 1.5
-            }
-          }]
-        }
-        
-        this.treeChart.setOption(option)
-        
-        window.addEventListener('resize', () => {
-          this.treeChart?.resize()
-        })
-      })
-    },
-    
-    zoomIn() {
-      this.zoomLevel = Math.min(this.zoomLevel * 1.2, 3)
-      this.updateZoom()
-    },
-    
-    zoomOut() {
-      this.zoomLevel = Math.max(this.zoomLevel / 1.2, 0.5)
-      this.updateZoom()
-    },
-    
-    resetView() {
-      this.zoomLevel = 1
-      this.updateZoom()
-    },
-    
-    updateZoom() {
-      if (this.treeChart) {
-        this.treeChart.setOption({
-          series: [{
-            zoom: this.zoomLevel
-          }]
-        })
-      }
-    },
-    
-    addKeyword() {
-      if (this.newKeyword.trim()) {
-        this.keywords.push({
-          text: this.newKeyword,
-          type: ''
-        })
-        this.newKeyword = ''
-      }
-    },
-    
-    removeKeyword(index) {
-      this.keywords.splice(index, 1)
-    },
-    
     async createActionFromBlueprint(blueprint) {
       if (!blueprint || !blueprint.id) {
         this.$message.error('蓝图ID不存在')
@@ -718,6 +578,7 @@ export default {
       }
     },
     
+    // 占位方法：创建蓝图分支版本，等待后端API完成
     createBranchVersion(blueprint) {
       this.$message.info(`创建分支版本功能开发中...`)
     },
@@ -822,6 +683,7 @@ export default {
       this.$router.push(`/action/${actionId}`)
     },
 
+    // 占位方法：暂停行动，等待后端API完成
     pauseAction(actionId) {
       this.$confirm('确定要暂停此行动吗？', '确认暂停', {
         confirmButtonText: '确定',
@@ -834,6 +696,7 @@ export default {
       })
     },
 
+    // 占位方法：停止行动，等待后端API完成
     stopAction(actionId) {
       this.$confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
         confirmButtonText: '确定停止',
@@ -865,7 +728,6 @@ export default {
   },
   
   mounted() {
-    this.initTreeChart()
     this.fetchCommonBlueprints()
   }
 }
