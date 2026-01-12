@@ -87,21 +87,26 @@ class ElasticsearchClient:
             logger.error(f"存储数据失败: {e}")
             return False
     
-    def bulk_store(self, index_name: str, documents: list[Dict[str, Any]]) -> bool:
+    def bulk_store(self, index_name: str, documents: list[Dict[str, Any]], id_field: str = "uuid") -> bool:
         """批量存储数据"""
         try:
             from elasticsearch.helpers import bulk
             
-            actions = [
-                {
+            actions = []
+            for doc in documents:
+                action = {
                     '_index': index_name,
                     '_source': doc
                 }
-                for doc in documents
-            ]
+                if id_field and id_field in doc:
+                    action['_id'] = doc[id_field]
+                actions.append(action)
             
-            success, failed = bulk(self.client, actions)
-            logger.info(f"批量存储完成: 成功 {success} 条, 失败 {len(failed)} 条")
+            success, failed = bulk(self.client, actions, raise_on_error=False)
+            if failed:
+                logger.warning(f"批量存储部分失败: {len(failed)} 条")
+                
+            logger.info(f"批量存储完成: 成功 {success} 条")
             return len(failed) == 0
         except Exception as e:
             logger.error(f"批量存储失败: {e}")

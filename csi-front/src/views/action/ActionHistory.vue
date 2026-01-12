@@ -154,6 +154,7 @@
               <p class="text-gray-400 text-sm">创建新行动后，历史记录将显示在这里</p>
             </div>
 
+            <!-- TODO: 周期更新 -->
             <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               <div
                 v-for="action in filteredActions"

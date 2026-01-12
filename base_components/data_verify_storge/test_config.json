@@ -8,7 +8,7 @@
         "data_in": {
             "type": "reference",
             "value": [
-                "tmp_queue_4"
+                "copy_2"
             ]
         }
     },

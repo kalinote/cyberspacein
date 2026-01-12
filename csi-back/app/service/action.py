@@ -9,7 +9,6 @@ from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
 from app.schemas.action.sdk import SDKResultRequest
 from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
-from app.schemas.general import DictModel
 from app.service.component import run_component
 from app.utils.dict_helper import pack_dict
 from app.utils.id_lib import generate_id
@@ -20,6 +19,8 @@ from beanie.operators import In
 from app.db.rabbitmq import delete_queue
 
 logger = logging.getLogger(__name__)
+
+# TODO: 节点失败需要增加检测任务是否完成(失败)的逻辑
 
 class ActionInstanceService:
     # TODO: 后续换成redis缓存，设置10分钟过期时间，同时在数据库更新时清理缓存
@@ -199,6 +200,32 @@ class ActionInstanceService:
         return True
 
     @staticmethod
+    async def cancel_following_nodes(action_id: str, node_id: str):
+        """
+        递归取消后续节点
+        """
+        next_nodes = await ActionInstanceService.find_next_node(action_id, node_id)
+        if not next_nodes:
+            return
+
+        for target_node_instance_id in next_nodes.keys():
+            node_instance = await ActionInstanceNodeModel.find_one({"_id": target_node_instance_id})
+            if not node_instance:
+                continue
+            
+            if node_instance.status in [
+                ActionInstanceNodeStatusEnum.PENDING, 
+                ActionInstanceNodeStatusEnum.UNREADY, 
+                ActionInstanceNodeStatusEnum.READY,
+                ActionInstanceNodeStatusEnum.UNKNOWN
+            ]:
+                node_instance.status = ActionInstanceNodeStatusEnum.CANCELLED
+                node_instance.finished_at = datetime.now()
+                await node_instance.save()
+                
+                await ActionInstanceService.cancel_following_nodes(action_id, node_instance.node_id)
+
+    @staticmethod
     async def finish_node(node_instance_id: str, result: SDKResultRequest):
         node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
         if not node_instance:
@@ -207,7 +234,7 @@ class ActionInstanceService:
         
         if result.status == "success":
             node_instance.status = ActionInstanceNodeStatusEnum.COMPLETED
-            node_instance.progress = 100
+            node_instance.progress = 100.0
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             for handle_name, value in result.outputs.items():
@@ -229,7 +256,7 @@ class ActionInstanceService:
             
             action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
             action.finished_nodes_instance.append(node_instance.id)
-            action.progress = int(len(action.finished_nodes_instance) / len(action.nodes_id)) * 100
+            node_instance.progress = 100.0
             await action.save()
         elif result.status == "failed":
             node_instance.status = ActionInstanceNodeStatusEnum.FAILED
@@ -237,6 +264,20 @@ class ActionInstanceService:
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             await node_instance.save()
+            
+            # 更新行动进度
+            action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
+            if action:
+                action.progress = round(len(action.finished_nodes_instance) / len(action.nodes_id) * 100, 2) if len(action.nodes_id) > 0 else 0.0
+                await action.save()
+            
+            # 取消后续节点
+            await ActionInstanceService.cancel_following_nodes(node_instance.action_id, node_instance.node_id)
+            
+            # 检查行动是否完成
+            if await ActionInstanceService.check_action_finished(node_instance.action_id):
+                await ActionInstanceService.finish_action(node_instance.action_id)
+            
             return False
         else:
             node_instance.status = ActionInstanceNodeStatusEnum.UNKNOWN
@@ -403,50 +444,45 @@ class ActionInstanceService:
         
         await ActionInstanceService.cleanup_action_queues(action_id)
         
-        action.status = ActionFlowStatusEnum.COMPLETED
+        # 检查是否有失败、取消或超时的节点
+        failed_count = await ActionInstanceNodeModel.find({
+            "action_id": action_id,
+            "status": {
+                "$in": [
+                    ActionInstanceNodeStatusEnum.FAILED,
+                    ActionInstanceNodeStatusEnum.CANCELLED,
+                    ActionInstanceNodeStatusEnum.TIMEOUT
+                ]
+            }
+        }).count()
+        
+        action.status = ActionFlowStatusEnum.FAILED if failed_count > 0 else ActionFlowStatusEnum.COMPLETED
         action.finished_at = datetime.now()
         action.duration = (datetime.now() - action.start_at).total_seconds()
-        await action.save()
-        return True
-    
-    @staticmethod
-    async def fail_action(action_id: str, error_message: str):
-        """
-        失败行动
-        """
-        action = await ActionInstanceModel.find_one({"_id": action_id})
-        if not action:
-            logger.error(f"未找到行动，Action ID: {action_id}")
-            return False
-        
-        await ActionInstanceService.cleanup_action_queues(action_id)
-        
-        action.status = ActionFlowStatusEnum.FAILED
-        action.error_message = error_message
-        action.finished_at = datetime.now()
-        action.duration = (datetime.now() - action.start_at).total_seconds()
+        action.progress = round(len(action.finished_nodes_instance) / len(action.nodes_id) * 100, 2) if len(action.nodes_id) > 0 else 0.0
         await action.save()
         return True
 
     @staticmethod
     async def check_action_finished(action_id: str):
         """
-        判断行动是否所有节点全部完成
-        
-        TODO: 暂时直接判断节点列表和已完成节点列表是否数量一致，后续考虑引入封装、分支和循环时的判断方法
+        判断行动是否所有节点全部完成(包括成功、失败、取消)
         """
+        count = await ActionInstanceNodeModel.find({
+            "action_id": action_id,
+            "status": {
+                "$in": [
+                    ActionInstanceNodeStatusEnum.PENDING,
+                    ActionInstanceNodeStatusEnum.UNREADY,
+                    ActionInstanceNodeStatusEnum.READY,
+                    ActionInstanceNodeStatusEnum.RUNNING,
+                    ActionInstanceNodeStatusEnum.UNKNOWN,
+                    ActionInstanceNodeStatusEnum.PAUSED
+                ]
+            }
+        }).count()
         
-        action = await ActionInstanceModel.find_one({"_id": action_id})
-        if not action:
-            logger.error(f"未找到行动，Action ID: {action_id}")
-            return False
-        
-        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
-        if not blueprint:
-            logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
-            return False
-        
-        return len(action.finished_nodes_instance) == len(blueprint.graph.nodes)
+        return count == 0
     
     @staticmethod
     async def update_progress(node_instance_id: str, progress: float):
@@ -454,9 +490,11 @@ class ActionInstanceService:
         更新节点运行进度
         """
         if progress > 100:
-            progress = 100
+            progress = 100.0
         if progress < 0:
-            progress = 0
+            progress = 0.0
+        
+        progress = round(progress, 2)
         
         node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
         if not node_instance:

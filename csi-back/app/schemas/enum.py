@@ -53,6 +53,13 @@ class ActionInstanceNodeStatusEnum(str, Enum):
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
     PAUSED = "paused"
+
+ActionNodeFinishStatusList = [
+    ActionInstanceNodeStatusEnum.COMPLETED,
+    ActionInstanceNodeStatusEnum.FAILED,
+    ActionInstanceNodeStatusEnum.CANCELLED,
+    ActionInstanceNodeStatusEnum.TIMEOUT
+]
     
 class ActionConfigIOTypeEnum(str, Enum):
     """
