@@ -153,7 +153,7 @@
                                     <el-tab-pane v-if="!articleData.clean_content && !articleData.safe_raw_content" label="内容" name="empty">
                                         <div class="text-center py-12 text-gray-400 flex flex-col items-center">
                                             <Icon icon="mdi:text-box-remove-outline" class="text-5xl mb-2" />
-                                            <p>暂无内容</p>
+                                            <p>暂无内容，点击开始分析以分析实体内容</p>
                                         </div>
                                     </el-tab-pane>
                                 </el-tabs>
