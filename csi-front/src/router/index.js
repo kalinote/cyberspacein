@@ -11,6 +11,7 @@ import ActionHistory from '../views/action/ActionHistory.vue'
 import ActionDetail from '../views/action/ActionDetail.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
+import ArticleDetail from '../views/details/ArticleDetail.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -81,9 +82,15 @@ const router = createRouter({
     },
     {
       // 平台详情页
-      path: '/platform/:id',
+      path: '/details/platform/:id',
       name: 'platform',
       component: Platform
+    },
+    {
+      // 文章详情页
+      path: '/details/article/:uuid',
+      name: 'article-detail',
+      component: ArticleDetail
     },
 
   ],

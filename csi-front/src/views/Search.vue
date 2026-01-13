@@ -368,7 +368,7 @@
                 </el-tag>
               </div>
               <div class="flex justify-between items-center text-sm text-gray-500">
-                <span>来源: <router-link :to="`/platform/${result.platformId}`"
+                <span>来源: <router-link :to="`/details/platform/${result.platformId}`"
                     class="text-blue-600 hover:text-blue-800 items-center underline">
                     <span class="font-medium">{{ result.platform }}</span>
                   </router-link></span>
