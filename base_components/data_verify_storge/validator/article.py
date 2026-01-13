@@ -5,6 +5,7 @@ ARTICLE_SCHEMA = {
     "data_version": int,
     "entity_type": str,
     "url": str,
+    "tags": list,
     "platform": str,
     "section": str,
     "spider_name": str,
