@@ -28,6 +28,7 @@
                         返回
                     </el-button>
                     <div class="flex items-start space-x-6">
+                        <!-- TODO: 这里后续显示平台图标，封面图在其他地方显示 -->
                         <div v-if="articleData.cover_image" class="w-20 h-20 bg-white rounded-2xl shadow-lg border border-gray-200 flex items-center justify-center overflow-hidden shrink-0">
                             <img :src="articleData.cover_image" :alt="articleData.title" class="w-full h-full object-cover" />
                         </div>
@@ -328,7 +329,7 @@
                                         class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
                                     >
                                         <Icon icon="mdi:download" />
-                                        <span>导出数据</span>
+                                        <span>媒体文件本地化</span>
                                     </button>
                                     <button 
                                         @click="togglePriorityTarget"
