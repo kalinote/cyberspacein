@@ -12,6 +12,12 @@
         "data_in": {
             "type": "reference",
             "value": "transit_queue"
+        },
+        "dict_in": {
+            "type": "string",
+            "value": {
+                "raw_content": "<script>alert('Hello, World!');</script>"
+            }
         }
     },
     "outputs": {
