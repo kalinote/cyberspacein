@@ -327,20 +327,11 @@ class ActionInstanceService:
                 if source_handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
                     if next_node_instance.node_id in node_instance.reference_queues:
                         queue_name = node_instance.reference_queues[next_node_instance.node_id]
-                        
-                        if target_handle_id in next_node_instance.inputs:
-                            current_value = next_node_instance.inputs[target_handle_id].value
-                            if isinstance(current_value, list):
-                                current_value.append(queue_name)
-                            else:
-                                current_value = [current_value, queue_name]
-                            next_node_instance.inputs[target_handle_id].value = current_value
-                        else:
-                            next_node_instance.inputs[target_handle_id] = ActionConfigIOModel(
-                                key=target_handle_definition.handle_name,
-                                value=[queue_name],
-                                type=ActionConfigIOTypeEnum.REFERENCE
-                            )
+                        next_node_instance.inputs[target_handle_id] = ActionConfigIOModel(
+                            key=target_handle_definition.handle_name,
+                            value=queue_name,
+                            type=ActionConfigIOTypeEnum.REFERENCE
+                        )
                         logger.info(f"传递队列 {queue_name} 给节点 {next_node_instance.node_id}")
                     else:
                         logger.error(f"未找到目标节点的队列映射，Target Node ID: {next_node_instance.node_id}")

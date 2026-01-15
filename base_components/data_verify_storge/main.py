@@ -30,8 +30,8 @@ def main():
     component.initialize()
     
     # 1. 获取队列名称
-    queue_names = component.inputs.get("data_in", {}).get("value", [])
-    if not queue_names:
+    queue_name = component.inputs.get("data_in", {}).get("value", [])
+    if not queue_name:
         component.fail("未找到数据输入队列名称")
 
     # 2. 初始化客户端
@@ -93,11 +93,10 @@ def main():
         total_processed = 0
         batch_size = 500  # 设置批量大小
         
-        for queue_name in queue_names:
-            logger.info(f"开始消费队列: {queue_name} (批量大小: {batch_size})")
-            count = rabbitmq_client.consume_all(queue_name, process_batch, batch_size=batch_size)
-            total_processed += count
-            logger.info(f"队列 {queue_name} 消费完成，共处理 {count} 条消息")
+        logger.info(f"开始消费队列: {queue_name} (批量大小: {batch_size})")
+        count = rabbitmq_client.consume_all(queue_name, process_batch, batch_size=batch_size)
+        total_processed += count
+        logger.info(f"队列 {queue_name} 消费完成，共处理 {count} 条消息")
         
         # 5. 完成任务
         rabbitmq_client.close()
