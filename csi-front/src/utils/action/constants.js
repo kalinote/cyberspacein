@@ -10,13 +10,14 @@ export const INPUT_TYPE_DEFAULTS = {
   'boolean': false,
   'datetime': null,
   'tags': [],
-  'conditions': []
+  'conditions': [],
+  'comment': ''
 }
 
 // 输入类型列表
 export const INPUT_TYPES = [
   'int', 'string', 'textarea', 'select', 'checkbox', 
   'checkbox-group', 'radio-group', 'boolean', 'datetime', 
-  'tags', 'conditions'
+  'tags', 'conditions', 'comment'
 ]
 

@@ -62,6 +62,7 @@ def get_redis_config():
 
 def get_input_queues(inputs: Dict[str, Any]) -> List[str]:
     data_in = inputs.get('data_in', {})
+    # TODO: 这里正常来说只应该有一个队列名，但现在暂时先这样
     if isinstance(data_in, dict) and data_in.get('type') == 'reference':
         value = data_in.get('value', [])
         if isinstance(value, list):

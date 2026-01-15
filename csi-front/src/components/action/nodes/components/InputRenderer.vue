@@ -4,8 +4,29 @@
         :class="[positionClass, { 'multi-line-layout': isMultiLineLayout }]"
         :style="inputConfig.custom_style"
     >
+        <!-- 注释型输入项：仅展示文本 -->
+        <template v-if="inputConfig.type === 'comment'">
+            <div class="comment-display">
+                <div class="divider-line"></div>
+                <div class="comment-content">
+                    <div class="flex items-start gap-2">
+                        <Icon icon="mdi:information-outline" class="text-blue-500 text-base mt-0.5 shrink-0" />
+                        <div class="flex-1">
+                            <div v-if="inputConfig.label" class="text-xs font-medium text-gray-700 mb-1">
+                                {{ inputConfig.label }}
+                            </div>
+                            <div class="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">
+                                {{ inputConfig.description || '暂无说明' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="divider-line"></div>
+            </div>
+        </template>
+        
         <!-- 多行布局：带分隔线 -->
-        <template v-if="isMultiLineLayout">
+        <template v-else-if="isMultiLineLayout">
             <div class="divider-line"></div>
             <div class="multi-line-content">
                 <div v-if="inputConfig.label" class="label-with-tooltip mb-2">
@@ -117,7 +138,8 @@ const INPUT_TYPE_MAP = {
     'boolean': 'el-switch',
     'datetime': 'el-date-picker',
     'tags': TagInput,
-    'conditions': ConditionInput
+    'conditions': ConditionInput,
+    'comment': 'comment-display'
 }
 
 const INPUT_DEFAULT_PROPS = {
@@ -240,5 +262,16 @@ const handleUpdate = (value) => {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.comment-display {
+    margin: 12px 0;
+}
+
+.comment-content {
+    padding: 10px 12px;
+    background: #f0f9ff;
+    border-radius: 6px;
+    border-left: 3px solid #3b82f6;
 }
 </style>

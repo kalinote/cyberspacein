@@ -74,3 +74,19 @@ ALL_INDEX = [
     "forum"
 ]
     
+class ActionNodeInputTypeEnum(str, Enum):
+    """
+    行动节点输入项类型枚举
+    """
+    INT = "int"
+    STRING = "string"
+    TEXTAREA = "textarea"
+    SELECT = "select"
+    CHECKBOX = "checkbox"
+    CHECKBOX_GROUP = "checkbox-group"
+    RADIO_GROUP = "radio-group"
+    BOOLEAN = "boolean"
+    DATETIME = "datetime"
+    TAGS = "tags"
+    CONDITIONS = "conditions"
+    COMMENT = "comment"

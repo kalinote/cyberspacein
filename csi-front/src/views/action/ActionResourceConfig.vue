@@ -610,14 +610,14 @@
               <el-input
                 v-model="input.description"
                 type="textarea"
-                :rows="2"
-                placeholder="请输入输入项描述"
+                :rows="input.type === 'comment' ? 4 : 2"
+                :placeholder="input.type === 'comment' ? '请输入要展示的说明文本（支持多行）' : '请输入输入项描述'"
               />
             </el-form-item>
-            <el-form-item :label="`是否必填`" :prop="`inputs.${index}.required`">
+            <el-form-item v-if="input.type !== 'comment'" :label="`是否必填`" :prop="`inputs.${index}.required`">
               <el-switch v-model="input.required" />
             </el-form-item>
-            <el-form-item :label="`默认值`" :prop="`inputs.${index}.default`">
+            <el-form-item v-if="input.type !== 'comment'" :label="`默认值`" :prop="`inputs.${index}.default`">
               <el-input v-model="input.default" placeholder="请输入默认值" />
             </el-form-item>
             <el-form-item v-if="input.type === 'select'" label="选项">
@@ -1160,8 +1160,8 @@ const handleSubmit = async () => {
           position: input.position,
           label: input.label,
           description: input.description || '',
-          required: input.required || false,
-          default: input.default || '',
+          required: input.type === 'comment' ? false : (input.required || false),
+          default: input.type === 'comment' ? '' : (input.default || ''),
           custom_style: input.custom_style || {},
           custom_props: input.custom_props || {}
         }
