@@ -144,7 +144,10 @@ class ActionInstanceService:
         
         # 检查前置节点是否全部完成
         all_previous_nodes = await ActionInstanceService.find_all_previous_nodes(action_id, node_instance.node_id)
-        previous_node_instances = await ActionInstanceNodeModel.find(In(ActionInstanceNodeModel.node_id, all_previous_nodes)).to_list()
+        previous_node_instances = await ActionInstanceNodeModel.find({
+            "action_id": action_id,
+            "node_id": {"$in": all_previous_nodes}
+        }).to_list()
         for prev_node in previous_node_instances:
             if prev_node.status != ActionInstanceNodeStatusEnum.COMPLETED:
                 logger.info(f"前置节点未完成({prev_node.node_id})，等待中，当前节点: {node_instance.id}，前置节点: {prev_node.id}")

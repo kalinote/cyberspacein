@@ -30,6 +30,9 @@
                             <el-tag type="primary" size="default">
                                 {{ platformDetail.type }}
                             </el-tag>
+                            <el-tag type="primary" size="default">
+                                {{ platformDetail.netType }}
+                            </el-tag>
                             <el-link v-if="platformDetail.url" :href="platformDetail.url" target="_blank" type="primary"
                                 class="text-sm">
                                 <template #icon>
@@ -72,7 +75,7 @@
                             <Icon icon="mdi:run" class="text-green-600 text-2xl" />
                         </div>
                         <div>
-                            <p class="text-sm text-gray-500">关联行动</p>
+                            <p class="text-sm text-gray-500">相关行动</p>
                             <p class="text-2xl font-bold text-gray-900">
                                 {{ statistics.related_actions.toLocaleString() }}
                             </p>
@@ -259,8 +262,54 @@
             </div>
         </section>
 
+        <!-- 平台快照时间线 -->
+        <section class="py-12 bg-white border-b border-gray-100">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <h2 class="text-2xl font-bold text-gray-900 mb-10 flex items-center">
+                    <Icon icon="mdi:history" class="text-blue-600 mr-2 text-2xl" />
+                    平台<span class="text-blue-500">快照</span>时间线
+                </h2>
+                <div class="relative py-4">
+                    <!-- 时间轴线 -->
+                    <div class="absolute top-14 left-0 w-full h-0.5 bg-blue-100"></div>
+                    <!-- 滚动容器 -->
+                    <div class="flex overflow-x-auto space-x-8 pb-8 px-4 scrollbar-thin scrollbar-thumb-blue-100 scrollbar-track-transparent">
+                        <div v-for="(snap, index) in snapshots" :key="index" class="flex-none flex flex-col items-center group relative min-w-[160px] w-[160px]">
+                            <!-- 时间点 -->
+                            <div class="mb-2 bg-white px-3 py-1 rounded-full border border-blue-200 text-blue-600 font-medium text-xs shadow-sm z-10 group-hover:border-blue-400 group-hover:bg-blue-50 transition-colors">
+                                {{ snap.date }}
+                            </div>
+                            <!-- 节点圆点 -->
+                            <div class="w-3 h-3 rounded-full border-2 border-white bg-blue-300 z-10 shadow-sm mb-4 group-hover:bg-blue-600 group-hover:scale-125 transition-all duration-300"></div>
+                            <!-- 图片卡片 -->
+                            <div class="w-full bg-white p-1.5 rounded-lg border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group-hover:border-blue-200">
+                                <div class="relative aspect-video rounded-md overflow-hidden bg-gray-100">
+                                    <el-image
+                                        :src="snap.image"
+                                        :preview-src-list="snapshotPreviewList"
+                                        :initial-index="index"
+                                        fit="cover"
+                                        class="w-full h-full"
+                                        loading="lazy"
+                                        preview-teleported
+                                        hide-on-click-modal
+                                    >
+                                        <template #placeholder>
+                                            <div class="w-full h-full flex items-center justify-center text-gray-400">
+                                                <Icon icon="mdi:image-outline" class="text-lg" />
+                                            </div>
+                                        </template>
+                                    </el-image>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- 平台资源管理 -->
-        <section class="py-12 bg-white">
+        <section class="py-12 bg-gray-50">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center mb-8">
                     <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
@@ -398,7 +447,7 @@
         </section>
 
         <!-- 关联情报 -->
-        <section class="py-12 bg-gray-50">
+        <section class="py-12 bg-white">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="mb-8 flex flex-col sm:flex-row sm:items-center justify-between">
                     <div>
@@ -493,6 +542,9 @@ export default {
         platformId() {
             return this.id || this.$route.params.id;
         },
+        snapshotPreviewList() {
+            return this.snapshots.map((s) => s.image);
+        },
     },
 
     data() {
@@ -507,6 +559,7 @@ export default {
                     "Bilibili是一个中国的视频分享平台，用户可以在上面观看和上传各种类型的视频。平台以弹幕评论系统为特色，用户可以在观看视频时发送实时评论，这些评论会以弹幕的形式显示在视频画面上。Bilibili主要面向年轻用户群体，内容涵盖动画、游戏、音乐、科技、生活等多个领域。",
                 type: "视频网站",
                 status: "正常",
+                netType: "明网",
                 createdAt: "2025-01-01",
                 updatedAt: "2025-01-01",
                 url: "https://www.bilibili.com",
@@ -525,16 +578,16 @@ export default {
             // TODO: 从接口获取数据趋势数据（根据时间范围：7天、30天、90天）
             trendData: {
                 "7d": {
-                    dates: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+                    dates: ["01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"],
                     values: [1200, 1350, 1420, 1380, 1520, 1280, 1250],
                 },
                 "30d": {
-                    dates: ["第1周", "第2周", "第3周", "第4周"],
-                    values: [8500, 9200, 8800, 9500],
+                    dates: ["12-17", "12-18", "12-19", "12-20", "12-21", "12-22", "12-23", "12-24", "12-25", "12-26", "12-27", "12-28", "12-29", "12-30", "12-31", "01-01", "01-02", "01-03", "01-04", "01-05", "01-06", "01-07", "01-08", "01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"],
+                    values: [8500, 9200, 8800, 9500, 9100, 9300, 8700, 9600, 8900, 9400, 9200, 8800, 9500, 9100, 9300, 8700, 9600, 8900, 9400, 9200, 8800, 9500, 9100, 9300, 8700, 9600, 8900, 9400, 9200, 8800],
                 },
                 "90d": {
-                    dates: ["第1月", "第2月", "第3月"],
-                    values: [35000, 42000, 48000],
+                    dates: ["10-18", "10-19", "10-20", "10-21", "10-22", "10-23", "10-24", "10-25", "10-26", "10-27", "10-28", "10-29", "10-30", "10-31", "11-01", "11-02", "11-03", "11-04", "11-05", "11-06", "11-07", "11-08", "11-09", "11-10", "11-11", "11-12", "11-13", "11-14", "11-15", "11-16", "11-17", "11-18", "11-19", "11-20", "11-21", "11-22", "11-23", "11-24", "11-25", "11-26", "11-27", "11-28", "11-29", "11-30", "12-01", "12-02", "12-03", "12-04", "12-05", "12-06", "12-07", "12-08", "12-09", "12-10", "12-11", "12-12", "12-13", "12-14", "12-15", "12-16", "12-17", "12-18", "12-19", "12-20", "12-21", "12-22", "12-23", "12-24", "12-25", "12-26", "12-27", "12-28", "12-29", "12-30", "12-31", "01-01", "01-02", "01-03", "01-04", "01-05", "01-06", "01-07", "01-08", "01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"],
+                    values: [35000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000],
                 },
             },
             // TODO: 从接口获取数据分类统计数据
@@ -562,6 +615,33 @@ export default {
                     count: 16840,
                     percentage: 14,
                     color: "bg-amber-500",
+                },
+            ],
+            // TODO: 从接口获取平台快照数据
+            snapshots: [
+                {
+                    date: "2024-01-01",
+                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
+                },
+                {
+                    date: "2024-03-15",
+                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
+                },
+                {
+                    date: "2024-06-20",
+                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
+                },
+                {
+                    date: "2024-09-10",
+                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
+                },
+                {
+                    date: "2024-12-25",
+                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
+                },
+                {
+                    date: "2025-01-01",
+                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
                 },
             ],
             // TODO: 从接口获取关联情报数据
@@ -704,11 +784,19 @@ export default {
             if (!this.trendChart) return;
 
             const data = this.trendData[this.currentRange];
+            const dateCount = data.dates.length;
+            let labelInterval = 0;
+            if (dateCount > 30) {
+                labelInterval = Math.floor(dateCount / 15);
+            } else if (dateCount > 7) {
+                labelInterval = Math.floor(dateCount / 10);
+            }
+
             const option = {
                 grid: {
                     left: "3%",
                     right: "4%",
-                    bottom: "10%",
+                    bottom: "15%",
                     top: "10%",
                     containLabel: true,
                 },
@@ -723,6 +811,11 @@ export default {
                     axisLabel: {
                         color: "#6b7280",
                         fontSize: 12,
+                        rotate: 45,
+                        interval: labelInterval,
+                        formatter: (value) => {
+                            return value;
+                        },
                     },
                 },
                 yAxis: {

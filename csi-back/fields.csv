@@ -1,0 +1,35 @@
+字段名	类型	来源	描述与用途
+uuid	keyword	采集	主键。md5(entity_type + source_id + last_edit_at + raw_content)。用于去重或版本控制。
+source_id	keyword	采集	平台原本的ID（如推文ID、文章ID）。不同类型的数据source_id含义有可能不同，但source_id一定能追踪到同一个数据源头。
+data_version	integer	采集	数据版本号，用于追踪后续可能出现的字段更新，比如在这一套字段设计中应固定为1
+entity_type	str	采集	实体类型，该字段主要用于各中间件分类。
+url	keyword	采集	原始链接。使用 keyword 也就是为了能精确匹配查询。
+tags	keyword (Array)	采集	从原文内容中提取出的标签（如 #AI）。【如果该平台存在标签】
+platform	keyword	采集	"来源平台 (twitter, weibo, bbc, etc.)。"
+section	keyword	采集	所属板块。
+spider_name	keyword	采集	爬虫名称。
+update_at	date	自动生成	最后一次存入数据库时间
+crawled_at	date	采集	采集入库的时间。
+publish_at	date	采集	内容在平台上发布的实际时间（不同于采集时间）。
+last_edit_at	date	采集	内容最后编辑时间（不同于发表时间）。
+language	keyword	分析	"语种 (zh-CN, en-US)，用于分词器选择和过滤。"
+author_id	keyword	采集	作者在原平台的唯一ID。
+author_name	text / keyword	采集	作者昵称。保留 text 用于模糊搜，keyword 用于聚合统计。
+nsfw	boolean	采集/分析	是否为NSFW内容。
+aigc	boolean	采集/分析	是否为AI生成内容。
+translation_content	text	分析	基于 clean_content 翻译到中文的内容。【如果原文不是中文】
+keywords	keyword (Array)	分析	基于内容分析得到的关键词列表。
+emotion	float	分析	基于内容分析的情感分数，从-1(消极)到1(积极)
+political_bias	keyword (Array)	分析	基于内容分析的政治倾向
+confidence	float	分析/输入	"内容置信度，范围-1,0-1，其中0-1为有效值，-1为零信任模式"
+subjective_rating	integer	输入	主观评分，仅能由用户设置。
+			
+			
+			
+字段名	类型	来源	描述与设计理由
+title	text	采集	核心字段。标题的权重通常高于正文，搜索时需要 boost。
+clean_content	text	采集	正文内容。对于长文章，建议开启 term_vector 以加速关键词提取或高亮。
+raw_content	text (no index)	采集	原始JSON或HTML。建议设为 index: false 以节省空间，仅做存储展示，不参与搜索。
+safe_raw_content	text (no index)	分析	经过处理js和css后的安全网页内容，用于前端页面还原展示，该字段由用户手动触发页面还原任务后填充
+cover_image	keyword	采集	封面图/缩略图 URL。【该字段非必填】
+likes	integer	采集	点赞数

@@ -9,6 +9,7 @@ import NewActionBlueprint from '../views/action/NewActionBlueprint.vue'
 import ActionResourceConfig from '../views/action/ActionResourceConfig.vue'
 import ActionHistory from '../views/action/ActionHistory.vue'
 import ActionDetail from '../views/action/ActionDetail.vue'
+import ActionBlueprintList from '../views/action/ActionBlueprintList.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
@@ -49,6 +50,12 @@ const router = createRouter({
       path: '/action/history',
       name: 'action-history',
       component: ActionHistory
+    },
+    {
+      // 行动蓝图列表
+      path: '/action/blueprints',
+      name: 'action-blueprint-list',
+      component: ActionBlueprintList
     },
     {
       // 行动详情

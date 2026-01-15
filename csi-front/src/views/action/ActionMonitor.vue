@@ -71,7 +71,7 @@
             <Icon icon="mdi:file-document-multiple" class="text-blue-600 text-2xl" />
             <span><span class="text-blue-500">行动</span>蓝图</span>
           </h2>
-          <el-button type="primary" link>
+          <el-button type="primary" link @click="$router.push('/action/blueprints')">
             <template #icon><Icon icon="mdi:arrow-right" /></template>
             查看全部蓝图
           </el-button>

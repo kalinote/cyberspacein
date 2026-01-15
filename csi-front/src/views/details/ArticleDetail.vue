@@ -148,7 +148,7 @@
                                             <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ articleData.clean_content }}</pre>
                                         </div>
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="articleData.safe_raw_content" label="渲染内容" name="rendered">
+                                    <el-tab-pane v-if="articleData.safe_raw_content" label="安全渲染内容" name="rendered">
                                         <div class="prose max-w-none article-content" v-html="articleData.safe_raw_content"></div>
                                     </el-tab-pane>
                                     <el-tab-pane v-if="!articleData.clean_content && !articleData.safe_raw_content" label="内容" name="empty">
@@ -322,7 +322,7 @@
                                         class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
                                     >
                                         <Icon :icon="analyzing ? 'mdi:loading' : 'mdi:brain'" :class="{ 'animate-spin': analyzing }" />
-                                        <span>{{ analyzing ? '分析中...' : '开始分析' }}</span>
+                                        <span>{{ analyzing ? '分析实体中...' : '分析此实体' }}</span>
                                     </button>
                                     <button 
                                         @click="handleExport"
@@ -408,7 +408,6 @@ const getEmotionColor = (emotion) => {
 const handleAnalyze = async () => {
     analyzing.value = true
     try {
-        await articleApi.analyzeArticle(uuid.value)
         ElMessage.success('分析任务已提交，请稍后刷新页面查看结果')
     } catch (err) {
         ElMessage.warning('分析功能暂未开放')
