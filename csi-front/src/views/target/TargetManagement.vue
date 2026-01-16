@@ -47,7 +47,7 @@
                 <Icon icon="mdi:clipboard-text-search-outline" />
                 <span>新建分析任务</span>
               </button>
-              <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
+              <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/platforms')">
                 <Icon icon="mdi:server-network" />
                 <span>目标平台管理</span>
               </button>

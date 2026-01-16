@@ -22,7 +22,7 @@
                         <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-2">
                             {{ platformDetail.name }}
                         </h1>
-                        <p class="text-gray-600 mb-4">{{ platformDetail.id }}</p>
+                        <p class="text-gray-600 mb-4">{{ platformDetail.uuid }}</p>
                         <div class="flex flex-wrap items-center gap-3">
                             <el-tag :type="getStatusType(platformDetail.status)" size="default">
                                 {{ platformDetail.status }}
@@ -553,7 +553,7 @@ export default {
             trendChart: null,
             // TODO: 从接口获取平台详情数据
             platformDetail: {
-                id: "fb5bebe1b7df48e6606fdffed2cf8b14",
+                uuid: "fb5bebe1b7df48e6606fdffed2cf8b14",
                 name: "Bilibili",
                 description:
                     "Bilibili是一个中国的视频分享平台，用户可以在上面观看和上传各种类型的视频。平台以弹幕评论系统为特色，用户可以在观看视频时发送实时评论，这些评论会以弹幕的形式显示在视频画面上。Bilibili主要面向年轻用户群体，内容涵盖动画、游戏、音乐、科技、生活等多个领域。",

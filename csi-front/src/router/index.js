@@ -13,6 +13,7 @@ import ActionBlueprintList from '../views/action/ActionBlueprintList.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
+import PlatformList from '../views/platform/PlatformList.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -98,6 +99,12 @@ const router = createRouter({
       path: '/details/article/:uuid',
       name: 'article-detail',
       component: ArticleDetail
+    },
+    {
+      // 平台列表页
+      path: '/platforms',
+      name: 'platform-list',
+      component: PlatformList
     },
 
   ],
