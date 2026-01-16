@@ -67,7 +67,7 @@
         <div class="flex justify-between items-center mb-8">
           <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
             <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
-            <span><span class="text-blue-500">目标</span>列表</span>
+            <span><span class="text-blue-500">重点</span>实体</span>
           </h2>
           <div class="flex items-center gap-4">
             <el-input

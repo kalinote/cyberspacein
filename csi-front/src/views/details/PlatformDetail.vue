@@ -14,7 +14,7 @@
                 <div class="flex items-start space-x-6">
                     <div
                         class="w-20 h-20 bg-white rounded-2xl shadow-lg border border-gray-200 flex items-center justify-center overflow-hidden">
-                        <img v-if="platformDetail.logo" :src="platformDetail.logo" :alt="platformDetail.name"
+                        <img v-if="platformDetail.logo" :src="getLogoUrl(platformDetail.logo)" :alt="platformDetail.name"
                             class="w-full h-full object-contain" />
                         <Icon v-else icon="mdi:web" class="text-blue-600 text-4xl" />
                     </div>
@@ -525,6 +525,7 @@
 import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
+import { getCosUrl } from "@/utils/cos";
 
 export default {
     name: "PlatformDetail",
@@ -762,6 +763,9 @@ export default {
                 已停用: "info",
             };
             return statusMap[status] || "info";
+        },
+        getLogoUrl(logo) {
+            return getCosUrl(logo);
         },
         switchRange(range) {
             this.updateChart();

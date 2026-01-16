@@ -15,6 +15,7 @@ from app.db import (
     init_elasticsearch, close_elasticsearch,
     init_rabbitmq, close_rabbitmq
 )
+from app.utils.cos import init_cos, close_cos
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -41,9 +42,11 @@ async def lifespan(app: FastAPI):
     await init_redis()
     await init_elasticsearch()
     await init_rabbitmq()
+    await init_cos()
     
     yield
     
+    await close_cos()
     await close_rabbitmq()
     await close_mariadb()
     await close_mongodb()

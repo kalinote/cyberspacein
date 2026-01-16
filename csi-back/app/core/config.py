@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     CRAWLAB_BASE_URL: str
     CRAWLAB_TOKEN: str
 
+    COS_ENDPOINT: str
+    COS_ACCESS_KEY_ID: str
+    COS_SECRET_ACCESS_KEY: str
+    COS_BUCKET_NAME: str
+    COS_REGION: str
+
+    USE_PROXY: bool = False
+    OUT_SERVICE_PROXY: Optional[str] = None
+    MAX_LOGO_SIZE: int = 5 * 1024 * 1024
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

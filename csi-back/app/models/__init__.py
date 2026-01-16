@@ -5,6 +5,7 @@ from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
+from app.models.platform.platform import PlatformModel
 
 
 def get_all_models() -> List[Type[Document]]:
@@ -14,5 +15,6 @@ def get_all_models() -> List[Type[Document]]:
         ActionBlueprintModel,
         ActionInstanceModel,
         ActionInstanceNodeModel,
-        ActionNodesHandleConfigModel
+        ActionNodesHandleConfigModel,
+        PlatformModel
     ]

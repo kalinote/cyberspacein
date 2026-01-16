@@ -16,3 +16,7 @@ elasticsearch[async]>=8.11.0,<9.0.0
 
 aiohttp
 aio-pika>=9.0.0
+aioboto3>=12.0.0
+
+Pillow>=10.0.0
+filetype>=1.2.0

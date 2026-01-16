@@ -102,7 +102,7 @@
             <div class="flex items-start justify-between mb-4">
               <div class="flex items-start space-x-4 flex-1">
                 <div class="w-16 h-16 bg-white rounded-xl shadow-sm border border-gray-200 flex items-center justify-center overflow-hidden shrink-0">
-                  <img v-if="platform.logo" :src="platform.logo" :alt="platform.name" class="w-full h-full object-contain" />
+                  <img v-if="platform.logo" :src="getLogoUrl(platform.logo)" :alt="platform.name" class="w-full h-full object-contain" />
                   <Icon v-else icon="mdi:web" class="text-blue-600 text-3xl" />
                 </div>
                 <div class="flex-1 min-w-0">
@@ -198,6 +198,7 @@ import Header from '@/components/Header.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
+import { getCosUrl } from '@/utils/cos'
 
 export default {
   name: 'PlatformList',
@@ -304,6 +305,10 @@ export default {
       }
     }
 
+    const getLogoUrl = (logo) => {
+      return getCosUrl(logo)
+    }
+
     onMounted(() => {
       fetchPlatformList()
     })
@@ -320,7 +325,8 @@ export default {
       handleViewDetail,
       handleDeletePlatform,
       getStatusType,
-      formatDate
+      formatDate,
+      getLogoUrl
     }
   }
 }
