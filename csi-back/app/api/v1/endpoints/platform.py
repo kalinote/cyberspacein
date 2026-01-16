@@ -40,7 +40,21 @@ async def create_platform(data: PlatformCreateRequest):
     if data.logo and data.logo.strip():
         try:
             logger.info(f"开始下载logo: {data.logo}")
-            logo_data = await async_download_file(data.logo)
+            headers = {
+                "accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "priority": "u=2, i",
+                "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": "\"Windows\"",
+                "sec-fetch-dest": "image",
+                "sec-fetch-mode": "no-cors",
+                "sec-fetch-site": "same-origin",
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+            }
+            headers["referer"] = data.url
+            
+            logo_data = await async_download_file(data.logo, headers=headers)
             
             is_valid, message, mime_type = validate_image_file(logo_data, data.logo)
             if is_valid and mime_type:
@@ -71,6 +85,7 @@ async def create_platform(data: PlatformCreateRequest):
         name=data.name,
         description=data.description,
         type=data.type,
+        net_type=data.net_type,
         status=data.status,
         url=data.url,
         logo=processed_logo,
@@ -88,6 +103,7 @@ async def create_platform(data: PlatformCreateRequest):
         name=platform_model.name,
         description=platform_model.description,
         type=platform_model.type,
+        net_type=platform_model.net_type,
         status=platform_model.status,
         created_at=platform_model.created_at,
         updated_at=platform_model.updated_at,
@@ -141,6 +157,7 @@ async def get_platform_list(
             name=platform.name,
             description=platform.description,
             type=platform.type,
+            net_type=platform.net_type,
             status=platform.status,
             created_at=platform.created_at,
             updated_at=platform.updated_at,
@@ -153,3 +170,26 @@ async def get_platform_list(
         ))
     
     return PageResponse.create(results, total, params.page, params.page_size)
+
+@router.get("/detail/{platform_id}", response_model=ApiResponse[PlatformBaseInfoSchema], summary="获取平台详情")
+async def get_platform_detail(platform_id: str):
+    platform = await PlatformModel.find_one({"_id": platform_id})
+    if not platform:
+        return ApiResponse.error(code=404, message=f"平台不存在，ID: {platform_id}")
+    
+    return ApiResponse.success(data=PlatformBaseInfoSchema(
+        id=platform.id,
+        name=platform.name,
+        description=platform.description,
+        type=platform.type,
+        net_type=platform.net_type,
+        status=platform.status,
+        created_at=platform.created_at,
+        updated_at=platform.updated_at,
+        url=platform.url,
+        logo=platform.logo,
+        tags=platform.tags,
+        category=platform.category,
+        sub_category=platform.sub_category,
+        confidence=platform.confidence
+    ))

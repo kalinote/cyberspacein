@@ -11,6 +11,7 @@ class PlatformModel(Document):
     name: str = Field(description="平台名称")
     description: str = Field(description="平台描述")
     type: str = Field(description="平台类型")
+    net_type: str = Field(description="网络类型(Tor/明网)")
     status: str = Field(description="平台状态")
     created_at: datetime = Field(default_factory=datetime.now, description="平台创建时间")
     updated_at: datetime = Field(default_factory=datetime.now, description="平台更新时间")

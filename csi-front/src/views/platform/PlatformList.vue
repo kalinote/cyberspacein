@@ -44,6 +44,7 @@
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">状态筛选</label>
             <el-select
+              v-model="selectedStatus"
               placeholder="全部状态"
               clearable
               class="w-full"
@@ -58,6 +59,7 @@
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">类型筛选</label>
             <el-select
+              v-model="selectedType"
               placeholder="全部类型"
               clearable
               class="w-full"
@@ -95,7 +97,7 @@
             <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               <div
                 v-for="platform in platformList"
-                :key="platform.uuid"
+                :key="platform.id"
                 class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow"
               >
             <!-- 平台头部信息 -->
@@ -158,11 +160,11 @@
             <!-- 操作按钮 -->
             <div class="pt-4 border-t border-gray-200">
               <div class="flex items-center gap-2">
-                <el-button type="primary" link size="small" class="flex-1" @click="handleViewDetail(platform.uuid)">
+                <el-button type="primary" link size="small" class="flex-1" @click="handleViewDetail(platform.id)">
                   <template #icon><Icon icon="mdi:eye" /></template>
                   查看详情
                 </el-button>
-                <el-button type="danger" link size="small" @click="handleDeletePlatform(platform.uuid)">
+                <el-button type="danger" link size="small" @click="handleDeletePlatform(platform.id)">
                   <template #icon><Icon icon="mdi:delete" /></template>
                   删除
                 </el-button>
@@ -210,6 +212,8 @@ export default {
     const router = useRouter()
     const loading = ref(false)
     const searchKeyword = ref('')
+    const selectedStatus = ref('')
+    const selectedType = ref('')
     const platformList = ref([])
     const pagination = ref({
       page: 1,
@@ -261,11 +265,11 @@ export default {
       ElMessage.info('新增平台功能暂未实现')
     }
 
-    const handleViewDetail = (uuid) => {
-      router.push(`/details/platform/${uuid}`)
+    const handleViewDetail = (id) => {
+      router.push(`/details/platform/${id}`)
     }
 
-    const handleDeletePlatform = (uuid) => {
+    const handleDeletePlatform = (id) => {
       ElMessageBox.confirm(
         '确定要删除该平台吗？此操作不可恢复。',
         '确认删除',
@@ -283,10 +287,9 @@ export default {
 
     const getStatusType = (status) => {
       const statusMap = {
-        正常: 'success',
-        异常: 'danger',
-        维护中: 'warning',
-        已停用: 'info'
+        活跃: 'success',
+        非活跃: 'danger',
+        离线: 'info'
       }
       return statusMap[status] || 'info'
     }
@@ -316,6 +319,8 @@ export default {
     return {
       loading,
       searchKeyword,
+      selectedStatus,
+      selectedType,
       platformList,
       pagination,
       handlePageChange,

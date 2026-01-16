@@ -526,6 +526,7 @@ import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
 import { getCosUrl } from "@/utils/cos";
+import { platformApi } from "@/api/platform";
 
 export default {
     name: "PlatformDetail",
@@ -750,10 +751,51 @@ export default {
         window.removeEventListener("resize", this.handleResize);
     },
     methods: {
-        // TODO: 调用接口获取平台详情数据
-        // 接口示例: GET /api/platforms/{platformId}
-        loadPlatformDetail() {
-            console.log("加载平台详情:", this.platformId);
+        // 调用接口获取平台详情数据
+        async loadPlatformDetail() {
+            try {
+                const response = await platformApi.getPlatformDetail(this.platformId);
+                if (response.code === 0 && response.data) {
+                    const data = response.data;
+                    this.platformDetail = {
+                        uuid: data.id || "",
+                        name: data.name || "",
+                        description: data.description || "",
+                        type: data.type || "",
+                        status: data.status || "",
+                        netType: data.net_type || "",
+                        createdAt: this.formatDate(data.created_at),
+                        updatedAt: this.formatDate(data.updated_at),
+                        url: data.url || "",
+                        logo: data.logo || "",
+                        tags: data.tags || [],
+                        category: data.category || "",
+                        subCategory: data.sub_category || "",
+                    };
+                }
+            } catch (error) {
+                console.error("加载平台详情失败:", error);
+                this.$notify({
+                    title: "加载失败",
+                    message: "获取平台详情失败，请稍后重试",
+                    type: "error",
+                    position: "top-right",
+                    duration: 3000,
+                });
+            }
+        },
+        formatDate(dateString) {
+            if (!dateString) return "-";
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleDateString("zh-CN", {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                });
+            } catch (error) {
+                return dateString;
+            }
         },
         getStatusType(status) {
             const statusMap = {

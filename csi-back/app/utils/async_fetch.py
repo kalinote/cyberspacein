@@ -19,8 +19,8 @@ async def async_post(url: str, data: dict = None, **kwargs):
 async def async_download_file(
     url: str,
     timeout: int = 30,
-    headers: Optional[Dict[str, str]] = None,
-    use_proxy: Optional[bool] = None
+    headers: Dict[str, str] | None = None,
+    use_proxy: bool | None = None
 ) -> bytes:
     """
     异步下载文件并返回字节数据
@@ -40,7 +40,8 @@ async def async_download_file(
     
     
     default_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        
     }
     if headers:
         default_headers.update(headers)
