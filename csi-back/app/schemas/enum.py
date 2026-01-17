@@ -68,7 +68,7 @@ class ActionConfigIOTypeEnum(str, Enum):
     VALUE = "value"
     REFERENCE = "reference"
     
-# es所有索引
+# es所有实体索引
 ALL_INDEX = [
     "article",
     "forum"

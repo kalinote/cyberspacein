@@ -2,7 +2,7 @@ from beanie import Document
 from pydantic import Field
 
 from app.schemas.enum import ActionConfigIOTypeEnum
-from app.schemas.general import DictModel
+from app.schemas.general import DictModelSchema
 
 class ActionNodesHandleConfigModel(Document):
     id: str = Field(alias="_id")
@@ -11,7 +11,7 @@ class ActionNodesHandleConfigModel(Document):
     label: str = Field(description="标签")
     color: str = Field(description="颜色代码")
     other_compatible_interfaces: list[str] = Field(default=[], description="其他兼容接口id列表")
-    custom_style: list[DictModel] | None = None
+    custom_style: list[DictModelSchema] | None = None
 
     class Settings:
         name = "action_nodes_handle_configs"

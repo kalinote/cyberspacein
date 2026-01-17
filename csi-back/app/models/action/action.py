@@ -4,7 +4,7 @@ from beanie import Document
 from pydantic import BaseModel, Field
 
 from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
-from app.schemas.general import DictModel
+from app.schemas.general import DictModelSchema
 
 class ActionInstanceModel(Document):
     """
@@ -55,7 +55,7 @@ class ActionInstanceNodeModel(Document):
     duration: float = Field(default=0, description="节点执行时长(秒)")
     
     progress: float = Field(default=0, description="节点执行进度(%)")
-    configs: list[DictModel] = Field(default_factory=list, description="节点配置")
+    configs: list[DictModelSchema] = Field(default_factory=list, description="节点配置")
     inputs: dict[str, ActionConfigIOModel] = Field(default_factory=dict, description="节点输入配置，key是handle_id，value是数据")
     outputs: dict[str, ActionConfigIOModel] = Field(default_factory=dict, description="节点输出配置，key是handle_id，value是数据")
     reference_queues: dict[str, str] = Field(default_factory=dict, description="REFERENCE类型的边到队列的映射，key是target_node_id，value是队列名")

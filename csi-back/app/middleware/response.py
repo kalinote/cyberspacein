@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from app.schemas.response import ApiResponse
+from app.schemas.response import ApiResponseSchema
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class ResponseMiddleware(BaseHTTPMiddleware):
                     response_headers.pop("content-length", None)
                     
                     if not isinstance(original_data, dict) or "code" not in original_data:
-                        wrapped_response = ApiResponse.success(data=original_data)
+                        wrapped_response = ApiResponseSchema.success(data=original_data)
                         return JSONResponse(
                             content=wrapped_response.model_dump(),
                             status_code=200,
@@ -63,6 +63,6 @@ class ResponseMiddleware(BaseHTTPMiddleware):
             if response is not None:
                 return response
             return JSONResponse(
-                content=ApiResponse.error(code=500, message=f"服务器内部错误: {str(e)}").model_dump(),
+                content=ApiResponseSchema.error(code=500, message=f"服务器内部错误: {str(e)}").model_dump(),
                 status_code=500
             )

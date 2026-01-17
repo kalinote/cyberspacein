@@ -2,7 +2,7 @@ from typing import Any
 from datetime import datetime
 from beanie import Document
 from pydantic import BaseModel, Field
-from app.schemas.general import DictModel
+from app.schemas.general import DictModelSchema
 
 
 class PositionModel(BaseModel):
@@ -19,7 +19,7 @@ class NodeDataModel(BaseModel):
     """
     definition_id: str
     version: str
-    form_data: list[DictModel]
+    form_data: list[DictModelSchema]
 
 
 class GraphNodeModel(BaseModel):

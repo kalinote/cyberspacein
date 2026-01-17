@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 from urllib.parse import urlparse
 
 
-class PlatformCreateRequest(BaseModel):
+class PlatformCreateRequestSchema(BaseModel):
     """
     创建平台请求
     """

@@ -4,7 +4,7 @@ from elasticsearch.exceptions import NotFoundError
 
 from app.db.elasticsearch import get_es
 from app.schemas.article import ArticleSchema
-from app.schemas.response import ApiResponse
+from app.schemas.response import ApiResponseSchema
 
 
 router = APIRouter(
@@ -12,11 +12,11 @@ router = APIRouter(
     tags=["article"],
 )
 
-@router.get("/detail/{uuid}", response_model=ApiResponse[ArticleSchema], summary="获取文章详情")
+@router.get("/detail/{uuid}", response_model=ApiResponseSchema[ArticleSchema], summary="获取文章详情")
 async def get_article_detail(uuid: str):
     es = get_es()
     if not es:
-        return ApiResponse.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
     
     try:
         result = await es.get(index="article", id=uuid)
@@ -70,9 +70,9 @@ async def get_article_detail(uuid: str):
             likes=source_data.get("likes")
         )
         
-        return ApiResponse.success(data=article_data)
+        return ApiResponseSchema.success(data=article_data)
     
     except NotFoundError:
-        return ApiResponse.error(code=404, message=f"文章不存在，UUID: {uuid}")
+        return ApiResponseSchema.error(code=404, message=f"文章不存在，UUID: {uuid}")
     except Exception as e:
-        return ApiResponse.error(code=500, message=f"查询文章详情失败: {str(e)}")
+        return ApiResponseSchema.error(code=500, message=f"查询文章详情失败: {str(e)}")

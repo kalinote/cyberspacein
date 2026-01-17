@@ -4,9 +4,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 
-from app.schemas.platform import PlatformBaseInfoSchema, PlatformCreateRequest
-from app.schemas.general import PageParams, PageResponse
-from app.schemas.response import ApiResponse
+from app.schemas.platform import PlatformBaseInfoSchema, PlatformCreateRequestSchema
+from app.schemas.general import PageParamsSchema, PageResponseSchema
+from app.schemas.response import ApiResponseSchema
 from app.models.platform.platform import PlatformModel
 from app.utils.id_lib import generate_id
 from app.utils.async_fetch import async_download_file
@@ -20,21 +20,21 @@ router = APIRouter(
     tags=["platform"],
 )
 
-@router.post("", response_model=ApiResponse[PlatformBaseInfoSchema], summary="创建平台")
-async def create_platform(data: PlatformCreateRequest):
+@router.post("", response_model=ApiResponseSchema[PlatformBaseInfoSchema], summary="创建平台")
+async def create_platform(data: PlatformCreateRequestSchema):
     platform_id = generate_id(data.name + data.url)
     
     existing_platform = await PlatformModel.find_one({"_id": platform_id})
     if existing_platform:
-        return ApiResponse.error(code=400, message=f"平台已存在，名称: {data.name} 或 URL: {data.url}")
+        return ApiResponseSchema.error(code=400, message=f"平台已存在，名称: {data.name} 或 URL: {data.url}")
     
     existing_by_name = await PlatformModel.find_one({"name": data.name})
     if existing_by_name:
-        return ApiResponse.error(code=400, message=f"平台名称已存在: {data.name}")
+        return ApiResponseSchema.error(code=400, message=f"平台名称已存在: {data.name}")
     
     existing_by_url = await PlatformModel.find_one({"url": data.url})
     if existing_by_url:
-        return ApiResponse.error(code=400, message=f"平台URL已存在: {data.url}")
+        return ApiResponseSchema.error(code=400, message=f"平台URL已存在: {data.url}")
     
     processed_logo = ""
     if data.logo and data.logo.strip():
@@ -117,11 +117,11 @@ async def create_platform(data: PlatformCreateRequest):
         spider_name=platform_model.spider_name
     )
     
-    return ApiResponse.success(data=response_data)
+    return ApiResponseSchema.success(data=response_data)
 
-@router.get("/list", response_model=PageResponse[PlatformBaseInfoSchema], summary="获取平台列表")
+@router.get("/list", response_model=PageResponseSchema[PlatformBaseInfoSchema], summary="获取平台列表")
 async def get_platform_list(
-    params: PageParams = Depends(),
+    params: PageParamsSchema = Depends(),
     type: Optional[str] = Query(None, description="平台类型筛选"),
     status: Optional[str] = Query(None, description="平台状态筛选"),
     category: Optional[str] = Query(None, description="平台分类筛选"),
@@ -172,15 +172,15 @@ async def get_platform_list(
             spider_name=platform.spider_name
         ))
     
-    return PageResponse.create(results, total, params.page, params.page_size)
+    return PageResponseSchema.create(results, total, params.page, params.page_size)
 
-@router.get("/detail/{platform_id}", response_model=ApiResponse[PlatformBaseInfoSchema], summary="获取平台详情")
+@router.get("/detail/{platform_id}", response_model=ApiResponseSchema[PlatformBaseInfoSchema], summary="获取平台详情")
 async def get_platform_detail(platform_id: str):
     platform = await PlatformModel.find_one({"_id": platform_id})
     if not platform:
-        return ApiResponse.error(code=404, message=f"平台不存在，ID: {platform_id}")
+        return ApiResponseSchema.error(code=404, message=f"平台不存在，ID: {platform_id}")
     
-    return ApiResponse.success(data=PlatformBaseInfoSchema(
+    return ApiResponseSchema.success(data=PlatformBaseInfoSchema(
         id=platform.id,
         name=platform.name,
         description=platform.description,

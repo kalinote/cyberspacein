@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.exceptions import ApiException
-from app.schemas.response import ApiResponse
+from app.schemas.response import ApiResponseSchema
 from app.middleware.response import ResponseMiddleware
 from app.db import (
     init_mariadb, close_mariadb,
@@ -75,7 +75,7 @@ app.add_middleware(ResponseMiddleware)
 async def api_exception_handler(request: Request, exc: ApiException):
     return JSONResponse(
         status_code=200,
-        content=ApiResponse.error(
+        content=ApiResponseSchema.error(
             code=exc.code,
             message=exc.message,
             data=exc.data
@@ -92,7 +92,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     
     return JSONResponse(
         status_code=200,
-        content=ApiResponse.error(
+        content=ApiResponseSchema.error(
             code=422,
             message="请求参数验证失败",
             data={"errors": errors}
@@ -105,7 +105,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     logging.exception(f"未处理的异常: {str(exc)}")
     return JSONResponse(
         status_code=200,
-        content=ApiResponse.error(
+        content=ApiResponseSchema.error(
             code=500,
             message="服务器内部错误" if not settings.DEBUG else str(exc),
             data=None

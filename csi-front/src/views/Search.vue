@@ -328,7 +328,7 @@
         <div class="mb-8 flex flex-col sm:flex-row sm:items-center justify-between">
           <div>
             <h2 class="text-3xl font-bold text-gray-900 mb-2">检索<span class="text-blue-500">结果</span></h2>
-            <p class="text-gray-600">共 <span class="font-bold text-blue-600">{{ searchResults.length }}</span> 条相关情报</p>
+            <p class="text-gray-600">共 <span class="font-bold text-blue-600">{{ totalResults }}</span> 条相关情报</p>
           </div>
           <div class="flex items-center space-x-4 mt-4 sm:mt-0">
             <div class="flex items-center">
@@ -348,48 +348,74 @@
           </div>
         </div>
 
+        <div class="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div class="flex gap-3">
+            <div class="flex-1">
+              <el-input 
+                v-model="searchQuery" 
+                placeholder="输入关键词搜索..." 
+                @keyup.enter="handleSearchFromResults"
+                size="default"
+                clearable>
+                <template #prefix>
+                  <Icon icon="mdi:magnify" class="text-lg" />
+                </template>
+              </el-input>
+            </div>
+            <el-button type="primary" @click="handleSearchFromResults">
+              <template #icon>
+                <Icon icon="mdi:magnify" />
+              </template>
+              搜索
+            </el-button>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div class="lg:col-span-2 space-y-6">
-            <div v-for="result in searchResults" :key="result.id"
+          <div class="lg:col-span-2 space-y-6" v-loading="loading">
+            <div v-for="result in searchResults" :key="result.uuid"
               class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
               <div class="flex justify-between items-start mb-4">
                 <div class="flex flex-wrap items-center gap-2">
-                  <el-tag :type="result.categoryType" size="small">{{ result.category }}</el-tag>
-                  <el-tag :type="result.priorityType" size="small">{{ result.priority }}</el-tag>
+                  <el-tag size="small">{{ result.section }}</el-tag>
+                  <el-tag :type="getConfidenceInfo(result.confidence).type" size="small">{{ getConfidenceInfo(result.confidence).text }}</el-tag>
                   <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
                 </div>
-                <span class="text-sm text-gray-500 shrink-0">{{ result.date }}</span>
+                <span class="text-sm text-gray-500 shrink-0">{{ formatDateTime(result.update_at) }}</span>
               </div>
               <h3 class="text-lg font-bold text-gray-900 mb-3">{{ result.title }}</h3>
-              <p class="text-gray-600 mb-4">{{ result.description }}</p>
+              <p class="text-gray-600 mb-4">{{ result.clean_content || '暂无分析内容' }}</p>
               <div class="flex flex-wrap gap-2 mb-4">
-                <el-tag v-for="tag in result.tags" :key="tag" size="small" type="info" effect="plain">
+                <el-tag v-for="tag in result.keywords" :key="tag" size="small" type="info" effect="plain">
                   {{ tag }}
                 </el-tag>
               </div>
               <div class="flex justify-between items-center text-sm text-gray-500">
-                <span>来源: <router-link :to="`/details/platform/${result.platformId}`"
+                <span>来源: 
+                  <router-link v-if="result.platform_id" :to="`/details/platform/${result.platform_id}`"
                     class="text-blue-600 hover:text-blue-800 items-center underline">
                     <span class="font-medium">{{ result.platform }}</span>
-                  </router-link></span>
-                <span>作者: <router-link :to="`/user/${result.authorId}`"
+                  </router-link>
+                  <span v-else class="font-medium">{{ result.platform }}</span>
+                </span>
+                <span>作者: 
+                  <router-link v-if="result.author_uuid" :to="`/user/${result.author_uuid}`"
                     class="text-blue-600 hover:text-blue-800 items-center underline">
-                    <span class="font-medium">{{ result.author }}</span>
-                  </router-link></span>
+                    <span class="font-medium">{{ result.author_name }}</span>
+                  </router-link>
+                  <span v-else class="font-medium">{{ result.author_name }}</span>
+                </span>
                 <div class="flex items-center space-x-4">
-                  <span class="flex items-center">
-                    <Icon icon="mdi:eye" class="mr-1" /> {{ result.views }}
-                  </span>
                   <el-button type="primary" link>
                     <template #icon>
                       <Icon icon="mdi:bookmark-outline" />
                     </template>
                     收藏
                   </el-button>
-                  <a :href="`/info/${result.id}`" class="text-blue-600 hover:text-blue-800 flex items-center">
+                  <router-link :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
                     查看详情
                     <Icon icon="mdi:arrow-right" class="ml-1" />
-                  </a>
+                  </router-link>
                 </div>
               </div>
             </div>
@@ -451,6 +477,7 @@
 import { Icon } from '@iconify/vue'
 import * as echarts from 'echarts'
 import Header from '@/components/Header.vue'
+import { searchApi } from '@/api/search'
 
 export default {
   name: 'Search',
@@ -470,7 +497,8 @@ export default {
       sortBy: 'relevance',
       currentPage: 1,
       pageSize: 5,
-      totalResults: 284,
+      totalResults: 0,
+      loading: false,
 
       // 高级筛选器
       showAdvancedFilters: false,
@@ -643,7 +671,43 @@ export default {
     }
   },
 
+  watch: {
+    currentPage() {
+      if (this.searchResults.length > 0) {
+        this.performSearch()
+      }
+    }
+  },
+
   methods: {
+    getConfidenceInfo(confidence) {
+      if (confidence === 0) {
+        return { text: '零信任', type: 'danger' }
+      } else if (confidence > 0 && confidence <= 0.4) {
+        return { text: '低', type: 'info' }
+      } else if (confidence > 0.4 && confidence <= 0.7) {
+        return { text: '中', type: '' }
+      } else {
+        return { text: '高', type: 'warning' }
+      }
+    },
+
+    getDetailRoute(entityType, uuid) {
+      return `/details/${entityType}/${uuid}`
+    },
+
+    formatDateTime(dateTime) {
+      if (!dateTime) return ''
+      const date = new Date(dateTime)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      const hours = String(date.getHours()).padStart(2, '0')
+      const minutes = String(date.getMinutes()).padStart(2, '0')
+      const seconds = String(date.getSeconds()).padStart(2, '0')
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+    },
+
     // 查询筛选模板规则转字符串
     // 筛选列表后续通过接口获取，当前只是临时数据
     Rules2Text(rule) {
@@ -691,110 +755,48 @@ export default {
       return iconConfigs[index]
     },
 
-    performSearch() {
-      // console.log('执行检索:', this.searchQuery)
-      this.searchResults = [
-        {
-          id: 1,
-          category: '社区讨论',
-          categoryType: 'danger',
-          priority: '低',
-          priorityType: 'info',
-          date: '2025-12-11 12:16:38',
-          title: '说一下你们看过的酒店偷拍',
-          description:
-            '最近喜欢看酒店和家庭偷拍、比较真实、但就是大多数图个乐呵、想问一下大佬们有没有清晰的长时间露脸、颜值高点、对话有意思的。',
-          tags: ['NSFW', '偷拍', '酒店', '家庭'],
-          platform: 'JAVBUS',
-          platformId: 'test_nsfw_0001',
-          author: 'sex_finder',
-          authorId: 'test_author_0001',
-          views: 2975,
-          nsfw: true
-        },
-        {
-          id: 2,
-          category: '市场动态',
-          categoryType: 'success',
-          priority: '中',
-          priorityType: '',
-          date: '2023-11-19 10:23:45',
-          title: '人工智能领域Q3投资报告:融资总额达45亿美元',
-          description: '第三季度全球人工智能领域共发生156起投资事件,总金额达45亿美元,同比增长32%。其中,生成式AI公司最受关注...',
-          tags: ['AI', '投资', '融资', '市场'],
-          platform: 'TechCrunch',
-          platformId: 'test_platform_0002',
-          author: '张维为',
-          authorId: 'test_author_0002',
-          views: 892,
-          nsfw: false
-        },
-        {
-          id: 3,
-          category: '政策法规',
-          categoryType: '',
-          priority: '中',
-          priorityType: '',
-          date: '2023-11-18 09:12:34',
-          title: '欧盟AI法案正式通过:对高风险AI系统实施严格监管',
-          description: '欧洲议会以绝对多数通过AI法案,对高风险人工智能系统提出严格要求,包括透明度、可解释性和人类监督等...',
-          tags: ['欧盟', 'AI法案', '监管', '政策'],
-          platform: 'EU官网',
-          platformId: 'test_platform_0003',
-          author: '李大钊',
-          authorId: 'test_author_0003',
-          views: 654,
-          nsfw: false
-        },
-        {
-          id: 4,
-          category: '技术发展',
-          categoryType: 'warning',
-          priority: '高',
-          priorityType: 'warning',
-          date: '2023-11-17 14:56:23',
-          title: '量子计算突破:IBM发布1000量子比特处理器',
-          description: 'IBM宣布推出Condor量子处理器,拥有1121个量子比特,标志着量子计算技术进入新阶段。该处理器在错误纠正和稳定性方面取得重大进展...',
-          tags: ['量子计算', 'IBM', '处理器', '技术突破'],
-          platform: 'IBM Research',
-          platformId: 'test_platform_0004',
-          author: '王小波',
-          authorId: 'test_author_0004',
-          views: 2156,
-          nsfw: false
-        },
-        {
-          id: 5,
-          category: '网络安全',
-          categoryType: 'primary',
-          priority: '紧急',
-          priorityType: 'danger',
-          date: '2023-11-16 12:00:00',
-          title: 'APT组织Lazarus针对金融机构发起新一轮攻击活动',
-          description: '安全厂商检测到Lazarus组织使用新的恶意软件变种,针对亚洲地区多家银行和金融机构发起针对性攻击。攻击手法包括鱼叉式钓鱼和供应链攻击...',
-          tags: ['APT', 'Lazarus', '金融', '攻击活动'],
-          platform: '威胁情报中心',
-          platformId: 'test_platform_0005',
-          author: '刁近乎',
-          authorId: 'test_author_0005',
-          views: 1834,
-          nsfw: false
+    async performSearch() {
+      try {
+        this.loading = true
+        const params = {
+          page: this.currentPage,
+          page_size: this.pageSize,
+          keywords: this.searchQuery || null
         }
-      ]
 
-      this.$nextTick(() => {
-        const resultsSection = document.getElementById('search-results')
-        if (resultsSection) {
-          const header = document.querySelector('header')
-          const headerHeight = header ? header.offsetHeight : 64
-          const offsetPosition = resultsSection.getBoundingClientRect().top + window.pageYOffset - headerHeight
+        const response = await searchApi.searchEntity(params)
+        
+        if (response.code === 0 && response.data) {
+          this.searchResults = response.data.items || []
+          this.totalResults = response.data.total || 0
+          
+          this.$nextTick(() => {
+            const resultsSection = document.getElementById('search-results')
+            if (resultsSection) {
+              const header = document.querySelector('header')
+              const headerHeight = header ? header.offsetHeight : 64
+              const offsetPosition = resultsSection.getBoundingClientRect().top + window.pageYOffset - headerHeight
 
-          window.scrollTo({
-            top: offsetPosition,
-            behavior: 'smooth'
+              window.scrollTo({
+                top: offsetPosition,
+                behavior: 'smooth'
+              })
+            }
           })
         }
-      })
+      } catch (error) {
+        console.error('搜索失败:', error)
+        this.$message.error('搜索失败，请稍后重试')
+        this.searchResults = []
+        this.totalResults = 0
+      } finally {
+        this.loading = false
+      }
+    },
+
+    handleSearchFromResults() {
+      this.currentPage = 1
+      this.performSearch()
     },
 
     switchTrendRange(range) {

@@ -13,8 +13,8 @@ from app.schemas.action.sdk import SDKResultRequest
 
 from app.service.component import get_components_by_project_id, get_components_project_by_name
 from app.schemas.action.node import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
-from app.schemas.general import PageParams, PageResponse
-from app.schemas.response import ApiResponse
+from app.schemas.general import PageParamsSchema, PageResponseSchema
+from app.schemas.response import ApiResponseSchema
 from app.schemas.enum import ActionConfigIOTypeEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
 from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
@@ -31,25 +31,25 @@ router = APIRouter(
     tags=["action"],
 )
 
-@router.post("/start", response_model=ApiResponse[StartActionResponse], summary="开始行动")
+@router.post("/start", response_model=ApiResponseSchema[StartActionResponse], summary="开始行动")
 async def start_action(
     data: StartActionRequest,
     background_tasks: BackgroundTasks
 ):
     blueprint = await ActionBlueprintModel.find_one({"_id": data.blueprint_id})
     if not blueprint:
-        return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {data.blueprint_id}")
+        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {data.blueprint_id}")
     
     result, message = await ActionInstanceService.init(data.blueprint_id)
     if not result:
-        return ApiResponse.error(code=500, message=message)
+        return ApiResponseSchema.error(code=500, message=message)
     background_tasks.add_task(ActionInstanceService.start, message)
     
-    return ApiResponse.success(data=StartActionResponse(action_id=message))
+    return ApiResponseSchema.success(data=StartActionResponse(action_id=message))
 
-@router.get("/list", response_model=PageResponse[ActionInstanceBaseInfoResponse], summary="获取行动列表")
+@router.get("/list", response_model=PageResponseSchema[ActionInstanceBaseInfoResponse], summary="获取行动列表")
 async def get_action_instances(
-    params: PageParams = Depends()
+    params: PageParamsSchema = Depends()
 ):
     skip = (params.page - 1) * params.page_size
     total = await ActionInstanceModel.find_all().count()
@@ -77,17 +77,17 @@ async def get_action_instances(
             total_steps=total_steps
         ))
     
-    return PageResponse.create(results, total, params.page, params.page_size)
+    return PageResponseSchema.create(results, total, params.page, params.page_size)
 
-@router.get("/detail/{action_id}", response_model=ApiResponse[ActionDetailResponse], summary="获取行动详情")
+@router.get("/detail/{action_id}", response_model=ApiResponseSchema[ActionDetailResponse], summary="获取行动详情")
 async def get_action_detail(action_id: str):
     action_instance = await ActionInstanceModel.find_one({"_id": action_id})
     if not action_instance:
-        return ApiResponse.error(code=404, message=f"行动不存在，ID: {action_id}")
+        return ApiResponseSchema.error(code=404, message=f"行动不存在，ID: {action_id}")
 
     blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
     if not blueprint:
-        return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
+        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
     
     completed_steps = len(action_instance.finished_nodes_instance) if action_instance.finished_nodes_instance else 0
     total_steps = len(action_instance.nodes_id) if action_instance.nodes_id else 0
@@ -139,7 +139,7 @@ async def get_action_detail(action_id: str):
             error_message=node_instance.error_message
         )
     
-    return ApiResponse.success(data=ActionDetailResponse(
+    return ApiResponseSchema.success(data=ActionDetailResponse(
             id=action_instance.id,
             name=blueprint.name,
             description=blueprint.description,
@@ -157,13 +157,13 @@ async def get_action_detail(action_id: str):
         ))
 
 #region 蓝图相关接口
-@router.post("/blueprint", response_model=ApiResponse[ActionBlueprintDetailResponse], summary="创建蓝图")
+@router.post("/blueprint", response_model=ApiResponseSchema[ActionBlueprintDetailResponse], summary="创建蓝图")
 async def create_blueprint(data: ActionBlueprint):
     blueprint_id = generate_id(data.name + data.version + str(len(data.graph.nodes)) + str(len(data.graph.edges)))
     
     existing_blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
     if existing_blueprint:
-        return ApiResponse.error(code=400, message=f"蓝图已存在，ID: {blueprint_id}")
+        return ApiResponseSchema.error(code=400, message=f"蓝图已存在，ID: {blueprint_id}")
     
     nodes_models = []
     for node in data.graph.nodes:
@@ -236,11 +236,11 @@ async def create_blueprint(data: ActionBlueprint):
         updated_at=blueprint_model.updated_at
     )
     
-    return ApiResponse.success(data=response_data)
+    return ApiResponseSchema.success(data=response_data)
 
-@router.get("/blueprint/list", response_model=PageResponse[ActionBlueprintBaseInfoResponse], summary="获取蓝图列表")
+@router.get("/blueprint/list", response_model=PageResponseSchema[ActionBlueprintBaseInfoResponse], summary="获取蓝图列表")
 async def get_blueprints(
-    params: PageParams = Depends()
+    params: PageParamsSchema = Depends()
 ):
     """
     # 获取蓝图列表
@@ -271,9 +271,9 @@ async def get_blueprints(
             branches=branches
         ))
     
-    return PageResponse.create(results, total, params.page, params.page_size)
+    return PageResponseSchema.create(results, total, params.page, params.page_size)
     
-@router.get("/blueprint/detail/{blueprint_id}", response_model=ApiResponse[ActionBlueprintDetailResponse], summary="获取蓝图详情")
+@router.get("/blueprint/detail/{blueprint_id}", response_model=ApiResponseSchema[ActionBlueprintDetailResponse], summary="获取蓝图详情")
 async def get_blueprint(blueprint_id: str):
     """
     # 获取蓝图详情
@@ -282,7 +282,7 @@ async def get_blueprint(blueprint_id: str):
     """
     blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
     if not blueprint:
-        return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {blueprint_id}")
+        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {blueprint_id}")
     
     graph = graph_model2schemas(blueprint.graph)
     
@@ -299,11 +299,11 @@ async def get_blueprint(blueprint_id: str):
         updated_at=blueprint.updated_at
     )
     
-    return ApiResponse.success(data=response_data)
+    return ApiResponseSchema.success(data=response_data)
 #endregion
 
 #region 资源相关接口
-@router.get("/resource/nodes", response_model=ApiResponse[List[ActionNodeResponse]], summary="获取节点列表")
+@router.get("/resource/nodes", response_model=ApiResponseSchema[List[ActionNodeResponse]], summary="获取节点列表")
 async def get_actions():
     nodes = await ActionNodeModel.find_all().to_list()
 
@@ -366,16 +366,16 @@ async def get_actions():
             command_args=node.command_args
         ))
 
-    return ApiResponse.success(data=results)
+    return ApiResponseSchema.success(data=results)
 
 
-@router.post("/resource/nodes", response_model=ApiResponse[ActionNodeResponse], summary="创建节点")
+@router.post("/resource/nodes", response_model=ApiResponseSchema[ActionNodeResponse], summary="创建节点")
 async def create_node(data: ActionNode):
     node_id = generate_id(data.name + data.type.value + data.version)
 
     existing_node = await ActionNodeModel.find_one({"_id": node_id})
     if existing_node:
-        return ApiResponse.error(code=400, message=f"节点已存在，ID: {node_id}")
+        return ApiResponseSchema.error(code=400, message=f"节点已存在，ID: {node_id}")
 
     handle_models: list[ActionNodeHandleModel] = []
     for handle in data.handles:
@@ -460,12 +460,12 @@ async def create_node(data: ActionNode):
         command_args=data.command_args
     )
 
-    return ApiResponse.success(data=response_data)
+    return ApiResponseSchema.success(data=response_data)
 
 
-@router.get("/resource/base_components", response_model=PageResponse[BaseComponent], summary="获取基础组件列表")
+@router.get("/resource/base_components", response_model=PageResponseSchema[BaseComponent], summary="获取基础组件列表")
 async def get_base_components(
-    params: PageParams = Depends()
+    params: PageParamsSchema = Depends()
 ):
     project_id = await get_components_project_by_name("csi_base_components")
     components = await get_components_by_project_id(project_id, params.page, params.page_size)
@@ -482,11 +482,11 @@ async def get_base_components(
             average_runtime=component["stat"].get("average_total_duration", None),
         ))
 
-    return PageResponse.create(results, len(components), params.page, params.page_size)
+    return PageResponseSchema.create(results, len(components), params.page, params.page_size)
 #endregion
 
 #region SDK相关接口
-@router.get("/sdk/{node_instance_id}/init", response_model=ApiResponse[ActionNodeConfigInitResponse], summary="获取节点配置初始化")
+@router.get("/sdk/{node_instance_id}/init", response_model=ApiResponseSchema[ActionNodeConfigInitResponse], summary="获取节点配置初始化")
 async def get_node_config_init(node_instance_id: str):
     """
     # 获取节点配置初始化
@@ -496,15 +496,15 @@ async def get_node_config_init(node_instance_id: str):
     logger.info(f"获取节点配置初始化: {node_instance_id}")
     node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
     if not node_instance:
-        return ApiResponse.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
+        return ApiResponseSchema.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
     
     node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
     if not node_instance:
-        return ApiResponse.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
+        return ApiResponseSchema.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
     
     node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id})
     if not node_definition:
-        return ApiResponse.error(code=404, message=f"节点定义不存在，ID: {node_instance.definition_id}")
+        return ApiResponseSchema.error(code=404, message=f"节点定义不存在，ID: {node_instance.definition_id}")
         
     inputs = {}
     for value in node_instance.inputs.values():
@@ -515,11 +515,11 @@ async def get_node_config_init(node_instance_id: str):
     
     action_instance = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
     if not action_instance:
-        return ApiResponse.error(code=404, message=f"行动实例不存在，ID: {node_instance.action_id}")
+        return ApiResponseSchema.error(code=404, message=f"行动实例不存在，ID: {node_instance.action_id}")
     
     blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
     if not blueprint:
-        return ApiResponse.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
+        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
     
     outputs = {}
     handle_queues = {}
@@ -556,9 +556,9 @@ async def get_node_config_init(node_instance_id: str):
         outputs=outputs
     )
     
-    return ApiResponse.success(data=response_data)
+    return ApiResponseSchema.success(data=response_data)
 
-@router.post("/sdk/{node_instance_id}/result", response_model=ApiResponse[Dict[str, Any]], summary="上报节点配置结果")
+@router.post("/sdk/{node_instance_id}/result", response_model=ApiResponseSchema[Dict[str, Any]], summary="上报节点配置结果")
 async def report_action_node_result(
     node_instance_id: str, 
     result: SDKResultRequest,
@@ -566,20 +566,20 @@ async def report_action_node_result(
 ):
     logger.info(f"上报节点结果: {node_instance_id}, {result}")
     background_tasks.add_task(ActionInstanceService.finish_node, node_instance_id, result)
-    return ApiResponse.success()
+    return ApiResponseSchema.success()
 
-@router.post("/sdk/{node_instance_id}/heartbeat", response_model=ApiResponse[Dict[str, Any]], summary="上报节点心跳")
+@router.post("/sdk/{node_instance_id}/heartbeat", response_model=ApiResponseSchema[Dict[str, Any]], summary="上报节点心跳")
 async def report_action_node_heartbeat(
     node_instance_id: str, data: Dict[str, Any],
     background_tasks: BackgroundTasks
 ):
     logger.info(f"上报节点心跳: {node_instance_id}, {data}")
     background_tasks.add_task(ActionInstanceService.update_progress, node_instance_id, data.get("progress", 0))
-    return ApiResponse.success()
+    return ApiResponseSchema.success()
 #endregion
 
 #region 节点配置相关接口
-@router.get("/configs/statistics", response_model=ApiResponse[ActionConfigsStatisticsResponse], summary="获取节点配置统计信息")
+@router.get("/configs/statistics", response_model=ApiResponseSchema[ActionConfigsStatisticsResponse], summary="获取节点配置统计信息")
 async def get_node_configs_statistics():
     """
     # 获取节点配置统计信息
@@ -594,9 +594,9 @@ async def get_node_configs_statistics():
         handle_count=handle_count
     )
     
-    return ApiResponse.success(data=statistics)
+    return ApiResponseSchema.success(data=statistics)
 
-@router.get("/configs/handles/all", response_model=ApiResponse[List[ActionNodesHandleConfigAllResponse]], summary="获取所有节点配置handle列表")
+@router.get("/configs/handles/all", response_model=ApiResponseSchema[List[ActionNodesHandleConfigAllResponse]], summary="获取所有节点配置handle列表")
 async def get_all_node_configs_handles():
     handles = await ActionNodesHandleConfigModel.find_all().to_list()
     results = []
@@ -605,11 +605,11 @@ async def get_all_node_configs_handles():
             id=handle.id,
             label=handle.label
         ))
-    return ApiResponse.success(data=results)
+    return ApiResponseSchema.success(data=results)
 
-@router.get("/configs/handles", response_model=PageResponse[ActionNodesHandleConfigResponse], summary="获取节点配置handle列表")
+@router.get("/configs/handles", response_model=PageResponseSchema[ActionNodesHandleConfigResponse], summary="获取节点配置handle列表")
 async def get_node_configs_handles(
-    params: PageParams = Depends()
+    params: PageParamsSchema = Depends()
 ):
     skip = (params.page - 1) * params.page_size
     total = await ActionNodesHandleConfigModel.find_all().count()
@@ -624,14 +624,14 @@ async def get_node_configs_handles(
             color=handle.color,
             custom_style=unpack_dict(handle.custom_style)
         ))
-    return PageResponse.create(results, total, params.page, params.page_size)
+    return PageResponseSchema.create(results, total, params.page, params.page_size)
 
-@router.post("/configs/handles", response_model=ApiResponse[ActionNodesHandleConfigResponse], summary="创建节点配置handle")
+@router.post("/configs/handles", response_model=ApiResponseSchema[ActionNodesHandleConfigResponse], summary="创建节点配置handle")
 async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
     handle_id = generate_id(data.handle_name + data.type.value)
     
     if await ActionNodesHandleConfigModel.find_one({"_id": handle_id}):
-        return ApiResponse.error(code=400, message=f"节点配置handle已存在，ID: {handle_id}")
+        return ApiResponseSchema.error(code=400, message=f"节点配置handle已存在，ID: {handle_id}")
     
     handle_model = ActionNodesHandleConfigModel(
         id=handle_id,
@@ -644,7 +644,7 @@ async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
     )
     await handle_model.insert()
     
-    return ApiResponse.success(data=ActionNodesHandleConfigResponse(
+    return ApiResponseSchema.success(data=ActionNodesHandleConfigResponse(
         id=handle_id,
         handle_name=data.handle_name,
         type=data.type,

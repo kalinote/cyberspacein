@@ -1,0 +1,143 @@
+import logging
+from datetime import datetime
+from fastapi import APIRouter, HTTPException
+
+from app.schemas.search import EntitySearchRequestSchema, SearchResultSchema
+from app.schemas.general import PageResponseSchema
+from app.schemas.enum import ALL_INDEX
+from app.db.elasticsearch import get_es
+from app.models.platform.platform import PlatformModel
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(
+    prefix="/search",
+    tags=["search"],
+)
+
+def parse_datetime(value):
+    """解析日期时间字段"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except:
+            try:
+                return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
+            except:
+                return None
+    return None
+
+@router.post("/entity", response_model=PageResponseSchema[SearchResultSchema], summary="搜索实体")
+async def search_entity(params: EntitySearchRequestSchema):
+    """
+    搜索实体接口，支持从多个索引中搜索，并提供关键词搜索和多种过滤条件
+    """
+    es = get_es()
+    if not es:
+        raise HTTPException(status_code=500, detail="Elasticsearch连接未初始化")
+    
+    try:
+        query_must = []
+        
+        if params.keywords:
+            keyword_query = {
+                "bool": {
+                    "should": [
+                        {"match": {"title": params.keywords}},
+                        {"match": {"clean_content": params.keywords}},
+                        {"match": {"raw_content": params.keywords}},
+                        {"term": {"keywords": params.keywords}},
+                        {"term": {"author_name": params.keywords}}
+                    ],
+                    "minimum_should_match": 1
+                }
+            }
+            query_must.append(keyword_query)
+        
+        if params.platform:
+            query_must.append({"term": {"platform": params.platform}})
+        
+        if params.author:
+            query_must.append({"term": {"author_name": params.author}})
+        
+        if params.aigc is not None:
+            query_must.append({"term": {"aigc": params.aigc}})
+        
+        if params.nsfw is not None:
+            query_must.append({"term": {"nsfw": params.nsfw}})
+        
+        query_body = {
+            "query": {
+                "bool": {
+                    "must": query_must if query_must else [{"match_all": {}}]
+                }
+            },
+            "from": (params.page - 1) * params.page_size,
+            "size": params.page_size
+        }
+        
+        if params.sort_by:
+            if params.sort_by in ["crawled_at", "last_edit_at"]:
+                sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
+                query_body["sort"] = [
+                    {
+                        params.sort_by: {
+                            "order": sort_order,
+                            "missing": "_last"
+                        }
+                    }
+                ]
+        
+        result = await es.search(index=ALL_INDEX, body=query_body)
+        
+        total = result["hits"]["total"]["value"] if isinstance(result["hits"]["total"], dict) else result["hits"]["total"]
+        hits = result["hits"]["hits"]
+        
+        search_results = []
+        for hit in hits:
+            source_data = hit.get("_source", {})
+            
+            platform_name = source_data.get("platform")
+            platform_id = None
+            if platform_name:
+                try:
+                    platform = await PlatformModel.find_one({"name": platform_name})
+                    if platform:
+                        platform_id = platform.id
+                except Exception as e:
+                    logger.warning(f"查询平台ID失败: {e}, platform_name: {platform_name}")
+            
+            search_result = SearchResultSchema(
+                uuid=source_data.get("uuid", hit.get("_id", "")),
+                entity_type=source_data.get("entity_type", ""),
+                source_id=source_data.get("source_id", ""),
+                data_version=source_data.get("data_version", 0),
+                platform=platform_name or "",
+                platform_id=platform_id,
+                section=source_data.get("section", ""),
+                update_at=parse_datetime(source_data.get("update_at")),
+                author_uuid=None,
+                author_name=source_data.get("author_name", ""),
+                nsfw=source_data.get("nsfw", False),
+                aigc=source_data.get("aigc", False),
+                keywords=source_data.get("keywords", []),
+                title=source_data.get("title", ""),
+                clean_content=source_data.get("clean_content"),
+                confidence=source_data.get("confidence", 1)
+            )
+            search_results.append(search_result)
+        
+        return PageResponseSchema.create(
+            items=search_results,
+            total=total,
+            page=params.page,
+            page_size=params.page_size
+        )
+    
+    except Exception as e:
+        logger.error(f"搜索实体失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索实体失败: {str(e)}")
