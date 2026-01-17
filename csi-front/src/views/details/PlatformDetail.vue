@@ -554,7 +554,11 @@ export default {
             return this.snapshots.map((s) => s.image);
         },
     },
-
+    watch: {
+        '$route.params.id'() {
+            this.loadPlatformDetail();
+        },
+    },
     data() {
         return {
             currentRange: "7d",

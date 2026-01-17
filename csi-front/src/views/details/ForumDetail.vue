@@ -11,14 +11,16 @@
 
         <div v-else-if="error" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div class="bg-white rounded-xl shadow-sm border border-red-200 p-8 text-center">
-                <Icon icon="mdi:alert-circle" class="text-red-500 text-5xl mb-4" />
+                <div class="flex justify-center mb-4">
+                    <Icon icon="mdi:alert-circle" class="text-red-500 text-5xl" />
+                </div>
                 <h2 class="text-xl font-bold text-gray-900 mb-2">加载失败</h2>
                 <p class="text-gray-600 mb-4">{{ error }}</p>
                 <el-button type="primary" @click="$router.back()">返回</el-button>
             </div>
         </div>
 
-        <template v-else-if="articleData">
+        <template v-else-if="forumData">
             <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-8">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <el-button type="primary" link @click="$router.back()" class="mb-6">
@@ -28,37 +30,51 @@
                         返回
                     </el-button>
                     <div class="flex items-start space-x-6">
-                        <!-- TODO: 这里后续显示平台图标，封面图在其他地方显示 -->
-                        <div v-if="articleData.cover_image" class="w-20 h-20 bg-white rounded-2xl shadow-lg border border-gray-200 flex items-center justify-center overflow-hidden shrink-0">
-                            <img :src="articleData.cover_image" :alt="articleData.title" class="w-full h-full object-cover" />
-                        </div>
                         <div class="flex-1">
-                            <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-2">
-                                {{ articleData.title || '无标题' }}
-                            </h1>
-                            <p class="text-gray-600 mb-4 font-mono text-sm">{{ articleData.uuid }}</p>
+                            <div class="flex items-center gap-3 mb-2">
+                                <h1 class="text-4xl md:text-5xl font-bold text-gray-900">
+                                    {{ forumData.title || '无标题' }}
+                                </h1>
+                            </div>
+                            <p class="text-gray-600 mb-4 font-mono text-sm">{{ forumData.uuid }}</p>
                             <div class="flex flex-wrap items-center gap-3">
-                                <el-tag v-if="articleData.platform" type="primary" size="default">
-                                    {{ articleData.platform }}
+                                <el-tag v-if="forumData.platform" type="primary" size="default">
+                                    {{ forumData.platform }}
                                 </el-tag>
-                                <el-tag v-if="articleData.section" type="info" size="default">
-                                    {{ articleData.section }}
+                                <el-tag v-if="forumData.section" type="primary" size="default">
+                                    {{ forumData.section }}
                                 </el-tag>
-                                <el-tag v-if="articleData.entity_type" type="" size="default">
-                                    {{ articleData.entity_type }}
+                                <el-tag v-if="forumData.category_tag" type="warning" size="default">
+                                    {{ forumData.category_tag }}
                                 </el-tag>
-                                <el-tag v-if="articleData.nsfw" type="danger" size="default">
+                                <el-tag :type="getThreadTypeTag(forumData.thread_type)" size="default">
+                                    {{ getThreadTypeText(forumData.thread_type) }}
+                                </el-tag>
+                                <el-tag v-if="forumData.nsfw" type="danger" size="default">
                                     NSFW
                                 </el-tag>
-                                <el-tag v-if="articleData.aigc" type="warning" size="default">
+                                <el-tag v-if="forumData.aigc" type="warning" size="default">
                                     AIGC
                                 </el-tag>
-                                <el-link v-if="articleData.url" :href="articleData.url" target="_blank" type="primary" class="text-sm">
+                                <el-tag v-if="forumData.floor" type="primary" size="default" class="shrink-0">
+                                    {{ forumData.floor }}楼
+                                </el-tag>
+                                <el-link v-if="forumData.url" :href="forumData.url" target="_blank" type="primary" class="text-sm">
                                     <template #icon>
                                         <Icon icon="mdi:open-in-new" />
                                     </template>
                                     查看原文
                                 </el-link>
+                                <router-link v-if="forumData.topic_thread_uuid" :to="`/details/forum/${forumData.topic_thread_uuid}`" class="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                                    <Icon icon="mdi:forum" class="mr-1" />
+                                    查看主贴
+                                </router-link>
+                            </div>
+                            <div v-if="forumData.status_flags && forumData.status_flags.length > 0" class="flex flex-wrap items-center gap-2 mt-3">
+                                <el-tag v-for="flag in forumData.status_flags" :key="flag" :type="getStatusFlagType(flag)" size="default">
+                                    <Icon :icon="getStatusFlagIcon(flag)" class="mr-1" />
+                                    {{ getStatusFlagText(flag) }}
+                                </el-tag>
                             </div>
                         </div>
                     </div>
@@ -77,7 +93,7 @@
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm text-gray-500">作者</p>
                                 <p class="text-lg font-bold text-gray-900 truncate">
-                                    {{ articleData.author_name || articleData.author_id || '未知' }}
+                                    {{ forumData.author_name || forumData.author_id || '未知' }}
                                 </p>
                             </div>
                         </div>
@@ -89,7 +105,7 @@
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm text-gray-500">发布时间</p>
                                 <p class="text-base font-bold text-gray-900">
-                                    {{ formatDateTime(articleData.publish_at) }}
+                                    {{ formatDateTime(forumData.publish_at) }}
                                 </p>
                             </div>
                         </div>
@@ -101,31 +117,81 @@
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm text-gray-500">采集时间</p>
                                 <p class="text-base font-bold text-gray-900">
-                                    {{ formatDateTime(articleData.crawled_at) }}
+                                    {{ formatDateTime(forumData.crawled_at) }}
                                 </p>
                             </div>
                         </div>
 
-                        <div v-if="articleData.likes !== null && articleData.likes !== -1" class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:thumb-up" class="text-purple-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">点赞数</p>
-                                <p class="text-2xl font-bold text-gray-900">
-                                    {{ articleData.likes.toLocaleString() }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div v-else class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                        <div class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
                             <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
                                 <Icon icon="mdi:spider" class="text-purple-600 text-2xl" />
                             </div>
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm text-gray-500">爬虫</p>
                                 <p class="text-base font-bold text-gray-900 truncate">
-                                    {{ articleData.spider_name || '未知' }}
+                                    {{ forumData.spider_name || '未知' }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="hasInteractionData" class="grid grid-cols-2 md:grid-cols-5 gap-6 mt-6">
+                        <div v-if="forumData.likes !== null && forumData.likes !== -1" class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:thumb-up" class="text-blue-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">点赞</p>
+                                <p class="text-2xl font-bold text-gray-900">
+                                    {{ forumData.likes.toLocaleString() }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div v-if="forumData.dislikes !== null && forumData.dislikes !== -1" class="bg-linear-to-br from-red-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:thumb-down" class="text-red-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">点踩</p>
+                                <p class="text-2xl font-bold text-gray-900">
+                                    {{ forumData.dislikes.toLocaleString() }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div v-if="forumData.collections !== null && forumData.collections !== -1" class="bg-linear-to-br from-yellow-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:bookmark" class="text-yellow-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">收藏</p>
+                                <p class="text-2xl font-bold text-gray-900">
+                                    {{ forumData.collections.toLocaleString() }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div v-if="forumData.comments !== null && forumData.comments !== -1" class="bg-linear-to-br from-green-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:comment" class="text-green-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">评论</p>
+                                <p class="text-2xl font-bold text-gray-900">
+                                    {{ forumData.comments.toLocaleString() }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div v-if="forumData.views !== null && forumData.views !== -1" class="bg-linear-to-br from-indigo-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:eye" class="text-indigo-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">浏览</p>
+                                <p class="text-2xl font-bold text-gray-900">
+                                    {{ forumData.views.toLocaleString() }}
                                 </p>
                             </div>
                         </div>
@@ -139,19 +205,19 @@
                         <div class="lg:col-span-2 space-y-6">
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h2 class="text-2xl font-bold text-gray-900 mb-4 flex items-center">
-                                    <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
-                                    文章<span class="text-blue-500">内容</span>
+                                    <Icon icon="mdi:forum" class="text-blue-600 mr-2" />
+                                    帖子<span class="text-blue-500">内容</span>
                                 </h2>
-                                <el-tabs v-model="activeTab" class="article-tabs">
-                                    <el-tab-pane v-if="articleData.clean_content" label="纯文本内容" name="clean">
+                                <el-tabs v-model="activeTab" class="forum-tabs">
+                                    <el-tab-pane v-if="forumData.clean_content" label="纯文本内容" name="clean">
                                         <div class="prose max-w-none">
-                                            <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ articleData.clean_content }}</pre>
+                                            <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ forumData.clean_content }}</pre>
                                         </div>
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="articleData.safe_raw_content" label="安全渲染内容" name="rendered">
-                                        <div class="prose max-w-none article-content" v-html="articleData.safe_raw_content"></div>
+                                    <el-tab-pane v-if="forumData.safe_raw_content" label="安全渲染内容" name="rendered">
+                                        <div class="prose max-w-none forum-content" v-html="forumData.safe_raw_content"></div>
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="!articleData.clean_content && !articleData.safe_raw_content" label="内容" name="empty">
+                                    <el-tab-pane v-if="!forumData.clean_content && !forumData.safe_raw_content" label="内容" name="empty">
                                         <div class="text-center py-12 text-gray-400 flex flex-col items-center">
                                             <Icon icon="mdi:text-box-remove-outline" class="text-5xl mb-2" />
                                             <p>暂无内容，点击开始分析以分析实体内容</p>
@@ -160,29 +226,46 @@
                                 </el-tabs>
                             </div>
 
-                            <div v-if="articleData.translation_content" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="forumData.files_urls && forumData.files_urls.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                                    <Icon icon="mdi:file-image" class="text-blue-600 mr-2" />
+                                    附件<span class="text-blue-500">文件</span>
+                                </h3>
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                    <div v-for="(url, index) in forumData.files_urls" :key="index" class="relative group">
+                                        <a :href="url" target="_blank" class="block aspect-square bg-gray-100 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+                                            <img v-if="isImageUrl(url)" :src="url" :alt="`附件${index + 1}`" class="w-full h-full object-cover" />
+                                            <div v-else class="w-full h-full flex items-center justify-center">
+                                                <Icon icon="mdi:file" class="text-4xl text-gray-400" />
+                                            </div>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="forumData.translation_content" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:translate" class="text-green-600 mr-2" />
                                     翻译<span class="text-blue-500">内容</span>
                                 </h3>
                                 <div class="prose max-w-none">
-                                    <p class="text-gray-700 leading-relaxed whitespace-pre-wrap">{{ articleData.translation_content }}</p>
+                                    <p class="text-gray-700 leading-relaxed whitespace-pre-wrap">{{ forumData.translation_content }}</p>
                                 </div>
                             </div>
 
-                            <div v-if="articleData.keywords && articleData.keywords.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="forumData.keywords && forumData.keywords.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:tag-multiple" class="text-blue-600 mr-2" />
                                     关键<span class="text-blue-500">词</span>
                                 </h3>
                                 <div class="flex flex-wrap gap-2">
-                                    <el-tag v-for="keyword in articleData.keywords" :key="keyword" type="primary" size="large">
+                                    <el-tag v-for="keyword in forumData.keywords" :key="keyword" type="primary" size="large">
                                         {{ keyword }}
                                     </el-tag>
                                 </div>
                             </div>
 
-                            <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="forumData.emotion !== null && forumData.emotion !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:emoticon-happy-outline" class="text-amber-600 mr-2" />
                                     情感<span class="text-blue-500">分析</span>
@@ -190,8 +273,8 @@
                                 <div class="space-y-4">
                                     <div class="flex items-center justify-between">
                                         <span class="text-sm text-gray-600">情感分数</span>
-                                        <span class="text-2xl font-bold" :class="getEmotionColor(articleData.emotion)">
-                                            {{ articleData.emotion.toFixed(2) }}
+                                        <span class="text-2xl font-bold" :class="getEmotionColor(forumData.emotion)">
+                                            {{ forumData.emotion.toFixed(2) }}
                                         </span>
                                     </div>
                                     <div class="relative h-4 bg-gray-200 rounded-full overflow-hidden">
@@ -201,7 +284,7 @@
                                         </div>
                                         <div 
                                             class="absolute top-0 bottom-0 w-1 bg-gray-800 transition-all duration-300"
-                                            :style="{ left: `${(articleData.emotion + 1) * 50}%` }"
+                                            :style="{ left: `${(forumData.emotion + 1) * 50}%` }"
                                         ></div>
                                     </div>
                                     <div class="flex justify-between text-sm text-gray-500">
@@ -212,24 +295,24 @@
                                 </div>
                             </div>
 
-                            <div v-if="articleData.political_bias && articleData.political_bias.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="forumData.political_bias && forumData.political_bias.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:scale-balance" class="text-purple-600 mr-2" />
                                     政治<span class="text-blue-500">倾向</span>
                                 </h3>
                                 <div class="flex flex-wrap gap-2">
-                                    <el-tag v-for="bias in articleData.political_bias" :key="bias" type="warning" size="large">
+                                    <el-tag v-for="bias in forumData.political_bias" :key="bias" type="warning" size="large">
                                         {{ bias }}
                                     </el-tag>
                                 </div>
                             </div>
 
-                            <div v-if="articleData.confidence !== null && articleData.confidence !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="forumData.confidence !== null && forumData.confidence !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:shield-check" class="text-green-600 mr-2" />
                                     置信<span class="text-blue-500">度</span>
                                 </h3>
-                                <div v-if="articleData.confidence === -1" class="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
+                                <div v-if="forumData.confidence === 0" class="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
                                     <Icon icon="mdi:alert-circle" class="text-red-600 text-3xl" />
                                     <div>
                                         <p class="font-bold text-red-900">零信任模式</p>
@@ -240,32 +323,32 @@
                                     <div class="flex items-center justify-between">
                                         <span class="text-sm text-gray-600">置信度分数</span>
                                         <span class="text-2xl font-bold text-green-600">
-                                            {{ (articleData.confidence * 100).toFixed(0) }}%
+                                            {{ (forumData.confidence * 100).toFixed(0) }}%
                                         </span>
                                     </div>
                                     <div class="h-4 bg-gray-200 rounded-full overflow-hidden">
                                         <div 
                                             class="h-full bg-linear-to-r from-green-500 to-emerald-400 rounded-full transition-all duration-300"
-                                            :style="{ width: `${articleData.confidence * 100}%` }"
+                                            :style="{ width: `${forumData.confidence * 100}%` }"
                                         ></div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div v-if="articleData.subjective_rating !== null && articleData.subjective_rating !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="forumData.subjective_rating !== null && forumData.subjective_rating !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:star" class="text-amber-600 mr-2" />
                                     主观<span class="text-blue-500">评分</span>
                                 </h3>
                                 <div class="flex items-center space-x-4">
                                     <el-rate 
-                                        v-model="articleData.subjective_rating" 
+                                        v-model="forumData.subjective_rating" 
                                         disabled 
                                         show-score
                                         :max="10"
                                         size="large"
                                     />
-                                    <span class="text-3xl font-bold text-gray-900">{{ articleData.subjective_rating }}/10</span>
+                                    <span class="text-3xl font-bold text-gray-900">{{ forumData.subjective_rating }}/10</span>
                                 </div>
                             </div>
                         </div>
@@ -273,40 +356,66 @@
                         <div class="space-y-6">
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-4">
+                                    帖子<span class="text-blue-500">信息</span>
+                                </h3>
+                                <div class="space-y-4">
+                                    <div v-if="forumData.topic_id">
+                                        <p class="text-sm text-gray-500 mb-1">主题ID</p>
+                                        <p class="font-medium text-gray-900 break-all text-sm">{{ forumData.topic_id }}</p>
+                                    </div>
+                                    <div v-if="forumData.parent_id">
+                                        <p class="text-sm text-gray-500 mb-1">父ID</p>
+                                        <p class="font-medium text-gray-900 break-all text-sm">{{ forumData.parent_id }}</p>
+                                    </div>
+                                    <div v-if="forumData.floor">
+                                        <p class="text-sm text-gray-500 mb-1">楼层号</p>
+                                        <p class="font-medium text-gray-900">{{ forumData.floor }}</p>
+                                    </div>
+                                    <div v-if="forumData.thread_type">
+                                        <p class="text-sm text-gray-500 mb-1">帖子类型</p>
+                                        <el-tag :type="getThreadTypeTag(forumData.thread_type)" size="default">
+                                            {{ getThreadTypeText(forumData.thread_type) }}
+                                        </el-tag>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <h3 class="text-lg font-bold text-gray-900 mb-4">
                                     元数据<span class="text-blue-500">信息</span>
                                 </h3>
                                 <div class="space-y-4">
-                                    <div v-if="articleData.tags && articleData.tags.length > 0">
+                                    <div v-if="forumData.tags && forumData.tags.length > 0">
                                         <p class="text-sm text-gray-500 mb-2">标签</p>
                                         <div class="flex flex-wrap gap-2">
-                                            <el-tag v-for="tag in articleData.tags" :key="tag" type="info" size="small">
+                                            <el-tag v-for="tag in forumData.tags" :key="tag" type="info" size="small">
                                                 {{ tag }}
                                             </el-tag>
                                         </div>
                                     </div>
-                                    <div v-if="articleData.language">
+                                    <div v-if="forumData.language">
                                         <p class="text-sm text-gray-500 mb-1">语言</p>
-                                        <p class="font-medium text-gray-900">{{ articleData.language }}</p>
+                                        <p class="font-medium text-gray-900">{{ forumData.language }}</p>
                                     </div>
-                                    <div v-if="articleData.entity_type">
+                                    <div v-if="forumData.entity_type">
                                         <p class="text-sm text-gray-500 mb-1">实体类型</p>
-                                        <p class="font-medium text-gray-900">{{ articleData.entity_type }}</p>
+                                        <p class="font-medium text-gray-900">{{ forumData.entity_type }}</p>
                                     </div>
-                                    <div v-if="articleData.data_version">
+                                    <div v-if="forumData.data_version">
                                         <p class="text-sm text-gray-500 mb-1">数据版本</p>
-                                        <p class="font-medium text-gray-900">v{{ articleData.data_version }}</p>
+                                        <p class="font-medium text-gray-900">v{{ forumData.data_version }}</p>
                                     </div>
-                                    <div v-if="articleData.source_id">
+                                    <div v-if="forumData.source_id">
                                         <p class="text-sm text-gray-500 mb-1">来源ID</p>
-                                        <p class="font-medium text-gray-900 break-all text-sm">{{ articleData.source_id }}</p>
+                                        <p class="font-medium text-gray-900 break-all text-sm">{{ forumData.source_id }}</p>
                                     </div>
-                                    <div v-if="articleData.last_edit_at">
+                                    <div v-if="forumData.last_edit_at">
                                         <p class="text-sm text-gray-500 mb-1">最后编辑</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.last_edit_at) }}</p>
+                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(forumData.last_edit_at) }}</p>
                                     </div>
-                                    <div v-if="articleData.update_at">
+                                    <div v-if="forumData.update_at">
                                         <p class="text-sm text-gray-500 mb-1">更新时间</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.update_at) }}</p>
+                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(forumData.update_at) }}</p>
                                     </div>
                                 </div>
                             </div>
@@ -358,51 +467,115 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
-import { articleApi } from '@/api/article'
+import { forumApi } from '@/api/forum'
 import { ElMessage } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
 
 const route = useRoute()
 const uuid = computed(() => route.params.uuid)
 
-const articleData = ref(null)
+const forumData = ref(null)
 const loading = ref(false)
 const error = ref(null)
 const activeTab = ref('clean')
 const analyzing = ref(false)
 const isPriorityTarget = ref(false)
 
-const loadArticleDetail = async () => {
+const hasInteractionData = computed(() => {
+    if (!forumData.value) return false
+    return (forumData.value.likes !== null && forumData.value.likes !== -1) ||
+           (forumData.value.dislikes !== null && forumData.value.dislikes !== -1) ||
+           (forumData.value.collections !== null && forumData.value.collections !== -1) ||
+           (forumData.value.comments !== null && forumData.value.comments !== -1) ||
+           (forumData.value.views !== null && forumData.value.views !== -1)
+})
+
+const loadForumDetail = async () => {
     loading.value = true
     error.value = null
     
     try {
-        const response = await articleApi.getArticleDetail(uuid.value)
+        const response = await forumApi.getForumDetail(uuid.value)
         if (response.code === 0) {
-            articleData.value = response.data
+            forumData.value = response.data
             
-            if (articleData.value.clean_content) {
+            if (forumData.value.clean_content) {
                 activeTab.value = 'clean'
-            } else if (articleData.value.safe_raw_content) {
+            } else if (forumData.value.safe_raw_content) {
                 activeTab.value = 'rendered'
             } else {
                 activeTab.value = 'empty'
             }
         } else {
-            error.value = response.message || '加载文章详情失败'
+            error.value = response.message || '加载帖子详情失败'
         }
     } catch (err) {
-        console.error('加载文章详情失败:', err)
-        error.value = '加载文章详情失败，请稍后重试'
+        console.error('加载帖子详情失败:', err)
+        error.value = '加载帖子详情失败，请稍后重试'
     } finally {
         loading.value = false
     }
+}
+
+const getThreadTypeTag = (type) => {
+    const typeMap = {
+        'thread': 'primary',
+        'comment': 'info',
+        'featured': 'warning'
+    }
+    return typeMap[type] || ''
+}
+
+const getThreadTypeText = (type) => {
+    const typeMap = {
+        'thread': '主贴',
+        'comment': '评论',
+        'featured': '点评'
+    }
+    return typeMap[type] || type
+}
+
+const getStatusFlagType = (flag) => {
+    const flagMap = {
+        'stickied': 'warning',
+        'essence': 'success',
+        'locked': 'danger',
+        'solved': 'success'
+    }
+    return flagMap[flag] || 'info'
+}
+
+const getStatusFlagIcon = (flag) => {
+    const iconMap = {
+        'stickied': 'mdi:pin',
+        'essence': 'mdi:star',
+        'locked': 'mdi:lock',
+        'solved': 'mdi:check-circle'
+    }
+    return iconMap[flag] || 'mdi:tag'
+}
+
+const getStatusFlagText = (flag) => {
+    const textMap = {
+        'stickied': '置顶',
+        'essence': '精华',
+        'locked': '锁定',
+        'solved': '已解决'
+    }
+    return textMap[flag] || flag
 }
 
 const getEmotionColor = (emotion) => {
     if (emotion < -0.3) return 'text-red-600'
     if (emotion > 0.3) return 'text-green-600'
     return 'text-gray-600'
+}
+
+const isImageUrl = (url) => {
+    if (!url) return false
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']
+    const lowerUrl = url.toLowerCase()
+    return imageExtensions.some(ext => lowerUrl.includes(ext))
 }
 
 const handleAnalyze = async () => {
@@ -430,38 +603,38 @@ const togglePriorityTarget = () => {
 }
 
 watch(() => route.params.uuid, () => {
-    loadArticleDetail()
+    loadForumDetail()
 }, { immediate: false })
 
 onMounted(() => {
-    loadArticleDetail()
+    loadForumDetail()
 })
 </script>
 
 <style scoped>
-.article-content :deep(img) {
+.forum-content :deep(img) {
     max-width: 100%;
     height: auto;
     border-radius: 8px;
     margin: 1rem 0;
 }
 
-.article-content :deep(a) {
+.forum-content :deep(a) {
     color: #3b82f6;
     text-decoration: underline;
 }
 
-.article-content :deep(p) {
+.forum-content :deep(p) {
     margin: 1rem 0;
     line-height: 1.8;
 }
 
-.article-content :deep(h1),
-.article-content :deep(h2),
-.article-content :deep(h3),
-.article-content :deep(h4),
-.article-content :deep(h5),
-.article-content :deep(h6) {
+.forum-content :deep(h1),
+.forum-content :deep(h2),
+.forum-content :deep(h3),
+.forum-content :deep(h4),
+.forum-content :deep(h5),
+.forum-content :deep(h6) {
     font-weight: bold;
     margin: 1.5rem 0 1rem 0;
 }
@@ -473,7 +646,7 @@ onMounted(() => {
     font-family: inherit;
 }
 
-.article-tabs :deep(.el-tabs__nav-wrap::after) {
+.forum-tabs :deep(.el-tabs__nav-wrap::after) {
     height: 1px;
 }
 </style>

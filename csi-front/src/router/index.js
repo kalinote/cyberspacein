@@ -13,6 +13,7 @@ import ActionBlueprintList from '../views/action/ActionBlueprintList.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
+import ForumDetail from '../views/details/ForumDetail.vue'
 import PlatformList from '../views/platform/PlatformList.vue'
 
 const router = createRouter({
@@ -99,6 +100,12 @@ const router = createRouter({
       path: '/details/article/:uuid',
       name: 'article-detail',
       component: ArticleDetail
+    },
+    {
+      // 论坛详情页
+      path: '/details/forum/:uuid',
+      name: 'forum-detail',
+      component: ForumDetail
     },
     {
       // 平台列表页
