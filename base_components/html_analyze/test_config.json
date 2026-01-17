@@ -6,7 +6,9 @@
     "config": {
         "clean_content": true,
         "safe_raw_content": true,
-        "process_fields": "raw_content"
+        "media_localization": true,
+        "process_fields": "raw_content",
+        "base_url_field": "url"
     },
     "inputs": {
         "data_in": {
@@ -16,7 +18,8 @@
         "dict_in": {
             "type": "string",
             "value": {
-                "raw_content": "<script>alert('Hello, World!');</script>"
+                "raw_content": "",
+                "url": ""
             }
         }
     },

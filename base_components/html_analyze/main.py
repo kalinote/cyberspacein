@@ -7,7 +7,8 @@ from rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger("html_analyze")
 
-def process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content):
+def process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content, 
+                        enable_media_localization, base_url_field):
     if process_fields not in data:
         raise ValueError(f"数据中未找到字段 '{process_fields}'")
     
@@ -15,6 +16,13 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
     
     if not isinstance(content, str):
         raise TypeError(f"字段 '{process_fields}' 不是字符串类型")
+    
+    base_url = None
+    if base_url_field and base_url_field in data:
+        base_url = data[base_url_field]
+        if base_url and not isinstance(base_url, str):
+            logger.warning(f"base_url字段 '{base_url_field}' 的值不是字符串类型，忽略")
+            base_url = None
     
     if enable_clean_content:
         try:
@@ -26,7 +34,11 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
     
     if enable_safe_raw_content:
         try:
-            data['safe_raw_content'] = SafeRawContentAnalyzer.analyze(content)
+            data['safe_raw_content'] = SafeRawContentAnalyzer.analyze(
+                content,
+                enable_media_localization=enable_media_localization,
+                base_url=base_url
+            )
             logger.debug(f"safe_raw_content 处理完成")
         except Exception as e:
             logger.error(f"safe_raw_content 处理失败: {e}")
@@ -40,7 +52,9 @@ def main():
 
     enable_clean_content = component.get_config("clean_content", False)
     enable_safe_raw_content = component.get_config("safe_raw_content", False)
+    enable_media_localization = component.get_config("media_localization", False)
     process_fields = component.get_config("process_fields", "raw_content")
+    base_url_field = component.get_config("base_url_field", None)
 
     queue_name = component.inputs.get("data_in", {}).get("value")
     dict_value = component.inputs.get("dict_in", {}).get("value")
@@ -81,7 +95,8 @@ def main():
                     data = json.loads(message['body'])
                     
                     try:
-                        data = process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content)
+                        data = process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content,
+                                                  enable_media_localization, base_url_field)
                     except (ValueError, TypeError) as e:
                         logger.warning(f"{e}，跳过处理")
                         client.ack_message(message['delivery_tag'])
@@ -113,7 +128,8 @@ def main():
         if has_dict_input:
             logger.info("开始处理字典输入")
             try:
-                handled_dict = process_single_data(dict_value, process_fields, enable_clean_content, enable_safe_raw_content)
+                handled_dict = process_single_data(dict_value, process_fields, enable_clean_content, enable_safe_raw_content,
+                                                   enable_media_localization, base_url_field)
                 logger.info("字典处理完成")
             except Exception as e:
                 logger.error(f"字典处理失败: {e}")

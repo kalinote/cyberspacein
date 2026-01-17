@@ -223,7 +223,9 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
                 remove_external_scripts: bool = True,
                 analyze_inline_js: bool = True,
                 preserve_safe_styles: bool = True,
-                force_html_mode: bool = False) -> str:
+                force_html_mode: bool = False,
+                enable_media_localization: bool = False,
+                base_url: Optional[str] = None) -> str:
         """
         分析并清理 HTML 内容
         
@@ -234,6 +236,8 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
             analyze_inline_js: 是否分析内联 JavaScript（默认True）
             preserve_safe_styles: 是否保留安全的样式内容（默认True）
             force_html_mode: 强制按HTML处理，即使检测不到HTML标签（默认False）
+            enable_media_localization: 是否启用媒体资源本地化（默认False）
+            base_url: 基础URL，用于解析相对路径（可选）
             
         Returns:
             清理后的安全内容
@@ -311,6 +315,15 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
                 logger.info(f"样式处理: 清理 {styles_cleaned} 个, 移除 {styles_removed} 个")
             
             result = str(soup)
+            
+            if enable_media_localization:
+                try:
+                    from analyzer.media_localizer import MediaLocalizer
+                    localizer = MediaLocalizer(base_url=base_url)
+                    result = localizer.localize(result)
+                except Exception as e:
+                    logger.error(f"媒体本地化失败: {e}", exc_info=True)
+            
             reduction_percent = round((1 - len(result) / len(content)) * 100, 1) if len(content) > 0 else 0
             # logger.info(f"内容清理完成 - 原始: {len(content)} 字节, 清理后: {len(result)} 字节, 减少: {reduction_percent}%")
             return result
