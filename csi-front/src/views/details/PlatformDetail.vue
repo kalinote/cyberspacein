@@ -209,6 +209,12 @@
                                         {{ platformDetail.updatedAt }}
                                     </p>
                                 </div>
+                                <div>
+                                    <p class="text-sm text-gray-500 mb-1">关联爬虫</p>
+                                    <p class="font-medium text-gray-900">
+                                        {{ platformDetail.spiderName || '无' }}
+                                    </p>
+                                </div>
                             </div>
                         </div>
 
@@ -555,20 +561,20 @@ export default {
             trendChart: null,
             // TODO: 从接口获取平台详情数据
             platformDetail: {
-                uuid: "fb5bebe1b7df48e6606fdffed2cf8b14",
-                name: "Bilibili",
-                description:
-                    "Bilibili是一个中国的视频分享平台，用户可以在上面观看和上传各种类型的视频。平台以弹幕评论系统为特色，用户可以在观看视频时发送实时评论，这些评论会以弹幕的形式显示在视频画面上。Bilibili主要面向年轻用户群体，内容涵盖动画、游戏、音乐、科技、生活等多个领域。",
-                type: "视频网站",
-                status: "正常",
-                netType: "明网",
-                createdAt: "2025-01-01",
-                updatedAt: "2025-01-01",
-                url: "https://www.bilibili.com",
-                logo: "https://www.bilibili.com/favicon.ico",
-                tags: ["视频分享", "二次元", "弹幕", "社交媒体"],
-                category: "娱乐",
-                subCategory: "视频",
+                uuid: "",
+                name: "",
+                description:"",
+                type: "",
+                status: "",
+                netType: "",
+                createdAt: "",
+                updatedAt: "",
+                spiderName: "",
+                url: "",
+                logo: "",
+                tags: [],
+                category: "",
+                subCategory: "",
             },
             // TODO: 从接口获取平台统计信息（数据总量、采集次数、最后更新、今日新增）
             statistics: {
@@ -757,6 +763,7 @@ export default {
                 const response = await platformApi.getPlatformDetail(this.platformId);
                 if (response.code === 0 && response.data) {
                     const data = response.data;
+                    console.log(data);
                     this.platformDetail = {
                         uuid: data.id || "",
                         name: data.name || "",
@@ -771,6 +778,7 @@ export default {
                         tags: data.tags || [],
                         category: data.category || "",
                         subCategory: data.sub_category || "",
+                        spiderName: data.spider_name || "",
                     };
                 }
             } catch (error) {

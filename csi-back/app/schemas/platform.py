@@ -18,6 +18,7 @@ class PlatformCreateRequest(BaseModel):
     category: str = Field(description="平台分类", min_length=1)
     sub_category: str = Field(description="平台子分类", min_length=1)
     confidence: float = Field(default=1, description="平台信任度")
+    spider_name: str | None = Field(default=None, description="爬虫名称")
     
     @field_validator("url")
     @classmethod
@@ -48,3 +49,4 @@ class PlatformBaseInfoSchema(BaseModel):
     category: str = Field(description="平台分类")
     sub_category: str = Field(description="平台子分类")
     confidence: float = Field(description="平台信任度")
+    spider_name: str | None = Field(default=None, description="爬虫名称")

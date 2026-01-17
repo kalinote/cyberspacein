@@ -21,6 +21,7 @@ class PlatformModel(Document):
     category: str = Field(description="平台分类")
     sub_category: str = Field(description="平台子分类")
     confidence: float = Field(default=1, description="平台信任度")
+    spider_name: str | None = Field(default=None, description="爬虫名称")
     
     class Settings:
         name = "platforms"
