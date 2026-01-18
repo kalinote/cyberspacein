@@ -29,18 +29,46 @@
         <template v-else-if="isMultiLineLayout">
             <div class="divider-line"></div>
             <div class="multi-line-content">
-                <div v-if="inputConfig.label" class="label-with-tooltip mb-2">
-                    <span class="text-xs text-gray-600 font-medium">{{ inputConfig.label }}</span>
+                <div v-if="inputConfig.label" class="label-with-tooltip mb-2 flex items-center justify-between">
+                    <div class="flex items-center">
+                        <span class="text-xs text-gray-600 font-medium">{{ inputConfig.label }}</span>
+                        <el-tooltip 
+                            v-if="inputConfig.description" 
+                            :content="inputConfig.description" 
+                            placement="top"
+                        >
+                            <Icon icon="mdi:information-outline" class="text-gray-400 text-sm cursor-help ml-1" />
+                        </el-tooltip>
+                    </div>
+                    
                     <el-tooltip 
-                        v-if="inputConfig.description" 
-                        :content="inputConfig.description" 
+                        v-if="isTemplateMode" 
+                        :content="currentMode === PARAM_MODE.PARAM ? '切换为固定值' : '切换为参数注入'"
                         placement="top"
                     >
-                        <Icon icon="mdi:information-outline" class="text-gray-400 text-sm cursor-help ml-1" />
+                        <el-button
+                            size="small"
+                            :type="currentMode === PARAM_MODE.PARAM ? 'primary' : 'default'"
+                            :icon="currentMode === PARAM_MODE.PARAM ? Link : Edit"
+                            circle
+                            @click="toggleMode"
+                            class="mode-toggle-btn"
+                        />
                     </el-tooltip>
                 </div>
                 
+                <ParamSelector
+                    v-if="isTemplateMode && currentMode === PARAM_MODE.PARAM"
+                    v-model="boundParamName"
+                    :input-type="inputConfig.type"
+                    :available-params="availableParams"
+                    :disabled="disabled"
+                    @update:model-value="handleParamChange"
+                    class="w-full"
+                />
+                
                 <component 
+                    v-else
                     :is="componentType"
                     :model-value="normalizedModelValue"
                     @update:model-value="handleUpdate"
@@ -96,7 +124,33 @@
                     <span v-else class="text-xs text-gray-500 shrink-0">{{ inputConfig.label }}:</span>
                 </div>
                 
+                <el-tooltip 
+                    v-if="isTemplateMode" 
+                    :content="currentMode === PARAM_MODE.PARAM ? '切换为固定值' : '切换为参数注入'"
+                    placement="top"
+                >
+                    <el-button
+                        size="small"
+                        :type="currentMode === PARAM_MODE.PARAM ? 'primary' : 'default'"
+                        :icon="currentMode === PARAM_MODE.PARAM ? Link : Edit"
+                        circle
+                        @click="toggleMode"
+                        class="mode-toggle-btn shrink-0"
+                    />
+                </el-tooltip>
+                
+                <ParamSelector
+                    v-if="isTemplateMode && currentMode === PARAM_MODE.PARAM"
+                    v-model="boundParamName"
+                    :input-type="inputConfig.type"
+                    :available-params="availableParams"
+                    :disabled="disabled"
+                    @update:model-value="handleParamChange"
+                    class="flex-1"
+                />
+                
                 <component 
+                    v-else
                     :is="componentType"
                     :model-value="normalizedModelValue"
                     @update:model-value="handleUpdate"
@@ -121,10 +175,13 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
+import { Link, Edit } from '@element-plus/icons-vue'
 import TagInput from './TagInput.vue'
 import ConditionInput from './ConditionInput.vue'
+import ParamSelector from '@/components/action/template/ParamSelector.vue'
+import { PARAM_MODE } from '@/utils/action/constants'
 
 // TODO: 这里还需要优化规范一下，比如考虑是否把boolean和switch统一起来
 const INPUT_TYPE_MAP = {
@@ -165,10 +222,65 @@ const props = defineProps({
     disabled: {
         type: Boolean,
         default: false
+    },
+    nodeId: {
+        type: String,
+        default: null
     }
 })
 
 const emit = defineEmits(['update:modelValue'])
+
+const templateContext = inject('templateContext', null)
+
+const isTemplateMode = computed(() => {
+    return templateContext?.isTemplateMode?.value || false
+})
+
+const availableParams = computed(() => {
+    return templateContext?.availableParams?.value || []
+})
+
+const currentBinding = computed(() => {
+    if (!templateContext || !props.nodeId || !props.inputConfig.name) {
+        return null
+    }
+    const nodeBindings = templateContext.bindings.value[props.nodeId]
+    return nodeBindings?.[props.inputConfig.name]
+})
+
+const currentMode = ref(PARAM_MODE.FIXED)
+const boundParamName = ref(null)
+
+watch(currentBinding, (paramName) => {
+    if (paramName) {
+        currentMode.value = PARAM_MODE.PARAM
+        boundParamName.value = paramName
+    } else {
+        currentMode.value = PARAM_MODE.FIXED
+        boundParamName.value = null
+    }
+}, { immediate: true })
+
+const toggleMode = () => {
+    if (currentMode.value === PARAM_MODE.FIXED) {
+        currentMode.value = PARAM_MODE.PARAM
+    } else {
+        currentMode.value = PARAM_MODE.FIXED
+        updateBinding(null)
+    }
+}
+
+const handleParamChange = (paramName) => {
+    boundParamName.value = paramName
+    updateBinding(paramName)
+}
+
+const updateBinding = (paramName) => {
+    if (templateContext?.updateBinding && props.nodeId && props.inputConfig.name) {
+        templateContext.updateBinding(props.nodeId, props.inputConfig.name, paramName)
+    }
+}
 
 const componentType = computed(() => {
     return INPUT_TYPE_MAP[props.inputConfig.type] || 'el-input'
@@ -273,5 +385,14 @@ const handleUpdate = (value) => {
     background: #f0f9ff;
     border-radius: 6px;
     border-left: 3px solid #3b82f6;
+}
+
+.mode-toggle-btn {
+    margin: 0 4px;
+}
+
+.mode-toggle-btn:hover {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
 }
 </style>

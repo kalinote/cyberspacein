@@ -10,7 +10,7 @@ from app.models.action.node import ActionNodeModel
 from app.schemas.action.sdk import SDKResultRequest
 from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 from app.service.component import run_component
-from app.utils.dict_helper import pack_dict
+from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id
 from app.utils.workflow import find_start_nodes
 from app.models.action.blueprint import ActionBlueprintModel
@@ -63,7 +63,7 @@ class ActionInstanceService:
         return handle
     
     @staticmethod
-    async def init(blueprint_id: str) -> tuple[bool, str]:
+    async def init(blueprint_id: str, inject_params: dict[str, Any] | None = None) -> tuple[bool, str]:
         """
         初始化行动实例
         
@@ -75,6 +75,25 @@ class ActionInstanceService:
         if not blueprint:
             logger.error(f"行动实例初始化失败，蓝图不存在: {blueprint_id}")
             return False, f"行动实例初始化失败，蓝图不存在: {blueprint_id}"
+        
+        param_required_map: dict[str, bool] = {}
+        template_bindings: dict[str, dict[str, str]] = {}
+        
+        if blueprint.is_template:
+            if not blueprint.template:
+                logger.error(f"模板蓝图缺少模板配置: {blueprint_id}")
+                return False, f"模板蓝图缺少模板配置: {blueprint_id}"
+            
+            template = blueprint.template
+            if "params" in template and template["params"]:
+                for param in template["params"]:
+                    param_name = param.get("name")
+                    if param_name:
+                        param_required_map[param_name] = param.get("required", False)
+            
+            if "bindings" in template and template["bindings"]:
+                template_bindings = template["bindings"]
+        
         action_instance = ActionInstanceModel(
             id=action_id,
             blueprint_id=blueprint_id,
@@ -88,13 +107,40 @@ class ActionInstanceService:
             node_definition = await ActionInstanceService.get_node_definition(node.data.definition_id)
             if node_definition:
                 default_configs = node_definition.default_configs or []
+            
+            form_data = node.data.form_data or []
+            form_data_dict = unpack_dict(form_data) or {}
+            fields_to_remove = set()
+            
+            if blueprint.is_template and node.id in template_bindings:
+                node_bindings = template_bindings[node.id]
+                
+                for field_name, param_name in node_bindings.items():
+                    if field_name not in form_data_dict:
+                        continue
+                    
+                    if inject_params and param_name in inject_params:
+                        form_data_dict[field_name] = inject_params[param_name]
+                    elif param_name in param_required_map:
+                        if param_required_map[param_name]:
+                            logger.error(f"行动实例初始化失败，缺少必需参数: {param_name}")
+                            return False, f"行动实例初始化失败，缺少必需参数: {param_name}"
+                        else:
+                            fields_to_remove.add(field_name)
+                    else:
+                        fields_to_remove.add(field_name)
+                
+                for field_name in fields_to_remove:
+                    form_data_dict.pop(field_name, None)
+                
+                form_data = pack_dict(form_data_dict) or []
                 
             action_instance_node = ActionInstanceNodeModel(
                 id=generate_id(action_id + node.id),
                 action_id=action_id,
                 node_id=node.id,
                 status=ActionInstanceNodeStatusEnum.PENDING,
-                configs=(node.data.form_data or []) + default_configs,
+                configs=form_data + default_configs,
                 definition_id=node.data.definition_id
             )
             await action_instance_node.insert()

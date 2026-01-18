@@ -20,7 +20,7 @@ from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
 from app.models.action.blueprint import ActionBlueprintModel, PositionModel, NodeDataModel, GraphNodeModel, GraphEdgeModel, ViewportModel, GraphModel
-from app.schemas.action.blueprint import ActionBlueprint, ActionBlueprintBaseInfoResponse, ActionBlueprintDetailResponse, GraphNode, GraphEdge, Position, NodeData, Graph, Viewport
+from app.schemas.action.blueprint import ActionBlueprintSchema, ActionBlueprintBaseInfoResponse, ActionBlueprintDetailResponseSchema, GraphNodeSchema, GraphEdgeSchema, PositionSchema, NodeDataSchema, GraphSchema, ViewportSchema, TemplateSpecSchema
 from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.workflow import count_workflow_paths, graph_model2schemas
 
@@ -157,8 +157,27 @@ async def get_action_detail(action_id: str):
         ))
 
 #region 蓝图相关接口
-@router.post("/blueprint", response_model=ApiResponseSchema[ActionBlueprintDetailResponse], summary="创建蓝图")
-async def create_blueprint(data: ActionBlueprint):
+@router.post("/blueprint", response_model=ApiResponseSchema[ActionBlueprintDetailResponseSchema], summary="创建蓝图")
+async def create_blueprint(data: ActionBlueprintSchema):
+    # 模板校验
+    if data.is_template:
+        # if not data.template or not data.template.params:
+            # return ApiResponseSchema.error(code=400, message="模板蓝图必须定义至少一个参数")
+        
+        # 验证参数名唯一性
+        param_names = [p.name for p in data.template.params]
+        if len(param_names) != len(set(param_names)):
+            return ApiResponseSchema.error(code=400, message="参数名称必须唯一")
+        
+        # 验证绑定引用的参数存在
+        for node_bindings in data.template.bindings.values():
+            for binding_name, binding_param in node_bindings.items():
+                if binding_param not in param_names:
+                    return ApiResponseSchema.error(
+                        code=400, 
+                        message=f"绑定引用的参数 '{binding_param}' 不存在"
+                    )
+    
     blueprint_id = generate_id(data.name + data.version + str(len(data.graph.nodes)) + str(len(data.graph.edges)))
     
     existing_blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
@@ -217,13 +236,15 @@ async def create_blueprint(data: ActionBlueprint):
         target=data.target,
         implementation_period=data.implementation_period,
         resource=data.resource,
-        graph=graph_model
+        graph=graph_model,
+        is_template=data.is_template,
+        template=data.template.model_dump() if data.template else None
     )
     
     await blueprint_model.insert()
     logger.info(f"成功创建蓝图: {blueprint_id}")
     
-    response_data = ActionBlueprintDetailResponse(
+    response_data = ActionBlueprintDetailResponseSchema(
         id=blueprint_id,
         name=data.name,
         version=data.version,
@@ -233,7 +254,9 @@ async def create_blueprint(data: ActionBlueprint):
         resource=data.resource,
         graph=data.graph,
         created_at=blueprint_model.created_at,
-        updated_at=blueprint_model.updated_at
+        updated_at=blueprint_model.updated_at,
+        is_template=blueprint_model.is_template,
+        template=data.template
     )
     
     return ApiResponseSchema.success(data=response_data)
@@ -268,12 +291,13 @@ async def get_blueprints(
             created_at=blueprint.created_at,
             updated_at=blueprint.updated_at,
             steps=steps,
-            branches=branches
+            branches=branches,
+            is_template=blueprint.is_template,
         ))
     
     return PageResponseSchema.create(results, total, params.page, params.page_size)
     
-@router.get("/blueprint/detail/{blueprint_id}", response_model=ApiResponseSchema[ActionBlueprintDetailResponse], summary="获取蓝图详情")
+@router.get("/blueprint/detail/{blueprint_id}", response_model=ApiResponseSchema[ActionBlueprintDetailResponseSchema], summary="获取蓝图详情")
 async def get_blueprint(blueprint_id: str):
     """
     # 获取蓝图详情
@@ -286,7 +310,7 @@ async def get_blueprint(blueprint_id: str):
     
     graph = graph_model2schemas(blueprint.graph)
     
-    response_data = ActionBlueprintDetailResponse(
+    response_data = ActionBlueprintDetailResponseSchema(
         id=blueprint.id,
         name=blueprint.name,
         version=blueprint.version,
@@ -296,7 +320,9 @@ async def get_blueprint(blueprint_id: str):
         resource=blueprint.resource,
         graph=graph,
         created_at=blueprint.created_at,
-        updated_at=blueprint.updated_at
+        updated_at=blueprint.updated_at,
+        is_template=blueprint.is_template,
+        template=TemplateSpecSchema(**blueprint.template) if blueprint.template else None
     )
     
     return ApiResponseSchema.success(data=response_data)

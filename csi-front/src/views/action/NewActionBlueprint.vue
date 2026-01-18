@@ -126,8 +126,30 @@
                             :autosize="{ minRows: 3, maxRows: 10 }" />
                     </el-form-item>
 
-                    <!-- TODO: 期限、资源配置设置 -->
+                    <!-- 模板蓝图开关 -->
+                    <el-form-item class="shrink-0 mb-0 -mt-2">
+                        <template #label>
+                            <div class="flex items-center justify-between w-full">
+                                <span class="text-sm font-medium text-gray-700">模板蓝图</span>
+                                <el-tooltip content="启用后可使用参数占位符，在运行时注入实际数据" placement="top">
+                                    <Icon icon="mdi:information-outline" class="text-gray-400 text-sm cursor-help" />
+                                </el-tooltip>
+                            </div>
+                        </template>
+                        <el-switch 
+                            v-model="isTemplate" 
+                            active-text="启用"
+                            inactive-text="禁用"
+                        />
+                    </el-form-item>
                 </el-form>
+
+                <!-- 参数管理区（仅在 isTemplate 为 true 时显示） -->
+                <TemplateParamsManager
+                    v-if="isTemplate"
+                    v-model:params="templateParams"
+                    v-model:bindings="templateBindings"
+                />
 
                 <!-- 底部保存按钮 -->
                 <div class="p-4 border-t border-gray-200 shrink-0">
@@ -148,7 +170,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, markRaw } from 'vue'
+import { ref, computed, onMounted, markRaw, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
@@ -156,6 +178,7 @@ import { VueFlow, useVueFlow } from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
+import TemplateParamsManager from "@/components/action/template/TemplateParamsManager.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
 import {
@@ -360,6 +383,29 @@ const actionFormRules = {
     ]
 }
 
+const isTemplate = ref(false)
+const templateParams = ref([])
+const templateBindings = ref({})
+
+provide('templateContext', {
+    isTemplateMode: computed(() => isTemplate.value),
+    availableParams: computed(() => templateParams.value),
+    bindings: templateBindings,
+    updateBinding: (nodeId, fieldName, paramName) => {
+        if (!templateBindings.value[nodeId]) {
+            templateBindings.value[nodeId] = {}
+        }
+        if (paramName) {
+            templateBindings.value[nodeId][fieldName] = paramName
+        } else {
+            delete templateBindings.value[nodeId][fieldName]
+            if (Object.keys(templateBindings.value[nodeId]).length === 0) {
+                delete templateBindings.value[nodeId]
+            }
+        }
+    }
+})
+
 // 配置常量
 const BASE_NODE_WIDTH = 300   // 节点组件的最小设计宽度
 const SIDEBAR_PADDING = 32    // p-4 * 2
@@ -528,6 +574,19 @@ const handleSaveAction = async () => {
         target: actionForm.value.target,
         implementation_period: actionForm.value.implementation_period,
         resource: {},
+        is_template: isTemplate.value,
+        ...(isTemplate.value && {
+            template: {
+                params: templateParams.value.map(p => ({
+                    name: p.name,
+                    type: p.type,
+                    label: p.label,
+                    required: p.required,
+                    description: p.description
+                })),
+                bindings: templateBindings.value
+            }
+        }),
         graph: {
             nodes: processedNodes,
             edges: processedEdges,

@@ -1,0 +1,32 @@
+{
+    "meta": {
+        "node_id": "test_node_001",
+        "action_id": "694251b96d9534925bd9f6f3"
+    },
+    "config": {
+        "clean_content": true,
+        "safe_raw_content": true,
+        "media_localization": true,
+        "process_fields": "raw_content",
+        "base_url_field": "url"
+    },
+    "inputs": {
+        "data_in": {
+            "type": "reference",
+            "value": "transit_queue"
+        },
+        "dict_in": {
+            "type": "string",
+            "value": {
+                "raw_content": "",
+                "url": ""
+            }
+        }
+    },
+    "outputs": {
+        "data_out": {
+            "type": "reference",
+            "value": ["analyzed_out"]
+        }
+    }
+}

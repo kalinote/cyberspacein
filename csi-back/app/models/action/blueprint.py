@@ -74,6 +74,9 @@ class ActionBlueprintModel(Document):
     resource: dict[str, Any] | None = None
     graph: GraphModel
     is_deleted: bool = Field(default=False, description="是否已删除")
+    is_template: bool = Field(default=False, description="是否为模板")
+    # TODO: 后续增加对应的模型
+    template: dict[str, Any] | None = Field(default=None, description="模板配置")
     
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     updated_at: datetime = Field(default_factory=lambda: datetime.now())

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 from pydantic import BaseModel, Field
-from app.schemas.action.blueprint import Graph
+from app.schemas.action.blueprint import GraphSchema
 from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 
 class StartActionRequest(BaseModel):
@@ -37,7 +37,7 @@ class ActionDetailResponse(ActionInstanceBaseInfoResponse):
     """
     行动详细信息的响应，用于正在执行的行动详细的信息页
     """
-    graph: Graph = Field(description="行动蓝图，用于标识基本结构和布局")
+    graph: GraphSchema = Field(description="行动蓝图，用于标识基本结构和布局")
     resource: dict[str, Any] = Field(default={}, description="分配资源，暂未实现")
     implementation_period: int = Field(description="执行期限(秒)")
     node_details: dict[str, ActionNodeDetailResponse] = Field(description="节点详细信息")

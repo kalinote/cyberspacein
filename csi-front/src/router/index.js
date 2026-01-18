@@ -10,6 +10,7 @@ import ActionResourceConfig from '../views/action/ActionResourceConfig.vue'
 import ActionHistory from '../views/action/ActionHistory.vue'
 import ActionDetail from '../views/action/ActionDetail.vue'
 import ActionBlueprintList from '../views/action/ActionBlueprintList.vue'
+import TaskManagement from '../views/action/TaskManagement.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
@@ -58,6 +59,12 @@ const router = createRouter({
       path: '/action/blueprints',
       name: 'action-blueprint-list',
       component: ActionBlueprintList
+    },
+    {
+      // 任务管理
+      path: '/action/tasks',
+      name: 'task-management',
+      component: TaskManagement
     },
     {
       // 行动详情

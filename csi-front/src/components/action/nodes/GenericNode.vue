@@ -56,6 +56,7 @@
                 :model-value="data[input.id]"
                 @update:model-value="updateInputValue(input.id, $event)"
                 :disabled="disabled"
+                :node-id="id"
             />
         </div>
     </div>

@@ -21,3 +21,9 @@ export const INPUT_TYPES = [
   'tags', 'conditions', 'comment'
 ]
 
+// 参数模式常量
+export const PARAM_MODE = {
+  FIXED: 'fixed',
+  PARAM: 'param'
+}
+

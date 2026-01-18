@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from app.models.action.blueprint import ActionBlueprintModel, GraphNodeModel, GraphModel
-from app.schemas.action.blueprint import Graph, GraphNode, GraphEdge, Position, NodeData, Viewport
+from app.schemas.action.blueprint import GraphSchema, GraphNodeSchema, GraphEdgeSchema, PositionSchema, NodeDataSchema, ViewportSchema
 from app.utils.dict_helper import unpack_dict
 
 
@@ -79,23 +79,23 @@ def count_workflow_paths(action_blueprint: ActionBlueprintModel) -> int:
     return total_count
 
 
-def graph_model2schemas(graph_model: GraphModel) -> Graph:
+def graph_model2schemas(graph_model: GraphModel) -> GraphSchema:
     """将 GraphModel 转换为 Graph schema"""
     nodes = []
     for node_model in graph_model.nodes:
         form_data = unpack_dict(node_model.data.form_data) or {}
-        node_data = NodeData(
+        node_data = NodeDataSchema(
             definition_id=node_model.data.definition_id,
             version=node_model.data.version,
             form_data=form_data
         )
         
-        position = Position(
+        position = PositionSchema(
             x=node_model.position.x,
             y=node_model.position.y
         )
         
-        node = GraphNode(
+        node = GraphNodeSchema(
             id=node_model.id,
             type=node_model.type,
             position=position,
@@ -105,7 +105,7 @@ def graph_model2schemas(graph_model: GraphModel) -> Graph:
     
     edges = []
     for edge_model in graph_model.edges:
-        edge = GraphEdge(
+        edge = GraphEdgeSchema(
             id=edge_model.id,
             source=edge_model.source,
             sourceHandle=edge_model.sourceHandle,
@@ -114,13 +114,13 @@ def graph_model2schemas(graph_model: GraphModel) -> Graph:
         )
         edges.append(edge)
     
-    viewport = Viewport(
+    viewport = ViewportSchema(
         x=graph_model.viewport.x,
         y=graph_model.viewport.y,
         zoom=graph_model.viewport.zoom
     )
     
-    graph = Graph(
+    graph = GraphSchema(
         nodes=nodes,
         edges=edges,
         viewport=viewport
