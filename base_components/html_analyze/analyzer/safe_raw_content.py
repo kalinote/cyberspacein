@@ -73,7 +73,7 @@ class WebSanitizer:
         self.raw_html = raw_html
         
         self.allowed_tags = allowed_tags or {
-            'div', 'span', 'p', 'br', 'hr', 'strong', 'em', 'b', 'i', 'u', 's',
+            'div', 'span', 'p', 'br', 'hr', 'strong', 'em', 'b', 'i', 'u', 's', 'font',
             'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
             'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption',
             'ul', 'ol', 'li', 'dl', 'dt', 'dd',
@@ -93,6 +93,7 @@ class WebSanitizer:
             'ol': ['start', 'type'],
             'ul': ['type'],
             'li': ['value'],
+            'font': ['color', 'face', 'size'],
             '*': ['class', 'id', 'style', 'title', 'lang', 'dir', 'data-*']
         }
         
