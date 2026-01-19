@@ -244,6 +244,8 @@ async def create_blueprint(data: ActionBlueprintSchema):
     await blueprint_model.insert()
     logger.info(f"成功创建蓝图: {blueprint_id}")
     
+    await ActionInstanceService._clear_cache("blueprint", blueprint_id)
+    
     response_data = ActionBlueprintDetailResponseSchema(
         id=blueprint_id,
         name=data.name,
@@ -449,6 +451,8 @@ async def create_node(data: ActionNode):
 
     await node_model.insert()
     logger.info(f"成功创建节点: {node_id}")
+
+    await ActionInstanceService._clear_cache("node", node_id)
 
     handle_ids = [handle.id for handle in handle_models]
     handle_configs = await ActionNodesHandleConfigModel.find(In(ActionNodesHandleConfigModel.id, handle_ids)).to_list()
@@ -669,6 +673,9 @@ async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
         custom_style=pack_dict(data.custom_style)
     )
     await handle_model.insert()
+    
+    await ActionInstanceService._clear_cache("handle", handle_id)
+    await ActionInstanceService._clear_cache("handle_name", data.handle_name)
     
     return ApiResponseSchema.success(data=ActionNodesHandleConfigResponse(
         id=handle_id,

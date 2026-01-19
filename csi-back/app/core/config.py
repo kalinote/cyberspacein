@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     
     REDIS_URL: str
     REDIS_PASSWORD: str
+    ACTION_CACHE_TTL: int = 600
     
     ELASTICSEARCH_URL: str
     ELASTICSEARCH_USER: str
