@@ -14,53 +14,149 @@ from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id
 from app.utils.workflow import find_start_nodes
 from app.models.action.blueprint import ActionBlueprintModel
-from app.utils.async_fetch import async_post
-from beanie.operators import In
 from app.db.rabbitmq import delete_queue
+from app.db.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
 # TODO: 节点失败需要增加检测任务是否完成(失败)的逻辑
 
 class ActionInstanceService:
-    # TODO: 后续换成redis缓存，设置10分钟过期时间，同时在数据库更新时清理缓存
-    blueprints: dict[str, ActionBlueprintModel] = {}
-    node_definitions: dict[str, ActionNodeModel] = {}
-    handle_definitions: dict[str, ActionNodesHandleConfigModel] = {}
-    handle_name_to_id: dict[str, str] = {}
+    @staticmethod
+    def _get_cache_key(cache_type: str, cache_id: str) -> str:
+        return f"action:cache:{cache_type}:{cache_id}"
     
-
+    @staticmethod
+    def _serialize_model(model: Any) -> str:
+        return model.model_dump_json()
+    
+    @staticmethod
+    async def _clear_cache(cache_type: str, cache_id: str):
+        try:
+            redis_client = get_redis()
+            if redis_client:
+                cache_key = ActionInstanceService._get_cache_key(cache_type, cache_id)
+                await redis_client.delete(cache_key)
+                logger.info(f"已清理缓存: {cache_key}")
+        except Exception as e:
+            logger.warning(f"清理缓存失败: {e}")
+    
     @staticmethod
     async def get_blueprint(blueprint_id: str) -> ActionBlueprintModel:
-        if blueprint_id not in ActionInstanceService.blueprints:
-            ActionInstanceService.blueprints[blueprint_id] = await ActionBlueprintModel.find_one({"_id": blueprint_id})
-        return ActionInstanceService.blueprints[blueprint_id]
+        try:
+            redis_client = get_redis()
+            if redis_client:
+                cache_key = ActionInstanceService._get_cache_key("blueprint", blueprint_id)
+                cached_data = await redis_client.get(cache_key)
+                if cached_data:
+                    return ActionBlueprintModel.model_validate_json(cached_data)
+        except Exception as e:
+            logger.warning(f"从Redis读取蓝图缓存失败: {e}")
+        
+        blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
+        if blueprint:
+            try:
+                redis_client = get_redis()
+                if redis_client:
+                    cache_key = ActionInstanceService._get_cache_key("blueprint", blueprint_id)
+                    await redis_client.setex(
+                        cache_key,
+                        settings.ACTION_CACHE_TTL,
+                        ActionInstanceService._serialize_model(blueprint)
+                    )
+            except Exception as e:
+                logger.warning(f"写入Redis蓝图缓存失败: {e}")
+        
+        return blueprint
     
     @staticmethod
     async def get_node_definition(node_definition_id: str) -> ActionNodeModel:
-        if node_definition_id not in ActionInstanceService.node_definitions:
-            ActionInstanceService.node_definitions[node_definition_id] = await ActionNodeModel.find_one({"_id": node_definition_id})
-        return ActionInstanceService.node_definitions[node_definition_id]
+        try:
+            redis_client = get_redis()
+            if redis_client:
+                cache_key = ActionInstanceService._get_cache_key("node", node_definition_id)
+                cached_data = await redis_client.get(cache_key)
+                if cached_data:
+                    return ActionNodeModel.model_validate_json(cached_data)
+        except Exception as e:
+            logger.warning(f"从Redis读取节点定义缓存失败: {e}")
+        
+        node_definition = await ActionNodeModel.find_one({"_id": node_definition_id})
+        if node_definition:
+            try:
+                redis_client = get_redis()
+                if redis_client:
+                    cache_key = ActionInstanceService._get_cache_key("node", node_definition_id)
+                    await redis_client.setex(
+                        cache_key,
+                        settings.ACTION_CACHE_TTL,
+                        ActionInstanceService._serialize_model(node_definition)
+                    )
+            except Exception as e:
+                logger.warning(f"写入Redis节点定义缓存失败: {e}")
+        
+        return node_definition
 
     @staticmethod
     async def get_handle_definition(handle_definition_id: str) -> ActionNodesHandleConfigModel:
-        if handle_definition_id not in ActionInstanceService.handle_definitions:
-            ActionInstanceService.handle_definitions[handle_definition_id] = await ActionNodesHandleConfigModel.find_one({"_id": handle_definition_id})
+        try:
+            redis_client = get_redis()
+            if redis_client:
+                cache_key = ActionInstanceService._get_cache_key("handle", handle_definition_id)
+                cached_data = await redis_client.get(cache_key)
+                if cached_data:
+                    return ActionNodesHandleConfigModel.model_validate_json(cached_data)
+        except Exception as e:
+            logger.warning(f"从Redis读取handle定义缓存失败: {e}")
         
-        return ActionInstanceService.handle_definitions[handle_definition_id]
+        handle_definition = await ActionNodesHandleConfigModel.find_one({"_id": handle_definition_id})
+        if handle_definition:
+            try:
+                redis_client = get_redis()
+                if redis_client:
+                    cache_key = ActionInstanceService._get_cache_key("handle", handle_definition_id)
+                    await redis_client.setex(
+                        cache_key,
+                        settings.ACTION_CACHE_TTL,
+                        ActionInstanceService._serialize_model(handle_definition)
+                    )
+            except Exception as e:
+                logger.warning(f"写入Redis handle定义缓存失败: {e}")
+        
+        return handle_definition
 
     @staticmethod
     async def get_handle_definition_by_name(handle_name: str) -> ActionNodesHandleConfigModel:
-        if handle_name in ActionInstanceService.handle_name_to_id:
-            handle_id = ActionInstanceService.handle_name_to_id[handle_name]
-            return await ActionInstanceService.get_handle_definition(handle_id)
+        handle_id = None
+        try:
+            redis_client = get_redis()
+            if redis_client:
+                cache_key = ActionInstanceService._get_cache_key("handle_name", handle_name)
+                cached_id = await redis_client.get(cache_key)
+                if cached_id:
+                    handle_id = cached_id
+        except Exception as e:
+            logger.warning(f"从Redis读取handle名称映射缓存失败: {e}")
         
-        handle = await ActionNodesHandleConfigModel.find_one({"handle_name": handle_name})
-        if handle:
-            ActionInstanceService.handle_name_to_id[handle_name] = handle.id
-            ActionInstanceService.handle_definitions[handle.id] = handle
+        if not handle_id:
+            handle = await ActionNodesHandleConfigModel.find_one({"handle_name": handle_name})
+            if handle:
+                handle_id = handle.id
+                try:
+                    redis_client = get_redis()
+                    if redis_client:
+                        cache_key = ActionInstanceService._get_cache_key("handle_name", handle_name)
+                        await redis_client.setex(
+                            cache_key,
+                            settings.ACTION_CACHE_TTL,
+                            handle_id
+                        )
+                except Exception as e:
+                    logger.warning(f"写入Redis handle名称映射缓存失败: {e}")
+                return handle
+            return None
         
-        return handle
+        return await ActionInstanceService.get_handle_definition(handle_id)
     
     @staticmethod
     async def init(blueprint_id: str, inject_params: dict[str, Any] | None = None) -> tuple[bool, str]:
