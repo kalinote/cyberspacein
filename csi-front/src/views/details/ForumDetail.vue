@@ -590,7 +590,7 @@ const handleAnalyze = async () => {
 }
 
 const handleExport = () => {
-    ElMessage.info('导出功能开发中')
+    ElMessage.info('功能开发中')
 }
 
 const togglePriorityTarget = () => {

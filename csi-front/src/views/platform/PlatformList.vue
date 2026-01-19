@@ -189,6 +189,154 @@
         </div>
       </div>
     </div>
+
+    <!-- 新增平台对话框 -->
+    <el-dialog
+      v-model="dialogVisible"
+      title="新增平台"
+      width="800px"
+      :close-on-click-modal="false"
+      @close="handleDialogClose"
+    >
+      <el-form
+        ref="formRef"
+        :model="formData"
+        :rules="formRules"
+        label-width="120px"
+        class="max-h-[70vh] overflow-y-auto pr-2"
+      >
+        <el-form-item label="平台名称" prop="name">
+          <el-input
+            v-model="formData.name"
+            placeholder="请输入平台名称"
+            maxlength="100"
+            show-word-limit
+            clearable
+          />
+        </el-form-item>
+
+        <el-form-item label="平台描述" prop="description">
+          <el-input
+            v-model="formData.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入平台描述"
+            clearable
+          />
+        </el-form-item>
+
+        <el-form-item label="平台类型" prop="type">
+          <el-select
+            v-model="formData.type"
+            placeholder="请选择平台类型"
+            class="w-full"
+          >
+            <el-option label="forum" value="forum" />
+            <el-option label="article" value="article" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="网络类型" prop="net_type">
+          <el-select
+            v-model="formData.net_type"
+            placeholder="请选择网络类型"
+            class="w-full"
+          >
+            <el-option label="明网" value="明网" />
+            <el-option label="Tor" value="Tor" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="平台状态" prop="status">
+          <el-select
+            v-model="formData.status"
+            placeholder="请选择平台状态"
+            class="w-full"
+          >
+            <el-option label="活跃" value="活跃" />
+            <el-option label="非活跃" value="非活跃" />
+            <el-option label="离线" value="离线" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="平台URL" prop="url">
+          <el-input
+            v-model="formData.url"
+            placeholder="请输入平台URL"
+            clearable
+          />
+        </el-form-item>
+
+        <el-form-item label="平台Logo" prop="logo">
+          <el-input
+            v-model="formData.logo"
+            placeholder="请输入平台Logo URL"
+            clearable
+          />
+        </el-form-item>
+
+        <el-form-item label="平台分类" prop="category">
+          <el-input
+            v-model="formData.category"
+            placeholder="请输入平台分类"
+            clearable
+          />
+        </el-form-item>
+
+        <el-form-item label="平台子分类" prop="sub_category">
+          <el-input
+            v-model="formData.sub_category"
+            placeholder="请输入平台子分类"
+            clearable
+          />
+        </el-form-item>
+
+        <el-form-item label="信任度" prop="confidence">
+          <div class="flex items-center gap-4 w-full">
+            <el-slider
+              v-model="formData.confidence"
+              :min="0"
+              :max="1"
+              :step="0.01"
+              class="flex-1"
+            />
+            <el-input-number
+              v-model="formData.confidence"
+              :min="0"
+              :max="1"
+              :step="0.01"
+              :precision="2"
+              controls-position="right"
+              style="width: 120px"
+            />
+          </div>
+        </el-form-item>
+
+        <el-form-item label="平台标签" prop="tags">
+          <TagInput
+            v-model="formData.tags"
+            placeholder="输入标签后按回车或点击添加"
+          />
+        </el-form-item>
+
+        <el-form-item label="爬虫名称" prop="spider_name">
+          <el-input
+            v-model="formData.spider_name"
+            placeholder="请输入爬虫名称（可选）"
+            clearable
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="handleDialogClose">取消</el-button>
+          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+            确定
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -201,12 +349,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
 import { getCosUrl } from '@/utils/cos'
+import TagInput from '@/components/action/nodes/components/TagInput.vue'
 
 export default {
   name: 'PlatformList',
   components: {
     Header,
-    Icon
+    Icon,
+    TagInput
   },
   setup() {
     const router = useRouter()
@@ -261,8 +411,104 @@ export default {
       ElMessage.info('搜索功能暂未实现')
     }
 
+    const dialogVisible = ref(false)
+    const formRef = ref(null)
+    const submitLoading = ref(false)
+    const formData = ref({
+      name: '',
+      description: '',
+      type: 'forum',
+      net_type: '明网',
+      status: '活跃',
+      url: '',
+      logo: '',
+      tags: [],
+      category: '',
+      sub_category: '',
+      confidence: 1,
+      spider_name: ''
+    })
+
+    const formRules = {
+      name: [
+        { required: true, message: '请输入平台名称', trigger: 'blur' },
+        { min: 1, max: 100, message: '平台名称长度应在1-100字符之间', trigger: 'blur' }
+      ],
+      type: [
+        { required: true, message: '请选择平台类型', trigger: 'change' }
+      ],
+      url: [
+        { required: true, message: '请输入平台URL', trigger: 'blur' }
+      ],
+      logo: [
+        { required: true, message: '请输入平台Logo', trigger: 'blur' }
+      ],
+      category: [
+        { required: true, message: '请输入平台分类', trigger: 'blur' }
+      ],
+      sub_category: [
+        { required: true, message: '请输入平台子分类', trigger: 'blur' }
+      ]
+    }
+
     const handleAddPlatform = () => {
-      ElMessage.info('新增平台功能暂未实现')
+      dialogVisible.value = true
+    }
+
+    const handleDialogClose = () => {
+      dialogVisible.value = false
+      if (formRef.value) {
+        formRef.value.resetFields()
+      }
+      formData.value = {
+        name: '',
+        description: '',
+        type: 'forum',
+        net_type: '明网',
+        status: '活跃',
+        url: '',
+        logo: '',
+        tags: [],
+        category: '',
+        sub_category: '',
+        confidence: 1,
+        spider_name: ''
+      }
+    }
+
+    const handleSubmit = async () => {
+      if (!formRef.value) return
+      
+      try {
+        await formRef.value.validate()
+        submitLoading.value = true
+        
+        const submitData = {
+          name: formData.value.name,
+          description: formData.value.description || '',
+          type: formData.value.type,
+          net_type: formData.value.net_type,
+          status: formData.value.status,
+          url: formData.value.url,
+          logo: formData.value.logo || '',
+          tags: formData.value.tags || [],
+          category: formData.value.category,
+          sub_category: formData.value.sub_category,
+          confidence: formData.value.confidence,
+          spider_name: formData.value.spider_name || null
+        }
+        
+        await platformApi.createPlatform(submitData)
+        ElMessage.success('平台创建成功')
+        handleDialogClose()
+        fetchPlatformList()
+      } catch (error) {
+        if (error !== false) {
+          console.error('创建平台失败:', error)
+        }
+      } finally {
+        submitLoading.value = false
+      }
     }
 
     const handleViewDetail = (id) => {
@@ -323,12 +569,19 @@ export default {
       selectedType,
       platformList,
       pagination,
+      dialogVisible,
+      formRef,
+      formData,
+      formRules,
+      submitLoading,
       handlePageChange,
       handlePageSizeChange,
       handleSearch,
       handleAddPlatform,
       handleViewDetail,
       handleDeletePlatform,
+      handleDialogClose,
+      handleSubmit,
       getStatusType,
       formatDate,
       getLogoUrl

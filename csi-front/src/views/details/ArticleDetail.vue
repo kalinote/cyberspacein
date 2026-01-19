@@ -28,10 +28,6 @@
                         返回
                     </el-button>
                     <div class="flex items-start space-x-6">
-                        <!-- TODO: 这里后续显示平台图标，封面图在其他地方显示 -->
-                        <div v-if="articleData.cover_image" class="w-20 h-20 bg-white rounded-2xl shadow-lg border border-gray-200 flex items-center justify-center overflow-hidden shrink-0">
-                            <img :src="articleData.cover_image" :alt="articleData.title" class="w-full h-full object-cover" />
-                        </div>
                         <div class="flex-1">
                             <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-2">
                                 {{ articleData.title || '无标题' }}
