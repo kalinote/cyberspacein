@@ -45,7 +45,7 @@
                 :format-tooltip="formatNsfwTooltip"
                 style="width: 60px"
               />
-              <span class="text-xs text-gray-600 -mt-1">NSFW</span>
+              <span class="text-xs text-gray-600 -mt-1">{{ nsfwFilterText }}</span>
             </div>
             <!-- <el-button plain>
               <template #icon><Icon icon="mdi:calendar" /></template>
@@ -384,7 +384,7 @@
                 :format-tooltip="formatNsfwTooltip"
                 style="width: 40px"
               />
-              <span class="text-xs text-gray-600 -mt-1">NSFW</span>
+              <span class="text-xs text-gray-600 -mt-1">{{ nsfwFilterText }}</span>
             </div>
             <el-button type="primary" @click="handleSearchFromResults">
               <template #icon>
@@ -693,6 +693,10 @@ export default {
 
     hasActiveFilters() {
       return this.filterRulesText.length > 0
+    },
+
+    nsfwFilterText() {
+      return this.formatNsfwTooltip(this.nsfwFilter)
     }
   },
 
@@ -708,7 +712,7 @@ export default {
     formatNsfwTooltip(value) {
       const tooltips = {
         0: '无NSFW',
-        1: '默认',
+        1: 'NSFW：默认',
         2: '仅NSFW'
       }
       return tooltips[value] || '默认'
