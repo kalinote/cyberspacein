@@ -1,7 +1,15 @@
 <template>
-    <div class="template-params-manager border-t border-gray-200 mt-4">
+    <div class="template-params-manager border-t border-gray-200 mt-4 relative group flex flex-col" :style="{ height: height + 'px' }">
         <div 
-            class="flex items-center justify-between py-3 px-2 cursor-pointer hover:bg-gray-50"
+            class="absolute left-0 right-0 -top-1 h-2 cursor-row-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
+            @mousedown.prevent="startResize"
+        >
+            <div class="h-px w-full bg-gray-200 group-hover:bg-blue-400 transition-colors"
+                :class="{ 'bg-blue-600!': isResizing }"></div>
+        </div>
+        
+        <div 
+            class="flex items-center justify-between py-3 px-2 cursor-pointer hover:bg-gray-50 shrink-0"
             @click="collapsed = !collapsed"
         >
             <div class="flex items-center gap-2">
@@ -23,9 +31,9 @@
             </el-button>
         </div>
 
-        <div v-show="!collapsed" class="params-content px-2 pb-4">
+        <div v-show="!collapsed" class="params-content px-2 pb-4 overflow-y-auto flex-1 min-h-0">
             <div v-if="params.length === 0" class="text-center py-8 text-gray-400">
-                <Icon icon="mdi:package-variant" class="text-4xl mb-2" />
+                <Icon icon="mdi:package-variant" class="text-4xl mb-2 block mx-auto" />
                 <p class="text-sm">暂无参数</p>
                 <p class="text-xs mt-1">点击上方按钮添加模板参数</p>
             </div>
@@ -173,6 +181,7 @@ import {
     removeParamBindings,
     updateParamBindingsName
 } from '@/utils/action/template'
+import { useVerticalResize } from '@/utils/action/useVerticalResize'
 
 const props = defineProps({
     params: {
@@ -186,6 +195,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:params', 'update:bindings'])
+
+const { height, isResizing, startResize } = useVerticalResize(300, 200, 600)
 
 const collapsed = ref(false)
 const showAddDialog = ref(false)
@@ -349,7 +360,6 @@ const cancelParamDialog = () => {
 }
 
 .params-content {
-    max-height: 400px;
     overflow-y: auto;
 }
 

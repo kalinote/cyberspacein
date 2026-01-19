@@ -35,6 +35,18 @@
               </template>
               高级筛选
             </el-button>
+            <div class="flex flex-col items-center gap-0">
+              <el-slider
+                v-model="nsfwFilter"
+                :min="0"
+                :max="2"
+                :step="1"
+                :show-stops="true"
+                :format-tooltip="formatNsfwTooltip"
+                style="width: 60px"
+              />
+              <span class="text-xs text-gray-600 -mt-1">NSFW</span>
+            </div>
             <!-- <el-button plain>
               <template #icon><Icon icon="mdi:calendar" /></template>
               时间范围
@@ -362,6 +374,18 @@
                 </template>
               </el-input>
             </div>
+            <div class="flex flex-col items-center gap-0">
+              <el-slider
+                v-model="nsfwFilter"
+                :min="0"
+                :max="2"
+                :step="1"
+                :show-stops="true"
+                :format-tooltip="formatNsfwTooltip"
+                style="width: 40px"
+              />
+              <span class="text-xs text-gray-600 -mt-1">NSFW</span>
+            </div>
             <el-button type="primary" @click="handleSearchFromResults">
               <template #icon>
                 <Icon icon="mdi:magnify" />
@@ -488,6 +512,7 @@ export default {
   data() {
     return {
       searchQuery: '',
+      nsfwFilter: 1,
       currentTrendRange: '7',
       currentSearchRange: '12',
       timeRange: 'all',
@@ -680,6 +705,15 @@ export default {
   },
 
   methods: {
+    formatNsfwTooltip(value) {
+      const tooltips = {
+        0: '无NSFW',
+        1: '默认',
+        2: '仅NSFW'
+      }
+      return tooltips[value] || '默认'
+    },
+
     getConfidenceInfo(confidence) {
       if (confidence === 0) {
         return { text: '零信任', type: 'danger' }
@@ -762,6 +796,12 @@ export default {
           page: this.currentPage,
           page_size: this.pageSize,
           keywords: this.searchQuery || null
+        }
+
+        if (this.nsfwFilter === 0) {
+          params.nsfw = false
+        } else if (this.nsfwFilter === 2) {
+          params.nsfw = true
         }
 
         const response = await searchApi.searchEntity(params)

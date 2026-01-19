@@ -83,7 +83,7 @@
                     <h3 class="text-base font-semibold text-gray-800 text-center">行动属性</h3>
                 </div>
                 <el-form ref="actionFormRef" :model="actionForm" :rules="actionFormRules"
-                    class="p-4 flex flex-col gap-4 flex-1 overflow-y-auto" label-width="auto" label-position="top">
+                    class="p-4 flex flex-col gap-4 flex-1 overflow-y-auto min-h-0" label-width="auto" label-position="top">
                     <!-- 标题输入框 -->
                     <el-form-item prop="title" class="shrink-0 mb-0">
                         <template #label>
@@ -149,6 +149,7 @@
                     v-if="isTemplate"
                     v-model:params="templateParams"
                     v-model:bindings="templateBindings"
+                    class="shrink-0"
                 />
 
                 <!-- 底部保存按钮 -->

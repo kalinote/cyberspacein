@@ -88,12 +88,21 @@
               >
                 <div class="mb-4">
                   <h3 class="text-xl font-bold text-gray-900 mb-4 line-clamp-2">{{ blueprint.title }}</h3>
-                  <el-tag 
-                    class="border-0" 
-                    :style="{ backgroundColor: blueprint.taskTypeTagColor, color: blueprint.taskTypeTagTextColor }"
-                  >
-                    {{ blueprint.taskType }}
-                  </el-tag>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <el-tag 
+                      class="border-0" 
+                      :style="{ backgroundColor: blueprint.taskTypeTagColor, color: blueprint.taskTypeTagTextColor }"
+                    >
+                      {{ blueprint.taskType }}
+                    </el-tag>
+                    <el-tag 
+                      v-if="blueprint.isTemplate"
+                      type="warning"
+                      class="border-0"
+                    >
+                      模板
+                    </el-tag>
+                  </div>
                 </div>
 
                 <div class="space-y-3 mb-6 flex-1">
@@ -172,6 +181,14 @@
                 <template #default="{ row }">
                   <div class="flex items-center gap-2">
                     <span class="font-medium">{{ row.title }}</span>
+                    <el-tag 
+                      v-if="row.isTemplate"
+                      type="warning"
+                      size="small"
+                      class="border-0"
+                    >
+                      模板
+                    </el-tag>
                   </div>
                 </template>
               </el-table-column>
@@ -318,7 +335,8 @@ const fetchBlueprints = async () => {
         resourceAllocation: '未配置',
         executionDeadline: formatImplementationPeriod(item.implementation_period),
         branchCount: item.branches || 0,
-        stepCount: item.steps || 0
+        stepCount: item.steps || 0,
+        isTemplate: item.is_template || false
       }
     })
     
@@ -415,3 +433,4 @@ onMounted(() => {
   fetchBlueprints()
 })
 </script>
+
