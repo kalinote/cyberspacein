@@ -2,15 +2,7 @@
     <div class="h-screen flex flex-col bg-white">
         <Header />
 
-        <div class="px-5 py-3 bg-white border-b border-gray-200 flex items-center shrink-0">
-            <el-button type="primary" link @click="$router.back()" class="mb-0!">
-                <template #icon>
-                    <Icon icon="mdi:arrow-left" />
-                </template>
-                返回
-            </el-button>
-            <span class="text-xl font-bold text-gray-800 ml-4">{{ actionData.name || '行动详情' }}</span>
-        </div>
+        <SimplePageHeader :title="actionData.name || '行动详情'" />
 
         <div class="flex-1 flex overflow-hidden">
             <!-- 流程图区域 -->
@@ -300,6 +292,7 @@ import { ref, computed, onMounted, onUnmounted, watch, markRaw, h } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
+import SimplePageHeader from "@/components/page-header/SimplePageHeader.vue"
 import { VueFlow, useVueFlow } from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"

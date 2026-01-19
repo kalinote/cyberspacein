@@ -3,54 +3,19 @@
         <Header />
 
         <!-- 顶部标题区域 -->
-        <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-8">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <el-button type="primary" link @click="$router.back()" class="mb-6">
-                    <template #icon>
-                        <Icon icon="mdi:arrow-left" />
-                    </template>
-                    返回
-                </el-button>
-                <div class="flex items-start space-x-6">
-                    <div
-                        class="w-20 h-20 bg-white rounded-2xl shadow-lg border border-gray-200 flex items-center justify-center overflow-hidden">
-                        <img v-if="platformDetail.logo" :src="getLogoUrl(platformDetail.logo)" :alt="platformDetail.name"
-                            class="w-full h-full object-contain" />
-                        <Icon v-else icon="mdi:web" class="text-blue-600 text-4xl" />
-                    </div>
-                    <div class="flex-1">
-                        <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-2">
-                            {{ platformDetail.name }}
-                        </h1>
-                        <p class="text-gray-600 mb-4">{{ platformDetail.uuid }}</p>
-                        <div class="flex flex-wrap items-center gap-3">
-                            <el-tag :type="getStatusType(platformDetail.status)" size="default">
-                                {{ platformDetail.status }}
-                            </el-tag>
-                            <el-tag type="primary" size="default">
-                                {{ platformDetail.type }}
-                            </el-tag>
-                            <el-tag type="primary" size="default">
-                                {{ platformDetail.netType }}
-                            </el-tag>
-                            <el-link v-if="platformDetail.url" :href="platformDetail.url" target="_blank" type="primary"
-                                class="text-sm">
-                                <template #icon>
-                                    <Icon icon="mdi:open-in-new" />
-                                </template>
-                                访问平台
-                            </el-link>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div
-                class="absolute top-10 right-10 w-64 h-64 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20">
-            </div>
-            <div
-                class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20">
-            </div>
-        </section>
+        <DetailPageHeader
+            :title="platformDetail.name"
+            :subtitle="platformDetail.uuid"
+            :logo="getLogoUrl(platformDetail.logo)"
+            :tags="[
+                { text: platformDetail.status, type: getStatusType(platformDetail.status) },
+                { text: platformDetail.type, type: 'primary' },
+                { text: platformDetail.netType, type: 'primary' }
+            ]"
+            :links="platformDetail.url ? [
+                { text: '访问平台', url: platformDetail.url, icon: 'mdi:open-in-new' }
+            ] : []"
+        />
 
         <!-- 统计信息卡片 -->
         <section class="py-8 bg-white">
@@ -531,6 +496,7 @@
 import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
+import DetailPageHeader from "@/components/page-header/DetailPageHeader.vue";
 import { getCosUrl } from "@/utils/cos";
 import { platformApi } from "@/api/platform";
 
@@ -539,6 +505,7 @@ export default {
     components: {
         Header,
         Icon,
+        DetailPageHeader,
     },
     props: {
         id: {

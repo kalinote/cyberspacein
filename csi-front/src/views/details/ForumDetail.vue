@@ -21,67 +21,52 @@
         </div>
 
         <template v-else-if="forumData">
-            <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-8">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <el-button type="primary" link @click="$router.back()" class="mb-6">
+            <DetailPageHeader
+                :title="forumData.title || '无标题'"
+                :subtitle="forumData.uuid"
+            >
+                <template #tags>
+                    <el-tag v-if="forumData.platform" type="primary" size="default">
+                        {{ forumData.platform }}
+                    </el-tag>
+                    <el-tag v-if="forumData.section" type="primary" size="default">
+                        {{ forumData.section }}
+                    </el-tag>
+                    <el-tag v-if="forumData.category_tag" type="warning" size="default">
+                        {{ forumData.category_tag }}
+                    </el-tag>
+                    <el-tag :type="getThreadTypeTag(forumData.thread_type)" size="default">
+                        {{ getThreadTypeText(forumData.thread_type) }}
+                    </el-tag>
+                    <el-tag v-if="forumData.nsfw" type="danger" size="default">
+                        NSFW
+                    </el-tag>
+                    <el-tag v-if="forumData.aigc" type="warning" size="default">
+                        AIGC
+                    </el-tag>
+                    <el-tag v-if="forumData.floor" type="primary" size="default" class="shrink-0">
+                        {{ forumData.floor }}楼
+                    </el-tag>
+                </template>
+                <template #extra>
+                    <el-link v-if="forumData.url" :href="forumData.url" target="_blank" type="primary" class="text-sm">
                         <template #icon>
-                            <Icon icon="mdi:arrow-left" />
+                            <Icon icon="mdi:open-in-new" />
                         </template>
-                        返回
-                    </el-button>
-                    <div class="flex items-start space-x-6">
-                        <div class="flex-1">
-                            <div class="flex items-center gap-3 mb-2">
-                                <h1 class="text-4xl md:text-5xl font-bold text-gray-900">
-                                    {{ forumData.title || '无标题' }}
-                                </h1>
-                            </div>
-                            <p class="text-gray-600 mb-4 font-mono text-sm">{{ forumData.uuid }}</p>
-                            <div class="flex flex-wrap items-center gap-3">
-                                <el-tag v-if="forumData.platform" type="primary" size="default">
-                                    {{ forumData.platform }}
-                                </el-tag>
-                                <el-tag v-if="forumData.section" type="primary" size="default">
-                                    {{ forumData.section }}
-                                </el-tag>
-                                <el-tag v-if="forumData.category_tag" type="warning" size="default">
-                                    {{ forumData.category_tag }}
-                                </el-tag>
-                                <el-tag :type="getThreadTypeTag(forumData.thread_type)" size="default">
-                                    {{ getThreadTypeText(forumData.thread_type) }}
-                                </el-tag>
-                                <el-tag v-if="forumData.nsfw" type="danger" size="default">
-                                    NSFW
-                                </el-tag>
-                                <el-tag v-if="forumData.aigc" type="warning" size="default">
-                                    AIGC
-                                </el-tag>
-                                <el-tag v-if="forumData.floor" type="primary" size="default" class="shrink-0">
-                                    {{ forumData.floor }}楼
-                                </el-tag>
-                                <el-link v-if="forumData.url" :href="forumData.url" target="_blank" type="primary" class="text-sm">
-                                    <template #icon>
-                                        <Icon icon="mdi:open-in-new" />
-                                    </template>
-                                    查看原文
-                                </el-link>
-                                <router-link v-if="forumData.topic_thread_uuid" :to="`/details/forum/${forumData.topic_thread_uuid}`" class="text-sm text-blue-600 hover:text-blue-800 flex items-center">
-                                    <Icon icon="mdi:forum" class="mr-1" />
-                                    查看主贴
-                                </router-link>
-                            </div>
-                            <div v-if="forumData.status_flags && forumData.status_flags.length > 0" class="flex flex-wrap items-center gap-2 mt-3">
-                                <el-tag v-for="flag in forumData.status_flags" :key="flag" :type="getStatusFlagType(flag)" size="default">
-                                    <Icon :icon="getStatusFlagIcon(flag)" class="mr-1" />
-                                    {{ getStatusFlagText(flag) }}
-                                </el-tag>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="absolute top-10 right-10 w-64 h-64 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-                <div class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-            </section>
+                        查看原文
+                    </el-link>
+                    <router-link v-if="forumData.topic_thread_uuid" :to="`/details/forum/${forumData.topic_thread_uuid}`" class="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                        <Icon icon="mdi:forum" class="mr-1" />
+                        查看主贴
+                    </router-link>
+                    <template v-if="forumData.status_flags && forumData.status_flags.length > 0">
+                        <el-tag v-for="flag in forumData.status_flags" :key="flag" :type="getStatusFlagType(flag)" size="default">
+                            <Icon :icon="getStatusFlagIcon(flag)" class="mr-1" />
+                            {{ getStatusFlagText(flag) }}
+                        </el-tag>
+                    </template>
+                </template>
+            </DetailPageHeader>
 
             <section class="py-8 bg-white">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -467,6 +452,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import { forumApi } from '@/api/forum'
 import { ElMessage } from 'element-plus'
 import { formatDateTime } from '@/utils/action'

@@ -2,27 +2,11 @@
   <div class="min-h-screen bg-gray-50">
     <Header />
     
-    <section class="bg-linear-to-br from-blue-50 to-white py-6 border-b border-gray-200">
-      <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-6">
-            <el-button type="primary" link @click="$router.back()" class="shrink-0">
-              <template #icon>
-                <Icon icon="mdi:arrow-left" />
-              </template>
-              返回
-            </el-button>
-            <div class="border-l border-gray-300 h-8"></div>
-            <div>
-              <h1 class="text-2xl font-bold text-gray-900 mb-1">
-                <span class="text-blue-500">历史行动</span>记录
-              </h1>
-              <p class="text-sm text-gray-600">查看所有已创建和已执行的行动历史记录</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+    <FunctionalPageHeader
+      title-prefix="历史行动"
+      title-suffix="记录"
+      subtitle="查看所有已创建和已执行的行动历史记录"
+    />
 
     <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 筛选栏 -->
@@ -332,6 +316,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   formatDateTime,

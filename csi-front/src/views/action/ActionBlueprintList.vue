@@ -2,27 +2,11 @@
   <div class="min-h-screen bg-gray-50">
     <Header />
     
-    <section class="bg-linear-to-br from-blue-50 to-white py-6 border-b border-gray-200">
-      <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-6">
-            <el-button type="primary" link @click="$router.back()" class="shrink-0">
-              <template #icon>
-                <Icon icon="mdi:arrow-left" />
-              </template>
-              返回
-            </el-button>
-            <div class="border-l border-gray-300 h-8"></div>
-            <div>
-              <h1 class="text-2xl font-bold text-gray-900 mb-1">
-                <span class="text-blue-500">行动蓝图</span>列表
-              </h1>
-              <p class="text-sm text-gray-600">查看和管理所有行动蓝图</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+    <FunctionalPageHeader
+      title-prefix="行动蓝图"
+      title-suffix="列表"
+      subtitle="查看和管理所有行动蓝图"
+    />
 
     <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 工具栏 -->
@@ -266,6 +250,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'

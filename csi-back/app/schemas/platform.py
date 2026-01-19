@@ -15,9 +15,10 @@ class PlatformCreateRequestSchema(BaseModel):
     url: str = Field(description="平台URL")
     logo: str = Field(description="平台Logo", default="")
     tags: list[str] = Field(description="平台标签", default_factory=list)
-    category: str = Field(description="平台分类", min_length=1)
-    sub_category: str = Field(description="平台子分类", min_length=1)
+    category: str = Field(description="平台分类，表示站点类型", min_length=1)
+    sub_category: str = Field(description="平台子分类，概况站点内容", min_length=1)
     confidence: float = Field(default=1, description="平台信任度")
+    # TODO: 可能需要改成list
     spider_name: str | None = Field(default=None, description="爬虫名称")
     
     @field_validator("url")

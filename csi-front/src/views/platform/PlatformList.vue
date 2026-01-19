@@ -2,27 +2,11 @@
   <div class="min-h-screen bg-gray-50">
     <Header />
     
-    <section class="bg-linear-to-br from-blue-50 to-white py-6 border-b border-gray-200">
-      <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-6">
-            <el-button type="primary" link @click="$router.back()" class="shrink-0">
-              <template #icon>
-                <Icon icon="mdi:arrow-left" />
-              </template>
-              返回
-            </el-button>
-            <div class="border-l border-gray-300 h-8"></div>
-            <div>
-              <h1 class="text-2xl font-bold text-gray-900 mb-1">
-                <span class="text-blue-500">平台</span>列表
-              </h1>
-              <p class="text-sm text-gray-600">统一管理所有平台信息，查看平台详情、状态和统计数据</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+    <FunctionalPageHeader
+      title-prefix="平台"
+      title-suffix="列表"
+      subtitle="统一管理所有平台信息，查看平台详情、状态和统计数据"
+    />
 
     <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 筛选栏 -->
@@ -50,10 +34,9 @@
               class="w-full"
             >
               <el-option label="全部状态" value="" />
-              <el-option label="正常" value="正常" />
-              <el-option label="异常" value="异常" />
-              <el-option label="维护中" value="维护中" />
-              <el-option label="已停用" value="已停用" />
+              <el-option label="活跃" value="活跃" />
+              <el-option label="非活跃" value="非活跃" />
+              <el-option label="离线" value="离线" />
             </el-select>
           </div>
           <div>
@@ -345,6 +328,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
@@ -356,7 +340,8 @@ export default {
   components: {
     Header,
     Icon,
-    TagInput
+    TagInput,
+    FunctionalPageHeader
   },
   setup() {
     const router = useRouter()

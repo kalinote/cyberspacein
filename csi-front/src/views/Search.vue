@@ -47,22 +47,18 @@
               />
               <span class="text-xs text-gray-600 -mt-1">{{ nsfwFilterText }}</span>
             </div>
-            <!-- <el-button plain>
-              <template #icon><Icon icon="mdi:calendar" /></template>
-              时间范围
-            </el-button>
-            <el-button plain>
-              <template #icon><Icon icon="mdi:tag" /></template>
-              分类标签
-            </el-button>
-            <el-button plain>
-              <template #icon><Icon icon="mdi:source-repository" /></template>
-              数据源
-            </el-button>
-            <el-button plain>
-              <template #icon><Icon icon="mdi:priority-high" /></template>
-              优先级
-            </el-button> -->
+            <div class="flex flex-col items-center gap-0">
+              <el-slider
+                v-model="aigcFilter"
+                :min="0"
+                :max="2"
+                :step="1"
+                :show-stops="true"
+                :format-tooltip="formatAigcTooltip"
+                style="width: 60px"
+              />
+              <span class="text-xs text-gray-600 -mt-1">{{ aigcFilterText }}</span>
+            </div>
           </div>
 
           <div v-if="filterRulesText" class="text-sm text-gray-600 pt-3 border-t border-gray-200">
@@ -101,30 +97,10 @@
             <h3 class="font-bold text-gray-900">时间范围</h3>
           </div>
           <div class="space-y-3">
-            <div class="flex items-center">
-              <input type="radio" id="time-0" v-model="timeRange" value="all"
+            <div v-for="(option, index) in filterOptions.timeRange" :key="index" class="flex items-center">
+              <input type="radio" :id="`time-${index}`" v-model="timeRange" :value="option.value"
                 class="h-4 w-4 text-blue-500 border-gray-300 focus:ring-blue-400">
-              <label for="time-0" class="ml-2 text-gray-700">全部</label>
-            </div>
-            <div class="flex items-center">
-              <input type="radio" id="time-1" v-model="timeRange" value="24h"
-                class="h-4 w-4 text-blue-500 border-gray-300 focus:ring-blue-400">
-              <label for="time-1" class="ml-2 text-gray-700">最近24小时</label>
-            </div>
-            <div class="flex items-center">
-              <input type="radio" id="time-2" v-model="timeRange" value="7d"
-                class="h-4 w-4 text-blue-500 border-gray-300 focus:ring-blue-400">
-              <label for="time-2" class="ml-2 text-gray-700">最近7天</label>
-            </div>
-            <div class="flex items-center">
-              <input type="radio" id="time-3" v-model="timeRange" value="30d"
-                class="h-4 w-4 text-blue-500 border-gray-300 focus:ring-blue-400">
-              <label for="time-3" class="ml-2 text-gray-700">最近30天</label>
-            </div>
-            <div class="flex items-center">
-              <input type="radio" id="time-4" v-model="timeRange" value="custom"
-                class="h-4 w-4 text-blue-500 border-gray-300 focus:ring-blue-400">
-              <label for="time-4" class="ml-2 text-gray-700">自定义</label>
+              <label :for="`time-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
             </div>
           </div>
         </div>
@@ -134,28 +110,13 @@
             <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
               <Icon icon="mdi:tag" class="text-green-600" />
             </div>
-            <h3 class="font-bold text-gray-900">情报分类</h3>
+            <h3 class="font-bold text-gray-900">实体类型</h3>
           </div>
           <div class="space-y-3">
-            <div class="flex items-center">
-              <input type="checkbox" id="cat-1" v-model="categories" value="网络安全"
+            <div v-for="(option, index) in filterOptions.categories" :key="index" class="flex items-center">
+              <input type="checkbox" :id="`cat-${index}`" v-model="categories" :value="option.value"
                 class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="cat-1" class="ml-2 text-gray-700">网络安全</label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="cat-2" v-model="categories" value="市场动态"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="cat-2" class="ml-2 text-gray-700">市场动态</label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="cat-3" v-model="categories" value="政策法规"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="cat-3" class="ml-2 text-gray-700">政策法规</label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="cat-4" v-model="categories" value="技术发展"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="cat-4" class="ml-2 text-gray-700">技术发展</label>
+              <label :for="`cat-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
             </div>
           </div>
         </div>
@@ -165,28 +126,13 @@
             <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
               <Icon icon="mdi:source-repository" class="text-purple-600" />
             </div>
-            <h3 class="font-bold text-gray-900">数据源</h3>
+            <h3 class="font-bold text-gray-900">网络类型</h3>
           </div>
           <div class="space-y-3">
-            <div class="flex items-center">
-              <input type="checkbox" id="source-1" v-model="sources" value="公开数据源"
+            <div v-for="(option, index) in filterOptions.sources" :key="index" class="flex items-center">
+              <input type="checkbox" :id="`source-${index}`" v-model="sources" :value="option.value"
                 class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="source-1" class="ml-2 text-gray-700">公开数据源</label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="source-2" v-model="sources" value="合作伙伴"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="source-2" class="ml-2 text-gray-700">合作伙伴</label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="source-3" v-model="sources" value="内部采集"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="source-3" class="ml-2 text-gray-700">内部采集</label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="source-4" v-model="sources" value="其他来源"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="source-4" class="ml-2 text-gray-700">其他来源</label>
+              <label :for="`source-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
             </div>
           </div>
         </div>
@@ -196,39 +142,15 @@
             <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
               <Icon icon="mdi:priority-high" class="text-amber-600" />
             </div>
-            <h3 class="font-bold text-gray-900">优先级</h3>
+            <h3 class="font-bold text-gray-900">置信度</h3>
           </div>
           <div class="space-y-3">
-            <div class="flex items-center">
-              <input type="checkbox" id="priority-1" v-model="priorities" value="紧急"
+            <div v-for="(option, index) in filterOptions.priorities" :key="index" class="flex items-center">
+              <input type="checkbox" :id="`priority-${index}`" v-model="priorities" :value="option.value"
                 class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="priority-1" class="ml-2 text-gray-700 flex items-center">
-                <span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span>
-                紧急
-              </label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="priority-2" v-model="priorities" value="高"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="priority-2" class="ml-2 text-gray-700 flex items-center">
-                <span class="inline-block w-3 h-3 rounded-full bg-amber-500 mr-2"></span>
-                高
-              </label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="priority-3" v-model="priorities" value="中"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="priority-3" class="ml-2 text-gray-700 flex items-center">
-                <span class="inline-block w-3 h-3 rounded-full bg-blue-500 mr-2"></span>
-                中
-              </label>
-            </div>
-            <div class="flex items-center">
-              <input type="checkbox" id="priority-4" v-model="priorities" value="低"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label for="priority-4" class="ml-2 text-gray-700 flex items-center">
-                <span class="inline-block w-3 h-3 rounded-full bg-gray-400 mr-2"></span>
-                低
+              <label :for="`priority-${index}`" class="ml-2 text-gray-700 flex items-center">
+                <span :class="getPriorityColorClass(option.value)" class="inline-block w-3 h-3 rounded-full mr-2"></span>
+                {{ option.label }}
               </label>
             </div>
           </div>
@@ -386,6 +308,18 @@
               />
               <span class="text-xs text-gray-600 -mt-1">{{ nsfwFilterText }}</span>
             </div>
+            <div class="flex flex-col items-center gap-0">
+              <el-slider
+                v-model="aigcFilter"
+                :min="0"
+                :max="2"
+                :step="1"
+                :show-stops="true"
+                :format-tooltip="formatAigcTooltip"
+                style="width: 40px"
+              />
+              <span class="text-xs text-gray-600 -mt-1">{{ aigcFilterText }}</span>
+            </div>
             <el-button type="primary" @click="handleSearchFromResults">
               <template #icon>
                 <Icon icon="mdi:magnify" />
@@ -513,7 +447,7 @@ export default {
     return {
       searchQuery: '',
       nsfwFilter: 1,
-      currentTrendRange: '7',
+      aigcFilter: 1,
       currentSearchRange: '12',
       timeRange: 'all',
       categories: [],
@@ -527,21 +461,29 @@ export default {
 
       // 高级筛选器
       showAdvancedFilters: false,
-      trendData: {
-        '7': {
-          dates: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-          values: [8320, 8740, 8920, 8670, 9150, 8410, 7890]
-        },
-        '30': {
-          dates: ['第1周', '第2周', '第3周', '第4周'],
-          values: [59800, 61200, 62500, 65400]
-        },
-        '90': {
-          dates: ['1月', '2月', '3月'],
-          values: [185000, 192000, 210000]
-        }
+      filterOptions: {
+        timeRange: [
+          { value: 'all', label: '全部' },
+          { value: '24h', label: '最近24小时' },
+          { value: '7d', label: '最近7天' },
+          { value: '30d', label: '最近30天' },
+          { value: 'custom', label: '自定义' }
+        ],
+        categories: [
+          { value: 'Forum', label: 'Forum' },
+          { value: 'Article', label: 'Article' }
+        ],
+        sources: [
+          { value: '明网', label: '明网' },
+          { value: 'Tor', label: 'Tor' }
+        ],
+        priorities: [
+          { value: '高', label: '高' },
+          { value: '中', label: '中' },
+          { value: '低', label: '低' },
+          { value: '零信任', label: '零信任' }
+        ]
       },
-
       searchTrendData: {
         '12': {
           dates: ['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00'],
@@ -569,8 +511,8 @@ export default {
           create_time: '2025-12-11 12:16:38',
           rules: {
             timeRange: '7d',
-            categories: ['网络安全'],
-            sources: ['公开数据源'],
+            categories: ['Forum'],
+            sources: ['明网'],
             priorities: ['高']
           }
         },
@@ -582,8 +524,8 @@ export default {
           create_time: '2025-12-10 09:30:15',
           rules: {
             timeRange: '30d',
-            categories: ['市场动态'],
-            sources: ['公开数据源', '合作伙伴'],
+            categories: ['Article'],
+            sources: ['明网', 'Tor'],
             priorities: ['中', '高']
           }
         },
@@ -595,9 +537,9 @@ export default {
           create_time: '2025-12-09 14:22:45',
           rules: {
             timeRange: '24h',
-            categories: ['政策法规'],
-            sources: ['公开数据源', '内部采集'],
-            priorities: ['紧急', '高']
+            categories: ['Article'],
+            sources: ['明网'],
+            priorities: ['高', '中']
           }
         },
         {
@@ -608,8 +550,8 @@ export default {
           create_time: '2025-12-08 16:45:20',
           rules: {
             timeRange: '7d',
-            categories: ['技术发展'],
-            sources: ['公开数据源', '合作伙伴', '内部采集'],
+            categories: ['Article'],
+            sources: ['明网', 'Tor'],
             priorities: ['高', '中']
           }
         },
@@ -621,9 +563,9 @@ export default {
           create_time: '2025-12-07 11:15:30',
           rules: {
             timeRange: '24h',
-            categories: ['网络安全'],
-            sources: ['公开数据源', '内部采集'],
-            priorities: ['紧急']
+            categories: ['Forum'],
+            sources: ['明网', 'Tor'],
+            priorities: ['高']
           }
         },
         {
@@ -634,9 +576,9 @@ export default {
           create_time: '2025-12-06 10:00:00',
           rules: {
             timeRange: '7d',
-            categories: ['网络安全', '市场动态', '政策法规', '技术发展'],
-            sources: ['公开数据源', '合作伙伴', '内部采集', '其他来源'],
-            priorities: ['紧急', '高', '中']
+            categories: ['Forum', 'Article'],
+            sources: ['明网', 'Tor'],
+            priorities: ['高', '中', '低']
           }
         }
       ],
@@ -646,29 +588,12 @@ export default {
         successRate: 97.8
       },
 
-      // TODO: 这里只是临时数据
       searchResults: [],
-
-      trendChart: null,
-      sourceChart: null,
       searchTrendChart: null
     }
   },
 
   computed: {
-    currentTrendStats() {
-      const data = this.trendData[this.currentTrendRange]
-      const lastValue = data.values[data.values.length - 1]
-      const prevValue = data.values[data.values.length - 2]
-      const change = ((lastValue - prevValue) / prevValue * 100).toFixed(1)
-      const avg = Math.round(data.values.reduce((a, b) => a + b, 0) / data.values.length)
-
-      return {
-        change: parseFloat(change),
-        avg: avg
-      }
-    },
-
     currentSearchStats() {
       const data = this.searchTrendData[this.currentSearchRange]
       const totalSearches = data.searchVolume.reduce((a, b) => a + b, 0)
@@ -697,6 +622,10 @@ export default {
 
     nsfwFilterText() {
       return this.formatNsfwTooltip(this.nsfwFilter)
+    },
+
+    aigcFilterText() {
+      return this.formatAigcTooltip(this.aigcFilter)
     }
   },
 
@@ -712,8 +641,17 @@ export default {
     formatNsfwTooltip(value) {
       const tooltips = {
         0: '无NSFW',
-        1: 'NSFW：默认',
+        1: '包含NSFW',
         2: '仅NSFW'
+      }
+      return tooltips[value] || '默认'
+    },
+
+    formatAigcTooltip(value) {
+      const tooltips = {
+        0: '无AIGC',
+        1: '包含AIGC',
+        2: '仅AIGC'
       }
       return tooltips[value] || '默认'
     },
@@ -746,35 +684,51 @@ export default {
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
     },
 
+    getPriorityColorClass(value) {
+      const colorMap = {
+        '高': 'bg-red-500',
+        '中': 'bg-amber-500',
+        '低': 'bg-blue-500',
+        '零信任': 'bg-gray-400'
+      }
+      return colorMap[value] || 'bg-gray-400'
+    },
+
     // 查询筛选模板规则转字符串
     // 筛选列表后续通过接口获取，当前只是临时数据
     Rules2Text(rule) {
-
       if (!rule) return ''
       const conditions = []
-      const timeRangeMap = {
-        'all': '全部',
-        '24h': '最近24小时',
-        '7d': '最近7天',
-        '30d': '最近30天',
-        'custom': '自定义'
-      }
-      // 支持 timeRange 和 timeRange 两种格式
-      const timeRange = rule.timeRange
+      
       if (rule.timeRange && rule.timeRange !== 'all') {
-        conditions.push(timeRangeMap[rule.timeRange])
+        const timeRangeOption = this.filterOptions.timeRange.find(opt => opt.value === rule.timeRange)
+        if (timeRangeOption) {
+          conditions.push(timeRangeOption.label)
+        }
       }
 
       if (rule.categories && rule.categories.length > 0) {
-        conditions.push(rule.categories.join(', '))
+        const categoryLabels = rule.categories.map(cat => {
+          const option = this.filterOptions.categories.find(opt => opt.value === cat)
+          return option ? option.label : cat
+        })
+        conditions.push(categoryLabels.join(', '))
       }
 
       if (rule.sources && rule.sources.length > 0) {
-        conditions.push(rule.sources.join(', '))
+        const sourceLabels = rule.sources.map(src => {
+          const option = this.filterOptions.sources.find(opt => opt.value === src)
+          return option ? option.label : src
+        })
+        conditions.push(sourceLabels.join(', '))
       }
 
       if (rule.priorities && rule.priorities.length > 0) {
-        conditions.push(rule.priorities.join(', ') + '优先级')
+        const priorityLabels = rule.priorities.map(pri => {
+          const option = this.filterOptions.priorities.find(opt => opt.value === pri)
+          return option ? option.label : pri
+        })
+        conditions.push(priorityLabels.join(', ') + '置信度')
       }
 
       return conditions.length > 0 ? conditions.join(' • ') : ''
@@ -799,13 +753,36 @@ export default {
         const params = {
           page: this.currentPage,
           page_size: this.pageSize,
-          keywords: this.searchQuery || null
+          keywords: this.searchQuery || null,
+          sort_by: this.sortBy
         }
 
         if (this.nsfwFilter === 0) {
           params.nsfw = false
         } else if (this.nsfwFilter === 2) {
           params.nsfw = true
+        }
+
+        if (this.aigcFilter === 0) {
+          params.aigc = false
+        } else if (this.aigcFilter === 2) {
+          params.aigc = true
+        }
+
+        if (this.timeRange && this.timeRange !== 'all') {
+          params.time_range = this.timeRange
+        }
+
+        if (this.categories && this.categories.length > 0) {
+          params.categories = this.categories
+        }
+
+        if (this.sources && this.sources.length > 0) {
+          params.sources = this.sources
+        }
+
+        if (this.priorities && this.priorities.length > 0) {
+          params.priorities = this.priorities
         }
 
         const response = await searchApi.searchEntity(params)
@@ -843,11 +820,6 @@ export default {
       this.performSearch()
     },
 
-    switchTrendRange(range) {
-      this.currentTrendRange = range
-      this.updateTrendChart()
-    },
-
     switchSearchRange() {
       this.updateSearchTrendChart()
     },
@@ -860,8 +832,8 @@ export default {
     },
 
     applyFilters() {
-      console.log('应用筛选条件')
       this.showAdvancedFilters = false
+      this.performSearch()
     },
 
     applyTemplateFilters(template) {
@@ -874,7 +846,6 @@ export default {
         this.searchQuery = template.searchQuery
       }
 
-      // 映射时间范围：模板使用 timeRange，筛选条件使用 timeRange
       if (rules.timeRange) {
         this.timeRange = rules.timeRange
       }
@@ -909,21 +880,6 @@ export default {
 
     handleDialogClose(done) {
       done()
-    },
-
-    updateTrendChart() {
-      if (!this.trendChart) return
-
-      const data = this.trendData[this.currentTrendRange]
-
-      this.trendChart.setOption({
-        xAxis: {
-          data: data.dates
-        },
-        series: [{
-          data: data.values
-        }]
-      })
     },
 
     updateSearchTrendChart() {

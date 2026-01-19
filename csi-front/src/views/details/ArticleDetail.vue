@@ -19,49 +19,36 @@
         </div>
 
         <template v-else-if="articleData">
-            <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-8">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <el-button type="primary" link @click="$router.back()" class="mb-6">
+            <DetailPageHeader
+                :title="articleData.title || '无标题'"
+                :subtitle="articleData.uuid"
+            >
+                <template #tags>
+                    <el-tag v-if="articleData.platform" type="primary" size="default">
+                        {{ articleData.platform }}
+                    </el-tag>
+                    <el-tag v-if="articleData.section" type="info" size="default">
+                        {{ articleData.section }}
+                    </el-tag>
+                    <el-tag v-if="articleData.entity_type" type="" size="default">
+                        {{ articleData.entity_type }}
+                    </el-tag>
+                    <el-tag v-if="articleData.nsfw" type="danger" size="default">
+                        NSFW
+                    </el-tag>
+                    <el-tag v-if="articleData.aigc" type="warning" size="default">
+                        AIGC
+                    </el-tag>
+                </template>
+                <template #extra>
+                    <el-link v-if="articleData.url" :href="articleData.url" target="_blank" type="primary" class="text-sm">
                         <template #icon>
-                            <Icon icon="mdi:arrow-left" />
+                            <Icon icon="mdi:open-in-new" />
                         </template>
-                        返回
-                    </el-button>
-                    <div class="flex items-start space-x-6">
-                        <div class="flex-1">
-                            <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-2">
-                                {{ articleData.title || '无标题' }}
-                            </h1>
-                            <p class="text-gray-600 mb-4 font-mono text-sm">{{ articleData.uuid }}</p>
-                            <div class="flex flex-wrap items-center gap-3">
-                                <el-tag v-if="articleData.platform" type="primary" size="default">
-                                    {{ articleData.platform }}
-                                </el-tag>
-                                <el-tag v-if="articleData.section" type="info" size="default">
-                                    {{ articleData.section }}
-                                </el-tag>
-                                <el-tag v-if="articleData.entity_type" type="" size="default">
-                                    {{ articleData.entity_type }}
-                                </el-tag>
-                                <el-tag v-if="articleData.nsfw" type="danger" size="default">
-                                    NSFW
-                                </el-tag>
-                                <el-tag v-if="articleData.aigc" type="warning" size="default">
-                                    AIGC
-                                </el-tag>
-                                <el-link v-if="articleData.url" :href="articleData.url" target="_blank" type="primary" class="text-sm">
-                                    <template #icon>
-                                        <Icon icon="mdi:open-in-new" />
-                                    </template>
-                                    查看原文
-                                </el-link>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="absolute top-10 right-10 w-64 h-64 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-                <div class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-            </section>
+                        查看原文
+                    </el-link>
+                </template>
+            </DetailPageHeader>
 
             <section class="py-8 bg-white">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -354,6 +341,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import { articleApi } from '@/api/article'
 import { ElMessage } from 'element-plus'
 import { formatDateTime } from '@/utils/action'

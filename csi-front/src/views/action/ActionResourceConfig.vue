@@ -2,43 +2,30 @@
   <div class="h-screen flex flex-col bg-gray-50">
     <Header />
     
-    <section class="bg-linear-to-br from-blue-50 to-white py-6 border-b border-gray-200">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-6">
-            <el-button type="primary" link @click="$router.back()" class="shrink-0">
-              <template #icon>
-                <Icon icon="mdi:arrow-left" />
-              </template>
-              返回
-            </el-button>
-            <div class="border-l border-gray-300 h-8"></div>
+    <FunctionalPageHeader
+      title-prefix="行动资源"
+      title-suffix="配置中心"
+      subtitle="统一管理行动资源，包括代理网络、账号、容器和行动节点"
+    >
+      <template #actions>
+        <div class="flex items-center gap-3">
+          <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-blue-100 flex items-center gap-3">
+            <Icon icon="mdi:chart-tree" class="text-blue-600 text-xl" />
             <div>
-              <h1 class="text-2xl font-bold text-gray-900 mb-1">
-                <span class="text-blue-500">行动资源</span>配置中心
-              </h1>
-              <p class="text-sm text-gray-600">统一管理行动资源，包括代理网络、账号、容器和行动节点</p>
+              <p class="text-xs text-gray-500">行动节点</p>
+              <p class="text-lg font-bold text-gray-900">{{ statistics.node_count }}</p>
             </div>
           </div>
-          <div class="flex items-center gap-3">
-            <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-blue-100 flex items-center gap-3">
-              <Icon icon="mdi:chart-tree" class="text-blue-600 text-xl" />
-              <div>
-                <p class="text-xs text-gray-500">行动节点</p>
-                <p class="text-lg font-bold text-gray-900">{{ statistics.node_count }}</p>
-              </div>
-            </div>
-            <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-green-100 flex items-center gap-3">
-              <Icon icon="mdi:cog" class="text-green-600 text-xl" />
-              <div>
-                <p class="text-xs text-gray-500">基础组件</p>
-                <p class="text-lg font-bold text-gray-900">{{ statistics.base_component_count }}</p>
-              </div>
+          <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-green-100 flex items-center gap-3">
+            <Icon icon="mdi:cog" class="text-green-600 text-xl" />
+            <div>
+              <p class="text-xs text-gray-500">基础组件</p>
+              <p class="text-lg font-bold text-gray-900">{{ statistics.base_component_count }}</p>
             </div>
           </div>
         </div>
-      </div>
-    </section>
+      </template>
+    </FunctionalPageHeader>
 
     <div class="flex-1 flex overflow-hidden">
       <div class="bg-white w-72 border-r border-gray-200 shrink-0 overflow-y-auto">
@@ -724,6 +711,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
