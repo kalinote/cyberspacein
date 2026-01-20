@@ -242,6 +242,13 @@
       v-model="blueprintDialogVisible"
       :blueprint-id="selectedBlueprintId"
     />
+
+    <!-- 模板参数输入弹窗 -->
+    <TemplateParamsDialog
+      v-model="templateParamsDialogVisible"
+      :blueprint-id="selectedBlueprintForRun?.id"
+      @submit="handleParamsSubmit"
+    />
   </div>
 </template>
 
@@ -252,6 +259,7 @@ import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
+import TemplateParamsDialog from '@/components/action/template/TemplateParamsDialog.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
@@ -271,6 +279,8 @@ const pagination = ref({
 const blueprints = ref([])
 const blueprintDialogVisible = ref(false)
 const selectedBlueprintId = ref(null)
+const templateParamsDialogVisible = ref(false)
+const selectedBlueprintForRun = ref(null)
 
 const formatImplementationPeriod = (seconds) => {
   if (!seconds || seconds <= 0) {
@@ -368,10 +378,22 @@ const createActionFromBlueprint = async (blueprint) => {
     return
   }
 
+  if (blueprint.isTemplate) {
+    templateParamsDialogVisible.value = true
+    selectedBlueprintForRun.value = blueprint
+  } else {
+    await runBlueprint(blueprint.id, null)
+  }
+}
+
+const runBlueprint = async (blueprintId, params) => {
   try {
-    const response = await actionApi.runAction({
-      blueprint_id: blueprint.id
-    })
+    const data = { blueprint_id: blueprintId }
+    if (params) {
+      data.params = params
+    }
+
+    const response = await actionApi.runAction(data)
 
     if (response.code === 0 && response.data && response.data.action_id) {
       ElMessage.success('行动已创建并开始执行')
@@ -383,6 +405,11 @@ const createActionFromBlueprint = async (blueprint) => {
     console.error('创建行动失败:', error)
     ElMessage.error(error.message || '创建行动失败，请稍后重试')
   }
+}
+
+const handleParamsSubmit = async (params) => {
+  await runBlueprint(selectedBlueprintForRun.value.id, params)
+  templateParamsDialogVisible.value = false
 }
 
 const createBranchVersion = (blueprint) => {

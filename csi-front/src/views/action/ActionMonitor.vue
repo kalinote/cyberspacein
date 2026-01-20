@@ -503,6 +503,13 @@
       v-model="blueprintDialogVisible"
       :blueprint-id="selectedBlueprintId"
     />
+
+    <!-- 模板参数输入弹窗 -->
+    <TemplateParamsDialog
+      v-model="templateParamsDialogVisible"
+      :blueprint-id="selectedBlueprintForRun?.id"
+      @submit="handleParamsSubmit"
+    />
   </div>
 </template>
 
@@ -510,6 +517,7 @@
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
+import TemplateParamsDialog from '@/components/action/template/TemplateParamsDialog.vue'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
 
@@ -518,12 +526,15 @@ export default {
   components: {
     Header,
     Icon,
-    BlueprintFlowDialog
+    BlueprintFlowDialog,
+    TemplateParamsDialog
   },
   data() {
     return {
       blueprintDialogVisible: false,
       selectedBlueprintId: null,
+      templateParamsDialogVisible: false,
+      selectedBlueprintForRun: null,
       loadingRunningActions: false,
       loadingBlueprints: false,
       // 占位数据：模拟正在执行的行动，等待后端API完成
@@ -570,10 +581,22 @@ export default {
         return
       }
 
+      if (blueprint.isTemplate) {
+        this.templateParamsDialogVisible = true
+        this.selectedBlueprintForRun = blueprint
+      } else {
+        await this.runBlueprint(blueprint.id, null)
+      }
+    },
+
+    async runBlueprint(blueprintId, params) {
       try {
-        const response = await actionApi.runAction({
-          blueprint_id: blueprint.id
-        })
+        const data = { blueprint_id: blueprintId }
+        if (params) {
+          data.params = params
+        }
+
+        const response = await actionApi.runAction(data)
 
         if (response.code === 0 && response.data && response.data.action_id) {
           this.$message.success('行动已创建并开始执行')
@@ -585,6 +608,11 @@ export default {
         console.error('创建行动失败:', error)
         this.$message.error(error.message || '创建行动失败，请稍后重试')
       }
+    },
+
+    async handleParamsSubmit(params) {
+      await this.runBlueprint(this.selectedBlueprintForRun.id, params)
+      this.templateParamsDialogVisible = false
     },
     
     // 占位方法：创建蓝图分支版本，等待后端API完成
