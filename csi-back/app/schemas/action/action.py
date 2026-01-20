@@ -6,6 +6,7 @@ from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, Actio
 
 class StartActionRequest(BaseModel):
     blueprint_id: str = Field(description="蓝图ID")
+    params: dict[str, Any] | None = Field(default=None, description="行动参数")
     
 class StartActionResponse(BaseModel):
     action_id: str = Field(description="行动ID")

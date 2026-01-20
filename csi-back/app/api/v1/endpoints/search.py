@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.search import EntitySearchRequestSchema, SearchResultSchema
@@ -7,6 +6,7 @@ from app.schemas.general import PageResponseSchema
 from app.schemas.enum import ALL_INDEX
 from app.db.elasticsearch import get_es
 from app.models.platform.platform import PlatformModel
+from app.utils.date_time import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -14,22 +14,6 @@ router = APIRouter(
     prefix="/search",
     tags=["search"],
 )
-
-def parse_datetime(value):
-    """解析日期时间字段"""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value.replace('Z', '+00:00'))
-        except:
-            try:
-                return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
-            except:
-                return None
-    return None
 
 @router.post("/entity", response_model=PageResponseSchema[SearchResultSchema], summary="搜索实体")
 async def search_entity(params: EntitySearchRequestSchema):

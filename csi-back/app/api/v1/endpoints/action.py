@@ -40,7 +40,10 @@ async def start_action(
     if not blueprint:
         return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {data.blueprint_id}")
     
-    result, message = await ActionInstanceService.init(data.blueprint_id)
+    if not data.params:
+        result, message = await ActionInstanceService.init(data.blueprint_id)
+    else:
+        result, message = await ActionInstanceService.init(data.blueprint_id, data.params)
     if not result:
         return ApiResponseSchema.error(code=500, message=message)
     background_tasks.add_task(ActionInstanceService.start, message)

@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, markRaw, onMounted } from 'vue'
+import { ref, computed, watch, markRaw, onMounted, provide } from 'vue'
 import { Icon } from '@iconify/vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -91,6 +91,26 @@ const blueprintData = ref(null)
 const nodeTypeConfigs = ref([])
 const elements = ref([])
 const { setViewport, fitView } = useVueFlow()
+
+const isTemplate = computed(() => {
+    return blueprintData.value?.is_template || false
+})
+
+const templateParams = computed(() => {
+    return blueprintData.value?.template?.params || []
+})
+
+const templateBindings = computed(() => {
+    return blueprintData.value?.template?.bindings || {}
+})
+
+provide('templateContext', {
+    isTemplateMode: isTemplate,
+    availableParams: templateParams,
+    bindings: templateBindings,
+    updateBinding: () => {
+    }
+})
 
 const nodeTypes = computed(() => {
     const types = {}
@@ -240,7 +260,7 @@ const loadBlueprintData = () => {
 
         const nodeData = getDefaultData(config)
 
-        if (config.inputs) {
+        if (config.inputs && !blueprintData.value?.is_template) {
             config.inputs.forEach(input => {
                 const formDataValue = node.data?.form_data?.[input.name]
                 if (formDataValue !== undefined && formDataValue !== null) {
