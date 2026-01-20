@@ -1,3 +1,67 @@
+<!--
+    分割按钮组件 (SplitButton)
+    
+    一个带下拉菜单的组合按钮组件，主按钮和下拉菜单按钮组合在一起。
+    
+    使用方法：
+    <template>
+        <SplitButton
+            :main-button-text="'分析此实体'"
+            :loading-text="'分析实体中...'"
+            :disabled="analyzing"
+            :loading="analyzing"
+            :options="analyzeOptions"
+            main-button-icon="mdi:brain"
+            @main-click="handleAnalyze"
+            @option-click="handleAnalyzeOption"
+        />
+    </template>
+    
+    <script setup>
+    import SplitButton from '@/components/SplitButton.vue'
+    import { ElMessage } from 'element-plus'
+    
+    const analyzing = ref(false)
+    
+    // 下拉选项配置
+    const analyzeOptions = [
+        { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
+        { label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion' },
+        { label: '传播路径分析', icon: 'mdi:share-variant', value: 'propagation' },
+        { label: '证据链溯源分析', icon: 'mdi:link-variant', value: 'evidence' }
+    ]
+    
+    // 主按钮点击事件
+    const handleAnalyze = async () => {
+        analyzing.value = true
+        try {
+            // 执行分析逻辑
+            ElMessage.success('分析任务已提交')
+        } finally {
+            analyzing.value = false
+        }
+    }
+    
+    // 下拉选项点击事件
+    const handleAnalyzeOption = (option) => {
+        // option 包含 { label, icon, value }
+        ElMessage.info(`${option.label}功能开发中`)
+    }
+    </script>
+    
+    Props:
+    - mainButtonText (String, 必需): 主按钮显示的文本
+    - loadingText (String, 默认: '处理中...'): 加载状态时显示的文本
+    - disabled (Boolean, 默认: false): 是否禁用按钮
+    - loading (Boolean, 默认: false): 是否处于加载状态
+    - options (Array, 默认: []): 下拉菜单选项数组，每个选项格式为：
+        { label: String, icon: String, value: Any }
+    - mainButtonIcon (String, 可选): 主按钮图标（Iconify 图标名称）
+    
+    Events:
+    - main-click: 主按钮点击时触发
+    - option-click: 下拉选项点击时触发，参数为选中的选项对象 { label, icon, value }
+-->
 <template>
     <div ref="menuRef" class="relative">
         <div class="flex">
@@ -38,6 +102,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 
+// Props 定义
 const props = defineProps({
     mainButtonText: {
         type: String,
@@ -65,25 +130,31 @@ const props = defineProps({
     }
 })
 
+// Events 定义
 const emit = defineEmits(['main-click', 'option-click'])
 
+// 内部状态
 const showMenu = ref(false)
 const menuRef = ref(null)
 
+// 切换下拉菜单显示/隐藏
 const toggleMenu = () => {
     showMenu.value = !showMenu.value
 }
 
+// 处理主按钮点击
 const handleMainClick = () => {
     showMenu.value = false
     emit('main-click')
 }
 
+// 处理下拉选项点击
 const handleOptionClick = (option) => {
     showMenu.value = false
     emit('option-click', option)
 }
 
+// 处理点击外部区域关闭菜单
 const handleClickOutside = (event) => {
     if (showMenu.value && menuRef.value && !menuRef.value.contains(event.target)) {
         showMenu.value = false
