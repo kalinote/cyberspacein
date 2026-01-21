@@ -1,1 +1,5 @@
 lingua-language-detector
+fastapi
+uvicorn[standard]
+pydantic-settings >= 2.12.0
+python-dotenv
