@@ -634,6 +634,9 @@ export default {
       if (this.searchResults.length > 0) {
         this.performSearch()
       }
+    },
+    '$route.query.q'() {
+      this.initSearchFromQuery()
     }
   },
 
@@ -820,6 +823,14 @@ export default {
       this.performSearch()
     },
 
+    initSearchFromQuery() {
+      if (this.$route.query.q) {
+        this.searchQuery = this.$route.query.q
+        this.currentPage = 1
+        this.performSearch()
+      }
+    },
+
     switchSearchRange() {
       this.updateSearchTrendChart()
     },
@@ -958,6 +969,7 @@ export default {
 
   mounted() {
     this.initCharts()
+    this.initSearchFromQuery()
   }
 }
 </script>

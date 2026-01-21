@@ -40,6 +40,7 @@ class COSUploader:
                 region_name=self.region
             )
             self._initialized = True
+            # TODO: 这里需要检查，日志发现反复初始化的情况
             logger.info(f"COS客户端初始化成功: {self.endpoint}")
             return True
         except Exception as e:

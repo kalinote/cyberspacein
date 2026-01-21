@@ -59,10 +59,12 @@
         <div class="flex items-center space-x-10">
           <div class="hidden md:block">
             <el-input
+              v-model="quickSearchQuery"
               placeholder="快速检索..."
               :prefix-icon="'Search'"
               style="width: 200px"
               clearable
+              @keyup.enter="handleQuickSearch"
             />
           </div>
           <div class="w-8 h-8 bg-linear-to-br from-blue-100 to-cyan-100 rounded-full flex items-center justify-center cursor-pointer">
@@ -84,7 +86,20 @@ export default {
   },
   data() {
     return {
-      showActionDropdown: false
+      showActionDropdown: false,
+      quickSearchQuery: ''
+    }
+  },
+  methods: {
+    handleQuickSearch() {
+      if (!this.quickSearchQuery || !this.quickSearchQuery.trim()) {
+        return
+      }
+      this.$router.push({
+        path: '/search',
+        query: { q: this.quickSearchQuery.trim() }
+      })
+      this.quickSearchQuery = ''
     }
   }
 }
