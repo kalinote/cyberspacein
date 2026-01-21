@@ -410,14 +410,16 @@
                                     快速<span class="text-blue-500">操作</span>
                                 </h3>
                                 <div class="space-y-3">
-                                    <button 
-                                        @click="handleAnalyze"
+                                    <SplitButton
+                                        :main-button-text="'分析此实体'"
+                                        :loading-text="'分析实体中...'"
                                         :disabled="analyzing"
-                                        class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
-                                    >
-                                        <Icon :icon="analyzing ? 'mdi:loading' : 'mdi:brain'" :class="{ 'animate-spin': analyzing }" />
-                                        <span>{{ analyzing ? '分析实体中...' : '分析此实体' }}</span>
-                                    </button>
+                                        :loading="analyzing"
+                                        :options="analyzeOptions"
+                                        main-button-icon="mdi:brain"
+                                        @main-click="handleAnalyze"
+                                        @option-click="handleAnalyzeOption"
+                                    />
                                     <button 
                                         @click="handleExport"
                                         class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
@@ -453,6 +455,7 @@ import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
+import SplitButton from '@/components/SplitButton.vue'
 import { forumApi } from '@/api/forum'
 import { ElMessage } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
@@ -466,6 +469,13 @@ const error = ref(null)
 const activeTab = ref('clean')
 const analyzing = ref(false)
 const isPriorityTarget = ref(false)
+
+const analyzeOptions = [
+    { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
+    { label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion' },
+    { label: '传播路径分析', icon: 'mdi:share-variant', value: 'propagation' },
+    { label: '证据链溯源分析', icon: 'mdi:link-variant', value: 'evidence' }
+]
 
 const hasInteractionData = computed(() => {
     if (!forumData.value) return false
@@ -573,6 +583,10 @@ const handleAnalyze = async () => {
     } finally {
         analyzing.value = false
     }
+}
+
+const handleAnalyzeOption = (option) => {
+    ElMessage.info(`${option.label}功能开发中`)
 }
 
 const handleExport = () => {
