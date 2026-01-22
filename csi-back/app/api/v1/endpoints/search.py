@@ -75,6 +75,15 @@ async def search_entity(params: EntitySearchRequestSchema):
                         }
                     }
                 ]
+        else:
+            query_body["sort"] = [
+                {
+                    "crawled_at": {
+                        "order": "desc",
+                        "missing": "_last"
+                    }
+                }
+            ]
         
         result = await es.search(index=ALL_INDEX, body=query_body)
         
