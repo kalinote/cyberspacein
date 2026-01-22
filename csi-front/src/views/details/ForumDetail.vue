@@ -503,7 +503,7 @@ const analyzing = ref(false)
 const showHighlightDialog = ref(false)
 const highlightLoading = ref(false)
 const highlightForm = ref({
-    reason: '用户手动标记重点'
+    reason: ''
 })
 
 const isPriorityTarget = computed(() => {
@@ -639,7 +639,7 @@ const togglePriorityTarget = async () => {
     if (forumData.value.is_highlighted) {
         await cancelHighlight()
     } else {
-        highlightForm.value.reason = '用户手动标记重点'
+        highlightForm.value.reason = ''
         showHighlightDialog.value = true
     }
 }
