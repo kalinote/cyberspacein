@@ -195,6 +195,18 @@
                             </div>
                         </div>
 
+                        <!-- 平台板块 -->
+                        <div v-if="platformDetail.sections && platformDetail.sections.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <h3 class="text-lg font-bold text-gray-900 mb-4">
+                                平台<span class="text-blue-500">板块</span>
+                            </h3>
+                            <div class="flex flex-wrap gap-2">
+                                <el-tag v-for="section in platformDetail.sections" :key="section" type="primary" size="default">
+                                    {{ section }}
+                                </el-tag>
+                            </div>
+                        </div>
+
                         <!-- 操作按钮 -->
                         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                             <h3 class="text-lg font-bold text-gray-900 mb-4">
@@ -544,6 +556,7 @@ export default {
                 url: "",
                 logo: "",
                 tags: [],
+                sections: [],
                 category: "",
                 subCategory: "",
             },
@@ -747,6 +760,7 @@ export default {
                         url: data.url || "",
                         logo: data.logo || "",
                         tags: data.tags || [],
+                        sections: data.sections || [],
                         category: data.category || "",
                         subCategory: data.sub_category || "",
                         spiderName: data.spider_name || "",

@@ -93,7 +93,8 @@ async def create_platform(data: PlatformCreateRequestSchema):
         category=data.category,
         sub_category=data.sub_category,
         confidence=data.confidence,
-        spider_name=data.spider_name
+        spider_name=data.spider_name,
+        sections=data.sections
     )
     
     await platform_model.insert()
@@ -114,7 +115,8 @@ async def create_platform(data: PlatformCreateRequestSchema):
         category=platform_model.category,
         sub_category=platform_model.sub_category,
         confidence=platform_model.confidence,
-        spider_name=platform_model.spider_name
+        spider_name=platform_model.spider_name,
+        sections=platform_model.sections
     )
     
     return ApiResponseSchema.success(data=response_data)
@@ -169,7 +171,8 @@ async def get_platform_list(
             category=platform.category,
             sub_category=platform.sub_category,
             confidence=platform.confidence,
-            spider_name=platform.spider_name
+            spider_name=platform.spider_name,
+            sections=platform.sections
         ))
     
     return PageResponseSchema.create(results, total, params.page, params.page_size)
@@ -195,5 +198,6 @@ async def get_platform_detail(platform_id: str):
         category=platform.category,
         sub_category=platform.sub_category,
         confidence=platform.confidence,
-        spider_name=platform.spider_name
+        spider_name=platform.spider_name,
+        sections=platform.sections
     ))

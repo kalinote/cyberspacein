@@ -140,6 +140,18 @@
               </div>
             </div>
 
+            <!-- 平台板块 -->
+            <div v-if="platform.sections && platform.sections.length > 0" class="mb-4">
+              <div class="flex flex-wrap gap-2">
+                <el-tag v-for="section in platform.sections.slice(0, 3)" :key="section" size="small" type="primary" effect="plain">
+                  {{ section }}
+                </el-tag>
+                <el-tag v-if="platform.sections.length > 3" size="small" type="primary" effect="plain">
+                  +{{ platform.sections.length - 3 }}
+                </el-tag>
+              </div>
+            </div>
+
             <!-- 操作按钮 -->
             <div class="pt-4 border-t border-gray-200">
               <div class="flex items-center gap-2">
@@ -302,6 +314,13 @@
           />
         </el-form-item>
 
+        <el-form-item label="平台板块" prop="sections">
+          <TagInput
+            v-model="formData.sections"
+            placeholder="输入板块名称后按回车或点击添加"
+          />
+        </el-form-item>
+
         <el-form-item label="爬虫名称" prop="spider_name">
           <el-input
             v-model="formData.spider_name"
@@ -408,6 +427,7 @@ export default {
       url: '',
       logo: '',
       tags: [],
+      sections: [],
       category: '',
       sub_category: '',
       confidence: 1,
@@ -454,6 +474,7 @@ export default {
         url: '',
         logo: '',
         tags: [],
+        sections: [],
         category: '',
         sub_category: '',
         confidence: 1,
@@ -477,6 +498,7 @@ export default {
           url: formData.value.url,
           logo: formData.value.logo || '',
           tags: formData.value.tags || [],
+          sections: formData.value.sections || [],
           category: formData.value.category,
           sub_category: formData.value.sub_category,
           confidence: formData.value.confidence,
