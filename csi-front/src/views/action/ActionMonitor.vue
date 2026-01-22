@@ -12,10 +12,10 @@
             <div class="flex flex-wrap gap-4">
               <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
                 <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Icon icon="mdi:server-network" class="text-blue-600 text-xl" />
+                  <Icon icon="mdi:file-document-multiple" class="text-blue-600 text-xl" />
                 </div>
                 <div>
-                  <p class="text-sm text-gray-500">活跃资源</p>
+                  <p class="text-sm text-gray-500">蓝图数量</p>
                   <!-- 占位数据，等待后端API完成 -->
                   <p class="text-xl font-bold text-gray-900">328</p>
                 </div>

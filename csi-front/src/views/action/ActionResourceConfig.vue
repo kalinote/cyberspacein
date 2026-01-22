@@ -395,6 +395,15 @@
             </div>
           </div>
 
+          <!-- 语料库占位页面 -->
+          <!-- <div v-else-if="activeTab === 'corpus'" class="space-y-4">
+            <div class="flex flex-col items-center justify-center py-16">
+              <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
+              <p class="text-gray-500 text-lg mb-2">功能开发中</p>
+              <p class="text-gray-400 text-sm">语料库管理功能即将上线</p>
+            </div>
+          </div> -->
+
           <div v-else class="flex flex-col items-center justify-center py-16">
             <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
             <p class="text-gray-500 text-lg mb-2">功能开发中</p>
@@ -730,7 +739,8 @@ const statistics = ref({
   handle_count: 0,
   proxy_count: 0,
   account_count: 0,
-  container_count: 0
+  container_count: 0,
+  corpus_count: 0
 })
 
 const dialogVisible = ref(false)
@@ -754,7 +764,9 @@ const resourceTabs = [
     { key: 'nodeHandles', label: '节点接口配置', icon: 'mdi:link-variant' }
   ]},
   { key: 'proxy', label: '代理网络', icon: 'mdi:server-network' },
-  { key: 'accounts', label: '采集账号', icon: 'mdi:account-key' },
+  { key: 'accounts', label: '采集账号', icon: 'mdi:account-key', children: [
+    { key: 'corpus', label: '语料库', icon: 'mdi:database' }
+  ]},
   { key: 'containers', label: '沙盒容器', icon: 'mdi:cube-outline' }
 ]
 
@@ -959,7 +971,8 @@ const getResourceCount = (tabKey) => {
     'nodeHandles': statistics.value.handle_count,
     'proxy': statistics.value.proxy_count,
     'accounts': statistics.value.account_count,
-    'containers': statistics.value.container_count
+    'containers': statistics.value.container_count,
+    'corpus': statistics.value.corpus_count
   }
   return countMap[tabKey] || 0
 }
@@ -1005,6 +1018,8 @@ const handleAdd = (tabKey) => {
     dialogVisible.value = true
   } else if (tabKey === 'nodeHandles') {
     handleDialogVisible.value = true
+  } else if (tabKey === 'corpus') {
+    ElMessage.info('语料库管理功能开发中')
   } else {
     ElMessage.info(`新增${tabKey}功能开发中`)
   }
