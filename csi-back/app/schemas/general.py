@@ -61,4 +61,7 @@ class BaseEntitySchema(BaseModel):
     clean_content: str | None = Field(default=None, description="正文内容")
     raw_content: str | None = Field(default=None, description="原始JSON或HTML")
     safe_raw_content: str | None = Field(default=None, description="经过处理js和css后的安全网页内容，用于前端页面还原展示")
+    is_highlighted: bool = Field(default=False, description="是否为重点目标")
+    highlighted_at: datetime | None = Field(default=None, description="标记时间")
+    highlight_reason: str | None = Field(default=None, description="标记理由")
     

@@ -11,6 +11,7 @@ class EntitySearchRequestSchema(PageParamsSchema):
     author: str | None = Field(default=None, description="作者名过滤，精确匹配")
     aigc: bool | None = Field(default=None, description="AIGC内容过滤")
     nsfw: bool | None = Field(default=None, description="NSFW内容过滤")
+    is_highlighted: bool | None = Field(default=None, description="重点目标过滤")
     sort_by: str | None = Field(default=None, description="排序字段，可选值：crawled_at、last_edit_at")
     sort_order: str | None = Field(default="desc", description="排序方向，可选值：asc、desc，默认为desc")
 
@@ -34,3 +35,4 @@ class SearchResultSchema(BaseModel):
     title: str = Field(description="标题")
     clean_content: str | None = Field(default=None, description="正文内容")
     confidence: float = Field(default=1, description="置信度")
+    is_highlighted: bool | None = Field(default=None, description="是否为重点目标")

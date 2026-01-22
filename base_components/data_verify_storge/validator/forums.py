@@ -39,11 +39,15 @@ FORUMS_SCHEMA = {
     "dislikes": int,
     "collections": int,
     "comments": int,
-    "views": int
+    "views": int,
+    "is_highlighted": bool,
+    "highlighted_at": str,
+    "highlight_reason": str
 }
 
 DATE_FIELDS = [
     "crawled_at",
     "publish_at",
-    "last_edit_at"
+    "last_edit_at",
+    "highlighted_at"
 ]

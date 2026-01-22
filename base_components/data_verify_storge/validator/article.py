@@ -29,11 +29,15 @@ ARTICLE_SCHEMA = {
     "raw_content": str,
     "safe_raw_content": str,
     "cover_image": str,
-    "likes": int
+    "likes": int,
+    "is_highlighted": bool,
+    "highlighted_at": str,
+    "highlight_reason": str
 }
 
 DATE_FIELDS = [
     "crawled_at",
     "publish_at",
-    "last_edit_at"
+    "last_edit_at",
+    "highlighted_at"
 ]

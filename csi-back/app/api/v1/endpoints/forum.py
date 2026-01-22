@@ -5,7 +5,9 @@ from elasticsearch.exceptions import NotFoundError
 
 from app.db.elasticsearch import get_es
 from app.schemas.forum import ForumSchema
+from app.schemas.highlight import HighlightRequestSchema
 from app.schemas.response import ApiResponseSchema
+from app.utils.date_time import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +25,6 @@ async def get_forum_detail(uuid: str):
     try:
         result = await es.get(index="forum", id=uuid)
         source_data = result.get("_source", {})
-        
-        def parse_datetime(value):
-            if value is None:
-                return None
-            if isinstance(value, datetime):
-                return value
-            if isinstance(value, str):
-                try:
-                    return datetime.fromisoformat(value.replace('Z', '+00:00'))
-                except:
-                    try:
-                        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
-                    except:
-                        return None
-            return None
         
         platform = source_data.get("platform")
         topic_id = source_data.get("topic_id")
@@ -115,7 +102,10 @@ async def get_forum_detail(uuid: str):
             collections=source_data.get("collections"),
             comments=source_data.get("comments"),
             views=source_data.get("views"),
-            topic_thread_uuid=topic_thread_uuid
+            topic_thread_uuid=topic_thread_uuid,
+            is_highlighted=source_data.get("is_highlighted", False),
+            highlighted_at=parse_datetime(source_data.get("highlighted_at")),
+            highlight_reason=source_data.get("highlight_reason")
         )
         
         return ApiResponseSchema.success(data=forum_data)
@@ -124,3 +114,44 @@ async def get_forum_detail(uuid: str):
         return ApiResponseSchema.error(code=404, message=f"论坛不存在，UUID: {uuid}")
     except Exception as e:
         return ApiResponseSchema.error(code=500, message=f"查询论坛详情失败: {str(e)}")
+
+@router.put("/highlight/{uuid}", response_model=ApiResponseSchema[dict], summary="设置/取消重点目标标记")
+async def set_forum_highlight(uuid: str, data: HighlightRequestSchema):
+    """
+    设置或取消论坛的重点目标标记
+    """
+    es = get_es()
+    if not es:
+        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+    
+    try:
+        current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if data.is_highlighted:
+            update_data = {
+                "is_highlighted": True,
+                "highlighted_at": current_time,
+                "highlight_reason": data.highlight_reason,
+                "update_at": current_time
+            }
+        else:
+            update_data = {
+                "is_highlighted": False,
+                "highlighted_at": None,
+                "highlight_reason": None,
+                "update_at": current_time
+            }
+        
+        await es.update(
+            index="forum",
+            id=uuid,
+            body={"doc": update_data}
+        )
+        
+        logger.info(f"成功更新论坛标记状态: {uuid}, is_highlighted={data.is_highlighted}")
+        return ApiResponseSchema.success(data={"message": "标记状态更新成功"})
+    
+    except NotFoundError:
+        return ApiResponseSchema.error(code=404, message=f"论坛不存在，UUID: {uuid}")
+    except Exception as e:
+        logger.error(f"更新论坛标记状态失败: {e}", exc_info=True)
+        return ApiResponseSchema.error(code=500, message=f"更新标记状态失败: {str(e)}")

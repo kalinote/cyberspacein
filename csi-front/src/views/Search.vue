@@ -364,11 +364,16 @@
                   <span v-else class="font-medium">{{ result.author_name }}</span>
                 </span>
                 <div class="flex items-center space-x-4">
-                  <el-button type="primary" link>
+                  <el-button 
+                    type="primary" 
+                    link
+                    @click="toggleHighlight(result)"
+                    :loading="result._highlightLoading"
+                  >
                     <template #icon>
-                      <Icon icon="mdi:bookmark-outline" />
+                      <Icon :icon="result.is_highlighted ? 'mdi:star' : 'mdi:star-outline'" />
                     </template>
-                    收藏
+                    {{ result.is_highlighted ? '取消重点目标' : '设置重点目标' }}
                   </el-button>
                   <router-link :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
                     查看详情
@@ -436,6 +441,8 @@ import { Icon } from '@iconify/vue'
 import * as echarts from 'echarts'
 import Header from '@/components/Header.vue'
 import { searchApi } from '@/api/search'
+import { articleApi } from '@/api/article'
+import { forumApi } from '@/api/forum'
 
 export default {
   name: 'Search',
@@ -964,6 +971,34 @@ export default {
           this.searchTrendChart?.resize()
         })
       })
+    },
+
+    async toggleHighlight(result) {
+      if (!result || !result.uuid) return
+
+      result._highlightLoading = true
+
+      try {
+        const isHighlighted = result.is_highlighted
+        const api = result.entity_type === 'Article' ? articleApi : forumApi
+        const requestData = isHighlighted
+          ? { is_highlighted: false }
+          : { is_highlighted: true, highlight_reason: '用户在搜索结果页标记' }
+
+        const response = await api.setHighlight(result.uuid, requestData)
+
+        if (response.code === 0) {
+          result.is_highlighted = !isHighlighted
+          this.$message.success(isHighlighted ? '已取消重点目标' : '已设置为重点目标')
+        } else {
+          this.$message.error(response.message || (isHighlighted ? '取消重点目标失败' : '设置重点目标失败'))
+        }
+      } catch (err) {
+        console.error('操作重点目标失败:', err)
+        this.$message.error('操作失败，请稍后重试')
+      } finally {
+        result._highlightLoading = false
+      }
     }
   },
 

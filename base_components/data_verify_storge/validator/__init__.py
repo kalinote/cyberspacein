@@ -69,6 +69,6 @@ def validate_and_transform(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 pass
 
     # 5. 添加 update_at
-    validated_data["update_at"] = datetime.now().isoformat()
+    validated_data["update_at"] = datetime.now().replace(microsecond=0).isoformat()
 
     return validated_data

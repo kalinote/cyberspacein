@@ -402,6 +402,14 @@
                                         <p class="text-sm text-gray-500 mb-1">更新时间</p>
                                         <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(forumData.update_at) }}</p>
                                     </div>
+                                    <div v-if="forumData.highlighted_at">
+                                        <p class="text-sm text-gray-500 mb-1">标记时间</p>
+                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(forumData.highlighted_at) }}</p>
+                                    </div>
+                                    <div v-if="forumData.highlight_reason">
+                                        <p class="text-sm text-gray-500 mb-1">标记理由</p>
+                                        <p class="font-medium text-gray-900 text-sm">{{ forumData.highlight_reason }}</p>
+                                    </div>
                                 </div>
                             </div>
 
@@ -446,6 +454,30 @@
                 </div>
             </section>
         </template>
+
+        <el-dialog
+            v-model="showHighlightDialog"
+            title="设置重点目标"
+            width="500px"
+            :close-on-click-modal="false"
+        >
+            <el-form :model="highlightForm" label-width="100px">
+                <el-form-item label="标记理由">
+                    <el-input
+                        v-model="highlightForm.reason"
+                        type="textarea"
+                        :rows="4"
+                        placeholder="请输入标记理由（可选）"
+                        maxlength="500"
+                        show-word-limit
+                    />
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="showHighlightDialog = false">取消</el-button>
+                <el-button type="primary" @click="confirmSetHighlight" :loading="highlightLoading">确定</el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
@@ -468,7 +500,15 @@ const loading = ref(false)
 const error = ref(null)
 const activeTab = ref('clean')
 const analyzing = ref(false)
-const isPriorityTarget = ref(false)
+const showHighlightDialog = ref(false)
+const highlightLoading = ref(false)
+const highlightForm = ref({
+    reason: '用户手动标记重点'
+})
+
+const isPriorityTarget = computed(() => {
+    return forumData.value?.is_highlighted === true
+})
 
 const analyzeOptions = [
     { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
@@ -593,12 +633,60 @@ const handleExport = () => {
     ElMessage.info('功能开发中')
 }
 
-const togglePriorityTarget = () => {
-    isPriorityTarget.value = !isPriorityTarget.value
-    if (isPriorityTarget.value) {
-        ElMessage.success('已设置为重点目标')
+const togglePriorityTarget = async () => {
+    if (!forumData.value) return
+
+    if (forumData.value.is_highlighted) {
+        await cancelHighlight()
     } else {
-        ElMessage.info('已取消重点目标')
+        highlightForm.value.reason = '用户手动标记重点'
+        showHighlightDialog.value = true
+    }
+}
+
+const confirmSetHighlight = async () => {
+    if (!forumData.value) return
+
+    highlightLoading.value = true
+    try {
+        const reason = highlightForm.value.reason?.trim() || '用户手动标记重点'
+        const response = await forumApi.setHighlight(uuid.value, {
+            is_highlighted: true,
+            highlight_reason: reason
+        })
+
+        if (response.code === 0) {
+            ElMessage.success('已设置为重点目标')
+            showHighlightDialog.value = false
+            await loadForumDetail()
+        } else {
+            ElMessage.error(response.message || '设置重点目标失败')
+        }
+    } catch (err) {
+        console.error('设置重点目标失败:', err)
+        ElMessage.error('设置重点目标失败，请稍后重试')
+    } finally {
+        highlightLoading.value = false
+    }
+}
+
+const cancelHighlight = async () => {
+    if (!forumData.value) return
+
+    try {
+        const response = await forumApi.setHighlight(uuid.value, {
+            is_highlighted: false
+        })
+
+        if (response.code === 0) {
+            ElMessage.success('已取消重点目标')
+            await loadForumDetail()
+        } else {
+            ElMessage.error(response.message || '取消重点目标失败')
+        }
+    } catch (err) {
+        console.error('取消重点目标失败:', err)
+        ElMessage.error('取消重点目标失败，请稍后重试')
     }
 }
 

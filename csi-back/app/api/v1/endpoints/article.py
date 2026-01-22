@@ -1,10 +1,15 @@
+import logging
 from datetime import datetime
 from fastapi import APIRouter
 from elasticsearch.exceptions import NotFoundError
 
 from app.db.elasticsearch import get_es
 from app.schemas.article import ArticleSchema
+from app.schemas.highlight import HighlightRequestSchema
 from app.schemas.response import ApiResponseSchema
+from app.utils.date_time import parse_datetime
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -21,21 +26,6 @@ async def get_article_detail(uuid: str):
     try:
         result = await es.get(index="article", id=uuid)
         source_data = result.get("_source", {})
-        
-        def parse_datetime(value):
-            if value is None:
-                return None
-            if isinstance(value, datetime):
-                return value
-            if isinstance(value, str):
-                try:
-                    return datetime.fromisoformat(value.replace('Z', '+00:00'))
-                except:
-                    try:
-                        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
-                    except:
-                        return None
-            return None
         
         article_data = ArticleSchema(
             uuid=source_data.get("uuid", uuid),
@@ -67,7 +57,10 @@ async def get_article_detail(uuid: str):
             raw_content=source_data.get("raw_content"),
             safe_raw_content=source_data.get("safe_raw_content"),
             cover_image=source_data.get("cover_image"),
-            likes=source_data.get("likes")
+            likes=source_data.get("likes"),
+            is_highlighted=source_data.get("is_highlighted", False),
+            highlighted_at=parse_datetime(source_data.get("highlighted_at")),
+            highlight_reason=source_data.get("highlight_reason")
         )
         
         return ApiResponseSchema.success(data=article_data)
@@ -76,3 +69,44 @@ async def get_article_detail(uuid: str):
         return ApiResponseSchema.error(code=404, message=f"文章不存在，UUID: {uuid}")
     except Exception as e:
         return ApiResponseSchema.error(code=500, message=f"查询文章详情失败: {str(e)}")
+
+@router.put("/highlight/{uuid}", response_model=ApiResponseSchema[dict], summary="设置/取消重点目标标记")
+async def set_article_highlight(uuid: str, data: HighlightRequestSchema):
+    """
+    设置或取消文章的重点目标标记
+    """
+    es = get_es()
+    if not es:
+        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+    
+    try:
+        current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if data.is_highlighted:
+            update_data = {
+                "is_highlighted": True,
+                "highlighted_at": current_time,
+                "highlight_reason": data.highlight_reason,
+                "update_at": current_time
+            }
+        else:
+            update_data = {
+                "is_highlighted": False,
+                "highlighted_at": None,
+                "highlight_reason": None,
+                "update_at": current_time
+            }
+        
+        await es.update(
+            index="article",
+            id=uuid,
+            body={"doc": update_data}
+        )
+        
+        logger.info(f"成功更新文章标记状态: {uuid}, is_highlighted={data.is_highlighted}")
+        return ApiResponseSchema.success(data={"message": "标记状态更新成功"})
+    
+    except NotFoundError:
+        return ApiResponseSchema.error(code=404, message=f"文章不存在，UUID: {uuid}")
+    except Exception as e:
+        logger.error(f"更新文章标记状态失败: {e}", exc_info=True)
+        return ApiResponseSchema.error(code=500, message=f"更新标记状态失败: {str(e)}")

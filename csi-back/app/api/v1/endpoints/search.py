@@ -54,6 +54,9 @@ async def search_entity(params: EntitySearchRequestSchema):
         if params.nsfw is not None:
             query_must.append({"term": {"nsfw": params.nsfw}})
         
+        if params.is_highlighted is not None:
+            query_must.append({"term": {"is_highlighted": params.is_highlighted}})
+        
         query_body = {
             "query": {
                 "bool": {
@@ -120,7 +123,8 @@ async def search_entity(params: EntitySearchRequestSchema):
                 keywords=source_data.get("keywords", []),
                 title=source_data.get("title", ""),
                 clean_content=source_data.get("clean_content"),
-                confidence=source_data.get("confidence", 1)
+                confidence=source_data.get("confidence", 1),
+                is_highlighted=source_data.get("is_highlighted")
             )
             search_results.append(search_result)
         
