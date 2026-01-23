@@ -14,6 +14,17 @@ class Settings(BaseSettings):
     LINGUA_LOW_ACCURACY_MODE: bool = False
     LINGUA_PRELOAD_MODELS: bool = True
     LINGUA_SUPPORTED_LANGUAGES: Optional[str] = None
+    
+    TRANSLATE_MODEL_PATH: Optional[str] = None
+    TRANSLATE_N_THREADS: Optional[int] = None
+    TRANSLATE_N_CTX: Optional[int] = None
+    TRANSLATE_MAX_TOKENS: Optional[int] = None
+    TRANSLATE_TEMPERATURE: Optional[float] = None
+    TRANSLATE_TOP_P: Optional[float] = None
+    
+    REDIS_URL: Optional[str] = None
+    REDIS_PASSWORD: Optional[str] = None
+    TRANSLATE_RESULT_TTL: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -3,3 +3,5 @@ fastapi
 uvicorn[standard]
 pydantic-settings >= 2.12.0
 python-dotenv
+llama-cpp-python
+redis[hiredis]>=5.0.0

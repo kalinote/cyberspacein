@@ -400,6 +400,7 @@ const isPriorityTarget = computed(() => {
 })
 
 const analyzeOptions = [
+    { label: '语言分析', icon: 'mdi:translate', value: 'language' },
     { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
     { label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion' },
     { label: '传播路径分析', icon: 'mdi:share-variant', value: 'propagation' },

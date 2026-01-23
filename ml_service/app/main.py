@@ -9,6 +9,8 @@ from app.core.exceptions import ApiException
 from app.schemas.response import ApiResponseSchema
 from app.middleware.response import ResponseMiddleware
 from app.service.ml.language import language_service
+from app.service.ml.translate import translate_service
+from app.db import init_redis, close_redis
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -22,11 +24,15 @@ root_logger.setLevel(logging.INFO if not settings.DEBUG else logging.DEBUG)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_redis()
     await language_service.initialize()
+    await translate_service.initialize()
     
     yield
     
+    await translate_service.cleanup()
     await language_service.cleanup()
+    await close_redis()
 
 
 app = FastAPI(
