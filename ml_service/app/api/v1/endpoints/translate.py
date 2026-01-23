@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/translate",
-    tags=["translate"],
+    tags=["翻译"],
 )
 
 
@@ -32,8 +32,10 @@ async def translate_text(request: TranslateRequest):
         raise BadRequestException(message="文本长度不能超过300字符，请使用异步接口")
     
     try:
-        # TODO: target_lang可能需要处理一下，防止llm注入攻击
-        result = translate_service.translate(request.text, request.target_lang)
+        result = await translate_service.translate_in_executor(
+            request.text,
+            request.target_lang
+        )
         return TranslateResponse(result=result)
     except Exception as e:
         logger.error(f"翻译失败: {e}", exc_info=True)
@@ -44,6 +46,7 @@ async def translate_text(request: TranslateRequest):
 async def translate_text_async(request: TranslateAsyncRequest, background_tasks: BackgroundTasks):
     """
     提交异步翻译任务
+    TODO: 保留格式的翻译、基于上下文提示的翻译
     
     - **text**: 待翻译的文本内容
     - **target_lang**: 目标语种（如：中文、英文、日文等）

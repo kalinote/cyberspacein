@@ -2,8 +2,11 @@ import logging
 import os
 import json
 import uuid
+import asyncio
+import threading
 from datetime import datetime
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
 from llama_cpp import Llama
 from app.core.config import settings
 from app.service.ml.base import BaseMLService
@@ -16,6 +19,8 @@ logger = logging.getLogger(__name__)
 class TranslateService(BaseMLService):
     _instance: Optional['TranslateService'] = None
     _llm: Optional[Llama] = None
+    _executor: Optional[ThreadPoolExecutor] = None
+    _lock: Optional[threading.Lock] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -23,6 +28,16 @@ class TranslateService(BaseMLService):
         return cls._instance
 
     async def initialize(self) -> None:
+        if self._lock is None:
+            self._lock = threading.Lock()
+        
+        if self._executor is None:
+            pool_size = settings.TRANSLATE_THREAD_POOL_SIZE
+            if pool_size is None:
+                pool_size = max(2, min(4, os.cpu_count() // 2))
+            self._executor = ThreadPoolExecutor(max_workers=pool_size, thread_name_prefix="translate")
+            logger.info(f"翻译线程池已初始化，大小: {pool_size}")
+        
         if self._llm is not None:
             logger.info("翻译模型已初始化")
             return
@@ -41,20 +56,52 @@ class TranslateService(BaseMLService):
             self._llm = Llama(
                 model_path=settings.TRANSLATE_MODEL_PATH,
                 n_ctx=n_ctx,
-                n_threads=n_threads
+                n_threads=n_threads,
+                verbose=False
             )
+            
             logger.info("翻译模型初始化成功")
         except Exception as e:
             logger.error(f"翻译模型初始化失败: {e}", exc_info=True)
             raise
 
     async def cleanup(self) -> None:
+        if self._executor is not None:
+            logger.info("正在关闭翻译线程池...")
+            try:
+                self._executor.shutdown(wait=True)
+            except Exception as e:
+                logger.warning(f"关闭线程池时出现异常: {e}")
+            finally:
+                self._executor = None
+                logger.info("翻译线程池已关闭")
+        
         self._llm = None
+        self._lock = None
         logger.info("翻译模型已清理")
 
     def _ensure_initialized(self) -> None:
         if self._llm is None:
             raise RuntimeError("翻译模型未初始化，请先配置 TRANSLATE_MODEL_PATH 并调用 initialize()")
+        if self._lock is None:
+            raise RuntimeError("翻译线程锁未初始化，请先调用 initialize()")
+        if self._executor is None:
+            raise RuntimeError("翻译线程池未初始化，请先调用 initialize()")
+    
+    def is_executor_ready(self) -> bool:
+        """检查执行器是否已初始化"""
+        return self._executor is not None
+    
+    async def translate_in_executor(self, text: str, target_lang: str) -> str:
+        """在线程池中执行翻译任务"""
+        self._ensure_initialized()
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            self.translate,
+            text,
+            target_lang
+        )
 
     def translate(self, text: str, target_lang: str) -> str:
         self._ensure_initialized()
@@ -62,7 +109,26 @@ class TranslateService(BaseMLService):
         if not text or not text.strip():
             return ""
         
-        prompt = f"<|user|>\n请将以下内容翻译成{target_lang}：\n{text}\n<|assistant|>\n"
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "string"
+                }
+            },
+            "required": ["result"]
+        }
+        
+        messages = [
+            {
+                "role": "system",
+                "content": "你是一位专业的翻译专家。"
+            },
+            {
+                "role": "user",
+                "content": f"请将以下内容翻译成{target_lang}，注意只需要输出翻译后的结果，不要额外解释，注意语句通顺，输出 JSON 格式：\n\n{text}"
+            }
+        ]
         
         max_tokens = settings.TRANSLATE_MAX_TOKENS
         if max_tokens is None:
@@ -72,16 +138,44 @@ class TranslateService(BaseMLService):
         top_p = settings.TRANSLATE_TOP_P or 0.9
         
         try:
-            response = self._llm(
-                prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                stop=["<|endoftext|>", "<|user|>"]
-            )
+            with self._lock:
+                response = self._llm.create_chat_completion(
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    response_format={
+                        "type": "json_object",
+                        "schema": json_schema
+                    }
+                )
             
-            result = response["choices"][0]["text"].strip()
-            return result
+            if "choices" not in response or not response["choices"]:
+                raise ValueError("响应中缺少 choices 字段或 choices 为空")
+            
+            message = response["choices"][0].get("message")
+            if not message:
+                raise ValueError("响应中缺少 message 字段")
+            
+            content = message.get("content")
+            if not content:
+                raise ValueError("响应中缺少 content 字段")
+            
+            try:
+                result_data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON 解析失败，原始响应: {content}", exc_info=True)
+                raise ValueError(f"无法解析模型返回的 JSON 格式: {e}") from e
+            
+            if "result" not in result_data:
+                logger.error(f"JSON 中缺少 result 字段，解析结果: {result_data}")
+                raise ValueError("模型返回的 JSON 中缺少 result 字段")
+            
+            return result_data["result"]
+            
+        except (KeyError, IndexError, TypeError) as e:
+            logger.error(f"响应结构异常: {response if 'response' in locals() else '未知'}", exc_info=True)
+            raise ValueError(f"响应格式错误: {e}") from e
         except Exception as e:
             logger.error(f"翻译失败: {e}", exc_info=True)
             raise
@@ -165,7 +259,7 @@ class TranslateService(BaseMLService):
         try:
             await self._save_task_status(token, TranslateTaskStatus.processing)
             
-            result = self.translate(text, target_lang)
+            result = await self.translate_in_executor(text, target_lang)
             
             await self._save_task_status(token, TranslateTaskStatus.completed, result=result)
             logger.info(f"翻译任务完成: {token}")

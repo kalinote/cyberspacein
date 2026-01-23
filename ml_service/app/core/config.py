@@ -21,10 +21,20 @@ class Settings(BaseSettings):
     TRANSLATE_MAX_TOKENS: Optional[int] = None
     TRANSLATE_TEMPERATURE: Optional[float] = None
     TRANSLATE_TOP_P: Optional[float] = None
+    TRANSLATE_THREAD_POOL_SIZE: Optional[int] = None
+    
+    GENERIC_MODEL_PATH: Optional[str] = None
+    GENERIC_N_THREADS: Optional[int] = None
+    GENERIC_N_CTX: Optional[int] = None
+    GENERIC_MAX_TOKENS: Optional[int] = None
+    GENERIC_TEMPERATURE: Optional[float] = None
+    GENERIC_TOP_P: Optional[float] = None
+    GENERIC_THREAD_POOL_SIZE: Optional[int] = None
     
     REDIS_URL: Optional[str] = None
     REDIS_PASSWORD: Optional[str] = None
     TRANSLATE_RESULT_TTL: int = 1800
+    KEYWORDS_RESULT_TTL: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=".env",

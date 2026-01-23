@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/language",
-    tags=["language"],
+    tags=["语种检测"],
 )
 
 
