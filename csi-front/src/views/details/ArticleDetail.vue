@@ -121,24 +121,66 @@
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         <div class="lg:col-span-2 space-y-6">
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h2 class="text-2xl font-bold text-gray-900 mb-4 flex items-center">
-                                    <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
-                                    文章<span class="text-blue-500">内容</span>
-                                </h2>
+                                <div class="flex items-center justify-between mb-4">
+                                    <h2 class="text-2xl font-bold text-gray-900 flex items-center">
+                                        <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
+                                        文章<span class="text-blue-500">内容</span>
+                                    </h2>
+                                    <div class="flex items-center gap-2">
+                                        <el-button
+                                            v-if="activeTab === 'safe-raw'"
+                                            type="default"
+                                            size="small"
+                                            @click="handleFormat"
+                                        >
+                                            <template #icon>
+                                                <Icon icon="mdi:code-braces" />
+                                            </template>
+                                            格式化
+                                        </el-button>
+                                        <el-button
+                                            v-if="activeTab === 'safe-raw'"
+                                            type="primary"
+                                            size="small"
+                                            @click="handleSaveSafeContent"
+                                        >
+                                            <template #icon>
+                                                <Icon icon="mdi:content-save" />
+                                            </template>
+                                            保存
+                                        </el-button>
+                                    </div>
+                                </div>
                                 <el-tabs v-model="activeTab" class="article-tabs">
                                     <el-tab-pane v-if="articleData.clean_content" label="纯文本内容" name="clean">
                                         <div class="prose max-w-none">
                                             <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ articleData.clean_content }}</pre>
                                         </div>
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="articleData.safe_raw_content" label="安全渲染内容" name="rendered">
-                                        <div class="prose max-w-none article-content" v-html="articleData.safe_raw_content"></div>
-                                    </el-tab-pane>
-                                    <el-tab-pane v-if="!articleData.clean_content && !articleData.safe_raw_content" label="内容" name="empty">
+                                    <el-tab-pane v-if="!articleData.clean_content" label="内容" name="empty">
                                         <div class="text-center py-12 text-gray-400 flex flex-col items-center">
                                             <Icon icon="mdi:text-box-remove-outline" class="text-5xl mb-2" />
                                             <p>暂无内容，点击开始分析以分析实体内容</p>
                                         </div>
+                                    </el-tab-pane>
+                                    <el-tab-pane v-if="articleData.safe_raw_content" label="安全渲染内容" name="rendered">
+                                        <div class="prose max-w-none article-content" v-html="editableSafeRawContent"></div>
+                                    </el-tab-pane>
+                                    <el-tab-pane v-if="articleData.raw_content" label="原始源代码" name="raw">
+                                        <MonacoEditor
+                                            ref="rawEditorRef"
+                                            :model-value="articleData.raw_content"
+                                            :read-only="true"
+                                            language="html"
+                                        />
+                                    </el-tab-pane>
+                                    <el-tab-pane v-if="articleData.safe_raw_content" label="安全内容代码" name="safe-raw">
+                                        <MonacoEditor
+                                            ref="safeRawEditorRef"
+                                            v-model="editableSafeRawContent"
+                                            :read-only="false"
+                                            language="html"
+                                        />
                                     </el-tab-pane>
                                 </el-tabs>
                             </div>
@@ -371,14 +413,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import SplitButton from '@/components/SplitButton.vue'
+import MonacoEditor from '@/components/MonacoEditor.vue'
 import { articleApi } from '@/api/article'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
 
 const route = useRoute()
@@ -394,13 +437,16 @@ const highlightLoading = ref(false)
 const highlightForm = ref({
     reason: ''
 })
+const editableSafeRawContent = ref('')
+const rawEditorRef = ref(null)
+const safeRawEditorRef = ref(null)
 
 const isPriorityTarget = computed(() => {
     return articleData.value?.is_highlighted === true
 })
 
 const analyzeOptions = [
-    { label: '语言分析', icon: 'mdi:translate', value: 'language' },
+    { label: '内容分析', icon: 'mdi:text-box', value: 'content' },
     { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
     { label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion' },
     { label: '多模态分析', icon: 'mdi:image-filter-none', value: 'multimodal' },
@@ -417,6 +463,10 @@ const loadArticleDetail = async () => {
         if (response.code === 0) {
             articleData.value = response.data
             
+            if (articleData.value.safe_raw_content) {
+                editableSafeRawContent.value = articleData.value.safe_raw_content
+            }
+            
             if (articleData.value.clean_content) {
                 activeTab.value = 'clean'
             } else if (articleData.value.safe_raw_content) {
@@ -432,6 +482,19 @@ const loadArticleDetail = async () => {
         error.value = '加载文章详情失败，请稍后重试'
     } finally {
         loading.value = false
+    }
+}
+
+const handleSaveSafeContent = async () => {
+    await ElMessageBox.alert('后端接口尚未实现，保存功能暂不可用', '提示', {
+        confirmButtonText: '确定',
+        type: 'info'
+    }).catch(() => {})
+}
+
+const handleFormat = async () => {
+    if (activeTab.value === 'safe-raw' && safeRawEditorRef.value) {
+        await safeRawEditorRef.value.formatDocument()
     }
 }
 
@@ -520,6 +583,13 @@ const cancelHighlight = async () => {
 watch(() => route.params.uuid, () => {
     loadArticleDetail()
 }, { immediate: false })
+
+watch(activeTab, async (newTab) => {
+    if (newTab === 'raw' && rawEditorRef.value && articleData.value?.raw_content) {
+        await nextTick()
+        await rawEditorRef.value.formatDocument()
+    }
+})
 
 onMounted(() => {
     loadArticleDetail()
