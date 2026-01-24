@@ -94,8 +94,8 @@ class GenericMLService(BaseMLService):
     
     async def inference_in_executor(
         self,
-        json_schema: Dict,
         messages: List[Dict],
+        json_schema: Optional[Dict] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None
@@ -106,8 +106,8 @@ class GenericMLService(BaseMLService):
         return await loop.run_in_executor(
             self._executor,
             self.inference,
-            json_schema,
             messages,
+            json_schema,
             max_tokens,
             temperature,
             top_p
@@ -115,8 +115,8 @@ class GenericMLService(BaseMLService):
 
     def inference(
         self,
-        json_schema: Dict,
         messages: List[Dict],
+        json_schema: Optional[Dict] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None
@@ -135,16 +135,20 @@ class GenericMLService(BaseMLService):
         
         try:
             with self._lock:
-                response = self._llm.create_chat_completion(
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    response_format={
+                completion_kwargs = {
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p
+                }
+                
+                if json_schema is not None:
+                    completion_kwargs["response_format"] = {
                         "type": "json_object",
                         "schema": json_schema
                     }
-                )
+                
+                response = self._llm.create_chat_completion(**completion_kwargs)
             
             if "choices" not in response or not response["choices"]:
                 raise ValueError("响应中缺少 choices 字段或 choices 为空")

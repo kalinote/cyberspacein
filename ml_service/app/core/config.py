@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = None
     TRANSLATE_RESULT_TTL: int = 1800
     KEYWORDS_RESULT_TTL: int = 1800
+    ENTITIES_RESULT_TTL: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=".env",

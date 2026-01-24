@@ -12,6 +12,7 @@ from app.service.ml.language import language_service
 from app.service.ml.translate import translate_service
 from app.service.ml.generic import generic_service
 from app.service.ml.keywords import keywords_service
+from app.service.ml.entities import entities_service
 from app.db import init_redis, close_redis
 
 logging.basicConfig(
@@ -30,11 +31,13 @@ async def lifespan(app: FastAPI):
     await language_service.initialize()
     await generic_service.initialize()
     await keywords_service.initialize()
+    await entities_service.initialize()
     await translate_service.initialize()
     
     yield
     
     await translate_service.cleanup()
+    await entities_service.cleanup()
     await keywords_service.cleanup()
     await generic_service.cleanup()
     await language_service.cleanup()

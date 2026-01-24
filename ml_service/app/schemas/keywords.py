@@ -30,3 +30,5 @@ class KeywordsStatusResponse(BaseModel):
     status: KeywordsTaskStatus = Field(description="任务状态")
     keywords: Optional[List[str]] = Field(default=None, description="提取的关键词列表，仅在状态为completed时返回")
     error: Optional[str] = Field(default=None, description="错误信息，仅在状态为failed时返回")
+    all: Optional[int] = Field(default=None, description="总段数，仅在状态为processing或completed时返回")
+    finished: Optional[int] = Field(default=None, description="已处理段数，仅在状态为processing或completed时返回")
