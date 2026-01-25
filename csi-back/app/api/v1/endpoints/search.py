@@ -1,8 +1,9 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.schemas.search import EntitySearchRequestSchema, SearchResultSchema
 from app.schemas.general import PageResponseSchema
+from app.schemas.response import ApiResponseSchema
 from app.schemas.enum import ALL_INDEX
 from app.db.elasticsearch import get_es
 from app.models.platform.platform import PlatformModel
@@ -22,7 +23,7 @@ async def search_entity(params: EntitySearchRequestSchema):
     """
     es = get_es()
     if not es:
-        raise HTTPException(status_code=500, detail="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
     
     try:
         query_must = []
@@ -137,4 +138,4 @@ async def search_entity(params: EntitySearchRequestSchema):
     
     except Exception as e:
         logger.error(f"搜索实体失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"搜索实体失败: {str(e)}")
+        return ApiResponseSchema.error(code=500, message=f"搜索实体失败: {str(e)}")

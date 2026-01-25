@@ -1,12 +1,15 @@
 import logging
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, Query, Depends
 from elasticsearch.exceptions import NotFoundError
 
 from app.db.elasticsearch import get_es
 from app.schemas.forum import ForumSchema
 from app.schemas.highlight import HighlightRequestSchema
 from app.schemas.response import ApiResponseSchema
+from app.schemas.general import PageParamsSchema, PageResponseSchema
+from app.schemas.search import SearchResultSchema
+from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime
 
 logger = logging.getLogger(__name__)
@@ -155,3 +158,92 @@ async def set_forum_highlight(uuid: str, data: HighlightRequestSchema):
     except Exception as e:
         logger.error(f"更新论坛标记状态失败: {e}", exc_info=True)
         return ApiResponseSchema.error(code=500, message=f"更新标记状态失败: {str(e)}")
+
+@router.get("/comments", response_model=PageResponseSchema[SearchResultSchema], summary="查询评论或点评")
+async def get_comments(
+    platform: str = Query(..., description="平台名称"),
+    source_id: str = Query(..., description="父级source_id"),
+    thread_type: str = Query(default="comment", description="帖子类型，comment(评论) 或 featured(点评)"),
+    params: PageParamsSchema = Depends()
+):
+    es = get_es()
+    if not es:
+        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+    
+    if thread_type not in ["comment", "featured"]:
+        return ApiResponseSchema.error(code=400, message="thread_type参数只能是comment或featured")
+    
+    try:
+        query_body = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"term": {"platform.keyword": platform}},
+                        {"term": {"parent_id.keyword": source_id}},
+                        {"term": {"thread_type.keyword": thread_type}}
+                    ]
+                }
+            },
+            "sort": [
+                {
+                    "floor": {
+                        "order": "asc",
+                        "missing": "_last"
+                    }
+                }
+            ],
+            "from": (params.page - 1) * params.page_size,
+            "size": params.page_size
+        }
+        
+        logger.info(f"查询论坛{thread_type}: platform={platform}, source_id={source_id}, page={params.page}, page_size={params.page_size}")
+        result = await es.search(index="forum", body=query_body)
+        total = result["hits"]["total"]["value"] if isinstance(result["hits"]["total"], dict) else result["hits"]["total"]
+        hits = result["hits"]["hits"]
+        
+        search_results = []
+        for hit in hits:
+            source_data = hit.get("_source", {})
+            
+            platform_name = source_data.get("platform")
+            platform_id = None
+            if platform_name:
+                try:
+                    platform_obj = await PlatformModel.find_one({"name": platform_name})
+                    if platform_obj:
+                        platform_id = platform_obj.id
+                except Exception as e:
+                    logger.warning(f"查询平台ID失败: {e}, platform_name: {platform_name}")
+            
+            search_result = SearchResultSchema(
+                uuid=source_data.get("uuid", hit.get("_id", "")),
+                entity_type=source_data.get("entity_type", ""),
+                source_id=source_data.get("source_id", ""),
+                data_version=source_data.get("data_version", 0),
+                platform=platform_name or "",
+                platform_id=platform_id,
+                section=source_data.get("section", ""),
+                update_at=parse_datetime(source_data.get("update_at")),
+                author_uuid=None,
+                author_name=source_data.get("author_name", ""),
+                nsfw=source_data.get("nsfw", False),
+                aigc=source_data.get("aigc", False),
+                keywords=source_data.get("keywords", []),
+                title=source_data.get("title", ""),
+                clean_content=source_data.get("clean_content"),
+                confidence=source_data.get("confidence", 1),
+                is_highlighted=source_data.get("is_highlighted")
+            )
+            search_results.append(search_result)
+        
+        return PageResponseSchema.create(
+            items=search_results,
+            total=total,
+            page=params.page,
+            page_size=params.page_size
+        )
+    
+    except Exception as e:
+        logger.error(f"查询论坛{thread_type}失败: {e}", exc_info=True)
+        return ApiResponseSchema.error(code=500, message=f"查询失败: {str(e)}")
+
