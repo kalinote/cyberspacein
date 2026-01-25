@@ -1,4 +1,5 @@
-from pydantic import Field
+from pydantic import BaseModel, Field
+from datetime import datetime
 from app.schemas.general import BaseEntitySchema
 
 class ForumSchema(BaseEntitySchema):
@@ -16,3 +17,25 @@ class ForumSchema(BaseEntitySchema):
     comments: int | None = Field(default=None, description="评论数")
     views: int | None = Field(default=None, description="浏览量")
     topic_thread_uuid: str | None = Field(default=None, description="对应主贴的uuid。根据platform和topic_id查询thread_type为thread且last_edit_at最新的记录的uuid")
+
+class CommentResultSchema(BaseModel):
+    """
+    评论/点评返回结果
+    """
+    uuid: str = Field(description="UUID")
+    entity_type: str = Field(description="实体类型")
+    source_id: str = Field(description="来源ID")
+    data_version: int = Field(description="数据版本")
+    platform: str = Field(description="平台")
+    platform_id: str | None = Field(default=None, description="平台ID")
+    section: str = Field(description="板块")
+    update_at: datetime = Field(description="更新时间")
+    author_uuid: str | None = Field(default=None, description="作者UUID")
+    author_name: str = Field(description="作者名称")
+    nsfw: bool = Field(description="是否为NSFW内容")
+    aigc: bool = Field(description="是否为AI生成内容")
+    keywords: list[str] = Field(description="关键词")
+    clean_content: str | None = Field(default=None, description="正文内容")
+    confidence: float = Field(default=1, description="置信度")
+    is_highlighted: bool | None = Field(default=None, description="是否为重点目标")
+    floor: int | None = Field(default=None, description="楼层号")

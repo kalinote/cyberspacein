@@ -4,11 +4,10 @@ from fastapi import APIRouter, Query, Depends
 from elasticsearch.exceptions import NotFoundError
 
 from app.db.elasticsearch import get_es
-from app.schemas.forum import ForumSchema
+from app.schemas.forum import ForumSchema, CommentResultSchema
 from app.schemas.highlight import HighlightRequestSchema
 from app.schemas.response import ApiResponseSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
-from app.schemas.search import SearchResultSchema
 from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime
 
@@ -159,7 +158,7 @@ async def set_forum_highlight(uuid: str, data: HighlightRequestSchema):
         logger.error(f"更新论坛标记状态失败: {e}", exc_info=True)
         return ApiResponseSchema.error(code=500, message=f"更新标记状态失败: {str(e)}")
 
-@router.get("/comments", response_model=PageResponseSchema[SearchResultSchema], summary="查询评论或点评")
+@router.get("/comments", response_model=PageResponseSchema[CommentResultSchema], summary="查询评论或点评")
 async def get_comments(
     platform: str = Query(..., description="平台名称"),
     source_id: str = Query(..., description="父级source_id"),
@@ -215,7 +214,7 @@ async def get_comments(
                 except Exception as e:
                     logger.warning(f"查询平台ID失败: {e}, platform_name: {platform_name}")
             
-            search_result = SearchResultSchema(
+            search_result = CommentResultSchema(
                 uuid=source_data.get("uuid", hit.get("_id", "")),
                 entity_type=source_data.get("entity_type", ""),
                 source_id=source_data.get("source_id", ""),
@@ -229,10 +228,10 @@ async def get_comments(
                 nsfw=source_data.get("nsfw", False),
                 aigc=source_data.get("aigc", False),
                 keywords=source_data.get("keywords", []),
-                title=source_data.get("title", ""),
                 clean_content=source_data.get("clean_content"),
                 confidence=source_data.get("confidence", 1),
-                is_highlighted=source_data.get("is_highlighted")
+                is_highlighted=source_data.get("is_highlighted"),
+                floor=source_data.get("floor")
             )
             search_results.append(search_result)
         

@@ -6,5 +6,8 @@ export const forumApi = {
   },
   setHighlight(uuid, data) {
     return request.put(`/forum/highlight/${uuid}`, data)
+  },
+  getComments(params) {
+    return request.get('/forum/comments', params)
   }
 }
