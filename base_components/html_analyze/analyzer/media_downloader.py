@@ -1,7 +1,6 @@
 import os
 import hashlib
 import logging
-from typing import Optional, Tuple
 import requests
 from urllib.parse import urlparse
 from dotenv import load_dotenv
@@ -20,10 +19,11 @@ class MediaDownloader:
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
     }
     
-    def __init__(self, timeout: int = 10, max_retries: int = 2, referer: Optional[str] = None):
+    def __init__(self, timeout: int = 10, max_retries: int = 2, referer: str | None = None, download_size_limit: int | None = None):
         self.timeout = timeout
         self.max_retries = max_retries
         self.referer = referer
+        self.download_size_limit = download_size_limit
         self.session = requests.Session()
         self.session.headers.update(self.DEFAULT_HEADERS)
         
@@ -52,10 +52,59 @@ class MediaDownloader:
         except Exception:
             return False
     
-    def download(self, url: str) -> Optional[Tuple[bytes, str, str]]:
+    def check_file_size(self, url: str) -> int | None:
+        """通过HEAD请求检查文件大小，返回文件大小（字节），如果无法获取则返回None"""
+        if not self.is_valid_url(url):
+            return None
+        
+        headers = {}
+        referer = self.referer
+        if not referer:
+            try:
+                parsed = urlparse(url)
+                if parsed.scheme and parsed.netloc:
+                    referer = f"{parsed.scheme}://{parsed.netloc}/"
+            except Exception:
+                pass
+        
+        if referer:
+            headers['Referer'] = referer
+        
+        try:
+            response = self.session.head(url, headers=headers, timeout=self.timeout, allow_redirects=True)
+            response.raise_for_status()
+            
+            content_length = response.headers.get('Content-Length')
+            if content_length:
+                try:
+                    size = int(content_length)
+                    return size
+                except (ValueError, TypeError):
+                    logger.debug(f"无法解析Content-Length: {content_length}")
+                    return None
+            else:
+                logger.debug(f"响应头中未包含Content-Length: {url}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            logger.debug(f"HEAD请求失败，无法获取文件大小: {url} - {e}")
+            return None
+        except Exception as e:
+            logger.debug(f"检查文件大小时发生错误: {url} - {e}")
+            return None
+    
+    def download(self, url: str) -> tuple[bytes, str, str] | None:
         if not self.is_valid_url(url):
             logger.debug(f"无效的URL，跳过下载: {url}")
             return None
+        
+        if self.download_size_limit is not None:
+            file_size = self.check_file_size(url)
+            if file_size is not None and file_size > self.download_size_limit:
+                logger.warning(f"文件大小 {file_size / (1024 * 1024):.2f}MB 超过限制 {self.download_size_limit / (1024 * 1024):.2f}MB，跳过下载: {url}")
+                return None
+            elif file_size is None:
+                logger.debug(f"无法获取文件大小，继续尝试下载: {url}")
         
         headers = {}
         referer = self.referer

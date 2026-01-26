@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict, Optional, Set
+from typing import Set
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from analyzer.media_downloader import MediaDownloader
@@ -19,11 +19,11 @@ class MediaLocalizer:
         'image': ['href', 'xlink:href'],
     }
     
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(self, base_url: str | None = None, download_size_limit: int | None = None):
         self.base_url = base_url
-        self.downloader = MediaDownloader(referer=base_url)
+        self.downloader = MediaDownloader(referer=base_url, download_size_limit=download_size_limit)
         self.uploader = COSUploader()
-        self.url_mapping: Dict[str, str] = {}
+        self.url_mapping: dict[str, str] = {}
         self.processed_urls: Set[str] = set()
     
     def localize(self, html_content: str) -> str:
@@ -173,7 +173,7 @@ class MediaLocalizer:
             self.processed_urls.add(absolute_url)
             return url
     
-    def _normalize_url(self, url: str) -> Optional[str]:
+    def _normalize_url(self, url: str) -> str | None:
         url = url.strip()
         
         if not url:

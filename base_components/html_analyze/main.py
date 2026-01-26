@@ -7,8 +7,36 @@ from rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger("html_analyze")
 
+def _parse_size_limit(size_str: str) -> int | None:
+    """解析大小限制字符串，支持 M、MB、K、KB、G、GB 等单位，默认单位为字节"""
+    if not size_str or not isinstance(size_str, str):
+        return None
+    
+    size_str = size_str.strip().upper()
+    if not size_str:
+        return None
+    
+    try:
+        if size_str.endswith('GB'):
+            return int(float(size_str[:-2]) * 1024 * 1024 * 1024)
+        elif size_str.endswith('G'):
+            return int(float(size_str[:-1]) * 1024 * 1024 * 1024)
+        elif size_str.endswith('MB'):
+            return int(float(size_str[:-2]) * 1024 * 1024)
+        elif size_str.endswith('M'):
+            return int(float(size_str[:-1]) * 1024 * 1024)
+        elif size_str.endswith('KB'):
+            return int(float(size_str[:-2]) * 1024)
+        elif size_str.endswith('K'):
+            return int(float(size_str[:-1]) * 1024)
+        else:
+            return int(float(size_str))
+    except (ValueError, TypeError):
+        logger.warning(f"无法解析下载大小限制: {size_str}，将使用默认值")
+        return None
+
 def process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content, 
-                        enable_media_localization, base_url_field):
+                        enable_media_localization, base_url_field, download_size_limit):
     if process_fields not in data:
         raise ValueError(f"数据中未找到字段 '{process_fields}'")
     
@@ -37,7 +65,8 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
             data['safe_raw_content'] = SafeRawContentAnalyzer.analyze(
                 content,
                 enable_media_localization=enable_media_localization,
-                base_url=base_url
+                base_url=base_url,
+                download_size_limit=download_size_limit
             )
             logger.debug(f"safe_raw_content 处理完成")
         except Exception as e:
@@ -55,6 +84,9 @@ def main():
     enable_media_localization = component.get_config("media_localization", False)
     process_fields = component.get_config("process_fields", "raw_content")
     base_url_field = component.get_config("base_url_field", None)
+    
+    download_size_limit_str = component.get_config("download_size_limit", "50M")
+    download_size_limit = _parse_size_limit(download_size_limit_str)
 
     queue_name = component.inputs.get("data_in", {}).get("value")
     dict_value = component.inputs.get("dict_in", {}).get("value")
@@ -96,7 +128,7 @@ def main():
                     
                     try:
                         data = process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content,
-                                                  enable_media_localization, base_url_field)
+                                                  enable_media_localization, base_url_field, download_size_limit)
                     except (ValueError, TypeError) as e:
                         logger.warning(f"{e}，跳过处理")
                         client.ack_message(message['delivery_tag'])
@@ -129,7 +161,7 @@ def main():
             logger.info("开始处理字典输入")
             try:
                 handled_dict = process_single_data(dict_value, process_fields, enable_clean_content, enable_safe_raw_content,
-                                                   enable_media_localization, base_url_field)
+                                                   enable_media_localization, base_url_field, download_size_limit)
                 logger.info("字典处理完成")
             except Exception as e:
                 logger.error(f"字典处理失败: {e}")

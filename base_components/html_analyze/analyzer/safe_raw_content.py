@@ -3,7 +3,7 @@ import esprima
 import bleach
 from bleach.css_sanitizer import CSSSanitizer
 from bs4 import BeautifulSoup
-from typing import Set, Dict, List, Optional
+from typing import Set
 import logging
 import re
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class JSSafeAnalyzer:
     """基于 AST 的 JavaScript 安全分析器"""
     
-    def __init__(self, script_content: str, dangerous_functions: Optional[Set[str]] = None):
+    def __init__(self, script_content: str, dangerous_functions: Set[str] | None = None):
         self.script_content = script_content
         self.is_malicious = False
         self.dangerous_functions = dangerous_functions or {
@@ -21,7 +21,7 @@ class JSSafeAnalyzer:
             'document.write', 'innerHTML', 'outerHTML',
             'execScript', 'constructor'
         }
-        self.found_issues: List[str] = []
+        self.found_issues: list[str] = []
 
     def analyze(self) -> bool:
         try:
@@ -67,9 +67,9 @@ class WebSanitizer:
     
     def __init__(self, 
                  raw_html: str,
-                 allowed_tags: Optional[Set[str]] = None,
-                 allowed_attrs: Optional[Dict[str, List[str]]] = None,
-                 allowed_css_props: Optional[List[str]] = None):
+                 allowed_tags: Set[str] | None = None,
+                 allowed_attrs: dict[str, list[str]] | None = None,
+                 allowed_css_props: list[str] | None = None):
         self.raw_html = raw_html
         
         self.allowed_tags = allowed_tags or {
@@ -81,12 +81,16 @@ class WebSanitizer:
             'section', 'article', 'aside', 'nav', 'header', 'footer', 'main',
             'figure', 'figcaption', 'details', 'summary',
             'mark', 'small', 'sub', 'sup', 'abbr', 'time',
+            'video', 'audio', 'source',
             'style', 'script'
         }
         
         self.allowed_attrs = allowed_attrs or {
             'a': ['href', 'title', 'target', 'rel', 'name'],
             'img': ['src', 'alt', 'width', 'height', 'title', 'loading', 'srcset', 'sizes'],
+            'video': ['src', 'poster', 'controls', 'autoplay', 'loop', 'muted', 'preload', 'width', 'height', 'data-src', 'data-poster'],
+            'audio': ['src', 'controls', 'autoplay', 'loop', 'muted', 'preload', 'data-src'],
+            'source': ['src', 'srcset', 'type', 'media', 'sizes', 'data-src', 'data-srcset'],
             'table': ['border', 'cellpadding', 'cellspacing', 'width', 'height'],
             'td': ['colspan', 'rowspan', 'width', 'height', 'align', 'valign'],
             'th': ['colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'scope'],
@@ -226,7 +230,8 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
                 preserve_safe_styles: bool = True,
                 force_html_mode: bool = False,
                 enable_media_localization: bool = False,
-                base_url: Optional[str] = None) -> str:
+                base_url: str | None = None,
+                download_size_limit: int | None = None) -> str:
         """
         分析并清理 HTML 内容
         
@@ -239,6 +244,7 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
             force_html_mode: 强制按HTML处理，即使检测不到HTML标签（默认False）
             enable_media_localization: 是否启用媒体资源本地化（默认False）
             base_url: 基础URL，用于解析相对路径（可选）
+            download_size_limit: 下载文件大小限制（字节），超过此大小将跳过下载（可选）
             
         Returns:
             清理后的安全内容
@@ -320,7 +326,7 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
             if enable_media_localization:
                 try:
                     from analyzer.media_localizer import MediaLocalizer
-                    localizer = MediaLocalizer(base_url=base_url)
+                    localizer = MediaLocalizer(base_url=base_url, download_size_limit=download_size_limit)
                     result = localizer.localize(result)
                 except Exception as e:
                     logger.error(f"媒体本地化失败: {e}", exc_info=True)
