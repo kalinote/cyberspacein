@@ -1,10 +1,8 @@
 import os
 import logging
-import llama_cpp
-from types import NoneType
 from typing import List, Optional
 from dotenv import load_dotenv
-from llama_cpp import Llama
+import requests
 
 
 load_dotenv()
@@ -12,108 +10,66 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-class EmbeddingModel:
-    """文本嵌入模型封装类"""
-    
-    _instance: Optional['EmbeddingModel'] = None
-    _model: Optional[Llama] = None
-    _initialized: bool = False
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
-    def __init__(self):
-        if not EmbeddingModel._initialized:
-            self._load_model()
-            EmbeddingModel._initialized = True
-    
-    def _load_model(self):
-        """加载嵌入模型"""
-        if EmbeddingModel._model is not None:
-            return
-        
-        model_path = os.getenv('MODEL_PATH')
-        if not model_path:
-            raise ValueError("未配置 MODEL_PATH 环境变量")
-        
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"模型文件不存在: {model_path}")
-        
-        try:
-            logger.info(f"正在加载模型: {model_path}")
-            EmbeddingModel._model = Llama(
-                model_path=model_path,
-                embedding=True,
-                n_ctx=8192,
-                verbose=False,
-                pooling_type=llama_cpp.LLAMA_POOLING_TYPE_LAST
-            )
-            logger.info("模型加载成功")
-        except Exception as e:
-            logger.error(f"模型加载失败: {e}")
-            raise
-    
-    def embed(self, text: str, prefix: str | None = None) -> List[float]:
-        """生成文本嵌入向量
-        
-        Args:
-            text: 输入文本
-            
-        Returns:
-            嵌入向量列表
-        """
-        if not text or not text.strip():
-            embedding_dim = int(os.getenv('EMBEDDING_DIM', '2560'))
-            return [0.0] * embedding_dim
-        
-        if EmbeddingModel._model is None:
-            self._load_model()
-        
-        try:
-            result = EmbeddingModel._model.create_embedding(prefix + text if prefix else text)
-            if result and 'data' in result and len(result['data']) > 0:
-                embedding = result['data'][0]['embedding']
-                return embedding
-            else:
-                raise ValueError("模型返回的嵌入结果为空")
-        except Exception as e:
-            logger.error(f"生成嵌入向量失败: {e}")
-            raise
-
-_model_instance: Optional[EmbeddingModel] = None
-
-
-def initialize_model() -> EmbeddingModel:
-    """初始化嵌入模型（在程序启动时调用）
-    
-    Returns:
-        嵌入模型实例
-        
-    Raises:
-        ValueError: 模型配置错误
-        FileNotFoundError: 模型文件不存在
-    """
-    global _model_instance
-    if _model_instance is None:
-        _model_instance = EmbeddingModel()
-    return _model_instance
-
-
 def get_embedding(text: str, prefix: str | None = None) -> List[float]:
     """获取文本嵌入向量的便捷函数
     
     Args:
         text: 输入文本
+        prefix: 文本前缀（可选）
         
     Returns:
         嵌入向量列表
         
     Raises:
-        RuntimeError: 模型未初始化
+        ValueError: 接口返回错误
+        RuntimeError: 接口调用失败
     """
-    global _model_instance
-    if _model_instance is None:
-        raise RuntimeError("模型未初始化，请先调用 initialize_model()")
-    return _model_instance.embed(text, prefix)
+    if not text or not text.strip():
+        logger.warning("输入文本为空，返回空列表")
+        return []
+    
+    base_url = os.getenv('ML_SERVICE_BASE_URL')
+    if not base_url:
+        raise ValueError("未配置 ML_SERVICE_BASE_URL 环境变量")
+    
+    url = f"{base_url.rstrip('/')}/api/v1/embedding"
+    
+    full_text = prefix + text if prefix else text
+    
+    try:
+        response = requests.post(
+            url,
+            json={"text": full_text},
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if result.get("code") != 0:
+            error_message = result.get("message", "未知错误")
+            raise ValueError(f"接口返回错误: {error_message}")
+        
+        data = result.get("data")
+        if not data:
+            raise ValueError("接口返回数据为空")
+        
+        embedding = data.get("embedding")
+        if not embedding:
+            raise ValueError("接口返回的嵌入向量为空")
+        
+        if not isinstance(embedding, list):
+            raise ValueError("接口返回的嵌入向量格式错误")
+        
+        return embedding
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"HTTP请求失败: {e}")
+        raise RuntimeError(f"调用嵌入接口失败: {str(e)}")
+    except ValueError as e:
+        logger.error(f"解析接口响应失败: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"获取嵌入向量失败: {e}")
+        raise RuntimeError(f"获取嵌入向量失败: {str(e)}")

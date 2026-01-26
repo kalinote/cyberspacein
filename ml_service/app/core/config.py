@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     GENERIC_TOP_P: Optional[float] = None
     GENERIC_THREAD_POOL_SIZE: Optional[int] = None
     
+    EMBEDDING_MODEL_PATH: Optional[str] = None
+    EMBEDDING_DIM: int = 2560
+    
     REDIS_URL: Optional[str] = None
     REDIS_PASSWORD: Optional[str] = None
     TRANSLATE_RESULT_TTL: int = 1800

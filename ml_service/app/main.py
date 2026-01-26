@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.exceptions import ApiException
@@ -13,6 +14,7 @@ from app.service.ml.translate import translate_service
 from app.service.ml.generic import generic_service
 from app.service.ml.keywords import keywords_service
 from app.service.ml.entities import entities_service
+from app.service.ml.embedding import embedding_service
 from app.db import init_redis, close_redis
 
 logging.basicConfig(
@@ -32,11 +34,13 @@ async def lifespan(app: FastAPI):
     await generic_service.initialize()
     await keywords_service.initialize()
     await entities_service.initialize()
+    await embedding_service.initialize()
     await translate_service.initialize()
     
     yield
     
     await translate_service.cleanup()
+    await embedding_service.cleanup()
     await entities_service.cleanup()
     await keywords_service.cleanup()
     await generic_service.cleanup()
@@ -59,6 +63,7 @@ app.add_middleware(
 )
 
 app.add_middleware(ResponseMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.exception_handler(ApiException)

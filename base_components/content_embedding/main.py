@@ -3,7 +3,7 @@ import logging
 import json
 from csi_base_component_sdk.sync import BaseComponent
 from rabbitmq_client import RabbitMQClient
-from embedding import get_embedding, initialize_model
+from embedding import get_embedding
 
 logger = logging.getLogger("content_embedding")
 
@@ -46,14 +46,6 @@ def process_single_data(data: dict, content_field: str, vector_field: str) -> di
 def main():
     component = BaseComponent()
     component.initialize()
-
-    try:
-        logger.info("正在初始化嵌入模型...")
-        initialize_model()
-        logger.info("嵌入模型初始化完成")
-    except Exception as e:
-        logger.error(f"嵌入模型初始化失败: {e}")
-        component.fail(f"嵌入模型初始化失败: {str(e)}")
 
     queue_name = component.inputs.get("data_in", {}).get("value")
     dict_value = component.inputs.get("dict_in", {}).get("value")

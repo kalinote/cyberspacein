@@ -25,6 +25,10 @@ class ResponseMiddleware(BaseHTTPMiddleware):
                 return response
             
             if response.status_code == 200 and "application/json" in response.headers.get("content-type", ""):
+                content_encoding = response.headers.get("content-encoding", "").lower()
+                if content_encoding in ("gzip", "deflate", "br"):
+                    return response
+                
                 response_body = b""
                 async for chunk in response.body_iterator:
                     response_body += chunk
