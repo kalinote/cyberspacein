@@ -29,6 +29,8 @@ ARTICLE_SCHEMA = {
     "raw_content": str,
     "safe_raw_content": str,
     "cover_image": str,
+    "vector_status": bool,
+    "clean_content_vector": list,
     "likes": int,
     "is_highlighted": bool,
     "highlighted_at": str,

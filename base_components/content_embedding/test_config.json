@@ -1,0 +1,24 @@
+{
+    "meta": {
+        "node_id": "test_node_001",
+        "action_id": "694251b96d9534925bd9f6f3"
+    },
+    "config": {
+        "content_field": "clean_content",
+        "vector_field": "clean_content_vector"
+    },
+    "inputs": {
+        "dict_in": {
+            "type": "string",
+            "value": {
+                "clean_content": "2024年12月4日，中国申报的“春节——中国人庆祝传统新年的社会实践”被列入联合国教科文组织人类非物质文化遗产代表作名录。作为申遗发起人之一，作家冯骥才在申遗成功后编著了《过年书》一书，全面阐述春节的文化内涵。书中收录了冯骥才的《过年》《花脸》《春节八事》等五十余篇关于春节的文章和采访，配以三十余幅彩图，从个人记忆、习俗梳理、民俗抢救到文化展望，系统呈现了春节作为中国人“最强化的生活”的丰富面貌。"
+            }
+        }
+    },
+    "outputs": {
+        "data_out": {
+            "type": "reference",
+            "value": ["analyzed_out"]
+        }
+    }
+}

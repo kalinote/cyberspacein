@@ -34,6 +34,8 @@ FORUMS_SCHEMA = {
     "raw_content": str,
     "safe_raw_content": str,
     "files_urls": list,
+    "vector_status": bool,
+    "clean_content_vector": list,
     "status_flags": list,
     "likes": int,
     "dislikes": int,
