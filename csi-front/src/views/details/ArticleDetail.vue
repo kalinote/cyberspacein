@@ -457,6 +457,7 @@ import { articleApi } from '@/api/article'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
 import { useAnnotationHandler } from '@/composables/useAnnotationHandler'
+import { useHighlight } from '@/composables/useHighlight'
 
 const route = useRoute()
 const uuid = computed(() => route.params.uuid)
@@ -466,11 +467,6 @@ const loading = ref(false)
 const error = ref(null)
 const activeTab = ref('clean')
 const analyzing = ref(false)
-const showHighlightDialog = ref(false)
-const highlightLoading = ref(false)
-const highlightForm = ref({
-    reason: ''
-})
 const editableSafeRawContent = ref('')
 const rawEditorRef = ref(null)
 const safeRawEditorRef = ref(null)
@@ -501,10 +497,6 @@ const {
     cleanContentRef,
     renderedContentRef,
     activeTab
-})
-
-const isPriorityTarget = computed(() => {
-    return articleData.value?.is_highlighted === true
 })
 
 const analyzeOptions = [
@@ -547,6 +539,20 @@ const loadArticleDetail = async () => {
     }
 }
 
+const {
+    showHighlightDialog,
+    highlightLoading,
+    highlightForm,
+    isPriorityTarget,
+    togglePriorityTarget,
+    confirmSetHighlight
+} = useHighlight({
+    entityType: 'article',
+    getData: () => articleData.value,
+    reloadData: loadArticleDetail,
+    withDialog: true
+})
+
 const handleSaveSafeContent = async () => {
     await ElMessageBox.alert('后端接口尚未实现，保存功能暂不可用', '提示', {
         confirmButtonText: '确定',
@@ -583,63 +589,6 @@ const handleAnalyzeOption = (option) => {
 
 const handleExport = () => {
     ElMessage.info('导出功能开发中')
-}
-
-const togglePriorityTarget = async () => {
-    if (!articleData.value) return
-
-    if (articleData.value.is_highlighted) {
-        await cancelHighlight()
-    } else {
-        highlightForm.value.reason = ''
-        showHighlightDialog.value = true
-    }
-}
-
-const confirmSetHighlight = async () => {
-    if (!articleData.value) return
-
-    highlightLoading.value = true
-    try {
-        const reason = highlightForm.value.reason?.trim() || '用户手动标记重点'
-        const response = await articleApi.setHighlight(uuid.value, {
-            is_highlighted: true,
-            highlight_reason: reason
-        })
-
-        if (response.code === 0) {
-            ElMessage.success('已设置为重点目标')
-            showHighlightDialog.value = false
-            await loadArticleDetail()
-        } else {
-            ElMessage.error(response.message || '设置重点目标失败')
-        }
-    } catch (err) {
-        console.error('设置重点目标失败:', err)
-        ElMessage.error('设置重点目标失败，请稍后重试')
-    } finally {
-        highlightLoading.value = false
-    }
-}
-
-const cancelHighlight = async () => {
-    if (!articleData.value) return
-
-    try {
-        const response = await articleApi.setHighlight(uuid.value, {
-            is_highlighted: false
-        })
-
-        if (response.code === 0) {
-            ElMessage.success('已取消重点目标')
-            await loadArticleDetail()
-        } else {
-            ElMessage.error(response.message || '取消重点目标失败')
-        }
-    } catch (err) {
-        console.error('取消重点目标失败:', err)
-        ElMessage.error('取消重点目标失败，请稍后重试')
-    }
 }
 
 watch(() => route.params.uuid, () => {

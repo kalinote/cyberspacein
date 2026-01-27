@@ -1,11 +1,9 @@
 import logging
-from datetime import datetime
 from fastapi import APIRouter, Query, Depends
 from elasticsearch.exceptions import NotFoundError
 
 from app.db.elasticsearch import get_es
 from app.schemas.forum import ForumSchema, CommentResultSchema
-from app.schemas.highlight import HighlightRequestSchema
 from app.schemas.response import ApiResponseSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.models.platform.platform import PlatformModel
@@ -117,46 +115,6 @@ async def get_forum_detail(uuid: str):
     except Exception as e:
         return ApiResponseSchema.error(code=500, message=f"查询论坛详情失败: {str(e)}")
 
-@router.put("/highlight/{uuid}", response_model=ApiResponseSchema[dict], summary="设置/取消重点目标标记")
-async def set_forum_highlight(uuid: str, data: HighlightRequestSchema):
-    """
-    设置或取消论坛的重点目标标记
-    """
-    es = get_es()
-    if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
-    
-    try:
-        current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        if data.is_highlighted:
-            update_data = {
-                "is_highlighted": True,
-                "highlighted_at": current_time,
-                "highlight_reason": data.highlight_reason,
-                "update_at": current_time
-            }
-        else:
-            update_data = {
-                "is_highlighted": False,
-                "highlighted_at": None,
-                "highlight_reason": None,
-                "update_at": current_time
-            }
-        
-        await es.update(
-            index="forum",
-            id=uuid,
-            body={"doc": update_data}
-        )
-        
-        logger.info(f"成功更新论坛标记状态: {uuid}, is_highlighted={data.is_highlighted}")
-        return ApiResponseSchema.success(data={"message": "标记状态更新成功"})
-    
-    except NotFoundError:
-        return ApiResponseSchema.error(code=404, message=f"论坛不存在，UUID: {uuid}")
-    except Exception as e:
-        logger.error(f"更新论坛标记状态失败: {e}", exc_info=True)
-        return ApiResponseSchema.error(code=500, message=f"更新标记状态失败: {str(e)}")
 
 @router.get("/comments", response_model=PageResponseSchema[CommentResultSchema], summary="查询评论或点评")
 async def get_comments(

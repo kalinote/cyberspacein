@@ -656,6 +656,7 @@ import { forumApi } from '@/api/forum'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
 import { useAnnotationHandler } from '@/composables/useAnnotationHandler'
+import { useHighlight } from '@/composables/useHighlight'
 
 const route = useRoute()
 const uuid = computed(() => route.params.uuid)
@@ -665,11 +666,6 @@ const loading = ref(false)
 const error = ref(null)
 const activeTab = ref('clean')
 const analyzing = ref(false)
-const showHighlightDialog = ref(false)
-const highlightLoading = ref(false)
-const highlightForm = ref({
-    reason: ''
-})
 const editableSafeRawContent = ref('')
 const rawEditorRef = ref(null)
 const safeRawEditorRef = ref(null)
@@ -711,28 +707,6 @@ const commentPage = ref(1)
 const featuredTotal = ref(0)
 const commentTotal = ref(0)
 
-const isPriorityTarget = computed(() => {
-    return forumData.value?.is_highlighted === true
-})
-
-const analyzeOptions = [
-    { label: '内容分析', icon: 'mdi:text-box', value: 'content' },
-    { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
-    { label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion' },
-    { label: '多模态分析', icon: 'mdi:image-filter-none', value: 'multimodal' },
-    { label: '传播路径分析', icon: 'mdi:share-variant', value: 'propagation' },
-    { label: '证据链溯源分析', icon: 'mdi:link-variant', value: 'evidence' }
-]
-
-const hasInteractionData = computed(() => {
-    if (!forumData.value) return false
-    return (forumData.value.likes !== null && forumData.value.likes !== -1) ||
-           (forumData.value.dislikes !== null && forumData.value.dislikes !== -1) ||
-           (forumData.value.collections !== null && forumData.value.collections !== -1) ||
-           (forumData.value.comments !== null && forumData.value.comments !== -1) ||
-           (forumData.value.views !== null && forumData.value.views !== -1)
-})
-
 const loadForumDetail = async () => {
     loading.value = true
     error.value = null
@@ -770,6 +744,38 @@ const loadForumDetail = async () => {
         loading.value = false
     }
 }
+
+const {
+    showHighlightDialog,
+    highlightLoading,
+    highlightForm,
+    isPriorityTarget,
+    togglePriorityTarget,
+    confirmSetHighlight
+} = useHighlight({
+    entityType: 'forum',
+    getData: () => forumData.value,
+    reloadData: loadForumDetail,
+    withDialog: true
+})
+
+const analyzeOptions = [
+    { label: '内容分析', icon: 'mdi:text-box', value: 'content' },
+    { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
+    { label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion' },
+    { label: '多模态分析', icon: 'mdi:image-filter-none', value: 'multimodal' },
+    { label: '传播路径分析', icon: 'mdi:share-variant', value: 'propagation' },
+    { label: '证据链溯源分析', icon: 'mdi:link-variant', value: 'evidence' }
+]
+
+const hasInteractionData = computed(() => {
+    if (!forumData.value) return false
+    return (forumData.value.likes !== null && forumData.value.likes !== -1) ||
+           (forumData.value.dislikes !== null && forumData.value.dislikes !== -1) ||
+           (forumData.value.collections !== null && forumData.value.collections !== -1) ||
+           (forumData.value.comments !== null && forumData.value.comments !== -1) ||
+           (forumData.value.views !== null && forumData.value.views !== -1)
+})
 
 const handleSaveSafeContent = async () => {
     await ElMessageBox.alert('后端接口尚未实现，保存功能暂不可用', '提示', {
@@ -926,63 +932,6 @@ const handleAnalyzeOption = (option) => {
 
 const handleExport = () => {
     ElMessage.info('功能开发中')
-}
-
-const togglePriorityTarget = async () => {
-    if (!forumData.value) return
-
-    if (forumData.value.is_highlighted) {
-        await cancelHighlight()
-    } else {
-        highlightForm.value.reason = ''
-        showHighlightDialog.value = true
-    }
-}
-
-const confirmSetHighlight = async () => {
-    if (!forumData.value) return
-
-    highlightLoading.value = true
-    try {
-        const reason = highlightForm.value.reason?.trim() || '用户手动标记重点'
-        const response = await forumApi.setHighlight(uuid.value, {
-            is_highlighted: true,
-            highlight_reason: reason
-        })
-
-        if (response.code === 0) {
-            ElMessage.success('已设置为重点目标')
-            showHighlightDialog.value = false
-            await loadForumDetail()
-        } else {
-            ElMessage.error(response.message || '设置重点目标失败')
-        }
-    } catch (err) {
-        console.error('设置重点目标失败:', err)
-        ElMessage.error('设置重点目标失败，请稍后重试')
-    } finally {
-        highlightLoading.value = false
-    }
-}
-
-const cancelHighlight = async () => {
-    if (!forumData.value) return
-
-    try {
-        const response = await forumApi.setHighlight(uuid.value, {
-            is_highlighted: false
-        })
-
-        if (response.code === 0) {
-            ElMessage.success('已取消重点目标')
-            await loadForumDetail()
-        } else {
-            ElMessage.error(response.message || '取消重点目标失败')
-        }
-    } catch (err) {
-        console.error('取消重点目标失败:', err)
-        ElMessage.error('取消重点目标失败，请稍后重试')
-    }
 }
 
 watch(() => route.params.uuid, () => {

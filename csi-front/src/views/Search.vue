@@ -441,8 +441,7 @@ import { Icon } from '@iconify/vue'
 import * as echarts from 'echarts'
 import Header from '@/components/Header.vue'
 import { searchApi } from '@/api/search'
-import { articleApi } from '@/api/article'
-import { forumApi } from '@/api/forum'
+import { highlightApi } from '@/api/highlight'
 
 export default {
   name: 'Search',
@@ -980,12 +979,12 @@ export default {
 
       try {
         const isHighlighted = result.is_highlighted
-        const api = result.entity_type === 'Article' ? articleApi : forumApi
+        const entityType = result.entity_type?.toLowerCase() || 'article'
         const requestData = isHighlighted
           ? { is_highlighted: false }
           : { is_highlighted: true, highlight_reason: '用户在搜索结果页标记' }
 
-        const response = await api.setHighlight(result.uuid, requestData)
+        const response = await highlightApi.setHighlight(entityType, result.uuid, requestData)
 
         if (response.code === 0) {
           result.is_highlighted = !isHighlighted
