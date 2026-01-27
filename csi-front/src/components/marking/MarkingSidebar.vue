@@ -1,24 +1,24 @@
 <template>
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
     <h3 class="text-lg font-bold text-gray-900 mb-4">
-      内容<span class="text-blue-500">批注</span>
+      内容<span class="text-blue-500">标注</span>
     </h3>
     <div class="text-sm text-gray-500 mb-4">
-      共 {{ sortedAnnotations.length }} 条批注
+      共 {{ sortedMarkings.length }} 条标注
     </div>
     
     <div class="space-y-3">
-      <div v-if="sortedAnnotations.length === 0" class="text-center py-8 text-gray-400">
+      <div v-if="sortedMarkings.length === 0" class="text-center py-8 text-gray-400">
         <Icon icon="mdi:comment-text-outline" class="text-4xl mb-2 mx-auto" />
-        <p class="text-sm">暂无批注</p>
-        <p class="text-xs mt-1">选择文本后添加批注</p>
+        <p class="text-sm">暂无标注</p>
+        <p class="text-xs mt-1">选择文本后添加标注</p>
       </div>
       
-      <AnnotationCard
-        v-for="annotation in sortedAnnotations"
-        :key="annotation.id"
-        :annotation="annotation"
-        :is-active="activeAnnotationId === annotation.id"
+      <MarkingCard
+        v-for="marking in sortedMarkings"
+        :key="marking.id"
+        :marking="marking"
+        :is-active="activeMarkingId === marking.id"
         @update="handleUpdate"
         @delete="handleDelete"
         @hover="handleHover"
@@ -29,14 +29,14 @@
 
 <script setup>
 import { Icon } from '@iconify/vue'
-import AnnotationCard from './AnnotationCard.vue'
+import MarkingCard from './MarkingCard.vue'
 
 const props = defineProps({
-  sortedAnnotations: {
+  sortedMarkings: {
     type: Array,
     default: () => []
   },
-  activeAnnotationId: {
+  activeMarkingId: {
     type: String,
     default: null
   }

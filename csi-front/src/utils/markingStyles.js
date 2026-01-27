@@ -36,7 +36,7 @@ export function getStyleIcon(style) {
   return styleIconMap[style] || 'mdi:tag'
 }
 
-export function createAnnotationConfig(style, isMultiline = false) {
+export function createMarkingConfig(style, isMultiline = false) {
   const config = {
     type: style,
     color: getStyleColor(style),

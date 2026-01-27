@@ -187,17 +187,17 @@
             <section class="py-12 bg-gray-50">
                 <div class="w-full px-4 sm:px-6 lg:px-8">
                     <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                        <AnnotationSidebar
-                            :sorted-annotations="getSortedAnnotationsByRegion(currentRegion)"
-                            :active-annotation-id="activeAnnotationId"
-                            @update="handleUpdateAnnotation"
-                            @delete="handleDeleteAnnotation"
-                            @hover="handleAnnotationHover"
+                        <MarkingSidebar
+                            :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
+                            :active-marking-id="activeMarkingId"
+                            @update="handleUpdateMarking"
+                            @delete="handleDeleteMarking"
+                            @hover="handleMarkingHover"
                         />
-                        <div class="lg:col-span-3 space-y-6 relative annotation-container">
-                            <AnnotationConnector
-                                :annotations="getAnnotationsByRegion(currentRegion)"
-                                :active-annotation-id="activeAnnotationId"
+                        <div class="lg:col-span-3 space-y-6 relative marking-container">
+                            <MarkingConnector
+                                :markings="getMarkingsByRegion(currentRegion)"
+                                :active-marking-id="activeMarkingId"
                             />
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <div class="flex items-center justify-between mb-4">
@@ -249,7 +249,7 @@
                                     <el-tab-pane v-if="forumData.safe_raw_content" label="安全渲染内容" name="rendered">
                                         <div
                                             ref="renderedContentRef"
-                                            class="prose max-w-none forum-content annotation-content select-text"
+                                            class="prose max-w-none forum-content marking-content select-text"
                                             v-html="editableSafeRawContent"
                                             @mouseup="handleRenderedContentMouseUp"
                                         ></div>
@@ -629,14 +629,14 @@
             </template>
         </el-dialog>
 
-        <AnnotationToolbar
+        <MarkingToolbar
             :visible="toolbarVisible"
             :position="toolbarPosition"
             :available-styles="availableStyles"
             :selected-style="selectedStyle"
             @style-select="handleStyleSelect"
-            @create="handleCreateAnnotation"
-            @cancel="handleCancelAnnotation"
+            @create="handleCreateMarking"
+            @cancel="handleCancelMarking"
         />
     </div>
 </template>
@@ -649,13 +649,13 @@ import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import SplitButton from '@/components/SplitButton.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import AnnotationSidebar from '@/components/annotation/AnnotationSidebar.vue'
-import AnnotationToolbar from '@/components/annotation/AnnotationToolbar.vue'
-import AnnotationConnector from '@/components/annotation/AnnotationConnector.vue'
+import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
+import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
+import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import { forumApi } from '@/api/forum'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
-import { useAnnotationHandler } from '@/composables/useAnnotationHandler'
+import { useMarkingHandler } from '@/composables/useMarkingHandler'
 import { useHighlight } from '@/composables/useHighlight'
 
 const route = useRoute()
@@ -674,25 +674,25 @@ const renderedContentRef = ref(null)
 
 const {
     currentRegion,
-    activeAnnotationId,
+    activeMarkingId,
     toolbarVisible,
     toolbarPosition,
     availableStyles,
     selectedStyle,
-    getAnnotationsByRegion,
-    getSortedAnnotationsByRegion,
+    getMarkingsByRegion,
+    getSortedMarkingsByRegion,
     handleCleanContentMouseUp,
     handleRenderedContentMouseUp,
     handleStyleSelect,
-    handleCreateAnnotation,
-    handleCancelAnnotation,
-    handleUpdateAnnotation,
-    handleDeleteAnnotation,
-    handleAnnotationHover,
+    handleCreateMarking,
+    handleCancelMarking,
+    handleUpdateMarking,
+    handleDeleteMarking,
+    handleMarkingHover,
     handleTabChange,
     setupEventListeners,
     cleanupEventListeners
-} = useAnnotationHandler({
+} = useMarkingHandler({
     cleanContentRef,
     renderedContentRef,
     activeTab
@@ -1010,16 +1010,16 @@ onUnmounted(() => {
     -ms-user-select: text;
 }
 
-.annotation-container :deep(.annotation-target) {
+.marking-container :deep(.marking-target) {
     position: relative;
 }
 
-.prose :deep(.annotation-target),
-.forum-content :deep(.annotation-target) {
+.prose :deep(.marking-target),
+.forum-content :deep(.marking-target) {
     overflow: visible !important;
 }
 
-:deep(.rough-annotation) {
+:deep(.rough-marking) {
     overflow: visible !important;
 }
 
@@ -1028,8 +1028,8 @@ onUnmounted(() => {
     overflow: visible !important;
 }
 
-.annotation-container :deep(.bg-white),
-.annotation-container :deep(.rounded-xl) {
+.marking-container :deep(.bg-white),
+.marking-container :deep(.rounded-xl) {
     overflow: visible !important;
 }
 

@@ -1,20 +1,20 @@
 <template>
   <div
-    class="annotation-card bg-white rounded-lg border border-gray-200 p-4 mb-3 shadow-sm hover:shadow-md transition-shadow"
+    class="marking-card bg-white rounded-lg border border-gray-200 p-4 mb-3 shadow-sm hover:shadow-md transition-shadow"
     :class="{ 'border-blue-300 bg-blue-50': isActive }"
-    :data-annotation-id="annotation.id"
+    :data-marking-id="marking.id"
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
   >
     <div class="flex items-start justify-between mb-2">
       <div class="flex items-center gap-2">
-        <Icon :icon="getStyleIcon(annotation.style)" class="text-lg" :style="{ color: getStyleColor(annotation.style) }" />
-        <span class="text-xs text-gray-500">{{ formatDate(annotation.createdAt) }}</span>
+        <Icon :icon="getStyleIcon(marking.style)" class="text-lg" :style="{ color: getStyleColor(marking.style) }" />
+        <span class="text-xs text-gray-500">{{ formatDate(marking.createdAt) }}</span>
       </div>
       <button
         @click="handleDelete"
         class="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-red-600"
-        title="删除批注"
+        title="删除标注"
       >
         <Icon icon="mdi:delete-outline" class="text-sm" />
       </button>
@@ -26,7 +26,7 @@
       </div>
     </div>
 
-    <div class="annotation-content">
+    <div class="marking-content">
       <textarea
         v-if="isEditing"
         v-model="editContent"
@@ -35,15 +35,15 @@
         @keydown.esc="handleCancel"
         class="w-full p-2 border border-gray-300 rounded text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
         rows="3"
-        placeholder="输入批注内容..."
+        placeholder="输入标注内容..."
       />
       <div
         v-else
         @click="handleEdit"
         class="p-2 border border-transparent rounded text-sm min-h-[60px] cursor-text hover:border-gray-300 transition-colors"
-        :class="{ 'text-gray-400': !annotation.content }"
+        :class="{ 'text-gray-400': !marking.content }"
       >
-        {{ annotation.content || '点击编辑批注...' }}
+        {{ marking.content || '点击编辑标注...' }}
       </div>
     </div>
   </div>
@@ -52,10 +52,10 @@
 <script setup>
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
-import { getStyleColor, getStyleIcon } from '@/utils/annotationStyles'
+import { getStyleColor, getStyleIcon } from '@/utils/markingStyles'
 
 const props = defineProps({
-  annotation: {
+  marking: {
     type: Object,
     required: true
   },
@@ -72,9 +72,9 @@ const editContent = ref('')
 
 function handleEdit() {
   isEditing.value = true
-  editContent.value = props.annotation.content || ''
+  editContent.value = props.marking.content || ''
   setTimeout(() => {
-    const textarea = document.querySelector('.annotation-content textarea')
+    const textarea = document.querySelector('.marking-content textarea')
     if (textarea) {
       textarea.focus()
     }
@@ -82,27 +82,27 @@ function handleEdit() {
 }
 
 function handleSave() {
-  if (editContent.value !== props.annotation.content) {
-    emit('update', props.annotation.id, editContent.value)
+  if (editContent.value !== props.marking.content) {
+    emit('update', props.marking.id, editContent.value)
   }
   isEditing.value = false
 }
 
 function handleCancel() {
-  editContent.value = props.annotation.content || ''
+  editContent.value = props.marking.content || ''
   isEditing.value = false
 }
 
 function handleDelete() {
-  emit('delete', props.annotation.id)
+  emit('delete', props.marking.id)
 }
 
 function handleMouseEnter() {
-  emit('hover', props.annotation.id, true)
+  emit('hover', props.marking.id, true)
 }
 
 function handleMouseLeave() {
-  emit('hover', props.annotation.id, false)
+  emit('hover', props.marking.id, false)
 }
 
 function formatDate(date) {
@@ -122,7 +122,7 @@ function formatDate(date) {
 }
 
 function getTargetText() {
-  const { target } = props.annotation
+  const { target } = props.marking
   if (target.textOffset) {
     return target.textOffset.text || ''
   }

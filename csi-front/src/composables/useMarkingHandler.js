@@ -1,11 +1,11 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { useAnnotation } from './useAnnotation'
+import { useMarking } from './useMarking'
 
-export function useAnnotationHandler(options = {}) {
+export function useMarkingHandler(options = {}) {
   const { cleanContentRef, renderedContentRef, activeTab } = options
 
-  const annotation = useAnnotation()
-  const activeAnnotationId = ref(null)
+  const marking = useMarking()
+  const activeMarkingId = ref(null)
 
   const currentRegion = computed(() => {
     if (activeTab?.value === 'clean') return 'clean'
@@ -24,7 +24,7 @@ export function useAnnotationHandler(options = {}) {
 
       const preElement = cleanContentRef.value.querySelector('pre')
       if (preElement) {
-        annotation.handleTextSelection(preElement, 'clean')
+        marking.handleTextSelection(preElement, 'clean')
       }
     }, 50)
   }
@@ -37,16 +37,16 @@ export function useAnnotationHandler(options = {}) {
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
         return
       }
-      annotation.handleHtmlSelection(renderedContentRef.value)
+      marking.handleHtmlSelection(renderedContentRef.value)
     }, 50)
   }
 
   function handleStyleSelect(style) {
-    annotation.selectedStyle.value = style
+    marking.selectedStyle.value = style
   }
 
-  function handleCreateAnnotation() {
-    if (!annotation.selectedText.value) return
+  function handleCreateMarking() {
+    if (!marking.selectedText.value) return
 
     let element = null
     let region = null
@@ -63,37 +63,37 @@ export function useAnnotationHandler(options = {}) {
     }
 
     if (element && region) {
-      const newAnnotation = annotation.createAnnotationFromSelection(element, region, annotation.selectedStyle.value)
-      if (newAnnotation) {
+      const newMarking = marking.createMarkingFromSelection(element, region, marking.selectedStyle.value)
+      if (newMarking) {
         nextTick(() => {
-          annotation.updateAnnotationPosition(newAnnotation)
+          marking.updateMarkingPosition(newMarking)
         })
       }
     }
   }
 
-  function handleCancelAnnotation() {
-    annotation.hideToolbar()
+  function handleCancelMarking() {
+    marking.hideToolbar()
     window.getSelection()?.removeAllRanges()
   }
 
-  function handleUpdateAnnotation(id, content) {
-    annotation.updateAnnotationContent(id, content)
+  function handleUpdateMarking(id, content) {
+    marking.updateMarkingContent(id, content)
   }
 
-  function handleDeleteAnnotation(id) {
-    annotation.deleteAnnotation(id)
-    if (activeAnnotationId.value === id) {
-      activeAnnotationId.value = null
+  function handleDeleteMarking(id) {
+    marking.deleteMarking(id)
+    if (activeMarkingId.value === id) {
+      activeMarkingId.value = null
     }
   }
 
-  function handleAnnotationHover(id, isHovering) {
-    activeAnnotationId.value = isHovering ? id : null
+  function handleMarkingHover(id, isHovering) {
+    activeMarkingId.value = isHovering ? id : null
   }
 
   function handleClick(e) {
-    if (e.target.closest('.annotation-toolbar')) {
+    if (e.target.closest('.marking-toolbar')) {
       return
     }
 
@@ -102,22 +102,22 @@ export function useAnnotationHandler(options = {}) {
       return
     }
 
-    if (!e.target.closest('.annotation-target') &&
-        !e.target.closest('.annotation-container')) {
-      annotation.hideToolbar()
+    if (!e.target.closest('.marking-target') &&
+        !e.target.closest('.marking-container')) {
+      marking.hideToolbar()
     }
   }
 
   function handleScroll() {
-    annotation.updateAllPositions()
+    marking.updateAllPositions()
   }
 
   async function handleTabChange(newTab, oldTab) {
-    annotation.hideToolbar()
+    marking.hideToolbar()
 
     if (oldTab === 'clean' || oldTab === 'rendered') {
       const oldRegion = oldTab === 'clean' ? 'clean' : 'rendered'
-      annotation.hideAnnotationsByRegion(oldRegion)
+      marking.hideMarkingsByRegion(oldRegion)
     }
 
     if (newTab === 'clean' || newTab === 'rendered') {
@@ -129,7 +129,7 @@ export function useAnnotationHandler(options = {}) {
           preElement.id = `clean-content-${Date.now()}`
         }
       }
-      annotation.showAnnotationsByRegion(newRegion)
+      marking.showMarkingsByRegion(newRegion)
     }
   }
 
@@ -146,17 +146,17 @@ export function useAnnotationHandler(options = {}) {
   }
 
   return {
-    ...annotation,
-    activeAnnotationId,
+    ...marking,
+    activeMarkingId,
     currentRegion,
     handleCleanContentMouseUp,
     handleRenderedContentMouseUp,
     handleStyleSelect,
-    handleCreateAnnotation,
-    handleCancelAnnotation,
-    handleUpdateAnnotation,
-    handleDeleteAnnotation,
-    handleAnnotationHover,
+    handleCreateMarking,
+    handleCancelMarking,
+    handleUpdateMarking,
+    handleDeleteMarking,
+    handleMarkingHover,
     handleTabChange,
     setupEventListeners,
     cleanupEventListeners

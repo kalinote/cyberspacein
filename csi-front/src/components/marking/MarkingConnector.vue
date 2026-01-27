@@ -1,6 +1,6 @@
 <template>
   <svg
-    class="annotation-connector absolute inset-0 pointer-events-none z-10"
+    class="marking-connector absolute inset-0 pointer-events-none z-10"
     :style="{ width: '100%', height: '100%' }"
   >
     <path
@@ -17,14 +17,14 @@
 
 <script setup>
 import { watch, ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { getStyleColor } from '@/utils/annotationStyles'
+import { getStyleColor } from '@/utils/markingStyles'
 
 const props = defineProps({
-  annotations: {
+  markings: {
     type: Array,
     default: () => []
   },
-  activeAnnotationId: {
+  activeMarkingId: {
     type: String,
     default: null
   }
@@ -32,14 +32,14 @@ const props = defineProps({
 
 const connectionPaths = ref([])
 
-function calculatePath(annotation, index) {
-  const { spanId, textOffset } = annotation.target
+function calculatePath(marking, index) {
+  const { spanId, textOffset } = marking.target
   let targetElement = null
 
   if (spanId) {
     targetElement = document.getElementById(spanId)
   } else if (textOffset) {
-    const elements = document.querySelectorAll(`[data-annotation-id="${annotation.id}"]`)
+    const elements = document.querySelectorAll(`[data-marking-id="${marking.id}"]`)
     if (elements.length > 0) {
       targetElement = elements[0]
     }
@@ -47,7 +47,7 @@ function calculatePath(annotation, index) {
 
   if (!targetElement) return null
 
-  const container = targetElement.closest('.annotation-container')
+  const container = targetElement.closest('.marking-container')
   if (!container) return null
 
   const targetRect = targetElement.getBoundingClientRect()
@@ -63,14 +63,14 @@ function calculatePath(annotation, index) {
   const sidebarX = sidebarRect.right - containerRect.left
 
   let cardY = targetY
-  const annotationCard = sidebar.querySelector(`[data-annotation-id="${annotation.id}"]`) ||
-    sidebar.querySelectorAll('.annotation-card')[index]
+  const markingCard = sidebar.querySelector(`[data-marking-id="${marking.id}"]`) ||
+    sidebar.querySelectorAll('.marking-card')[index]
   
-  if (annotationCard) {
-    const cardRect = annotationCard.getBoundingClientRect()
+  if (markingCard) {
+    const cardRect = markingCard.getBoundingClientRect()
     cardY = cardRect.top + cardRect.height / 2 - containerRect.top
-  } else if (annotation.position?.top) {
-    cardY = annotation.position.top
+  } else if (marking.position?.top) {
+    cardY = marking.position.top
   }
 
   const startX = targetX
@@ -85,12 +85,12 @@ function calculatePath(annotation, index) {
 
   const d = `M ${startX} ${startY} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${endX} ${endY}`
 
-  const isActive = props.activeAnnotationId === annotation.id
+  const isActive = props.activeMarkingId === marking.id
 
   return {
-    id: annotation.id,
+    id: marking.id,
     d,
-    color: getStyleColor(annotation.style, isActive),
+    color: getStyleColor(marking.style, isActive),
     width: isActive ? 2.5 : 1.5
   }
 }
@@ -98,14 +98,14 @@ function calculatePath(annotation, index) {
 function updatePaths() {
   nextTick(() => {
     setTimeout(() => {
-      const sortedAnnotations = [...props.annotations].sort((a, b) => {
+      const sortedMarkings = [...props.markings].sort((a, b) => {
         const topA = a.position?.top || 0
         const topB = b.position?.top || 0
         return topA - topB
       })
 
-      const paths = sortedAnnotations
-        .map((annotation, index) => calculatePath(annotation, index))
+      const paths = sortedMarkings
+        .map((marking, index) => calculatePath(marking, index))
         .filter(path => path !== null)
       
       connectionPaths.value = paths
@@ -122,8 +122,8 @@ function scheduleUpdate() {
   updateTimer = setTimeout(updatePaths, 50)
 }
 
-watch(() => props.annotations, updatePaths, { deep: true })
-watch(() => props.activeAnnotationId, updatePaths)
+watch(() => props.markings, updatePaths, { deep: true })
+watch(() => props.activeMarkingId, updatePaths)
 
 onMounted(() => {
   updatePaths()
@@ -142,7 +142,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.annotation-connector {
+.marking-connector {
   overflow: visible;
 }
 </style>

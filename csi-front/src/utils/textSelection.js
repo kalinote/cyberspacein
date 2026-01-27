@@ -6,8 +6,8 @@ export function createSpanWrapper(range, spanId) {
 
     const span = document.createElement('span')
     span.id = spanId
-    span.className = 'annotation-target'
-    span.setAttribute('data-annotation-id', spanId)
+    span.className = 'marking-target'
+    span.setAttribute('data-marking-id', spanId)
 
     try {
       range.surroundContents(span)

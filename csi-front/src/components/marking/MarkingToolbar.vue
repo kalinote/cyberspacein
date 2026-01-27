@@ -3,7 +3,7 @@
     <Transition name="toolbar-fade">
       <div
         v-if="visible"
-        class="annotation-toolbar fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 p-2 flex items-center gap-1"
+        class="marking-toolbar fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 p-2 flex items-center gap-1"
         :style="{
           top: `${position.top}px`,
           left: `${position.left}px`,

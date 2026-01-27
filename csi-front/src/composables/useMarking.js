@@ -1,20 +1,20 @@
 import { ref, computed, nextTick } from 'vue'
 import { annotate } from 'rough-notation'
 import { createSpanWrapper, serializeTextSelection, serializeHtmlSelection } from '@/utils/textSelection'
-import { getStyleColor, createAnnotationConfig } from '@/utils/annotationStyles'
+import { getStyleColor, createMarkingConfig } from '@/utils/markingStyles'
 
-export function useAnnotation() {
-  const annotations = ref([])
+export function useMarking() {
+  const markings = ref([])
   const selectedText = ref(null)
   const selectedStyle = ref('highlight')
   const toolbarVisible = ref(false)
   const toolbarPosition = ref({ top: 0, left: 0 })
   const toolbarRange = ref(null)
-  const annotationInstances = ref(new Map())
+  const markingInstances = ref(new Map())
   const originalTexts = ref(new Map())
   const isMultilineSelection = ref(false)
 
-  const annotationStyles = [
+  const markingStyles = [
     { value: 'underline', label: '下划线', icon: 'mdi:format-underline', supportsMultiline: false },
     { value: 'highlight', label: '高亮', icon: 'mdi:format-color-highlight', supportsMultiline: true },
     { value: 'box', label: '边框', icon: 'mdi:border-all', supportsMultiline: true },
@@ -34,16 +34,16 @@ export function useAnnotation() {
   }
 
   function generateId() {
-    return `annotation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    return `marking-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
   }
 
-  function createAnnotation(element, region, target, style) {
+  function createMarking(element, region, target, style) {
     const id = generateId()
     const now = new Date()
 
-    const annotation = {
+    const marking = {
       id,
-      type: 'annotation',
+      type: 'marking',
       content: '',
       style: style || selectedStyle.value,
       target: {
@@ -58,20 +58,20 @@ export function useAnnotation() {
       updatedAt: now
     }
 
-    annotations.value.push(annotation)
-    return annotation
+    markings.value.push(marking)
+    return marking
   }
 
-  function applyHighlight(element, annotation) {
-    if (annotation.target.region === 'clean') {
-      applyTextHighlight(element, annotation)
+  function applyHighlight(element, marking) {
+    if (marking.target.region === 'clean') {
+      applyTextHighlight(element, marking)
     } else {
-      applyHtmlHighlight(element, annotation)
+      applyHtmlHighlight(element, marking)
     }
   }
 
-  function applyTextHighlight(element, annotation) {
-    const { textOffset } = annotation.target
+  function applyTextHighlight(element, marking) {
+    const { textOffset } = marking.target
     if (!textOffset) return
 
     const elementId = element.id || `text-element-${Date.now()}`
@@ -93,8 +93,8 @@ export function useAnnotation() {
     const selectedText = originalText.substring(textOffset.start, textOffset.end)
     if (!selectedText.trim()) return
 
-    const spanId = `annotation-span-${annotation.id}`
-    annotation.target.spanId = spanId
+    const spanId = `marking-span-${marking.id}`
+    marking.target.spanId = spanId
     
     try {
       const walker = document.createTreeWalker(
@@ -138,8 +138,8 @@ export function useAnnotation() {
 
       const span = document.createElement('span')
       span.id = spanId
-      span.className = 'annotation-target'
-      span.setAttribute('data-annotation-id', annotation.id)
+      span.className = 'marking-target'
+      span.setAttribute('data-marking-id', marking.id)
       
       try {
         range.surroundContents(span)
@@ -154,11 +154,11 @@ export function useAnnotation() {
           const highlightElement = document.getElementById(spanId)
           if (highlightElement) {
             const isMultiline = checkIfMultiline(range.cloneRange())
-            const config = createAnnotationConfig(annotation.style, isMultiline)
+            const config = createMarkingConfig(marking.style, isMultiline)
             const instance = annotate(highlightElement, config)
             instance.show()
-            annotationInstances.value.set(annotation.id, instance)
-            updateAnnotationPosition(annotation)
+            markingInstances.value.set(marking.id, instance)
+            updateMarkingPosition(marking)
           }
         }, 50)
       })
@@ -167,8 +167,8 @@ export function useAnnotation() {
     }
   }
 
-  function applyHtmlHighlight(element, annotation) {
-    const { spanId } = annotation.target
+  function applyHtmlHighlight(element, marking) {
+    const { spanId } = marking.target
     if (!spanId) return
 
     nextTick(() => {
@@ -178,25 +178,25 @@ export function useAnnotation() {
           const range = document.createRange()
           range.selectNodeContents(highlightElement)
           const isMultiline = checkIfMultiline(range)
-          const config = createAnnotationConfig(annotation.style, isMultiline)
+          const config = createMarkingConfig(marking.style, isMultiline)
           const instance = annotate(highlightElement, config)
           instance.show()
-          annotationInstances.value.set(annotation.id, instance)
-          updateAnnotationPosition(annotation)
+          markingInstances.value.set(marking.id, instance)
+          updateMarkingPosition(marking)
         }
       }, 50)
     })
   }
 
-  function updateAnnotationPosition(annotation) {
+  function updateMarkingPosition(marking) {
     nextTick(() => {
-      const { spanId, textOffset } = annotation.target
+      const { spanId, textOffset } = marking.target
       let targetElement = null
 
       if (spanId) {
         targetElement = document.getElementById(spanId)
       } else if (textOffset) {
-        const elements = document.querySelectorAll(`[data-annotation-id="${annotation.id}"]`)
+        const elements = document.querySelectorAll(`[data-marking-id="${marking.id}"]`)
         if (elements.length > 0) {
           targetElement = elements[0]
         }
@@ -204,11 +204,11 @@ export function useAnnotation() {
 
       if (targetElement) {
         const rect = targetElement.getBoundingClientRect()
-        const container = targetElement.closest('.annotation-container')
+        const container = targetElement.closest('.marking-container')
         
         if (container) {
           const containerRect = container.getBoundingClientRect()
-          annotation.position = {
+          marking.position = {
             top: rect.top - containerRect.top + container.scrollTop,
             left: rect.left - containerRect.left
           }
@@ -218,8 +218,8 @@ export function useAnnotation() {
   }
 
   function updateAllPositions() {
-    annotations.value.forEach(annotation => {
-      updateAnnotationPosition(annotation)
+    markings.value.forEach(marking => {
+      updateMarkingPosition(marking)
     })
     if (toolbarVisible.value) {
       updateToolbarPosition()
@@ -338,9 +338,9 @@ export function useAnnotation() {
       isMultilineSelection.value = checkIfMultiline(range)
       
       if (isMultilineSelection.value) {
-        const currentStyle = annotationStyles.find(s => s.value === selectedStyle.value)
+        const currentStyle = markingStyles.find(s => s.value === selectedStyle.value)
         if (currentStyle && !currentStyle.supportsMultiline) {
-          const multilineStyle = annotationStyles.find(s => s.supportsMultiline)
+          const multilineStyle = markingStyles.find(s => s.supportsMultiline)
           if (multilineStyle) {
             selectedStyle.value = multilineStyle.value
           }
@@ -379,7 +379,7 @@ export function useAnnotation() {
     isMultilineSelection.value = false
   }
 
-  function createAnnotationFromSelection(element, region, style) {
+  function createMarkingFromSelection(element, region, style) {
     if (!selectedText.value) return null
 
     let target = null
@@ -390,7 +390,7 @@ export function useAnnotation() {
       rangeToUse = selectedText.value.range
     } else {
       rangeToUse = selectedText.value.range
-      const spanId = `annotation-span-${generateId()}`
+      const spanId = `marking-span-${generateId()}`
       const span = createSpanWrapper(rangeToUse.cloneRange(), spanId)
       if (span) {
         target = serializeHtmlSelection(element, span)
@@ -399,35 +399,35 @@ export function useAnnotation() {
 
     if (!target) return null
 
-    const annotation = createAnnotation(element, region, target, style)
-    applyHighlight(element, annotation)
+    const marking = createMarking(element, region, target, style)
+    applyHighlight(element, marking)
     
     window.getSelection()?.removeAllRanges()
     hideToolbar()
 
-    return annotation
+    return marking
   }
 
-  function updateAnnotationContent(id, content) {
-    const annotation = annotations.value.find(a => a.id === id)
-    if (annotation) {
-      annotation.content = content
-      annotation.updatedAt = new Date()
+  function updateMarkingContent(id, content) {
+    const marking = markings.value.find(a => a.id === id)
+    if (marking) {
+      marking.content = content
+      marking.updatedAt = new Date()
     }
   }
 
-  function deleteAnnotation(id) {
-    const index = annotations.value.findIndex(a => a.id === id)
+  function deleteMarking(id) {
+    const index = markings.value.findIndex(a => a.id === id)
     if (index > -1) {
-      const annotation = annotations.value[index]
-      const instance = annotationInstances.value.get(id)
+      const marking = markings.value[index]
+      const instance = markingInstances.value.get(id)
       if (instance) {
         instance.remove()
-        annotationInstances.value.delete(id)
+        markingInstances.value.delete(id)
       }
 
-      if (annotation.target.spanId) {
-        const element = document.getElementById(annotation.target.spanId)
+      if (marking.target.spanId) {
+        const element = document.getElementById(marking.target.spanId)
         if (element) {
           const parent = element.parentNode
           if (parent) {
@@ -438,7 +438,7 @@ export function useAnnotation() {
           }
         }
       } else {
-        const element = document.querySelector(`[data-annotation-id="${id}"]`)
+        const element = document.querySelector(`[data-marking-id="${id}"]`)
         if (element) {
           const parent = element.parentNode
           if (parent) {
@@ -450,62 +450,62 @@ export function useAnnotation() {
         }
       }
 
-      annotations.value.splice(index, 1)
+      markings.value.splice(index, 1)
     }
   }
 
-  function clearAllAnnotations() {
-    annotations.value.forEach(annotation => {
-      const instance = annotationInstances.value.get(annotation.id)
+  function clearAllMarkings() {
+    markings.value.forEach(marking => {
+      const instance = markingInstances.value.get(marking.id)
       if (instance) {
         instance.remove()
       }
     })
-    annotationInstances.value.clear()
-    annotations.value = []
+    markingInstances.value.clear()
+    markings.value = []
   }
 
-  function getAnnotationById(id) {
-    return annotations.value.find(a => a.id === id)
+  function getMarkingById(id) {
+    return markings.value.find(a => a.id === id)
   }
 
-  function getAnnotationsByRegion(region) {
-    return annotations.value.filter(a => a.target.region === region)
+  function getMarkingsByRegion(region) {
+    return markings.value.filter(a => a.target.region === region)
   }
 
-  function getSortedAnnotationsByRegion(region) {
-    return [...getAnnotationsByRegion(region)].sort((a, b) => {
+  function getSortedMarkingsByRegion(region) {
+    return [...getMarkingsByRegion(region)].sort((a, b) => {
       return a.position.top - b.position.top
     })
   }
 
-  const sortedAnnotations = computed(() => {
-    return [...annotations.value].sort((a, b) => {
+  const sortedMarkings = computed(() => {
+    return [...markings.value].sort((a, b) => {
       return a.position.top - b.position.top
     })
   })
 
-  function showAnnotationsByRegion(region) {
-    const regionAnnotations = getAnnotationsByRegion(region)
-    regionAnnotations.forEach(annotation => {
-      const instance = annotationInstances.value.get(annotation.id)
+  function showMarkingsByRegion(region) {
+    const regionMarkings = getMarkingsByRegion(region)
+    regionMarkings.forEach(marking => {
+      const instance = markingInstances.value.get(marking.id)
       if (instance) {
         instance.show()
       } else {
         const element = region === 'clean' 
-          ? document.querySelector(`[data-annotation-id="${annotation.id}"]`)?.closest('pre')
-          : document.getElementById(annotation.target.spanId)?.closest('.annotation-content')
+          ? document.querySelector(`[data-marking-id="${marking.id}"]`)?.closest('pre')
+          : document.getElementById(marking.target.spanId)?.closest('.marking-content')
         if (element) {
-          applyHighlight(element, annotation)
+          applyHighlight(element, marking)
         }
       }
     })
   }
 
-  function hideAnnotationsByRegion(region) {
-    const regionAnnotations = getAnnotationsByRegion(region)
-    regionAnnotations.forEach(annotation => {
-      const instance = annotationInstances.value.get(annotation.id)
+  function hideMarkingsByRegion(region) {
+    const regionMarkings = getMarkingsByRegion(region)
+    regionMarkings.forEach(marking => {
+      const instance = markingInstances.value.get(marking.id)
       if (instance) {
         instance.hide()
       }
@@ -514,35 +514,35 @@ export function useAnnotation() {
 
   const availableStyles = computed(() => {
     if (!isMultilineSelection.value) {
-      return annotationStyles
+      return markingStyles
     }
-    return annotationStyles.filter(style => style.supportsMultiline)
+    return markingStyles.filter(style => style.supportsMultiline)
   })
 
   return {
-    annotations,
+    markings,
     selectedText,
     selectedStyle,
     toolbarVisible,
     toolbarPosition,
-    annotationStyles,
+    markingStyles,
     availableStyles,
     isMultilineSelection,
     handleTextSelection,
     handleHtmlSelection,
-    createAnnotationFromSelection,
-    updateAnnotationContent,
-    deleteAnnotation,
-    clearAllAnnotations,
-    getAnnotationById,
-    updateAnnotationPosition,
+    createMarkingFromSelection,
+    updateMarkingContent,
+    deleteMarking,
+    clearAllMarkings,
+    getMarkingById,
+    updateMarkingPosition,
     updateAllPositions,
     updateToolbarPosition,
-    getAnnotationsByRegion,
-    getSortedAnnotationsByRegion,
-    showAnnotationsByRegion,
-    hideAnnotationsByRegion,
-    sortedAnnotations,
+    getMarkingsByRegion,
+    getSortedMarkingsByRegion,
+    showMarkingsByRegion,
+    hideMarkingsByRegion,
+    sortedMarkings,
     hideToolbar
   }
 }
