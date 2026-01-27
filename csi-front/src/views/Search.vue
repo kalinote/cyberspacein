@@ -341,8 +341,8 @@
                 </div>
                 <span class="text-sm text-gray-500 shrink-0">{{ formatDateTime(result.update_at) }}</span>
               </div>
-              <h3 class="text-lg font-bold text-gray-900 mb-3">{{ result.title }}</h3>
-              <p class="text-gray-600 mb-4">{{ result.clean_content || '暂无分析内容' }}</p>
+              <h3 class="text-lg font-bold text-gray-900 mb-3 search-highlight" v-html="result.title"></h3>
+              <p class="text-gray-600 mb-4 search-highlight" v-html="result.clean_content || '暂无分析内容'"></p>
               <div class="flex flex-wrap gap-2 mb-4">
                 <el-tag v-for="tag in result.keywords" :key="tag" size="small" type="info" effect="plain">
                   {{ tag }}
@@ -1007,3 +1007,11 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.search-highlight :deep(em) {
+  font-style: normal;
+  color: #dc2626;
+  font-weight: 700;
+}
+</style>

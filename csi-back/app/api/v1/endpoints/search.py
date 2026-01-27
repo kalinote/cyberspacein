@@ -8,6 +8,7 @@ from app.schemas.enum import ALL_INDEX
 from app.db.elasticsearch import get_es
 from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime
+from app.utils.search import merge_highlight_tags
 
 logger = logging.getLogger(__name__)
 
@@ -68,17 +69,31 @@ async def search_entity(params: EntitySearchRequestSchema):
             "size": params.page_size
         }
         
-        if params.sort_by:
-            if params.sort_by in ["crawled_at", "last_edit_at"]:
-                sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
-                query_body["sort"] = [
-                    {
-                        params.sort_by: {
-                            "order": sort_order,
-                            "missing": "_last"
-                        }
+        if params.keywords:
+            query_body["highlight"] = {
+                "pre_tags": ["<em>"],
+                "post_tags": ["</em>"],
+                "fields": {
+                    "title": {},
+                    "clean_content": {
+                        "fragment_size": 200,
+                        "number_of_fragments": 3
                     }
-                ]
+                }
+            }
+        
+        if params.sort_by == "relevance":
+            pass
+        elif params.sort_by in ["crawled_at", "last_edit_at"]:
+            sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
+            query_body["sort"] = [
+                {
+                    params.sort_by: {
+                        "order": sort_order,
+                        "missing": "_last"
+                    }
+                }
+            ]
         else:
             query_body["sort"] = [
                 {
@@ -97,6 +112,7 @@ async def search_entity(params: EntitySearchRequestSchema):
         search_results = []
         for hit in hits:
             source_data = hit.get("_source", {})
+            highlight_data = hit.get("highlight", {})
             
             platform_name = source_data.get("platform")
             platform_id = None
@@ -107,6 +123,18 @@ async def search_entity(params: EntitySearchRequestSchema):
                         platform_id = platform.id
                 except Exception as e:
                     logger.warning(f"查询平台ID失败: {e}, platform_name: {platform_name}")
+            
+            title = highlight_data.get("title", [source_data.get("title", "")])[0]
+            title = merge_highlight_tags(title)
+            clean_content = source_data.get("clean_content")
+            if highlight_data.get("clean_content"):
+                clean_content = merge_highlight_tags(highlight_data["clean_content"][0])
+            
+            keywords_hits = 0
+            if highlight_data:
+                for fragments in highlight_data.values():
+                    for fragment in fragments:
+                        keywords_hits += fragment.count("<em>")
             
             search_result = SearchResultSchema(
                 uuid=source_data.get("uuid", hit.get("_id", "")),
@@ -122,10 +150,11 @@ async def search_entity(params: EntitySearchRequestSchema):
                 nsfw=source_data.get("nsfw", False),
                 aigc=source_data.get("aigc", False),
                 keywords=source_data.get("keywords", []),
-                title=source_data.get("title", ""),
-                clean_content=source_data.get("clean_content"),
+                title=title,
+                clean_content=clean_content,
                 confidence=source_data.get("confidence", 1),
-                is_highlighted=source_data.get("is_highlighted")
+                is_highlighted=source_data.get("is_highlighted"),
+                keywords_hits=keywords_hits
             )
             search_results.append(search_result)
         

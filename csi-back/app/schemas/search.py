@@ -12,7 +12,7 @@ class EntitySearchRequestSchema(PageParamsSchema):
     aigc: bool | None = Field(default=None, description="AIGC内容过滤")
     nsfw: bool | None = Field(default=None, description="NSFW内容过滤")
     is_highlighted: bool | None = Field(default=None, description="重点目标过滤")
-    sort_by: str | None = Field(default=None, description="排序字段，可选值：crawled_at、last_edit_at")
+    sort_by: str | None = Field(default=None, description="排序字段，可选值：crawled_at、last_edit_at、relevance（相关性）")
     sort_order: str | None = Field(default="desc", description="排序方向，可选值：asc、desc，默认为desc")
 
 class SearchResultSchema(BaseModel):
@@ -36,3 +36,4 @@ class SearchResultSchema(BaseModel):
     clean_content: str | None = Field(default=None, description="正文内容")
     confidence: float = Field(default=1, description="置信度")
     is_highlighted: bool | None = Field(default=None, description="是否为重点目标")
+    keywords_hits: int = Field(default=0, description="关键词命中次数")
