@@ -185,9 +185,20 @@
             </section>
 
             <section class="py-12 bg-gray-50">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <div class="lg:col-span-2 space-y-6">
+                <div class="w-full px-4 sm:px-6 lg:px-8">
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                        <AnnotationSidebar
+                            :sorted-annotations="getSortedAnnotationsByRegion(currentRegion)"
+                            :active-annotation-id="activeAnnotationId"
+                            @update="handleUpdateAnnotation"
+                            @delete="handleDeleteAnnotation"
+                            @hover="handleAnnotationHover"
+                        />
+                        <div class="lg:col-span-3 space-y-6 relative annotation-container">
+                            <AnnotationConnector
+                                :annotations="getAnnotationsByRegion(currentRegion)"
+                                :active-annotation-id="activeAnnotationId"
+                            />
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <div class="flex items-center justify-between mb-4">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
@@ -221,7 +232,11 @@
                                 </div>
                                 <el-tabs v-model="activeTab" class="forum-tabs">
                                     <el-tab-pane v-if="forumData.clean_content" label="纯文本内容" name="clean">
-                                        <div class="prose max-w-none">
+                                        <div
+                                            ref="cleanContentRef"
+                                            class="prose max-w-none select-text"
+                                            @mouseup="handleCleanContentMouseUp"
+                                        >
                                             <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ forumData.clean_content }}</pre>
                                         </div>
                                     </el-tab-pane>
@@ -232,7 +247,12 @@
                                         </div>
                                     </el-tab-pane>
                                     <el-tab-pane v-if="forumData.safe_raw_content" label="安全渲染内容" name="rendered">
-                                        <div class="prose max-w-none forum-content" v-html="editableSafeRawContent"></div>
+                                        <div
+                                            ref="renderedContentRef"
+                                            class="prose max-w-none forum-content annotation-content select-text"
+                                            v-html="editableSafeRawContent"
+                                            @mouseup="handleRenderedContentMouseUp"
+                                        ></div>
                                     </el-tab-pane>
                                     <el-tab-pane v-if="forumData.raw_content" label="原始源代码" name="raw">
                                         <MonacoEditor
@@ -608,20 +628,34 @@
                 <el-button type="primary" @click="confirmSetHighlight" :loading="highlightLoading">确定</el-button>
             </template>
         </el-dialog>
+
+        <AnnotationToolbar
+            :visible="toolbarVisible"
+            :position="toolbarPosition"
+            :available-styles="availableStyles"
+            :selected-style="selectedStyle"
+            @style-select="handleStyleSelect"
+            @create="handleCreateAnnotation"
+            @cancel="handleCancelAnnotation"
+        />
     </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import SplitButton from '@/components/SplitButton.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
+import AnnotationSidebar from '@/components/annotation/AnnotationSidebar.vue'
+import AnnotationToolbar from '@/components/annotation/AnnotationToolbar.vue'
+import AnnotationConnector from '@/components/annotation/AnnotationConnector.vue'
 import { forumApi } from '@/api/forum'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
+import { useAnnotationHandler } from '@/composables/useAnnotationHandler'
 
 const route = useRoute()
 const uuid = computed(() => route.params.uuid)
@@ -639,6 +673,34 @@ const highlightForm = ref({
 const editableSafeRawContent = ref('')
 const rawEditorRef = ref(null)
 const safeRawEditorRef = ref(null)
+const cleanContentRef = ref(null)
+const renderedContentRef = ref(null)
+
+const {
+    currentRegion,
+    activeAnnotationId,
+    toolbarVisible,
+    toolbarPosition,
+    availableStyles,
+    selectedStyle,
+    getAnnotationsByRegion,
+    getSortedAnnotationsByRegion,
+    handleCleanContentMouseUp,
+    handleRenderedContentMouseUp,
+    handleStyleSelect,
+    handleCreateAnnotation,
+    handleCancelAnnotation,
+    handleUpdateAnnotation,
+    handleDeleteAnnotation,
+    handleAnnotationHover,
+    handleTabChange,
+    setupEventListeners,
+    cleanupEventListeners
+} = useAnnotationHandler({
+    cleanContentRef,
+    renderedContentRef,
+    activeTab
+})
 
 const featuredComments = ref([])
 const commentList = ref([])
@@ -935,15 +997,21 @@ watch(commentPage, () => {
     loadComments()
 })
 
-watch(activeTab, async (newTab) => {
+watch(activeTab, async (newTab, oldTab) => {
     if (newTab === 'raw' && rawEditorRef.value && forumData.value?.raw_content) {
         await nextTick()
         await rawEditorRef.value.formatDocument()
     }
+    await handleTabChange(newTab, oldTab)
 })
 
 onMounted(() => {
     loadForumDetail()
+    setupEventListeners()
+})
+
+onUnmounted(() => {
+    cleanupEventListeners()
 })
 </script>
 
@@ -984,5 +1052,47 @@ onMounted(() => {
 
 .forum-tabs :deep(.el-tabs__nav-wrap::after) {
     height: 1px;
+}
+
+.select-text {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
+.annotation-container :deep(.annotation-target) {
+    position: relative;
+}
+
+.prose :deep(.annotation-target),
+.forum-content :deep(.annotation-target) {
+    overflow: visible !important;
+}
+
+:deep(.rough-annotation) {
+    overflow: visible !important;
+}
+
+.prose,
+.forum-content {
+    overflow: visible !important;
+}
+
+.annotation-container :deep(.bg-white),
+.annotation-container :deep(.rounded-xl) {
+    overflow: visible !important;
+}
+
+.forum-tabs :deep(.el-tabs__content),
+.forum-tabs :deep(.el-tab-pane) {
+    overflow: visible !important;
+}
+
+.prose pre {
+    padding-left: 8px;
+    padding-right: 8px;
+    margin-left: -8px;
+    margin-right: -8px;
 }
 </style>
