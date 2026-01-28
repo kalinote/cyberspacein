@@ -27,6 +27,15 @@ async def get_forum_detail(uuid: str):
         source_data = result.get("_source", {})
         
         platform = source_data.get("platform")
+        platform_uuid = None
+        if platform:
+            try:
+                platform_obj = await PlatformModel.find_one({"name": platform})
+                if platform_obj:
+                    platform_uuid = platform_obj.id
+            except Exception as e:
+                logger.warning(f"查询平台UUID失败: {e}, platform_name: {platform}")
+        
         topic_id = source_data.get("topic_id")
         topic_thread_uuid = None
         
@@ -69,6 +78,7 @@ async def get_forum_detail(uuid: str):
             url=source_data.get("url"),
             tags=source_data.get("tags"),
             platform=source_data.get("platform"),
+            platform_uuid=platform_uuid,
             section=source_data.get("section"),
             spider_name=source_data.get("spider_name"),
             update_at=parse_datetime(source_data.get("update_at")),

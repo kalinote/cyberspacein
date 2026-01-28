@@ -41,6 +41,7 @@ class BaseEntitySchema(BaseModel):
     url: str | None = Field(default=None, description="原始链接")
     tags: list[str] | None = Field(default=None, description="从原文内容中提取出的标签（如 #AI）")
     platform: str | None = Field(default=None, description="来源平台 (twitter, weibo, bbc, etc.)")
+    platform_uuid: str | None = Field(default=None, description="平台UUID")
     section: str | None = Field(default=None, description="所属板块")
     spider_name: str | None = Field(default=None, description="爬虫名称")
     update_at: datetime | None = Field(default=None, description="最后一次存入数据库时间")

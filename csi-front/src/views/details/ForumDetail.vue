@@ -494,6 +494,32 @@
                                     帖子<span class="text-blue-500">信息</span>
                                 </h3>
                                 <div class="space-y-4">
+                                    <div v-if="forumData.author_name || forumData.author_id">
+                                        <p class="text-sm text-gray-500 mb-1">作者</p>
+                                        <router-link
+                                            v-if="forumData.author_uuid"
+                                            :to="`/user/${forumData.author_uuid}`"
+                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
+                                        >
+                                            {{ forumData.author_name || forumData.author_id }}
+                                        </router-link>
+                                        <p v-else class="font-medium text-gray-900">
+                                            {{ forumData.author_name || forumData.author_id }}
+                                        </p>
+                                    </div>
+                                    <div v-if="forumData.platform">
+                                        <p class="text-sm text-gray-500 mb-1">平台</p>
+                                        <router-link
+                                            v-if="forumData.platform_uuid"
+                                            :to="`/details/platform/${forumData.platform_uuid}`"
+                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
+                                        >
+                                            {{ forumData.platform }}
+                                        </router-link>
+                                        <p v-else class="font-medium text-gray-900">
+                                            {{ forumData.platform }}
+                                        </p>
+                                    </div>
                                     <div v-if="forumData.topic_id">
                                         <p class="text-sm text-gray-500 mb-1">主题ID</p>
                                         <p class="font-medium text-gray-900 break-all text-sm">{{ forumData.topic_id }}</p>

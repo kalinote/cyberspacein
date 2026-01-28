@@ -318,6 +318,40 @@
                         <div class="space-y-6">
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-4">
+                                    文章<span class="text-blue-500">信息</span>
+                                </h3>
+                                <div class="space-y-4">
+                                    <div v-if="articleData.author_name || articleData.author_id">
+                                        <p class="text-sm text-gray-500 mb-1">作者</p>
+                                        <router-link
+                                            v-if="articleData.author_uuid"
+                                            :to="`/user/${articleData.author_uuid}`"
+                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
+                                        >
+                                            {{ articleData.author_name || articleData.author_id }}
+                                        </router-link>
+                                        <p v-else class="font-medium text-gray-900">
+                                            {{ articleData.author_name || articleData.author_id }}
+                                        </p>
+                                    </div>
+                                    <div v-if="articleData.platform">
+                                        <p class="text-sm text-gray-500 mb-1">平台</p>
+                                        <router-link
+                                            v-if="articleData.platform_uuid"
+                                            :to="`/details/platform/${articleData.platform_uuid}`"
+                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
+                                        >
+                                            {{ articleData.platform }}
+                                        </router-link>
+                                        <p v-else class="font-medium text-gray-900">
+                                            {{ articleData.platform }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <h3 class="text-lg font-bold text-gray-900 mb-4">
                                     元数据<span class="text-blue-500">信息</span>
                                 </h3>
                                 <div class="space-y-4">
