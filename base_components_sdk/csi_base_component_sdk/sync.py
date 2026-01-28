@@ -10,12 +10,8 @@ import requests
 
 if TYPE_CHECKING:
     from .rabbitmq import RabbitMQClient
+    from .logging_manager import WebSocketLogClient
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%H:%M:%S'
-)
 logger = logging.getLogger("CSI_SDK")
 
 class BaseComponent:
@@ -51,6 +47,8 @@ class BaseComponent:
         
         self._enable_rabbitmq = enable_rabbitmq
         self.rabbitmq: Optional["RabbitMQClient"] = None
+        
+        self._ws_log_client: Optional["WebSocketLogClient"] = None
 
     def _parse_args(self):
         parser = argparse.ArgumentParser(description="CSI Base Components SDK (Sync)")
@@ -59,6 +57,15 @@ class BaseComponent:
         parser.add_argument('--local-config', type=str, help='本地调试配置文件路径', default=None)
         args, _ = parser.parse_known_args()
         return args
+
+    def _build_ws_log_url(self) -> str:
+        """构建 WebSocket 日志提交 URL"""
+        ws_base = self.api_base_url
+        if ws_base.startswith('https://'):
+            ws_base = 'wss://' + ws_base[8:]
+        elif ws_base.startswith('http://'):
+            ws_base = 'ws://' + ws_base[7:]
+        return f"{ws_base}/action/sdk/ws/{self.action_node_id}/log_submit"
 
     def __enter__(self):
         """
@@ -124,11 +131,20 @@ class BaseComponent:
                     f"无法连接到 RabbitMQ: {self.rabbitmq.host}:{self.rabbitmq.port} "
                     f"(vhost={self.rabbitmq.vhost}, user={self.rabbitmq.username})"
                 )
+        
+        if self.is_remote and self._ws_log_client is None:
+            from .logging_manager import WebSocketLogClient
+            ws_url = self._build_ws_log_url()
+            self._ws_log_client = WebSocketLogClient(ws_url)
+            self._ws_log_client.connect()
 
     def close(self):
         """
-        关闭 RabbitMQ 和 Session
+        关闭 WebSocket 日志客户端、RabbitMQ 和 Session
         """
+        if self._ws_log_client:
+            self._ws_log_client.close()
+            self._ws_log_client = None
         if self.rabbitmq:
             self.rabbitmq.close()
         if self.session:

@@ -5,3 +5,4 @@ crawlab-sdk
 build
 pika>=1.3.0
 python-dotenv>=1.0.0
+websocket-client>=1.6.0
