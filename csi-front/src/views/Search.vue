@@ -342,7 +342,7 @@
                 <span class="text-sm text-gray-500 shrink-0">{{ formatDateTime(result.update_at) }}</span>
               </div>
               <h3 class="text-lg font-bold text-gray-900 mb-3 search-highlight" v-html="result.title"></h3>
-              <p class="text-gray-600 mb-4 search-highlight" v-html="result.clean_content || '暂无分析内容'"></p>
+              <p class="text-gray-600 mb-4 search-highlight" v-html="truncateContent(result.clean_content, 200) || '暂无分析内容'"></p>
               <div class="flex flex-wrap gap-2 mb-4">
                 <el-tag v-for="tag in result.keywords" :key="tag" size="small" type="info" effect="plain">
                   {{ tag }}
@@ -647,6 +647,39 @@ export default {
   },
 
   methods: {
+    truncateContent(content, maxLength) {
+      if (!content) return ''
+      const tempDiv = document.createElement('div')
+      tempDiv.innerHTML = content
+      const textContent = tempDiv.textContent || tempDiv.innerText || ''
+      if (textContent.length <= maxLength) return content
+      let truncated = ''
+      let currentLength = 0
+      const walk = (node) => {
+        if (currentLength >= maxLength) return
+        if (node.nodeType === Node.TEXT_NODE) {
+          const remaining = maxLength - currentLength
+          if (node.textContent.length <= remaining) {
+            truncated += node.textContent
+            currentLength += node.textContent.length
+          } else {
+            truncated += node.textContent.substring(0, remaining) + '...'
+            currentLength = maxLength
+          }
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          truncated += `<${node.tagName.toLowerCase()}>`
+          for (const child of node.childNodes) {
+            walk(child)
+          }
+          truncated += `</${node.tagName.toLowerCase()}>`
+        }
+      }
+      for (const child of tempDiv.childNodes) {
+        walk(child)
+      }
+      return truncated
+    },
+
     formatNsfwTooltip(value) {
       const tooltips = {
         0: '无NSFW',

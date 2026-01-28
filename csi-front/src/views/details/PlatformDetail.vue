@@ -435,7 +435,7 @@
                 <div class="mb-8 flex flex-col sm:flex-row sm:items-center justify-between">
                     <div>
                         <h2 class="text-2xl font-bold text-gray-900 mb-2">关联<span class="text-blue-500">情报</span></h2>
-                        <p class="text-gray-600">共 <span class="font-bold text-blue-600">{{ relatedIntelligence.length }}</span> 条相关情报</p>
+                        <p class="text-gray-600">共 <span class="font-bold text-blue-600">{{ intelligenceTotalResults }}</span> 条相关情报</p>
                     </div>
                     <div class="flex items-center space-x-4 mt-4 sm:mt-0">
                         <div class="flex items-center">
@@ -449,47 +449,64 @@
                     </div>
                 </div>
 
-                <div class="space-y-6">
-                    <div v-for="item in relatedIntelligence" :key="item.id"
+                <div class="space-y-6" v-loading="intelligenceLoading">
+                    <div v-for="result in relatedIntelligence" :key="result.uuid"
                         class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
                         <div class="flex justify-between items-start mb-4">
                             <div class="flex flex-wrap items-center gap-2">
-                                <el-tag :type="item.categoryType" size="small">{{ item.category }}</el-tag>
-                                <el-tag :type="item.priorityType" size="small">{{ item.priority }}</el-tag>
-                                <el-tag v-if="item.nsfw" type="danger" size="small">NSFW</el-tag>
+                                <el-tag size="small">{{ result.section }}</el-tag>
+                                <el-tag :type="getConfidenceInfo(result.confidence).type" size="small">{{ getConfidenceInfo(result.confidence).text }}</el-tag>
+                                <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
                             </div>
-                            <span class="text-sm text-gray-500 shrink-0">{{ item.date }}</span>
+                            <span class="text-sm text-gray-500 shrink-0">{{ formatDateTime(result.update_at) }}</span>
                         </div>
-                        <h3 class="text-lg font-bold text-gray-900 mb-3">{{ item.title }}</h3>
-                        <p class="text-gray-600 mb-4">{{ item.description }}</p>
+                        <h3 class="text-lg font-bold text-gray-900 mb-3 search-highlight" v-html="result.title"></h3>
+                        <p class="text-gray-600 mb-4 search-highlight" v-html="truncateContent(result.clean_content, 200) || '暂无分析内容'"></p>
                         <div class="flex flex-wrap gap-2 mb-4">
-                            <el-tag v-for="tag in item.tags" :key="tag" size="small" type="info" effect="plain">
+                            <el-tag v-for="tag in result.keywords" :key="tag" size="small" type="info" effect="plain">
                                 {{ tag }}
                             </el-tag>
                         </div>
                         <div class="flex justify-between items-center text-sm text-gray-500">
-                            <span>来源: <router-link :to="`/details/platform/${item.platform_id}`" class="text-blue-600 hover:text-blue-800 items-center underline">
-                                <span class="font-medium">{{ item.platform }}</span>
-                            </router-link></span>
-                            <span>作者: <router-link :to="`/user/${item.author_id}`" class="text-blue-600 hover:text-blue-800 items-center underline">
-                                <span class="font-medium">{{ item.author }}</span>
-                            </router-link></span>
+                            <span>来源: 
+                                <router-link v-if="result.platform_id" :to="`/details/platform/${result.platform_id}`"
+                                    class="text-blue-600 hover:text-blue-800 items-center underline">
+                                    <span class="font-medium">{{ result.platform }}</span>
+                                </router-link>
+                                <span v-else class="font-medium">{{ result.platform }}</span>
+                            </span>
+                            <span>作者: 
+                                <router-link v-if="result.author_uuid" :to="`/user/${result.author_uuid}`"
+                                    class="text-blue-600 hover:text-blue-800 items-center underline">
+                                    <span class="font-medium">{{ result.author_name }}</span>
+                                </router-link>
+                                <span v-else class="font-medium">{{ result.author_name }}</span>
+                            </span>
                             <div class="flex items-center space-x-4">
-                                <span class="flex items-center">
-                                    <Icon icon="mdi:eye" class="mr-1" /> {{ item.views }}
-                                </span>
-                                <el-button type="primary" link>
-                                    <template #icon><Icon icon="mdi:bookmark-outline" /></template>
-                                    收藏
+                                <el-button 
+                                    type="primary" 
+                                    link
+                                    @click="toggleHighlight(result)"
+                                    :loading="result._highlightLoading"
+                                >
+                                    <template #icon>
+                                        <Icon :icon="result.is_highlighted ? 'mdi:star' : 'mdi:star-outline'" />
+                                    </template>
+                                    {{ result.is_highlighted ? '取消重点目标' : '设置重点目标' }}
                                 </el-button>
-                                <a :href="`/info/${item.id}`" class="text-blue-600 hover:text-blue-800 flex items-center">
-                                    查看详情 <Icon icon="mdi:arrow-right" class="ml-1" />
-                                </a>
+                                <router-link :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
+                                    查看详情
+                                    <Icon icon="mdi:arrow-right" class="ml-1" />
+                                </router-link>
                             </div>
                         </div>
                     </div>
 
-                    <div class="flex justify-center mt-8">
+                    <div v-if="relatedIntelligence.length === 0 && !intelligenceLoading" class="text-center py-12 text-gray-500">
+                        暂无相关情报数据
+                    </div>
+
+                    <div class="flex justify-center mt-8" v-if="intelligenceTotalResults > 0">
                         <el-pagination
                             v-model:current-page="intelligenceCurrentPage"
                             :page-size="intelligencePageSize"
@@ -511,6 +528,8 @@ import Header from "@/components/Header.vue";
 import DetailPageHeader from "@/components/page-header/DetailPageHeader.vue";
 import { getCosUrl } from "@/utils/cos";
 import { platformApi } from "@/api/platform";
+import { searchApi } from "@/api/search";
+import { highlightApi } from "@/api/highlight";
 
 export default {
     name: "PlatformDetail",
@@ -536,6 +555,13 @@ export default {
     watch: {
         '$route.params.id'() {
             this.loadPlatformDetail();
+        },
+        intelligenceCurrentPage() {
+            this.loadRelatedIntelligence();
+        },
+        intelligenceSortBy() {
+            this.intelligenceCurrentPage = 1;
+            this.loadRelatedIntelligence();
         },
     },
     data() {
@@ -636,98 +662,12 @@ export default {
                     image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
                 },
             ],
-            // TODO: 从接口获取关联情报数据
-            relatedIntelligence: [
-                {
-                    id: 1,
-                    category: "视频内容",
-                    categoryType: "primary",
-                    priority: "中",
-                    priorityType: "",
-                    date: "2025-01-15 14:30:22",
-                    title: "B站UP主发布最新科技评测视频，引发广泛讨论",
-                    description: "知名科技UP主发布了关于最新智能手机的深度评测视频，视频时长45分钟，详细分析了各项性能指标和使用体验，获得了大量用户的关注和讨论。",
-                    tags: ["科技", "评测", "视频", "B站"],
-                    platform: "Bilibili",
-                    platform_id: "fb5bebe1b7df48e6606fdffed2cf8b14",
-                    author: "科技评测君",
-                    author_id: "test_author_0001",
-                    views: 125430,
-                    nsfw: false,
-                },
-                {
-                    id: 2,
-                    category: "用户评论",
-                    categoryType: "success",
-                    priority: "低",
-                    priorityType: "info",
-                    date: "2025-01-15 10:15:33",
-                    title: "用户对B站新功能的反馈和建议",
-                    description: "大量用户对B站最新推出的功能进行了讨论，主要集中在界面优化、播放体验和社区互动等方面，整体反馈较为积极。",
-                    tags: ["用户反馈", "功能更新", "社区"],
-                    platform: "Bilibili",
-                    platform_id: "fb5bebe1b7df48e6606fdffed2cf8b14",
-                    author: "B站用户",
-                    author_id: "test_author_0002",
-                    views: 8920,
-                    nsfw: false,
-                },
-                {
-                    id: 3,
-                    category: "弹幕数据",
-                    categoryType: "warning",
-                    priority: "中",
-                    priorityType: "",
-                    date: "2025-01-14 18:45:11",
-                    title: "热门视频弹幕数据分析报告",
-                    description: "对近期热门视频的弹幕数据进行了深度分析，发现用户互动频率显著提升，弹幕内容质量也有所改善，体现了社区活跃度的增长。",
-                    tags: ["弹幕", "数据分析", "热门视频"],
-                    platform: "Bilibili",
-                    platform_id: "fb5bebe1b7df48e6606fdffed2cf8b14",
-                    author: "数据分析师",
-                    author_id: "test_author_0003",
-                    views: 6540,
-                    nsfw: false,
-                },
-                {
-                    id: 4,
-                    category: "视频内容",
-                    categoryType: "primary",
-                    priority: "高",
-                    priorityType: "warning",
-                    date: "2025-01-14 09:20:45",
-                    title: "B站年度盛典活动正式启动",
-                    description: "B站宣布年度盛典活动正式启动，将评选出年度最佳UP主、最佳视频等多个奖项，吸引了大量创作者和用户的关注。",
-                    tags: ["年度盛典", "活动", "UP主"],
-                    platform: "Bilibili",
-                    platform_id: "fb5bebe1b7df48e6606fdffed2cf8b14",
-                    author: "B站官方",
-                    author_id: "test_author_0004",
-                    views: 21560,
-                    nsfw: false,
-                },
-                {
-                    id: 5,
-                    category: "用户评论",
-                    categoryType: "success",
-                    priority: "中",
-                    priorityType: "",
-                    date: "2025-01-13 16:30:28",
-                    title: "B站社区讨论热点话题汇总",
-                    description: "本周B站社区讨论的热点话题主要集中在二次元文化、游戏攻略、生活分享等领域，用户参与度持续上升。",
-                    tags: ["社区", "热点", "讨论"],
-                    platform: "Bilibili",
-                    platform_id: "fb5bebe1b7df48e6606fdffed2cf8b14",
-                    author: "社区观察员",
-                    author_id: "test_author_0005",
-                    views: 18340,
-                    nsfw: false,
-                },
-            ],
+            relatedIntelligence: [],
             intelligenceSortBy: "relevance",
             intelligenceCurrentPage: 1,
             intelligencePageSize: 5,
-            intelligenceTotalResults: 25,
+            intelligenceTotalResults: 0,
+            intelligenceLoading: false,
         };
     },
     mounted() {
@@ -747,7 +687,6 @@ export default {
                 const response = await platformApi.getPlatformDetail(this.platformId);
                 if (response.code === 0 && response.data) {
                     const data = response.data;
-                    console.log(data);
                     this.platformDetail = {
                         uuid: data.id || "",
                         name: data.name || "",
@@ -765,6 +704,7 @@ export default {
                         subCategory: data.sub_category || "",
                         spiderName: data.spider_name || "",
                     };
+                    this.loadRelatedIntelligence();
                 }
             } catch (error) {
                 console.error("加载平台详情失败:", error);
@@ -959,8 +899,126 @@ export default {
                 position: "top-right",
                 duration: 3000,
             });
-            // 路由示例: this.$router.push(`/action/create`)
+        },
+        async loadRelatedIntelligence() {
+            if (!this.platformDetail.name) return;
+            
+            try {
+                this.intelligenceLoading = true;
+                const params = {
+                    page: this.intelligenceCurrentPage,
+                    page_size: this.intelligencePageSize,
+                    sort_by: this.intelligenceSortBy,
+                    platform: this.platformDetail.name,
+                };
+
+                const response = await searchApi.searchEntity(params);
+                
+                if (response.code === 0 && response.data) {
+                    this.relatedIntelligence = response.data.items || [];
+                    this.intelligenceTotalResults = response.data.total || 0;
+                }
+            } catch (error) {
+                console.error("加载关联情报失败:", error);
+                this.$message.error("加载关联情报失败，请稍后重试");
+                this.relatedIntelligence = [];
+                this.intelligenceTotalResults = 0;
+            } finally {
+                this.intelligenceLoading = false;
+            }
+        },
+        truncateContent(content, maxLength) {
+            if (!content) return "";
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = content;
+            const textContent = tempDiv.textContent || tempDiv.innerText || "";
+            if (textContent.length <= maxLength) return content;
+            let truncated = "";
+            let currentLength = 0;
+            const walk = (node) => {
+                if (currentLength >= maxLength) return;
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const remaining = maxLength - currentLength;
+                    if (node.textContent.length <= remaining) {
+                        truncated += node.textContent;
+                        currentLength += node.textContent.length;
+                    } else {
+                        truncated += node.textContent.substring(0, remaining) + "...";
+                        currentLength = maxLength;
+                    }
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    truncated += `<${node.tagName.toLowerCase()}>`;
+                    for (const child of node.childNodes) {
+                        walk(child);
+                    }
+                    truncated += `</${node.tagName.toLowerCase()}>`;
+                }
+            };
+            for (const child of tempDiv.childNodes) {
+                walk(child);
+            }
+            return truncated;
+        },
+        getConfidenceInfo(confidence) {
+            if (confidence === 0) {
+                return { text: "零信任", type: "danger" };
+            } else if (confidence > 0 && confidence <= 0.4) {
+                return { text: "低", type: "info" };
+            } else if (confidence > 0.4 && confidence <= 0.7) {
+                return { text: "中", type: "" };
+            } else {
+                return { text: "高", type: "warning" };
+            }
+        },
+        getDetailRoute(entityType, uuid) {
+            return `/details/${entityType}/${uuid}`;
+        },
+        formatDateTime(dateTime) {
+            if (!dateTime) return "";
+            const date = new Date(dateTime);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+            const hours = String(date.getHours()).padStart(2, "0");
+            const minutes = String(date.getMinutes()).padStart(2, "0");
+            const seconds = String(date.getSeconds()).padStart(2, "0");
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        },
+        async toggleHighlight(result) {
+            if (!result || !result.uuid) return;
+
+            result._highlightLoading = true;
+
+            try {
+                const isHighlighted = result.is_highlighted;
+                const entityType = result.entity_type?.toLowerCase() || "article";
+                const requestData = isHighlighted
+                    ? { is_highlighted: false }
+                    : { is_highlighted: true, highlight_reason: "用户在平台详情页标记" };
+
+                const response = await highlightApi.setHighlight(entityType, result.uuid, requestData);
+
+                if (response.code === 0) {
+                    result.is_highlighted = !isHighlighted;
+                    this.$message.success(isHighlighted ? "已取消重点目标" : "已设置为重点目标");
+                } else {
+                    this.$message.error(response.message || (isHighlighted ? "取消重点目标失败" : "设置重点目标失败"));
+                }
+            } catch (err) {
+                console.error("操作重点目标失败:", err);
+                this.$message.error("操作失败，请稍后重试");
+            } finally {
+                result._highlightLoading = false;
+            }
         },
     },
 };
 </script>
+
+<style scoped>
+.search-highlight :deep(em) {
+    font-style: normal;
+    color: #dc2626;
+    font-weight: 700;
+}
+</style>

@@ -45,10 +45,10 @@ async def search_entity(params: EntitySearchRequestSchema):
             query_must.append(keyword_query)
         
         if params.platform:
-            query_must.append({"term": {"platform": params.platform}})
+            query_must.append({"term": {"platform.keyword": params.platform}})
         
         if params.author:
-            query_must.append({"term": {"author_name": params.author}})
+            query_must.append({"term": {"author_name.keyword": params.author}})
         
         if params.aigc is not None:
             query_must.append({"term": {"aigc": params.aigc}})
