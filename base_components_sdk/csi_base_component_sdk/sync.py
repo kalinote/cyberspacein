@@ -4,9 +4,12 @@ import json
 import sys
 import logging
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from crawlab import save_item
 import requests
+
+if TYPE_CHECKING:
+    from .rabbitmq import RabbitMQClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,14 +19,20 @@ logging.basicConfig(
 logger = logging.getLogger("CSI_SDK")
 
 class BaseComponent:
-    def __init__(self, action_node_id: str = None, api_base_url: str = None, manual_config: str = None):
+    def __init__(self, action_node_id: str = None, api_base_url: str = None, 
+                 manual_config: str = None, enable_rabbitmq: bool = False):
         """
         初始化 Node 对象，解析参数。
         注意：构造函数中不进行网络请求，网络请求在 __enter__ 或 initialize 中进行。
+        
+        Args:
+            action_node_id: 行动节点ID
+            api_base_url: API基础URL
+            manual_config: 本地调试配置文件路径
+            enable_rabbitmq: 是否启用 RabbitMQ 自动管理
         """
         self.args = self._parse_args()
         
-        # 优先使用传入参数，其次使用命令行参数
         self.action_node_id = action_node_id or self.args.action_node_id
         self.api_base_url = (api_base_url or self.args.api_base_url)
         if self.api_base_url:
@@ -31,52 +40,50 @@ class BaseComponent:
             
         self.manual_config_path = manual_config or self.args.local_config
         
-        # 数据容器
         self.config: Dict[str, Any] = {}
         self.inputs: Dict[str, Any] = {}
         self.outputs: Dict[str, Any] = {}
         self.session: Optional[requests.Session] = None
         
-        # 运行模式标记
         self.is_remote = bool(self.action_node_id and self.api_base_url)
         
         self.created_at = datetime.now()
+        
+        self._enable_rabbitmq = enable_rabbitmq
+        self.rabbitmq: Optional["RabbitMQClient"] = None
 
     def _parse_args(self):
         parser = argparse.ArgumentParser(description="CSI Base Components SDK (Sync)")
         parser.add_argument('--action-node-id', type=str, help='行动节点ID', default=os.getenv('ACTION_NODE_ID'))
         parser.add_argument('--api-base-url', type=str, help='API基础URL', default=os.getenv('API_BASE_URL'))
         parser.add_argument('--local-config', type=str, help='本地调试配置文件路径', default=None)
-        # 允许接收其他未知参数
         args, _ = parser.parse_known_args()
         return args
 
     def __enter__(self):
         """
-        Context Manager 入口：建立 Session 并拉取配置
+        Context Manager 入口：调用 initialize 完成所有初始化
         """
-        self.session = requests.Session()
         self.initialize()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """
-        Context Manager 出口：关闭 Session
+        Context Manager 出口：调用 close 关闭所有连接
         """
-        if self.session:
-            self.session.close()
+        self.close()
         
         if exc_type:
             logger.error(f"节点执行异常退出: {exc_val}")
 
     def initialize(self):
         """
-        核心初始化逻辑：拉取配置
+        核心初始化逻辑：建立 Session、拉取配置、初始化 RabbitMQ（如启用）
         """
+        if self.session is None:
+            self.session = requests.Session()
+        
         if self.is_remote:
-            if self.session is None:
-                self.session = requests.Session()
-            
             logger.info(f"正在从远程拉取上下文: {self.action_node_id}")
             try:
                 url = f"{self.api_base_url}/action/sdk/{self.action_node_id}/init"
@@ -108,11 +115,19 @@ class BaseComponent:
                 sys.exit(1)
         else:
             logger.warning("未检测到行动节点ID或本地配置，以空模式启动")
+        
+        if self._enable_rabbitmq and self.rabbitmq is None:
+            from .rabbitmq import RabbitMQClient
+            self.rabbitmq = RabbitMQClient()
+            if not self.rabbitmq.connect():
+                raise RuntimeError("无法连接到 RabbitMQ")
 
     def close(self):
         """
-        关闭 Session
+        关闭 RabbitMQ 和 Session
         """
+        if self.rabbitmq:
+            self.rabbitmq.close()
         if self.session:
             self.session.close()
 
@@ -125,7 +140,6 @@ class BaseComponent:
             return default
         
         if isinstance(val, dict) and 'type' in val:
-            # 如果是引用类型，返回 URI；如果是值，返回 content
             return val.get('uri') if val['type'] == 'reference' else val.get('content')
         return val
 

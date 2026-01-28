@@ -1,6 +1,5 @@
-from .async_ import AsyncBaseComponent
 from .sync import BaseComponent
+from .rabbitmq import RabbitMQClient
 
-__all__ = ['AsyncBaseComponent', 'BaseComponent']
-__version__ = '0.1.0'
-
+__all__ = ['BaseComponent', 'RabbitMQClient']
+__version__ = '0.2.0'
