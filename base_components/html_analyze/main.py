@@ -1,6 +1,10 @@
 import logging
 import json
 from typing import Callable, TYPE_CHECKING
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from csi_base_component_sdk import BaseComponent
 from analyzer.clean_content import CleanContentAnalyzer
 from analyzer.safe_raw_content import SafeRawContentAnalyzer

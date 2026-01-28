@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] [%(levelname)s] [CSI_SDK] %(message)s',
+    format='[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
     datefmt='%H:%M:%S'
 )
 logger = logging.getLogger("CSI_SDK")
@@ -120,7 +120,10 @@ class BaseComponent:
             from .rabbitmq import RabbitMQClient
             self.rabbitmq = RabbitMQClient()
             if not self.rabbitmq.connect():
-                raise RuntimeError("无法连接到 RabbitMQ")
+                raise RuntimeError(
+                    f"无法连接到 RabbitMQ: {self.rabbitmq.host}:{self.rabbitmq.port} "
+                    f"(vhost={self.rabbitmq.vhost}, user={self.rabbitmq.username})"
+                )
 
     def close(self):
         """
@@ -148,7 +151,7 @@ class BaseComponent:
         上报进度（非阻塞）
         """
         if not self.is_remote:
-            logger.info(f"[本地模拟进度] {percentage}% - {message}")
+            logger.info(f"[独立模式] {percentage}% - {message}")
             return
 
         try:

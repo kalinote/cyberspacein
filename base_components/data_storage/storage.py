@@ -3,6 +3,8 @@ import sys
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from csi_base_component_sdk import BaseComponent, RabbitMQClient
 from mongodb import MongoDBStorage
 from elasticsearch_storage import ElasticsearchStorage
@@ -15,8 +17,6 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 BATCH_SIZE = 100
 

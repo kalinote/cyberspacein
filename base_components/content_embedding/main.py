@@ -1,5 +1,9 @@
 import logging
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from csi_base_component_sdk import BaseComponent
 from embedding import get_embedding
 

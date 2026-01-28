@@ -2,11 +2,12 @@ import json
 import logging
 from typing import Dict
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from csi_base_component_sdk import BaseComponent
 from es_client import ElasticsearchClient
 from validator import validate_and_transform
-
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,

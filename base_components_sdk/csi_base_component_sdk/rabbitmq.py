@@ -2,11 +2,8 @@ import os
 import json
 import logging
 from typing import Optional, List, Dict, Any, Callable
-from dotenv import load_dotenv
 import pika
 from pika.exceptions import AMQPConnectionError, AMQPChannelError
-
-load_dotenv()
 
 logger = logging.getLogger("CSI_SDK")
 
