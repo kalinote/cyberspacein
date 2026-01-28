@@ -290,7 +290,7 @@
                                     >
                                         <Icon icon="mdi:account-circle" class="text-blue-600 text-base shrink-0" />
                                         <span class="font-medium text-gray-900 shrink-0">{{ item.author_name || '匿名用户' }}:</span>
-                                        <span class="text-gray-700 flex-1 min-w-0 truncate">{{ item.clean_content || '暂无内容' }}</span>
+                                        <span class="text-gray-700 flex-1 min-w-0 truncate">{{ item.clean_content || '暂无分析内容' }}</span>
                                         <span class="text-sm text-gray-500 shrink-0 ml-auto">点评于 {{ formatDateTime(item.publish_at || item.update_at) }}</span>
                                     </router-link>
                                 </div>
@@ -328,7 +328,7 @@
                                                 <span class="font-medium text-gray-900">{{ item.author_name || '匿名用户' }}</span>
                                                 <span class="text-sm text-gray-500">{{ formatDateTime(item.publish_at || item.update_at) }}</span>
                                             </div>
-                                            <p class="text-gray-700 mb-3 line-clamp-3">{{ item.clean_content || '暂无内容' }}</p>
+                                            <p class="text-gray-700 mb-3 line-clamp-3">{{ item.clean_content || '暂无分析内容' }}</p>
                                             <div class="flex flex-wrap items-center gap-2 mb-2">
                                                 <el-tag v-if="item.confidence !== null && item.confidence !== undefined" :type="getConfidenceInfo(item.confidence).type" size="small">
                                                     {{ getConfidenceInfo(item.confidence).text }}
@@ -636,7 +636,6 @@
             :selected-style="selectedStyle"
             @style-select="handleStyleSelect"
             @create="handleCreateMarking"
-            @cancel="handleCancelMarking"
         />
     </div>
 </template>
@@ -685,7 +684,6 @@ const {
     handleRenderedContentMouseUp,
     handleStyleSelect,
     handleCreateMarking,
-    handleCancelMarking,
     handleUpdateMarking,
     handleDeleteMarking,
     handleMarkingHover,

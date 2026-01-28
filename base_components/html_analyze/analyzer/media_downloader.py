@@ -19,7 +19,7 @@ class MediaDownloader:
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
     }
     
-    def __init__(self, timeout: int = 10, max_retries: int = 2, referer: str | None = None, download_size_limit: int | None = None):
+    def __init__(self, timeout: int = 600, max_retries: int = 2, referer: str | None = None, download_size_limit: int | None = None):
         self.timeout = timeout
         self.max_retries = max_retries
         self.referer = referer
@@ -35,7 +35,8 @@ class MediaDownloader:
             }
             logger.info(f"使用代理进行下载: {proxy}")
     
-    def is_valid_url(self, url: str) -> bool:
+    @staticmethod
+    def is_valid_url(url: str) -> bool:
         if not url or not isinstance(url, str):
             return False
         
@@ -125,12 +126,25 @@ class MediaDownloader:
                 response = self.session.get(url, headers=headers, timeout=self.timeout, stream=True)
                 response.raise_for_status()
                 
-                content = response.content
                 content_type = response.headers.get('Content-Type', '').split(';')[0].strip()
                 
+                chunks = []
+                downloaded_size = 0
+                chunk_size = 8192
+                
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        chunks.append(chunk)
+                        downloaded_size += len(chunk)
+                        if self.download_size_limit is not None and downloaded_size > self.download_size_limit:
+                            logger.warning(f"下载大小 {downloaded_size / (1024 * 1024):.2f}MB 超过限制，中止下载: {url}")
+                            response.close()
+                            return None
+                
+                content = b''.join(chunks)
                 file_hash = self.calculate_sha256(content)
                 
-                logger.debug(f"文件下载成功: {url} (SHA256: {file_hash})")
+                logger.debug(f"文件下载成功: {url} (大小: {len(content) / 1024:.1f}KB, SHA256: {file_hash})")
                 return content, file_hash, content_type
                 
             except requests.exceptions.Timeout:

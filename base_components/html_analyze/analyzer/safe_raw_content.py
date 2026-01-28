@@ -3,7 +3,7 @@ import esprima
 import bleach
 from bleach.css_sanitizer import CSSSanitizer
 from bs4 import BeautifulSoup
-from typing import Set
+from typing import Set, Callable
 import logging
 import re
 
@@ -231,7 +231,8 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
                 force_html_mode: bool = False,
                 enable_media_localization: bool = False,
                 base_url: str | None = None,
-                download_size_limit: int | None = None) -> str:
+                download_size_limit: int | None = None,
+                heartbeat_callback: Callable[[], None] | None = None) -> str:
         """
         分析并清理 HTML 内容
         
@@ -245,6 +246,7 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
             enable_media_localization: 是否启用媒体资源本地化（默认False）
             base_url: 基础URL，用于解析相对路径（可选）
             download_size_limit: 下载文件大小限制（字节），超过此大小将跳过下载（可选）
+            heartbeat_callback: 心跳回调函数，在长时间操作期间定期调用以保持连接（可选）
             
         Returns:
             清理后的安全内容
@@ -327,7 +329,7 @@ class SafeRawContentAnalyzer(BaseAnalyzer):
                 try:
                     from analyzer.media_localizer import MediaLocalizer
                     localizer = MediaLocalizer(base_url=base_url, download_size_limit=download_size_limit)
-                    result = localizer.localize(result)
+                    result = localizer.localize(result, heartbeat_callback=heartbeat_callback)
                 except Exception as e:
                     logger.error(f"媒体本地化失败: {e}", exc_info=True)
             

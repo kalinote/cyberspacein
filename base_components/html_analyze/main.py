@@ -1,11 +1,22 @@
 import logging
 import json
+from typing import Callable
 from csi_base_component_sdk.sync import BaseComponent
 from analyzer.clean_content import CleanContentAnalyzer
 from analyzer.safe_raw_content import SafeRawContentAnalyzer
 from rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger("html_analyze")
+
+
+def create_heartbeat_callback(client: RabbitMQClient | None) -> Callable[[], None] | None:
+    if client is None:
+        return None
+    
+    def heartbeat_callback():
+        client.process_data_events()
+    
+    return heartbeat_callback
 
 def _parse_size_limit(size_str: str) -> int | None:
     """解析大小限制字符串，支持 M、MB、K、KB、G、GB 等单位，默认单位为字节"""
@@ -36,7 +47,8 @@ def _parse_size_limit(size_str: str) -> int | None:
         return None
 
 def process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content, 
-                        enable_media_localization, base_url_field, download_size_limit):
+                        enable_media_localization, base_url_field, download_size_limit,
+                        heartbeat_callback: Callable[[], None] | None = None):
     if process_fields not in data:
         raise ValueError(f"数据中未找到字段 '{process_fields}'")
     
@@ -66,7 +78,8 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
                 content,
                 enable_media_localization=enable_media_localization,
                 base_url=base_url,
-                download_size_limit=download_size_limit
+                download_size_limit=download_size_limit,
+                heartbeat_callback=heartbeat_callback
             )
             logger.debug(f"safe_raw_content 处理完成")
         except Exception as e:
@@ -116,6 +129,8 @@ def main():
             if not client.connect():
                 component.fail("无法连接到 RabbitMQ")
             
+            heartbeat_callback = create_heartbeat_callback(client)
+            
             logger.info(f"开始处理队列: {queue_name}")
             
             while True:
@@ -128,7 +143,8 @@ def main():
                     
                     try:
                         data = process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content,
-                                                  enable_media_localization, base_url_field, download_size_limit)
+                                                  enable_media_localization, base_url_field, download_size_limit,
+                                                  heartbeat_callback=heartbeat_callback)
                     except (ValueError, TypeError) as e:
                         logger.warning(f"{e}，跳过处理")
                         client.ack_message(message['delivery_tag'])

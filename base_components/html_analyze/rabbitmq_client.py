@@ -167,6 +167,14 @@ class RabbitMQClient:
                 success_count += 1
         return success_count
     
+    def process_data_events(self) -> None:
+        """处理连接事件（心跳等），需要在长时间操作期间定期调用"""
+        try:
+            if self.connection and not self.connection.is_closed:
+                self.connection.process_data_events()
+        except Exception as e:
+            logger.warning(f"处理连接事件时发生错误: {e}")
+    
     def close(self) -> None:
         """关闭 RabbitMQ 连接"""
         try:

@@ -437,7 +437,6 @@
             :selected-style="selectedStyle"
             @style-select="handleStyleSelect"
             @create="handleCreateMarking"
-            @cancel="handleCancelMarking"
         />
     </div>
 </template>
@@ -486,7 +485,6 @@ const {
     handleRenderedContentMouseUp,
     handleStyleSelect,
     handleCreateMarking,
-    handleCancelMarking,
     handleUpdateMarking,
     handleDeleteMarking,
     handleMarkingHover,

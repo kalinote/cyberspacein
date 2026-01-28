@@ -72,11 +72,6 @@ export function useMarkingHandler(options = {}) {
     }
   }
 
-  function handleCancelMarking() {
-    marking.hideToolbar()
-    window.getSelection()?.removeAllRanges()
-  }
-
   function handleUpdateMarking(id, content) {
     marking.updateMarkingContent(id, content)
   }
@@ -92,19 +87,14 @@ export function useMarkingHandler(options = {}) {
     activeMarkingId.value = isHovering ? id : null
   }
 
-  function handleClick(e) {
+  function handleMouseDown(e) {
     if (e.target.closest('.marking-toolbar')) {
       return
     }
 
-    const selection = window.getSelection()
-    if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
-      return
-    }
-
-    if (!e.target.closest('.marking-target') &&
-        !e.target.closest('.marking-container')) {
+    if (marking.toolbarVisible.value) {
       marking.hideToolbar()
+      window.getSelection()?.removeAllRanges()
     }
   }
 
@@ -134,13 +124,13 @@ export function useMarkingHandler(options = {}) {
   }
 
   function setupEventListeners() {
-    document.addEventListener('click', handleClick)
+    document.addEventListener('mousedown', handleMouseDown)
     window.addEventListener('scroll', handleScroll, true)
     window.addEventListener('resize', handleScroll)
   }
 
   function cleanupEventListeners() {
-    document.removeEventListener('click', handleClick)
+    document.removeEventListener('mousedown', handleMouseDown)
     window.removeEventListener('scroll', handleScroll, true)
     window.removeEventListener('resize', handleScroll)
   }
@@ -153,7 +143,6 @@ export function useMarkingHandler(options = {}) {
     handleRenderedContentMouseUp,
     handleStyleSelect,
     handleCreateMarking,
-    handleCancelMarking,
     handleUpdateMarking,
     handleDeleteMarking,
     handleMarkingHover,
