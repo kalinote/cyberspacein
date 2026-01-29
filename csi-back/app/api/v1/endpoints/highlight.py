@@ -1,26 +1,14 @@
 import logging
 from datetime import datetime
-from enum import Enum
 from fastapi import APIRouter, Path
 from elasticsearch.exceptions import NotFoundError
 
 from app.db.elasticsearch import get_es
+from app.schemas.constants import ENTITY_TYPE_NAMES, EntityType
 from app.schemas.highlight import HighlightRequestSchema
 from app.schemas.response import ApiResponseSchema
 
 logger = logging.getLogger(__name__)
-
-
-class EntityType(str, Enum):
-    ARTICLE = "article"
-    FORUM = "forum"
-
-
-ENTITY_TYPE_NAMES = {
-    EntityType.ARTICLE: "文章",
-    EntityType.FORUM: "论坛"
-}
-
 
 router = APIRouter(
     prefix="/highlight",

@@ -2,7 +2,7 @@ from typing import Any, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from app.schemas.enum import ActionNodeInputTypeEnum, ActionNodeTypeEnum
+from app.schemas.constants import ActionNodeInputTypeEnum, ActionNodeTypeEnum
 
 
 class ActionNodeOption(BaseModel):

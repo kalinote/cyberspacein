@@ -46,9 +46,10 @@ class EntitiesService(BaseMLService):
         """检查服务是否可用"""
         return generic_service.is_model_ready() and generic_service.is_executor_ready()
     
+    ENTITY_CATEGORIES_EN = ("person", "location", "organization", "company", "region", "network_user")
+
     def _build_entities_messages_optimized(self, text: str) -> list:
         """构建实体提取的消息列表（Markdown格式）"""
-        # 短文本暂时不做思考，节省时间
         think_label = "/no_think" if len(text) < 300 else "/think"
         return [
             {
@@ -60,25 +61,26 @@ class EntitiesService(BaseMLService):
                 "content": f"""{think_label} 请从下方文本中提取实体。
 
 ### 要求：
-1. 仅提取：人名、地名、机构、企业、网络用户。
+1. 仅提取以下类别：person、location、organization、company、region、network_user。
 2. 不要提取数字、时间、书名、抽象概念。
-3. 格式：每行一个，使用 "实体 | 类别" 的格式。
+3. 格式：每行一个，使用 "实体 | 类别" 的格式，类别必须使用英文 key（见下方）。
 
-### 类别说明：
-- **人名**：真实人物的姓名
-- **地名**：地理位置名称
-- **机构**：组织机构名称
-- **企业**：公司、企业名称
-- **网络用户**：疑似网络用户名、账号、昵称等。注意：网络用户名一般不太好分辨，可能需要根据上下文内容来辨别。例如：在社交媒体、论坛、评论区等场景中出现的用户名；包含特殊字符、数字组合的疑似账号；带有@符号的提及等（结果不带@符号）。
+### 类别（英文 key）与含义：
+- **person**：真实人物的姓名（人名）
+- **location**：地理位置名称（地名）
+- **organization**：组织机构名称（机构）
+- **company**：公司、企业名称（企业）
+- **region**：国家、地区、区域（国家地区）
+- **network_user**：疑似网络用户名、账号、昵称等。如：社交媒体/论坛/评论区中的用户名、含特殊字符或数字的疑似账号、@提及（结果不带@）
 
 ### 示例：
 输入：张三在阿里巴巴杭州总部工作，用户@tech_guru在数码博主‘数码狂人’的贴文评论区留言。
 输出：
-张三 | 人名
-阿里巴巴 | 企业
-杭州 | 地名
-tech_guru | 网络用户
-数码狂人 | 网络用户
+张三 | person
+阿里巴巴 | company
+杭州 | location
+tech_guru | network_user
+数码狂人 | network_user
 
 ### 待处理文本：
 {text}
@@ -86,85 +88,59 @@ tech_guru | 网络用户
             }
         ]
     
-    def _normalize_category(self, category: str) -> str:
-        """标准化类别名称"""
-        category = category.strip()
+    def _normalize_category(self, category: str) -> Optional[str]:
+        """将类别名称映射为英文 key，不在白名单内的返回 None"""
+        if not category:
+            return None
+        raw = category.strip().lower()
         category_map = {
-            "人物": "人名",
-            "人员": "人名",
-            "地点": "地名",
-            "位置": "地名",
-            "组织机构": "机构",
-            "组织": "机构",
-            "公司": "企业",
-            "国家": "国家地区",
-            "地区": "国家地区",
-            "区域": "国家地区",
-            "用户名": "网络用户",
-            "用户": "网络用户",
-            "账号": "网络用户",
-            "昵称": "网络用户",
-            "ID": "网络用户"
+            "人名": "person", "人物": "person", "人员": "person",
+            "地名": "location", "地点": "location", "位置": "location",
+            "机构": "organization", "组织机构": "organization", "组织": "organization",
+            "企业": "company", "公司": "company",
+            "国家地区": "region", "国家": "region", "地区": "region", "区域": "region",
+            "网络用户": "network_user", "用户名": "network_user", "用户": "network_user",
+            "账号": "network_user", "昵称": "network_user", "id": "network_user",
+            "person": "person", "location": "location", "organization": "organization",
+            "company": "company", "region": "region", "network_user": "network_user",
         }
-        return category_map.get(category, category)
+        return category_map.get(raw) or (raw if raw in self.ENTITY_CATEGORIES_EN else None)
     
     def _merge_entities_results(self, results: List[Dict[str, List[str]]]) -> Dict[str, List[str]]:
-        """合并多个实体提取结果，按类别合并并去重"""
-        merged = {
-            "人名": [],
-            "地名": [],
-            "机构": [],
-            "企业": [],
-            "国家地区": [],
-            "网络用户": []
-        }
-        
+        """合并多个实体提取结果，按类别合并并去重（key 为英文）"""
+        merged = {k: [] for k in self.ENTITY_CATEGORIES_EN}
         for result in results:
             for category, entities in result.items():
                 if category in merged:
                     for entity in entities:
                         if entity not in merged[category]:
                             merged[category].append(entity)
-        
         return {k: v for k, v in merged.items() if v}
     
     def _parse_entities_result(self, result_text: str) -> Dict[str, List[str]]:
-        """解析实体提取结果（Markdown格式）"""
+        """解析实体提取结果（Markdown格式），输出 key 为英文类别"""
         try:
             result_text = remove_think_tags(result_text)
-            
-            entities_by_category: Dict[str, List[str]] = {
-                "人名": [],
-                "地名": [],
-                "机构": [],
-                "企业": [],
-                "国家地区": [],
-                "网络用户": []
-            }
-            
+            entities_by_category: Dict[str, List[str]] = {k: [] for k in self.ENTITY_CATEGORIES_EN}
+
             for line in result_text.split('\n'):
                 line = line.strip()
                 if not line:
                     continue
-                
                 if '|' in line:
                     parts = line.split('|', 1)
                     entity = parts[0].strip()
                     category = parts[1].strip() if len(parts) > 1 else ""
-                    
                     if entity and category:
                         category_normalized = self._normalize_category(category)
-                        if category_normalized in entities_by_category:
+                        if category_normalized and category_normalized in entities_by_category:
                             if entity not in entities_by_category[category_normalized]:
                                 entities_by_category[category_normalized].append(entity)
-            
+
             result = {k: v for k, v in entities_by_category.items() if v}
-            
             if not result:
                 logger.warning(f"未提取到任何实体，原始响应: {result_text[:200]}")
-            
             return result
-            
         except Exception as e:
             logger.error(f"解析实体提取结果失败，原始响应: {result_text[:200]}", exc_info=True)
             raise ValueError(f"无法解析模型返回的格式: {e}") from e

@@ -1,7 +1,7 @@
 from beanie import Document
 from pydantic import Field
 
-from app.schemas.enum import ActionConfigIOTypeEnum
+from app.schemas.constants import ActionConfigIOTypeEnum
 from app.schemas.general import DictModelSchema
 
 class ActionNodesHandleConfigModel(Document):

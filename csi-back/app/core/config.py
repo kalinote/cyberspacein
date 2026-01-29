@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     OUT_SERVICE_PROXY: Optional[str] = None
     MAX_LOGO_SIZE: int = 5 * 1024 * 1024
 
+    ML_SERVICE_BASE_URL: str = ""
+
+    ML_ASYNC_POLL_INTERVAL: int = 3
+    ML_ASYNC_POLL_TIMEOUT: int = 600
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

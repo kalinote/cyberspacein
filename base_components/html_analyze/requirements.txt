@@ -1,8 +1,4 @@
-beautifulsoup4
-python-dotenv
+dotenv
 pika>=1.3.0
-bleach[css]
-esprima
-lxml
 boto3
 requests

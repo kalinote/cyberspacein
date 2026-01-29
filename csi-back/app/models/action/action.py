@@ -3,7 +3,7 @@ from typing import Any
 from beanie import Document
 from pydantic import BaseModel, Field
 
-from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 from app.schemas.general import DictModelSchema
 
 class ActionInstanceModel(Document):

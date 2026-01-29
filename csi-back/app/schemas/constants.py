@@ -90,3 +90,13 @@ class ActionNodeInputTypeEnum(str, Enum):
     TAGS = "tags"
     CONDITIONS = "conditions"
     COMMENT = "comment"
+    
+class EntityType(str, Enum):
+    ARTICLE = "article"
+    FORUM = "forum"
+
+
+ENTITY_TYPE_NAMES = {
+    EntityType.ARTICLE: "文章",
+    EntityType.FORUM: "论坛"
+}

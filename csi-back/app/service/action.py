@@ -8,7 +8,7 @@ import logging
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
 from app.schemas.action.sdk import SDKResultRequest
-from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 from app.service.component import run_component
 from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id

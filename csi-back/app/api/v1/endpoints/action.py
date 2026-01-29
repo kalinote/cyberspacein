@@ -15,7 +15,7 @@ from app.service.component import get_components_by_project_id, get_components_p
 from app.schemas.action.node import BaseComponent, ActionNodeResponse, ActionNodeHandleResponse, ActionNodeInputResponse, ActionNodeOption
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
-from app.schemas.enum import ActionConfigIOTypeEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
+from app.schemas.constants import ActionConfigIOTypeEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
 from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel

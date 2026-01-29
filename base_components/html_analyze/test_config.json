@@ -11,9 +11,12 @@
         "base_url_field": "url"
     },
     "inputs": {
-        "data_in": {
-            "type": "reference",
-            "value": "cycle_task_out"
+        "dict_in": {
+            "type": "string",
+            "value": {
+                "raw_content": "<video class=\"cont_video\" data-videoid=\"716904\" src=\"https://cloudvideo.thepaper.cn/video/4a3f9fd3ca954429ac19cd717d3361ae/hd/1768968468984_67DFE4_1768968481876.mp4\" controls=\"controls\" webkit-playsinline=\"\" playsinline=\"\" x5-playsinline=\"\" x-webkit-airplay=\"allow\" preload=\"preload\" poster=\"https://imgpai.thepaper.cn/newpai/image/1768968402432_jtiyXJ_1768968402780.png\" data-duration=\"00:33\" data-verticalvideo=\"1\" data-width=\"720\" data-height=\"1280\"></video>",
+                "url": "https://www.thepaper.cn/newsDetail_forward_32431792"
+            }
         }
     },
     "outputs": {

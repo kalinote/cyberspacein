@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from pydantic import BaseModel, Field
 from app.schemas.action.blueprint import GraphSchema
-from app.schemas.enum import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
 
 class StartActionRequest(BaseModel):
     blueprint_id: str = Field(description="蓝图ID")

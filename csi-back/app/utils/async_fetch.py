@@ -5,6 +5,14 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def unwrap_response(resp):
+    """外部服务统一包裹 { code, message, data }，返回 data；无 data 时返回原 resp 兼容。"""
+    if not isinstance(resp, dict) or "data" not in resp:
+        return resp
+    return resp["data"]
+
+
 async def async_get(url: str, params: dict = None, **kwargs):
     async with aiohttp.ClientSession() as session:
         async with session.get(url, params=params, **kwargs) as response:

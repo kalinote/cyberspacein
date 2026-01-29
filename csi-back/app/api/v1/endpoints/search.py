@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from app.schemas.search import EntitySearchRequestSchema, SearchResultSchema
 from app.schemas.general import PageResponseSchema
 from app.schemas.response import ApiResponseSchema
-from app.schemas.enum import ALL_INDEX
+from app.schemas.constants import ALL_INDEX
 from app.db.elasticsearch import get_es
 from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime

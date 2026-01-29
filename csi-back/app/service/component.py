@@ -1,7 +1,7 @@
 import json
 import logging
 from app.core.config import settings
-from app.utils.async_fetch import async_get, async_post
+from app.utils.async_fetch import async_get, async_post, unwrap_response
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,10 @@ async def get_components_project_by_name(project_name: str):
             },
             headers={"Authorization": settings.CRAWLAB_TOKEN}
         )
-        return response["data"][0]["_id"]
+        data = unwrap_response(response)
+        if data and isinstance(data, list) and len(data) > 0:
+            return data[0]["_id"]
+        return None
     except Exception as e:
         logger.error(f"获取组件项目ID失败: {e}")
         return None
@@ -36,7 +39,8 @@ async def get_components_by_project_id(project_id: str, page: int = 1, page_size
             },
             headers={"Authorization": settings.CRAWLAB_TOKEN}
         )
-        return response["data"]
+        data = unwrap_response(response)
+        return data if data is not None else None
     except Exception as e:
         logger.error(f"获取组件失败: {e}")
         return None
@@ -54,7 +58,7 @@ async def run_component(component_id: str, command: str, command_args: list[str]
             },
             headers={"Authorization": settings.CRAWLAB_TOKEN}
         )
-        return response["data"]
+        return unwrap_response(response)
     except Exception as e:
         logger.error(f"运行组件失败: {e}")
         return None

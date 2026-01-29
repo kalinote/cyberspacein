@@ -1,23 +1,96 @@
-from analyzer.base import BaseAnalyzer
-import esprima
-import bleach
-from bleach.css_sanitizer import CSSSanitizer
-from bs4 import BeautifulSoup
-from typing import Set, Callable
 import logging
 import re
+from typing import Set
+from urllib.parse import urlparse
+
+import bleach
+import esprima
+from bleach.css_sanitizer import CSSSanitizer
+from bs4 import BeautifulSoup
+
+from app.service.ml.base import BaseMLService
 
 logger = logging.getLogger(__name__)
 
+MEDIA_TAGS_ATTRS = {
+    'img': ['src', 'srcset', 'data-src', 'data-srcset'],
+    'video': ['src', 'poster', 'data-src', 'data-poster'],
+    'audio': ['src', 'data-src'],
+    'source': ['src', 'srcset', 'data-src', 'data-srcset'],
+    'image': ['href', 'xlink:href'],
+}
+
+def _filter_resource_url(url: str) -> str | None:
+    # 暂时不做过滤
+    return url
+
+def _extract_srcset_urls(srcset: str) -> Set[str]:
+    urls: Set[str] = set()
+    if not srcset:
+        return urls
+    for item in srcset.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        tokens = item.split()
+        if tokens:
+            u = _filter_resource_url(tokens[0])
+            if u:
+                urls.add(u)
+    return urls
+
+
+def _extract_css_urls(css_content: str) -> Set[str]:
+    urls: Set[str] = set()
+    if not css_content:
+        return urls
+    url_pattern = r'url\s*\(\s*(["\']?)([^"\'()]+)\1\s*\)'
+    for match in re.finditer(url_pattern, css_content, flags=re.IGNORECASE):
+        u = _filter_resource_url(match.group(2).strip())
+        if u:
+            urls.add(u)
+    return urls
+
+
+def _collect_resource_links(html: str) -> list[str]:
+    soup = BeautifulSoup(html, 'html.parser')
+    seen: Set[str] = set()
+    result: list[str] = []
+    for tag_name, attrs in MEDIA_TAGS_ATTRS.items():
+        for tag in soup.find_all(tag_name):
+            for attr in attrs:
+                if tag.has_attr(attr):
+                    raw = tag[attr]
+                    if attr in ('srcset', 'data-srcset'):
+                        for u in _extract_srcset_urls(raw):
+                            if u not in seen:
+                                seen.add(u)
+                                result.append(u)
+                    else:
+                        u = _filter_resource_url(raw)
+                        if u and u not in seen:
+                            seen.add(u)
+                            result.append(u)
+    for tag in soup.find_all(style=True):
+        for u in _extract_css_urls(tag['style']):
+            if u not in seen:
+                seen.add(u)
+                result.append(u)
+    for style_tag in soup.find_all('style'):
+        if style_tag.string:
+            for u in _extract_css_urls(style_tag.string):
+                if u not in seen:
+                    seen.add(u)
+                    result.append(u)
+    return result
+
 
 class JSSafeAnalyzer:
-    """基于 AST 的 JavaScript 安全分析器"""
-    
     def __init__(self, script_content: str, dangerous_functions: Set[str] | None = None):
         self.script_content = script_content
         self.is_malicious = False
         self.dangerous_functions = dangerous_functions or {
-            'eval', 'setTimeout', 'setInterval', 'Function', 
+            'eval', 'setTimeout', 'setInterval', 'Function',
             'document.write', 'innerHTML', 'outerHTML',
             'execScript', 'constructor'
         }
@@ -35,13 +108,10 @@ class JSSafeAnalyzer:
             return True
 
     def _traverse(self, node):
-        """递归遍历 AST 节点"""
         if not hasattr(node, 'type'):
             return
-
         if node.type == 'CallExpression':
             self._check_call_expression(node.callee)
-
         for key, value in vars(node).items():
             if isinstance(value, list):
                 for item in value:
@@ -50,7 +120,6 @@ class JSSafeAnalyzer:
                 self._traverse(value)
 
     def _check_call_expression(self, callee):
-        """检查函数调用是否危险"""
         if hasattr(callee, 'type'):
             if callee.type == 'Identifier' and callee.name in self.dangerous_functions:
                 self.is_malicious = True
@@ -63,15 +132,12 @@ class JSSafeAnalyzer:
 
 
 class WebSanitizer:
-    """HTML 内容安全清理器"""
-    
-    def __init__(self, 
+    def __init__(self,
                  raw_html: str,
                  allowed_tags: Set[str] | None = None,
                  allowed_attrs: dict[str, list[str]] | None = None,
                  allowed_css_props: list[str] | None = None):
         self.raw_html = raw_html
-        
         self.allowed_tags = allowed_tags or {
             'div', 'span', 'p', 'br', 'hr', 'strong', 'em', 'b', 'i', 'u', 's', 'font',
             'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -84,7 +150,6 @@ class WebSanitizer:
             'video', 'audio', 'source',
             'style', 'script'
         }
-        
         self.allowed_attrs = allowed_attrs or {
             'a': ['href', 'title', 'target', 'rel', 'name'],
             'img': ['src', 'alt', 'width', 'height', 'title', 'loading', 'srcset', 'sizes'],
@@ -100,10 +165,9 @@ class WebSanitizer:
             'font': ['color', 'face', 'size'],
             '*': ['class', 'id', 'style', 'title', 'lang', 'dir', 'data-*']
         }
-        
         self.css_sanitizer = CSSSanitizer(
             allowed_css_properties=allowed_css_props or [
-                'color', 'background', 'background-color', 'background-image', 
+                'color', 'background', 'background-color', 'background-image',
                 'background-position', 'background-size', 'background-repeat',
                 'font', 'font-size', 'font-weight', 'font-family', 'font-style',
                 'text-align', 'text-decoration', 'text-transform', 'text-indent',
@@ -126,9 +190,7 @@ class WebSanitizer:
                 'cursor', 'pointer-events', 'user-select'
             ]
         )
-        
         self.dangerous_url_schemes = {'javascript:', 'data:', 'vbscript:', 'file:'}
-        
         self.dangerous_css_patterns = [
             r'expression\s*\(',
             r'behavior\s*:',
@@ -139,57 +201,44 @@ class WebSanitizer:
         ]
 
     def _attribute_filter(self, tag: str, name: str, value: str) -> bool:
-        """自定义属性过滤器"""
         if name.startswith('on'):
             return False
-        
         if name in ['href', 'src', 'action', 'formaction', 'data', 'poster', 'cite']:
             value_lower = value.lower().strip()
             for scheme in self.dangerous_url_schemes:
                 if value_lower.startswith(scheme):
                     return False
-        
         if name == 'style':
             return self._is_safe_css(value)
-        
         return True
-    
+
     def _is_safe_css(self, css_content: str) -> bool:
-        """检查CSS内容是否安全"""
         if not css_content:
             return True
-        
         css_lower = css_content.lower()
         for pattern in self.dangerous_css_patterns:
             if re.search(pattern, css_lower, re.IGNORECASE):
                 logger.warning(f"检测到危险CSS模式: {pattern}")
                 return False
-        
         return True
-    
+
     def clean_style_tag_content(self, css_content: str) -> str:
-        """清理style标签内的CSS内容"""
         if not css_content:
             return ""
-        
         lines = []
         for line in css_content.split('\n'):
             line_lower = line.lower()
             is_dangerous = False
-            
             for pattern in self.dangerous_css_patterns:
                 if re.search(pattern, line_lower, re.IGNORECASE):
                     logger.warning(f"移除危险CSS行: {line.strip()}")
                     is_dangerous = True
                     break
-            
             if not is_dangerous:
                 lines.append(line)
-        
         return '\n'.join(lines)
 
     def sanitize(self) -> str:
-        """执行 HTML 清理"""
         try:
             clean_html = bleach.clean(
                 self.raw_html,
@@ -204,139 +253,98 @@ class WebSanitizer:
             return ""
 
 
-class SafeRawContentAnalyzer(BaseAnalyzer):
-    """安全原始内容分析器 - 清理并分析 HTML/JavaScript"""
-    
-    @staticmethod
-    def _is_html_content(content: str) -> bool:
-        """检测内容是否为HTML"""
-        html_indicators = [
-            r'<\s*([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>',
-            r'<\s*/\s*([a-zA-Z][a-zA-Z0-9]*)\s*>',
-            r'<!DOCTYPE',
-            r'<!doctype'
-        ]
-        
-        for pattern in html_indicators:
-            if re.search(pattern, content, re.IGNORECASE):
-                return True
-        return False
-    
-    @staticmethod
-    def analyze(content: str, 
-                remove_all_scripts: bool = False,
-                remove_external_scripts: bool = True,
-                analyze_inline_js: bool = True,
-                preserve_safe_styles: bool = True,
-                force_html_mode: bool = False,
-                enable_media_localization: bool = False,
-                base_url: str | None = None,
-                download_size_limit: int | None = None,
-                heartbeat_callback: Callable[[], None] | None = None) -> str:
-        """
-        分析并清理 HTML 内容
-        
-        Args:
-            content: 待清理的内容（HTML或纯文本）
-            remove_all_scripts: 是否移除所有脚本标签（默认False，只移除危险脚本）
-            remove_external_scripts: 是否移除外部脚本引用（默认True）
-            analyze_inline_js: 是否分析内联 JavaScript（默认True）
-            preserve_safe_styles: 是否保留安全的样式内容（默认True）
-            force_html_mode: 强制按HTML处理，即使检测不到HTML标签（默认False）
-            enable_media_localization: 是否启用媒体资源本地化（默认False）
-            base_url: 基础URL，用于解析相对路径（可选）
-            download_size_limit: 下载文件大小限制（字节），超过此大小将跳过下载（可选）
-            heartbeat_callback: 心跳回调函数，在长时间操作期间定期调用以保持连接（可选）
-            
-        Returns:
-            清理后的安全内容
-        """
-        if not content or not isinstance(content, str):
-            logger.warning("输入内容为空或类型错误")
-            return ""
-        
-        if not force_html_mode and not SafeRawContentAnalyzer._is_html_content(content):
-            # logger.info("非HTML内容，无需处理")
-            return content
-        
-        try:
-            sanitizer = WebSanitizer(content)
-            sanitized_html = sanitizer.sanitize()
-            
-            soup = BeautifulSoup(sanitized_html, 'html.parser')
-            
-            scripts_removed = 0
-            scripts_kept = 0
-            for script in soup.find_all('script'):
-                should_remove = False
-                
-                if script.get('src'):
-                    if remove_external_scripts:
-                        logger.info(f"移除外部脚本: {script.get('src')}")
-                        should_remove = True
-                    else:
-                        src = script.get('src', '').lower()
-                        if any(src.startswith(scheme) for scheme in ['javascript:', 'data:', 'vbscript:']):
-                            logger.warning(f"移除危险外部脚本: {script.get('src')}")
-                            should_remove = True
-                
-                if analyze_inline_js and script.string and not should_remove:
-                    analyzer = JSSafeAnalyzer(script.string)
-                    if analyzer.analyze():
-                        logger.warning(f"检测到危险 JavaScript: {analyzer.found_issues}")
-                        should_remove = True
-                
-                if remove_all_scripts or should_remove:
-                    script.decompose()
-                    scripts_removed += 1
+def _is_html_content(content: str) -> bool:
+    html_indicators = [
+        r'<\s*([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>',
+        r'<\s*/\s*([a-zA-Z][a-zA-Z0-9]*)\s*>',
+        r'<!DOCTYPE',
+        r'<!doctype'
+    ]
+    for pattern in html_indicators:
+        if re.search(pattern, content, re.IGNORECASE):
+            return True
+    return False
+
+
+def _clean_html_impl(content: str,
+                     remove_all_scripts: bool = False,
+                     remove_external_scripts: bool = True,
+                     analyze_inline_js: bool = True,
+                     preserve_safe_styles: bool = True,
+                     force_html_mode: bool = False) -> str:
+    if not content or not isinstance(content, str):
+        logger.warning("输入内容为空或类型错误")
+        return ""
+    if not force_html_mode and not _is_html_content(content):
+        return content
+    try:
+        sanitizer = WebSanitizer(content)
+        sanitized_html = sanitizer.sanitize()
+        soup = BeautifulSoup(sanitized_html, 'html.parser')
+        for script in soup.find_all('script'):
+            should_remove = False
+            if script.get('src'):
+                if remove_external_scripts:
+                    logger.info(f"移除外部脚本: {script.get('src')}")
+                    should_remove = True
                 else:
-                    scripts_kept += 1
-            
-            if scripts_removed > 0 or scripts_kept > 0:
-                logger.info(f"脚本处理: 移除 {scripts_removed} 个, 保留 {scripts_kept} 个")
-            
-            styles_cleaned = 0
-            styles_removed = 0
-            for style in soup.find_all('style'):
-                if style.string:
-                    if preserve_safe_styles:
-                        cleaned_css = sanitizer.clean_style_tag_content(style.string)
-                        if cleaned_css and cleaned_css.strip():
-                            style.string = cleaned_css
-                            styles_cleaned += 1
-                        else:
-                            style.decompose()
-                            styles_removed += 1
+                    src = script.get('src', '').lower()
+                    if any(src.startswith(scheme) for scheme in ['javascript:', 'data:', 'vbscript:']):
+                        logger.warning(f"移除危险外部脚本: {script.get('src')}")
+                        should_remove = True
+            if analyze_inline_js and script.string and not should_remove:
+                analyzer = JSSafeAnalyzer(script.string)
+                if analyzer.analyze():
+                    logger.warning(f"检测到危险 JavaScript: {analyzer.found_issues}")
+                    should_remove = True
+            if remove_all_scripts or should_remove:
+                script.decompose()
+        for style in soup.find_all('style'):
+            if style.string:
+                if preserve_safe_styles:
+                    cleaned_css = sanitizer.clean_style_tag_content(style.string)
+                    if cleaned_css and cleaned_css.strip():
+                        style.string = cleaned_css
                     else:
-                        style_lower = style.string.lower()
-                        has_danger = False
-                        for pattern in sanitizer.dangerous_css_patterns:
-                            if re.search(pattern, style_lower, re.IGNORECASE):
-                                has_danger = True
-                                break
-                        
-                        if has_danger:
-                            logger.warning(f"检测到危险 CSS 模式，移除 style 标签")
-                            style.decompose()
-                            styles_removed += 1
-            
-            if styles_cleaned > 0 or styles_removed > 0:
-                logger.info(f"样式处理: 清理 {styles_cleaned} 个, 移除 {styles_removed} 个")
-            
-            result = str(soup)
-            
-            if enable_media_localization:
-                try:
-                    from analyzer.media_localizer import MediaLocalizer
-                    localizer = MediaLocalizer(base_url=base_url, download_size_limit=download_size_limit)
-                    result = localizer.localize(result, heartbeat_callback=heartbeat_callback)
-                except Exception as e:
-                    logger.error(f"媒体本地化失败: {e}", exc_info=True)
-            
-            reduction_percent = round((1 - len(result) / len(content)) * 100, 1) if len(content) > 0 else 0
-            # logger.info(f"内容清理完成 - 原始: {len(content)} 字节, 清理后: {len(result)} 字节, 减少: {reduction_percent}%")
-            return result
-            
-        except Exception as e:
-            logger.error(f"内容分析失败: {str(e)}", exc_info=True)
-            return ""
+                        style.decompose()
+                else:
+                    style_lower = style.string.lower()
+                    has_danger = any(
+                        re.search(pattern, style_lower, re.IGNORECASE)
+                        for pattern in sanitizer.dangerous_css_patterns
+                    )
+                    if has_danger:
+                        logger.warning("检测到危险 CSS 模式，移除 style 标签")
+                        style.decompose()
+        return str(soup)
+    except Exception as e:
+        logger.error(f"内容分析失败: {str(e)}", exc_info=True)
+        return ""
+
+
+class HtmlAnalyzeService(BaseMLService):
+    _instance: "HtmlAnalyzeService | None" = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def initialize(self) -> None:
+        pass
+
+    async def cleanup(self) -> None:
+        pass
+
+    def extract_text(self, html: str) -> str:
+        soup = BeautifulSoup(html, "html.parser")
+        return soup.get_text().strip()
+
+    def clean_html(self, html: str) -> str:
+        return _clean_html_impl(html)
+
+    def extract_resource_links(self, html: str) -> list[str]:
+        return _collect_resource_links(html)
+
+
+html_analyze_service = HtmlAnalyzeService()

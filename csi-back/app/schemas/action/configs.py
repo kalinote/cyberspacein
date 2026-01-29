@@ -1,7 +1,7 @@
 from typing import Any
 from pydantic import BaseModel, Field
 
-from app.schemas.enum import ActionConfigIOTypeEnum
+from app.schemas.constants import ActionConfigIOTypeEnum
 
 class ActionNodesHandleConfigRequest(BaseModel):
     handle_name: str = Field(description="连接点名称")
