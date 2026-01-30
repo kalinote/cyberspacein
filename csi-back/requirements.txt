@@ -20,3 +20,7 @@ aioboto3>=12.0.0
 
 Pillow>=10.0.0
 filetype>=1.2.0
+
+beautifulsoup4
+bleach[css]
+esprima

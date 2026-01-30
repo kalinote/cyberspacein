@@ -14,7 +14,7 @@ from app.schemas.html_analyze import (
     HtmlCleanBatchItem,
     HtmlExtractLinksBatchItem,
 )
-from app.service.ml.html_analyze import html_analyze_service
+from app.service.html_analyze import html_analyze_service
 from app.core.exceptions import InternalServerException
 
 logger = logging.getLogger(__name__)

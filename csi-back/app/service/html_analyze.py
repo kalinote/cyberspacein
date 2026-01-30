@@ -8,7 +8,6 @@ import esprima
 from bleach.css_sanitizer import CSSSanitizer
 from bs4 import BeautifulSoup
 
-from app.service.ml.base import BaseMLService
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +321,7 @@ def _clean_html_impl(content: str,
         return ""
 
 
-class HtmlAnalyzeService(BaseMLService):
+class HtmlAnalyzeService:
     _instance: "HtmlAnalyzeService | None" = None
 
     def __new__(cls):

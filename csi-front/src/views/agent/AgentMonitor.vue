@@ -49,17 +49,17 @@
                                 class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
                                 @click="$router.push('/action/new')">
                                 <Icon icon="mdi:rocket-launch-outline" />
-                                <span>新建标准智能体</span>
+                                <span>新建智能体</span>
                             </button>
                             <button
-                                class="w-full bg-cyan-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2">
+                                class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
                                 <Icon icon="mdi:brain" />
                                 <span>配置分析引擎</span>
                             </button>
                             <button
-                                class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
+                                class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
                                 <Icon icon="mdi:file-document-multiple" />
-                                <span>从模板创建智能体</span>
+                                <span>分析工作管理</span>
                             </button>
                         </div>
                     </div>
