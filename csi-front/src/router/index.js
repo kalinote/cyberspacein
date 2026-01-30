@@ -12,6 +12,7 @@ import ActionDetail from '../views/action/ActionDetail.vue'
 import ActionBlueprintList from '../views/action/ActionBlueprintList.vue'
 import TaskManagement from '../views/action/TaskManagement.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
+import AgentConfig from '../views/agent/AgentConfig.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
 import ForumDetail from '../views/details/ForumDetail.vue'
@@ -89,6 +90,12 @@ const router = createRouter({
       path: '/agent',
       name: 'agent-monitor',
       component: AgentMonitor
+    },
+    {
+      // 配置分析引擎
+      path: '/agent/engine-config',
+      name: 'agent-engine-config',
+      component: AgentConfig
     },
     {
       // 视频编辑器

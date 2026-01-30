@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/search",
-    tags=["search"],
+    tags=["搜索"],
 )
 
 @router.post("/entity", response_model=PageResponseSchema[SearchResultSchema], summary="搜索实体")

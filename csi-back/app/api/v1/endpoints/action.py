@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/action",
-    tags=["action"],
+    tags=["行动管理"],
 )
 
 @router.post("/start", response_model=ApiResponseSchema[StartActionResponse], summary="开始行动")

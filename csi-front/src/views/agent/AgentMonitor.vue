@@ -47,12 +47,13 @@
                         <div class="space-y-4">
                             <button
                                 class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
-                                @click="$router.push('/action/new')">
+                                @click="$router.push('/agent/new')">
                                 <Icon icon="mdi:rocket-launch-outline" />
                                 <span>新建智能体</span>
                             </button>
                             <button
-                                class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
+                                class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
+                                @click="$router.push('/agent/engine-config')">
                                 <Icon icon="mdi:brain" />
                                 <span>配置分析引擎</span>
                             </button>
@@ -75,21 +76,10 @@
                         <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
                         <span><span class="text-blue-500">智能体</span>列表</span>
                     </h2>
-                    <div class="flex items-center gap-4">
-                        <el-input
-                            placeholder="搜索智能体..."
-                            style="width: 240px"
-                            clearable
-                        >
-                            <template #prefix>
-                                <Icon icon="mdi:magnify" class="text-gray-400" />
-                            </template>
-                        </el-input>
-                        <el-button type="primary">
-                            <template #icon><Icon icon="mdi:filter" /></template>
-                            筛选
-                        </el-button>
-                    </div>
+                    <el-button type="primary" link>
+                        <template #icon><Icon icon="mdi:arrow-right" /></template>
+                        查看全部智能体
+                    </el-button>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

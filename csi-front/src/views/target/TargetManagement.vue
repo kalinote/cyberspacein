@@ -69,21 +69,10 @@
             <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
             <span><span class="text-blue-500">重点</span>实体</span>
           </h2>
-          <div class="flex items-center gap-4">
-            <el-input
-              placeholder="搜索目标..."
-              style="width: 240px"
-              clearable
-            >
-              <template #prefix>
-                <Icon icon="mdi:magnify" class="text-gray-400" />
-              </template>
-            </el-input>
-            <el-button type="primary">
-              <template #icon><Icon icon="mdi:filter" /></template>
-              筛选
-            </el-button>
-          </div>
+          <el-button type="primary" link>
+            <template #icon><Icon icon="mdi:arrow-right" /></template>
+            查看全部实体
+          </el-button>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

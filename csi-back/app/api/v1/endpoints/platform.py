@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/platform",
-    tags=["platform"],
+    tags=["平台管理"],
 )
 
 @router.post("", response_model=ApiResponseSchema[PlatformBaseInfoSchema], summary="创建平台")
