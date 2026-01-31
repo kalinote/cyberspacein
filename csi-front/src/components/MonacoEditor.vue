@@ -1,9 +1,9 @@
 <template>
-    <div ref="editorContainer" class="monaco-editor-container"></div>
+    <div ref="editorContainer" class="monaco-editor-container" :style="containerStyle"></div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import loader from '@monaco-editor/loader'
 
 const props = defineProps({
@@ -18,8 +18,16 @@ const props = defineProps({
     language: {
         type: String,
         default: 'html'
+    },
+    minHeight: {
+        type: Number,
+        default: 600
     }
 })
+
+const containerStyle = computed(() => ({
+    minHeight: `${props.minHeight}px`
+}))
 
 const emit = defineEmits(['update:modelValue'])
 
@@ -96,6 +104,7 @@ defineExpose({
 <style scoped>
 .monaco-editor-container {
     width: 100%;
-    min-height: 600px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
 }
 </style>

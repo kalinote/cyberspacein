@@ -24,3 +24,6 @@ filetype>=1.2.0
 beautifulsoup4
 bleach[css]
 esprima
+
+langchain
+langchain-openai

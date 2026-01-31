@@ -19,3 +19,12 @@ class AgentModelConfigModel(Document):
 class AgentPromptTemplateModel(Document):
     id: str = Field(alias="_id")
     name: str = Field(description="提示词模板名称")
+    description: str = Field(description="提示词模板描述")
+    system_prompt: str = Field(description="系统提示词")
+    user_prompt: str = Field(description="第一段用户提示词模板")
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+
+    class Settings:
+        name = "agent_prompt_templates"
+        indexes = ["name"]

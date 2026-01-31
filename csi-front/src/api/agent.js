@@ -6,5 +6,11 @@ export const agentApi = {
   },
   createModel(data) {
     return request.post('/agent/configs/models', data)
+  },
+  getPromptTemplateList(params = { page: 1, page_size: 10 }) {
+    return request.get('/agent/configs/prompt-templates', params)
+  },
+  createPromptTemplate(data) {
+    return request.post('/agent/configs/prompt-templates', data)
   }
 }

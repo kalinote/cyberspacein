@@ -6,8 +6,13 @@ from fastapi import APIRouter, Depends, Query
 
 from app.schemas.response import ApiResponseSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
-from app.schemas.agent import AgentModelConfigCreateRequestSchema, AgentModelConfigSchema
-from app.models.agent.configs import AgentModelConfigModel
+from app.schemas.agent import (
+    AgentModelConfigCreateRequestSchema,
+    AgentModelConfigSchema,
+    AgentPromptTemplateCreateRequestSchema,
+    AgentPromptTemplateSchema,
+)
+from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 from app.utils.id_lib import generate_id
 
 logger = logging.getLogger(__name__)
@@ -80,5 +85,68 @@ async def get_agent_model_config_list(
             updated_at=m.updated_at,
         )
         for m in items
+    ]
+    return PageResponseSchema.create(results, total, params.page, params.page_size)
+
+
+@router.post("/configs/prompt-templates", response_model=ApiResponseSchema[AgentPromptTemplateSchema], summary="新增提示词模板")
+async def create_agent_prompt_template(data: AgentPromptTemplateCreateRequestSchema):
+    template_id = generate_id(data.name + data.system_prompt + data.user_prompt)
+    existing = await AgentPromptTemplateModel.find_one({"_id": template_id})
+    if existing:
+        return ApiResponseSchema.error(code=400, message="同名且同内容的模板已存在")
+    existing_by_name = await AgentPromptTemplateModel.find_one({"name": data.name})
+    if existing_by_name:
+        return ApiResponseSchema.error(code=400, message=f"提示词模板名称已存在: {data.name}")
+    doc = AgentPromptTemplateModel(
+        id=template_id,
+        name=data.name,
+        description=data.description,
+        system_prompt=data.system_prompt,
+        user_prompt=data.user_prompt,
+    )
+    await doc.insert()
+    logger.info(f"成功创建提示词模板: {template_id} - {data.name}")
+    return ApiResponseSchema.success(data=AgentPromptTemplateSchema(
+        id=doc.id,
+        name=doc.name,
+        description=doc.description,
+        system_prompt=doc.system_prompt,
+        user_prompt=doc.user_prompt,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+    ))
+
+
+@router.get("/configs/prompt-templates", response_model=PageResponseSchema[AgentPromptTemplateSchema], summary="查询提示词模板列表")
+async def get_agent_prompt_template_list(
+    params: PageParamsSchema = Depends(),
+    search: Optional[str] = Query(None, description="搜索关键词，模糊匹配名称或描述"),
+):
+    skip = (params.page - 1) * params.page_size
+    query_filters = {}
+    if search:
+        pattern = re.compile(re.escape(search), re.IGNORECASE)
+        query_filters["$or"] = [
+            {"name": {"$regex": pattern}},
+            {"description": {"$regex": pattern}},
+        ]
+    if query_filters:
+        query = AgentPromptTemplateModel.find(query_filters)
+    else:
+        query = AgentPromptTemplateModel.find_all()
+    total = await query.count()
+    items = await query.skip(skip).limit(params.page_size).to_list()
+    results = [
+        AgentPromptTemplateSchema(
+            id=t.id,
+            name=t.name,
+            description=t.description,
+            system_prompt=t.system_prompt,
+            user_prompt=t.user_prompt,
+            created_at=t.created_at,
+            updated_at=t.updated_at,
+        )
+        for t in items
     ]
     return PageResponseSchema.create(results, total, params.page, params.page_size)

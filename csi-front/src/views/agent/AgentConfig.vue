@@ -67,13 +67,17 @@
               :placeholder="'搜索' + getCurrentTabLabel() + '...'"
               clearable
               class="w-64"
-              @keyup.enter="activeTab === 'modelResources' ? handleModelSearch() : null"
+              @keyup.enter="activeTab === 'modelResources' ? handleModelSearch() : activeTab === 'promptTemplates' ? handlePromptTemplateSearch() : null"
             >
               <template #prefix>
                 <Icon icon="mdi:magnify" class="text-gray-400" />
               </template>
             </el-input>
-            <el-button v-if="activeTab === 'modelResources'" type="default" @click="handleModelSearch">
+            <el-button
+              v-if="activeTab === 'modelResources' || activeTab === 'promptTemplates'"
+              type="default"
+              @click="activeTab === 'modelResources' ? handleModelSearch() : handlePromptTemplateSearch()"
+            >
               <template #icon><Icon icon="mdi:magnify" /></template>
               搜索
             </el-button>
@@ -87,7 +91,7 @@
         </div>
 
         <div class="flex-1 overflow-auto p-6">
-          <div v-if="activeTab === 'analysisOptions'" class="space-y-4">
+          <div v-if="activeTab === 'analysisEngines'" class="space-y-4">
             <div class="min-h-[200px]">
               <div
                 v-for="(item, index) in filteredAnalysisOptions"
@@ -209,9 +213,9 @@
           </div>
 
           <div v-else-if="activeTab === 'promptTemplates'" class="space-y-4">
-            <div class="min-h-[200px]">
+            <div v-loading="promptTemplateListLoading" element-loading-text="加载中..." class="min-h-[200px]">
               <div
-                v-for="(item, index) in filteredPromptTemplates"
+                v-for="(item, index) in promptTemplateList"
                 :key="item.id"
                 class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
               >
@@ -224,10 +228,10 @@
                       <div class="flex items-center gap-3 mb-2">
                         <h3 class="text-lg font-bold text-gray-900">{{ item.name }}</h3>
                       </div>
-                      <p class="text-sm text-gray-600 mb-3 line-clamp-2">{{ item.preview }}</p>
+                      <p class="text-sm text-gray-600 mb-3 line-clamp-2">{{ getPromptTemplatePreview(item) }}</p>
                       <div class="flex items-center gap-2 text-sm text-gray-500">
                         <Icon icon="mdi:clock-outline" />
-                        <span>更新于 {{ item.updatedAt }}</span>
+                        <span>更新于 {{ formatModelDate(item.updated_at) }}</span>
                       </div>
                     </div>
                   </div>
@@ -247,10 +251,21 @@
                   </div>
                 </div>
               </div>
-              <div v-if="filteredPromptTemplates.length === 0" class="flex flex-col items-center justify-center py-16">
+              <div v-if="!promptTemplateListLoading && promptTemplateList.length === 0" class="flex flex-col items-center justify-center py-16">
                 <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
                 <p class="text-gray-500">暂无数据</p>
               </div>
+            </div>
+            <div v-if="!promptTemplateListLoading && promptTemplateList.length > 0" class="flex justify-center pt-4">
+              <el-pagination
+                v-model:current-page="promptTemplatePagination.page"
+                v-model:page-size="promptTemplatePagination.pageSize"
+                :page-sizes="[10, 20, 50]"
+                :total="promptTemplatePagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="handlePromptTemplatePageChange"
+                @size-change="handlePromptTemplatePageSizeChange"
+              />
             </div>
           </div>
 
@@ -342,6 +357,60 @@
         <el-button type="primary" :loading="modelSubmitLoading" @click="handleModelSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="promptTemplateDialogVisible"
+      title="新增提示词模板"
+      width="960px"
+      :close-on-click-modal="false"
+      @close="handlePromptTemplateDialogClose"
+    >
+      <el-form
+        ref="promptTemplateFormRef"
+        :model="promptTemplateFormData"
+        :rules="promptTemplateFormRules"
+        label-width="100px"
+      >
+        <el-form-item label="标题" prop="name">
+          <el-input v-model="promptTemplateFormData.name" placeholder="请输入提示词标题" clearable />
+        </el-form-item>
+        <el-form-item label="描述" prop="description">
+          <el-input
+            v-model="promptTemplateFormData.description"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入描述（可选）"
+            clearable
+          />
+        </el-form-item>
+        <el-tabs v-model="promptTemplateActiveTab">
+          <el-tab-pane label="系统提示词" name="system_prompt">
+            <el-form-item label="系统提示词" prop="system_prompt">
+              <MonacoEditor
+                v-model="promptTemplateFormData.system_prompt"
+                language="markdown"
+                :read-only="false"
+                :min-height="560"
+              />
+            </el-form-item>
+          </el-tab-pane>
+          <el-tab-pane label="用户提示词" name="user_prompt">
+            <el-form-item label="用户提示词" prop="user_prompt">
+              <MonacoEditor
+                v-model="promptTemplateFormData.user_prompt"
+                language="markdown"
+                :read-only="false"
+                :min-height="560"
+              />
+            </el-form-item>
+          </el-tab-pane>
+        </el-tabs>
+      </el-form>
+      <template #footer>
+        <el-button @click="handlePromptTemplateDialogClose">取消</el-button>
+        <el-button type="primary" :loading="promptTemplateSubmitLoading" @click="handlePromptTemplateSubmit">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -350,15 +419,16 @@ import { ref, computed, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
+import MonacoEditor from '@/components/MonacoEditor.vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
 
-const activeTab = ref('analysisOptions')
+const activeTab = ref('analysisEngines')
 const searchKeyword = ref('')
 
 const engineTabs = [
-  { key: 'analysisOptions', label: '分析选项', icon: 'mdi:format-list-checks' },
+  { key: 'analysisEngines', label: '分析引擎', icon: 'mdi:brain' },
   { key: 'modelResources', label: '模型资源', icon: 'mdi:server' },
   { key: 'promptTemplates', label: '提示词模板', icon: 'mdi:file-document-edit' },
   { key: 'tools', label: '工具', icon: 'mdi:tools' }
@@ -396,8 +466,32 @@ const fetchModelList = async () => {
   }
 }
 
+const promptTemplateList = ref([])
+const promptTemplateListLoading = ref(false)
+const promptTemplatePagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+const promptTemplateLoadedOnce = ref(false)
+
+const fetchPromptTemplateList = async () => {
+  promptTemplateListLoading.value = true
+  try {
+    const result = await getPaginatedData(agentApi.getPromptTemplateList, {
+      search: searchKeyword.value.trim() || undefined,
+      page: promptTemplatePagination.value.page,
+      page_size: promptTemplatePagination.value.pageSize
+    })
+    promptTemplateList.value = result.items
+    promptTemplatePagination.value = { ...promptTemplatePagination.value, ...result.pagination }
+    promptTemplateLoadedOnce.value = true
+  } catch (e) {
+    promptTemplateList.value = []
+  } finally {
+    promptTemplateListLoading.value = false
+  }
+}
+
 watch(activeTab, (tab) => {
   if (tab === 'modelResources' && !modelLoadedOnce.value) fetchModelList()
+  if (tab === 'promptTemplates' && !promptTemplateLoadedOnce.value) fetchPromptTemplateList()
 })
 
 const maskApiKey = (key) => {
@@ -423,11 +517,6 @@ const formatModelDate = (dateStr) => {
   }
 }
 
-const promptTemplatesList = ref([
-  { id: '1', name: '通用分析助手', preview: '你是一个专业的分析助手，负责对给定内容进行多维度分析，输出结构化的分析结果...', updatedAt: '2025-01-28 10:00' },
-  { id: '2', name: '情感分析专用', preview: '你专注于情感分析任务，请识别文本中的情感倾向、强度与关键词...', updatedAt: '2025-01-27 14:30' }
-])
-
 const toolsList = ref([
   { id: '1', name: '网页检索', description: '根据查询检索相关网页内容', type: '检索' },
   { id: '2', name: '知识库查询', description: '从配置的知识库中检索知识片段', type: '检索' },
@@ -437,7 +526,7 @@ const toolsList = ref([
 const statistics = computed(() => ({
   analysisOptions: analysisOptionsList.value.length,
   modelResources: modelPagination.value.total,
-  promptTemplates: promptTemplatesList.value.length,
+  promptTemplates: promptTemplatePagination.value.total,
   tools: toolsList.value.length
 }))
 
@@ -445,10 +534,16 @@ const getResourceCount = (tabKey) => {
   const map = {
     analysisOptions: analysisOptionsList.value.length,
     modelResources: modelPagination.value.total,
-    promptTemplates: promptTemplatesList.value.length,
+    promptTemplates: promptTemplatePagination.value.total,
     tools: toolsList.value.length
   }
   return map[tabKey] ?? 0
+}
+
+const getPromptTemplatePreview = (item) => {
+  if (item.description) return item.description
+  const text = (item.system_prompt || item.user_prompt || '').trim()
+  return text.length > 80 ? text.slice(0, 80) + '...' : text || '-'
 }
 
 const getCurrentTabIcon = () => {
@@ -472,9 +567,6 @@ const filterByKeyword = (list, fields) => {
 const filteredAnalysisOptions = computed(() =>
   filterByKeyword(analysisOptionsList.value, ['label', 'value', 'description'])
 )
-const filteredPromptTemplates = computed(() =>
-  filterByKeyword(promptTemplatesList.value, ['name', 'preview'])
-)
 const filteredTools = computed(() =>
   filterByKeyword(toolsList.value, ['name', 'description', 'type'])
 )
@@ -491,6 +583,20 @@ const handleModelPageSizeChange = (pageSize) => {
 const handleModelSearch = () => {
   modelPagination.value.page = 1
   fetchModelList()
+}
+
+const handlePromptTemplatePageChange = (page) => {
+  promptTemplatePagination.value.page = page
+  fetchPromptTemplateList()
+}
+const handlePromptTemplatePageSizeChange = (pageSize) => {
+  promptTemplatePagination.value.pageSize = pageSize
+  promptTemplatePagination.value.page = 1
+  fetchPromptTemplateList()
+}
+const handlePromptTemplateSearch = () => {
+  promptTemplatePagination.value.page = 1
+  fetchPromptTemplateList()
 }
 
 const modelDialogVisible = ref(false)
@@ -513,6 +619,8 @@ const modelFormRules = {
 const handleAdd = () => {
   if (activeTab.value === 'modelResources') {
     modelDialogVisible.value = true
+  } else if (activeTab.value === 'promptTemplates') {
+    promptTemplateDialogVisible.value = true
   } else {
     ElMessage.info('功能开发中')
   }
@@ -544,6 +652,98 @@ const handleModelSubmit = async () => {
     if (e !== false) console.error('新增模型失败:', e)
   } finally {
     modelSubmitLoading.value = false
+  }
+}
+
+const DEFAULT_SYSTEM_PROMPT_TEMPLATE = `【注意】提示词模板仍需优化
+## Role: 互联网舆情监测 Agent
+
+## Capability: 
+1. 具备 SQL/API 数据库访问权限。
+2. 擅长对非结构化文本进行语义聚类。
+
+## Workflow:
+1. 分析用户指令，生成数据库检索参数。
+2. 执行查询并对原始结果进行预处理（去重、脱敏）。
+3. 运用“多维交叉分析法”生成洞察。
+4. 以 Markdown 报告形式输出。
+
+## Constraints:
+- 必须引用原始数据来源。
+- 总结字数不超过 800 字，重点内容加粗。
+- 若数据量少于 5 条，需注明“样本量较小”。`
+
+const DEFAULT_USER_PROMPT_TEMPLATE = `【注意】提示词模板仍需优化
+### 1. 任务背景 (Context)
+我目前正在处理 [项目名称/具体场景]，目标是解决 [具体痛点/实现什么目的]。
+
+### 2. 核心任务 (Task)
+请基于系统设定的角色，为我执行以下操作：
+- [具体子任务 1]
+- [具体子任务 2]
+
+### 3. 输入数据/参考资料 (Input/Data)
+以下是你要处理的具体内容：
+---
+[在此粘贴你的原始文本、数据、链接或代码]
+使用 {{ template_params }} 可以在实体分析时自动填充实体参数，如 {{ uuid }} 将在运行时自动替换为实体uuid
+---
+
+### 4. 特定要求 (Requirements)
+- 语气风格：[如：专业/幽默/简洁]
+- 重点关注：[如：性能优化/合规性/视觉美感]
+- 避坑指南：[如：不要使用任何专业术语/不要提及竞争对手名称]
+
+### 5. 输出交付物 (Output)
+请以 [JSON / Markdown表格 / 三段式报告] 的形式输出。`
+
+const promptTemplateDialogVisible = ref(false)
+const promptTemplateActiveTab = ref('system_prompt')
+const promptTemplateFormRef = ref(null)
+const promptTemplateSubmitLoading = ref(false)
+const promptTemplateFormData = ref({
+  name: '',
+  description: '',
+  system_prompt: DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+  user_prompt: DEFAULT_USER_PROMPT_TEMPLATE
+})
+const promptTemplateFormRules = {
+  name: [{ required: true, message: '请输入提示词标题', trigger: 'blur' }],
+  system_prompt: [{ required: true, message: '请输入系统提示词', trigger: 'blur' }],
+  user_prompt: [{ required: true, message: '请输入用户提示词', trigger: 'blur' }]
+}
+
+const handlePromptTemplateDialogClose = () => {
+  promptTemplateDialogVisible.value = false
+  promptTemplateActiveTab.value = 'system_prompt'
+  promptTemplateFormRef.value?.resetFields()
+  promptTemplateFormData.value = { name: '', description: '', system_prompt: DEFAULT_SYSTEM_PROMPT_TEMPLATE, user_prompt: DEFAULT_USER_PROMPT_TEMPLATE }
+}
+
+const handlePromptTemplateSubmit = async () => {
+  if (!promptTemplateFormRef.value) return
+  try {
+    await promptTemplateFormRef.value.validate()
+    promptTemplateSubmitLoading.value = true
+    await agentApi.createPromptTemplate({
+      name: promptTemplateFormData.value.name,
+      description: promptTemplateFormData.value.description || undefined,
+      system_prompt: promptTemplateFormData.value.system_prompt,
+      user_prompt: promptTemplateFormData.value.user_prompt
+    })
+    ElMessage.success('新增成功')
+    handlePromptTemplateDialogClose()
+    promptTemplatePagination.value.page = 1
+    fetchPromptTemplateList()
+  } catch (e) {
+    if (e !== false) {
+      const data = promptTemplateFormData.value
+      if (!data.system_prompt?.trim()) promptTemplateActiveTab.value = 'system_prompt'
+      else if (!data.user_prompt?.trim()) promptTemplateActiveTab.value = 'user_prompt'
+      console.error('新增提示词模板失败:', e)
+    }
+  } finally {
+    promptTemplateSubmitLoading.value = false
   }
 }
 
