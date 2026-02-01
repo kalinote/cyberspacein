@@ -16,16 +16,3 @@ class AgentModel(Document):
         name = "agents"
         indexes = ["name"]
     
-class AgentCheckpointerModel(Document):
-    id: str = Field(alias="_id")
-    agent_id: str = Field(description="智能体id")
-    checkpointer_id: str = Field(description="检查点id")
-    data: dict = Field(description="检查点数据")
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
-    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
-    
-    class Settings:
-        name = "agent_checkpointers"
-        indexes = ["agent_id", "checkpointer_id"]
-    
-    
