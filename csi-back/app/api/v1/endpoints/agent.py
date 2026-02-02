@@ -4,9 +4,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
+from app.schemas.agent.configs import AgentToolsParameterSchema, AgentToolsResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
-from app.schemas.agent import (
+from app.schemas.agent.agent import (
     AgentModelConfigCreateRequestSchema,
     AgentModelConfigSchema,
     AgentPromptTemplateCreateRequestSchema,
@@ -14,6 +15,7 @@ from app.schemas.agent import (
 )
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 from app.utils.id_lib import generate_id
+from app.service.agent.tools import all_tools
 
 logger = logging.getLogger(__name__)
 
@@ -150,3 +152,34 @@ async def get_agent_prompt_template_list(
         for t in items
     ]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
+
+@router.get("/configs/tools", response_model=ApiResponseSchema[list[AgentToolsResponseSchema]], summary="查询工具列表")
+async def get_agent_tools():
+    results = []
+    for t in all_tools.values():
+        params = []
+        if hasattr(t, "args_schema") and t.args_schema is not None:
+            get_schema = getattr(t.args_schema, "model_json_schema", None) or getattr(t.args_schema, "schema", None)
+            schema = get_schema() if get_schema else {}
+            props = schema.get("properties", {})
+            required_list = schema.get("required", [])
+            for name, info in props.items():
+                req = name in required_list
+                default = info.get("default", "无默认值")
+                desc = info.get("description", "") or "无说明"
+                typ = info.get("type", info.get("anyOf", "?"))
+                if isinstance(typ, list):
+                    typ = typ[0].get("type", "?") if typ else "?"
+                params.append(AgentToolsParameterSchema(
+                    name=name,
+                    description=desc,
+                    type=typ if isinstance(typ, str) else str(typ),
+                    required=req,
+                    default=default if default is not None else "None",
+                ))
+        results.append(AgentToolsResponseSchema(
+            name=t.name,
+            description=t.description or "",
+            parameters=params,
+        ))
+    return ApiResponseSchema.success(data=results)

@@ -63,6 +63,7 @@
           </div>
           <div class="flex items-center gap-3">
             <el-input
+              v-if="activeTab !== 'tools'"
               v-model="searchKeyword"
               :placeholder="'搜索' + getCurrentTabLabel() + '...'"
               clearable
@@ -81,7 +82,7 @@
               <template #icon><Icon icon="mdi:magnify" /></template>
               搜索
             </el-button>
-            <el-button type="primary" @click="handleAdd">
+            <el-button v-if="activeTab !== 'tools'" type="primary" @click="handleAdd">
               <template #icon>
                 <Icon icon="mdi:plus" />
               </template>
@@ -270,44 +271,46 @@
           </div>
 
           <div v-else-if="activeTab === 'tools'" class="space-y-4">
-            <div class="min-h-[200px]">
+            <div v-loading="toolsListLoading" element-loading-text="加载中..." class="min-h-[200px]">
               <div
-                v-for="(item, index) in filteredTools"
-                :key="item.id"
+                v-for="(item, index) in toolsList"
+                :key="item.name + '-' + index"
                 class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
               >
-                <div class="flex items-start justify-between">
-                  <div class="flex items-start gap-4 flex-1">
-                    <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-purple-100">
-                      <Icon icon="mdi:tools" class="text-2xl text-purple-600" />
-                    </div>
-                    <div class="flex-1">
-                      <div class="flex items-center gap-3 mb-2">
-                        <h3 class="text-lg font-bold text-gray-900">{{ item.name }}</h3>
-                        <el-tag size="small" class="border-0 bg-purple-100 text-purple-700">
-                          {{ item.type }}
-                        </el-tag>
-                      </div>
-                      <p class="text-sm text-gray-600">{{ item.description }}</p>
-                    </div>
+                <div class="flex items-start gap-4">
+                  <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-purple-100">
+                    <Icon icon="mdi:tools" class="text-2xl text-purple-600" />
                   </div>
-                  <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="handleAction('查看', item.name)">
-                      <template #icon><Icon icon="mdi:eye" /></template>
-                      查看
-                    </el-button>
-                    <el-button type="primary" link @click="handleAction('编辑', item.name)">
-                      <template #icon><Icon icon="mdi:pencil" /></template>
-                      编辑
-                    </el-button>
-                    <el-button type="danger" link @click="handleAction('删除', item.name)">
-                      <template #icon><Icon icon="mdi:delete" /></template>
-                      删除
-                    </el-button>
+                  <div class="flex-1 min-w-0">
+                    <h3 class="text-lg font-bold text-gray-900 mb-2">{{ item.name }}</h3>
+                    <p v-if="item.description" class="text-sm text-gray-600 mb-3 whitespace-pre-line">{{ item.description }}</p>
+                    <div v-if="item.parameters?.length" class="mt-3">
+                      <p class="text-sm font-medium text-gray-700 mb-2">参数</p>
+                      <el-table :data="item.parameters" size="small" border>
+                        <el-table-column prop="name" label="参数名称" min-width="120" />
+                        <el-table-column prop="description" label="参数描述" min-width="160">
+                          <template #default="{ row }">
+                            <span class="whitespace-pre-line">{{ row.description ?? '-' }}</span>
+                          </template>
+                        </el-table-column>
+                        <el-table-column prop="type" label="类型" width="100" />
+                        <el-table-column label="必填" width="70" align="center">
+                          <template #default="{ row }">
+                            <el-tag v-if="row.required" size="small" type="danger">是</el-tag>
+                            <el-tag v-else size="small" type="info">否</el-tag>
+                          </template>
+                        </el-table-column>
+                        <el-table-column label="默认值" min-width="100">
+                          <template #default="{ row }">
+                            {{ row.default !== undefined && row.default !== null ? String(row.default) : '-' }}
+                          </template>
+                        </el-table-column>
+                      </el-table>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div v-if="filteredTools.length === 0" class="flex flex-col items-center justify-center py-16">
+              <div v-if="!toolsListLoading && toolsList.length === 0" class="flex flex-col items-center justify-center py-16">
                 <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
                 <p class="text-gray-500">暂无数据</p>
               </div>
@@ -489,9 +492,27 @@ const fetchPromptTemplateList = async () => {
   }
 }
 
+const toolsList = ref([])
+const toolsListLoading = ref(false)
+const toolsLoadedOnce = ref(false)
+
+const fetchToolsList = async () => {
+  toolsListLoading.value = true
+  try {
+    const res = await agentApi.getToolsList()
+    toolsList.value = Array.isArray(res?.data) ? res.data : []
+    toolsLoadedOnce.value = true
+  } catch (e) {
+    toolsList.value = []
+  } finally {
+    toolsListLoading.value = false
+  }
+}
+
 watch(activeTab, (tab) => {
   if (tab === 'modelResources' && !modelLoadedOnce.value) fetchModelList()
   if (tab === 'promptTemplates' && !promptTemplateLoadedOnce.value) fetchPromptTemplateList()
+  if (tab === 'tools' && !toolsLoadedOnce.value) fetchToolsList()
 })
 
 const maskApiKey = (key) => {
@@ -517,12 +538,6 @@ const formatModelDate = (dateStr) => {
   }
 }
 
-const toolsList = ref([
-  { id: '1', name: '网页检索', description: '根据查询检索相关网页内容', type: '检索' },
-  { id: '2', name: '知识库查询', description: '从配置的知识库中检索知识片段', type: '检索' },
-  { id: '3', name: '代码执行', description: '在沙箱中执行代码片段', type: '执行' }
-])
-
 const statistics = computed(() => ({
   analysisOptions: analysisOptionsList.value.length,
   modelResources: modelPagination.value.total,
@@ -530,15 +545,7 @@ const statistics = computed(() => ({
   tools: toolsList.value.length
 }))
 
-const getResourceCount = (tabKey) => {
-  const map = {
-    analysisOptions: analysisOptionsList.value.length,
-    modelResources: modelPagination.value.total,
-    promptTemplates: promptTemplatePagination.value.total,
-    tools: toolsList.value.length
-  }
-  return map[tabKey] ?? 0
-}
+const getResourceCount = (tabKey) => statistics.value[tabKey] ?? 0
 
 const getPromptTemplatePreview = (item) => {
   if (item.description) return item.description
@@ -566,9 +573,6 @@ const filterByKeyword = (list, fields) => {
 
 const filteredAnalysisOptions = computed(() =>
   filterByKeyword(analysisOptionsList.value, ['label', 'value', 'description'])
-)
-const filteredTools = computed(() =>
-  filterByKeyword(toolsList.value, ['name', 'description', 'type'])
 )
 
 const handleModelPageChange = (page) => {

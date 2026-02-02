@@ -100,3 +100,12 @@ ENTITY_TYPE_NAMES = {
     EntityType.ARTICLE: "文章",
     EntityType.FORUM: "论坛"
 }
+
+ENTITY_TYPE_INDEX_MAP = {
+    EntityType.ARTICLE: "article",
+    EntityType.FORUM: "forum",
+    
+    # 值转换
+    EntityType.ARTICLE.value: "article",
+    EntityType.FORUM.value: "forum",
+}

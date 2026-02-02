@@ -12,5 +12,8 @@ export const agentApi = {
   },
   createPromptTemplate(data) {
     return request.post('/agent/configs/prompt-templates', data)
+  },
+  getToolsList() {
+    return request.get('/agent/configs/tools')
   }
 }
