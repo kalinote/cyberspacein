@@ -9,6 +9,7 @@ from app.schemas.response import ApiResponseSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.agent.agent import (
     AgentCreateRequestSchema,
+    AgentListItemSchema,
     AgentModelConfigCreateRequestSchema,
     AgentModelConfigSchema,
     AgentPromptTemplateCreateRequestSchema,
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/agent",
-    tags=["智能体管理"],
+    tags=["分析引擎管理"],
 )
 
 
@@ -151,16 +152,16 @@ async def get_agent_prompt_template_list(
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 
-@router.post("/agents", response_model=ApiResponseSchema[AgentSchema], summary="创建智能体")
+@router.post("/agents", response_model=ApiResponseSchema[AgentSchema], summary="创建分析引擎")
 async def create_agent(data: AgentCreateRequestSchema):
     raw = data.name + data.prompt_template_id + str(data.llm_config) + ",".join(data.tools)
     agent_id = generate_id(raw)
     existing = await AgentModel.find_one({"_id": agent_id})
     if existing:
-        return ApiResponseSchema.error(code=400, message="该智能体已存在")
+        return ApiResponseSchema.error(code=400, message="该分析引擎已存在")
     existing_by_name = await AgentModel.find_one({"name": data.name})
     if existing_by_name:
-        return ApiResponseSchema.error(code=400, message=f"智能体名称已存在: {data.name}")
+        return ApiResponseSchema.error(code=400, message=f"分析引擎名称已存在: {data.name}")
     doc = AgentModel(
         id=agent_id,
         name=data.name,
@@ -170,7 +171,7 @@ async def create_agent(data: AgentCreateRequestSchema):
         tools=data.tools,
     )
     await doc.insert()
-    logger.info(f"成功创建智能体: {agent_id} - {data.name}")
+    logger.info(f"成功创建分析引擎: {agent_id} - {data.name}")
     return ApiResponseSchema.success(data=AgentSchema(
         id=doc.id,
         name=doc.name,
@@ -183,7 +184,7 @@ async def create_agent(data: AgentCreateRequestSchema):
     ))
 
 
-@router.get("/agents", response_model=PageResponseSchema[AgentSchema], summary="查询智能体列表")
+@router.get("/agents", response_model=PageResponseSchema[AgentSchema], summary="查询分析引擎列表")
 async def get_agent_list(
     params: PageParamsSchema = Depends(),
     search: Optional[str] = Query(None, description="搜索关键词，模糊匹配名称或描述"),
@@ -214,6 +215,11 @@ async def get_agent_list(
     ]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
+@router.get("/configs/agents-list", response_model=ApiResponseSchema[list[AgentListItemSchema]], summary="查询分析引擎名称列表")
+async def get_agent_agents_list():
+    items = await AgentModel.find_all().to_list()
+    results = [AgentListItemSchema(id=a.id, name=a.name) for a in items]
+    return ApiResponseSchema.success(data=results)
 
 @router.get("/configs/tools", response_model=ApiResponseSchema[list[AgentToolsResponseSchema]], summary="查询工具列表")
 async def get_agent_tools():

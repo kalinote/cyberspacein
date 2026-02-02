@@ -22,6 +22,9 @@ export const agentApi = {
   getAgentList(params = { page: 1, page_size: 10 }) {
     return request.get('/agent/agents', params)
   },
+  getAgentsConfigList() {
+    return request.get('/agent/configs/agents-list')
+  },
   createAgent(data) {
     return request.post('/agent/agents', data)
   }

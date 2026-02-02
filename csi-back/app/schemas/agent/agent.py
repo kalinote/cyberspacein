@@ -47,8 +47,13 @@ class AgentCreateRequestSchema(BaseModel):
     tools: list[str] = Field(default_factory=list, description="工具列表")
 
 
+class AgentListItemSchema(BaseModel):
+    id: str = Field(description="分析引擎ID")
+    name: str = Field(description="分析引擎名称")
+
+
 class AgentSchema(BaseModel):
-    id: str = Field(description="智能体ID")
+    id: str = Field(description="分析引擎ID")
     name: str = Field(description="Agent名称")
     description: str = Field(description="Agent描述")
     prompt_template_id: str = Field(description="提示词模板id")

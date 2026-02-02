@@ -24,8 +24,8 @@
                 :subtitle="articleData.uuid"
             >
                 <template #tags>
-                    <el-tag v-if="articleData.platform" type="primary" size="default">
-                        {{ articleData.platform }}
+                    <el-tag v-if="articleData.spider_name" type="primary" size="default">
+                        {{ articleData.spider_name }}
                     </el-tag>
                     <el-tag v-if="articleData.section" type="info" size="default">
                         {{ articleData.section }}
@@ -52,7 +52,7 @@
 
             <section class="py-8 bg-white">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="grid grid-cols-1 gap-6" :class="(articleData.likes != null && articleData.likes !== -1) ? 'md:grid-cols-5' : 'md:grid-cols-4'">
                         <div class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
                             <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                                 <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
@@ -61,6 +61,18 @@
                                 <p class="text-sm text-gray-500">作者</p>
                                 <p class="text-lg font-bold text-gray-900 truncate">
                                     {{ articleData.author_name || articleData.author_id || '未知' }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">来源平台</p>
+                                <p class="text-base font-bold text-gray-900 truncate">
+                                    {{ articleData.platform || '未知' }}
                                 </p>
                             </div>
                         </div>
@@ -89,26 +101,14 @@
                             </div>
                         </div>
 
-                        <div v-if="articleData.likes !== null && articleData.likes !== -1" class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:thumb-up" class="text-purple-600 text-2xl" />
+                        <div v-if="articleData.likes !== null && articleData.likes !== -1" class="bg-linear-to-br from-pink-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:thumb-up" class="text-pink-600 text-2xl" />
                             </div>
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm text-gray-500">点赞数</p>
                                 <p class="text-2xl font-bold text-gray-900">
                                     {{ articleData.likes.toLocaleString() }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div v-else class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:spider" class="text-purple-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">爬虫</p>
-                                <p class="text-base font-bold text-gray-900 truncate">
-                                    {{ articleData.spider_name || '未知' }}
                                 </p>
                             </div>
                         </div>
@@ -487,6 +487,7 @@ import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import { articleApi } from '@/api/article'
+import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
 import { useMarkingHandler } from '@/composables/useMarkingHandler'
@@ -531,14 +532,17 @@ const {
     activeTab
 })
 
-const analyzeOptions = [
-    { label: '内容分析', icon: 'mdi:text-box', value: 'content' },
-    { label: '共识分析', icon: 'mdi:account-group', value: 'consensus' },
-    { label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion' },
-    { label: '多模态分析', icon: 'mdi:image-filter-none', value: 'multimodal' },
-    { label: '传播路径分析', icon: 'mdi:share-variant', value: 'propagation' },
-    { label: '证据链溯源分析', icon: 'mdi:link-variant', value: 'evidence' }
-]
+const analyzeOptions = ref([])
+
+const loadAnalyzeOptions = async () => {
+    try {
+        const res = await agentApi.getAgentsConfigList()
+        const list = res?.data || []
+        analyzeOptions.value = list.map(item => ({ label: item.name, value: item.id }))
+    } catch (e) {
+        analyzeOptions.value = []
+    }
+}
 
 const loadArticleDetail = async () => {
     loading.value = true
@@ -616,7 +620,10 @@ const handleAnalyze = async () => {
 }
 
 const handleAnalyzeOption = (option) => {
-    ElMessage.info(`${option.label}功能开发中`)
+    ElMessageBox.alert(`开始执行：${option.value}`, '提示', {
+        confirmButtonText: '确定',
+        type: 'info'
+    }).catch(() => {})
 }
 
 const handleExport = () => {
@@ -637,6 +644,7 @@ watch(activeTab, async (newTab, oldTab) => {
 
 onMounted(() => {
     loadArticleDetail()
+    loadAnalyzeOptions()
     setupEventListeners()
 })
 
