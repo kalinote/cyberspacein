@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from pydantic import BaseModel, Field
 
 
@@ -34,5 +35,24 @@ class AgentPromptTemplateSchema(BaseModel):
     description: str = Field(description="提示词模板描述")
     system_prompt: str = Field(description="系统提示词")
     user_prompt: str = Field(description="第一段用户提示词模板")
+    created_at: datetime = Field(description="创建时间")
+    updated_at: datetime = Field(description="更新时间")
+
+
+class AgentCreateRequestSchema(BaseModel):
+    name: str = Field(description="Agent名称", min_length=1)
+    description: str = Field(description="Agent描述")
+    prompt_template_id: str = Field(description="提示词模板id")
+    llm_config: dict[str, Any] = Field(description="LLM配置，包括模型、温度等")
+    tools: list[str] = Field(default_factory=list, description="工具列表")
+
+
+class AgentSchema(BaseModel):
+    id: str = Field(description="智能体ID")
+    name: str = Field(description="Agent名称")
+    description: str = Field(description="Agent描述")
+    prompt_template_id: str = Field(description="提示词模板id")
+    llm_config: dict[str, Any] = Field(description="LLM配置，包括模型、温度等")
+    tools: list[str] = Field(description="工具列表")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")

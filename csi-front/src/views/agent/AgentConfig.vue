@@ -12,7 +12,7 @@
           <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-blue-100 flex items-center gap-3">
             <Icon icon="mdi:format-list-checks" class="text-blue-600 text-xl" />
             <div>
-              <p class="text-xs text-gray-500">分析选项</p>
+              <p class="text-xs text-gray-500">分析引擎</p>
               <p class="text-lg font-bold text-gray-900">{{ statistics.analysisOptions }}</p>
             </div>
           </div>
@@ -68,16 +68,16 @@
               :placeholder="'搜索' + getCurrentTabLabel() + '...'"
               clearable
               class="w-64"
-              @keyup.enter="activeTab === 'modelResources' ? handleModelSearch() : activeTab === 'promptTemplates' ? handlePromptTemplateSearch() : null"
+              @keyup.enter="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : activeTab === 'promptTemplates' ? handlePromptTemplateSearch() : null"
             >
               <template #prefix>
                 <Icon icon="mdi:magnify" class="text-gray-400" />
               </template>
             </el-input>
             <el-button
-              v-if="activeTab === 'modelResources' || activeTab === 'promptTemplates'"
+              v-if="activeTab === 'analysisEngines' || activeTab === 'modelResources' || activeTab === 'promptTemplates'"
               type="default"
-              @click="activeTab === 'modelResources' ? handleModelSearch() : handlePromptTemplateSearch()"
+              @click="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : handlePromptTemplateSearch()"
             >
               <template #icon><Icon icon="mdi:magnify" /></template>
               搜索
@@ -93,47 +93,75 @@
 
         <div class="flex-1 overflow-auto p-6">
           <div v-if="activeTab === 'analysisEngines'" class="space-y-4">
-            <div class="min-h-[200px]">
+            <div v-loading="agentListLoading" element-loading-text="加载中..." class="min-h-[200px]">
               <div
-                v-for="(item, index) in filteredAnalysisOptions"
+                v-for="(item, index) in agentList"
                 :key="item.id"
                 class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
               >
                 <div class="flex items-start justify-between">
                   <div class="flex items-start gap-4 flex-1">
                     <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-blue-100">
-                      <Icon :icon="item.icon" class="text-2xl text-blue-600" />
+                      <Icon icon="mdi:brain" class="text-2xl text-blue-600" />
                     </div>
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
-                        <h3 class="text-lg font-bold text-gray-900">{{ item.label }}</h3>
+                        <h3 class="text-lg font-bold text-gray-900">{{ item.name }}</h3>
                         <el-tag size="small" class="border-0 bg-gray-100 text-gray-700">
-                          {{ item.value }}
+                          {{ item.prompt_template_id }}
                         </el-tag>
                       </div>
-                      <p v-if="item.description" class="text-sm text-gray-600 mb-3">{{ item.description }}</p>
+                      <p v-if="item.description" class="text-sm text-gray-600 mb-2">{{ item.description }}</p>
+                      <div class="flex items-center gap-6 text-sm flex-wrap">
+                        <div v-if="item.llm_config && Object.keys(item.llm_config).length" class="flex items-center gap-2">
+                          <Icon icon="mdi:cog" class="text-orange-500" />
+                          <span class="text-gray-600">LLM 配置:</span>
+                          <span class="text-gray-700">{{ Object.keys(item.llm_config).length }} 项</span>
+                        </div>
+                        <div v-if="item.tools?.length" class="flex items-center gap-2">
+                          <Icon icon="mdi:tools" class="text-purple-500" />
+                          <span class="text-gray-600">工具:</span>
+                          <span class="text-gray-700">{{ item.tools.join(', ') }}</span>
+                        </div>
+                        <div v-if="item.updated_at" class="flex items-center gap-2">
+                          <Icon icon="mdi:clock-outline" class="text-gray-500" />
+                          <span class="text-gray-600">更新时间:</span>
+                          <span class="text-gray-700">{{ formatModelDate(item.updated_at) }}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="handleAction('查看', item.label)">
+                    <el-button type="primary" link @click="handleAction('查看', item.name)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="handleAction('编辑', item.label)">
+                    <el-button type="primary" link @click="handleAction('编辑', item.name)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleAction('删除', item.label)">
+                    <el-button type="danger" link @click="handleAction('删除', item.name)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
                   </div>
                 </div>
               </div>
-              <div v-if="filteredAnalysisOptions.length === 0" class="flex flex-col items-center justify-center py-16">
+              <div v-if="!agentListLoading && agentList.length === 0" class="flex flex-col items-center justify-center py-16">
                 <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
                 <p class="text-gray-500">暂无数据</p>
               </div>
+            </div>
+            <div v-if="!agentListLoading && agentList.length > 0" class="flex justify-center pt-4">
+              <el-pagination
+                v-model:current-page="agentPagination.page"
+                v-model:page-size="agentPagination.pageSize"
+                :page-sizes="[10, 20, 50]"
+                :total="agentPagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="handleAgentPageChange"
+                @size-change="handleAgentPageSizeChange"
+              />
             </div>
           </div>
 
@@ -414,6 +442,75 @@
         <el-button type="primary" :loading="promptTemplateSubmitLoading" @click="handlePromptTemplateSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="agentDialogVisible"
+      title="新增分析引擎"
+      width="560px"
+      :close-on-click-modal="false"
+      @close="handleAgentDialogClose"
+      @opened="loadAgentDialogOptions"
+    >
+      <el-form
+        ref="agentFormRef"
+        :model="agentFormData"
+        :rules="agentFormRules"
+        label-width="120px"
+      >
+        <el-form-item label="名称" prop="name">
+          <el-input v-model="agentFormData.name" placeholder="请输入名称" clearable />
+        </el-form-item>
+        <el-form-item label="描述" prop="description">
+          <el-input
+            v-model="agentFormData.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入描述（可选）"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="提示词模板" prop="prompt_template_id">
+          <el-select
+            v-model="agentFormData.prompt_template_id"
+            placeholder="请选择提示词模板"
+            class="w-full"
+            filterable
+            :loading="agentPromptOptionsLoading"
+          >
+            <el-option
+              v-for="item in promptTemplateOptionsForAgent"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="LLM 配置" prop="llm_config">
+          <KeyValueEditor v-model="agentFormData.llm_config" />
+        </el-form-item>
+        <el-form-item label="工具" prop="tools">
+          <el-select
+            v-model="agentFormData.tools"
+            placeholder="请选择工具（可多选）"
+            class="w-full"
+            multiple
+            filterable
+            :loading="agentToolsOptionsLoading"
+          >
+            <el-option
+              v-for="name in agentToolsListOptions"
+              :key="name"
+              :label="name"
+              :value="name"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="handleAgentDialogClose">取消</el-button>
+        <el-button type="primary" :loading="agentSubmitLoading" @click="handleAgentSubmit">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -423,6 +520,7 @@ import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
+import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
@@ -436,15 +534,6 @@ const engineTabs = [
   { key: 'promptTemplates', label: '提示词模板', icon: 'mdi:file-document-edit' },
   { key: 'tools', label: '工具', icon: 'mdi:tools' }
 ]
-
-const analysisOptionsList = ref([
-  { id: '1', label: '内容分析', icon: 'mdi:text-box', value: 'content', description: '对文本内容进行结构化与主题分析' },
-  { id: '2', label: '共识分析', icon: 'mdi:account-group', value: 'consensus', description: '分析群体观点与共识度' },
-  { id: '3', label: '情感分析', icon: 'mdi:emoticon-happy-outline', value: 'emotion', description: '识别文本情感倾向与强度' },
-  { id: '4', label: '多模态分析', icon: 'mdi:image-filter-none', value: 'multimodal', description: '结合图文等多模态信息进行分析' },
-  { id: '5', label: '传播路径分析', icon: 'mdi:share-variant', value: 'propagation', description: '追踪信息传播路径与节点' },
-  { id: '6', label: '证据链溯源分析', icon: 'mdi:link-variant', value: 'evidence', description: '构建与追溯证据链' }
-])
 
 const modelList = ref([])
 const modelListLoading = ref(false)
@@ -509,11 +598,35 @@ const fetchToolsList = async () => {
   }
 }
 
+const agentList = ref([])
+const agentListLoading = ref(false)
+const agentPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+const agentLoadedOnce = ref(false)
+
+const fetchAgentList = async () => {
+  agentListLoading.value = true
+  try {
+    const result = await getPaginatedData(agentApi.getAgentList, {
+      search: searchKeyword.value.trim() || undefined,
+      page: agentPagination.value.page,
+      page_size: agentPagination.value.pageSize
+    })
+    agentList.value = result.items
+    agentPagination.value = { ...agentPagination.value, ...result.pagination }
+    agentLoadedOnce.value = true
+  } catch (e) {
+    agentList.value = []
+  } finally {
+    agentListLoading.value = false
+  }
+}
+
 watch(activeTab, (tab) => {
+  if (tab === 'analysisEngines' && !agentLoadedOnce.value) fetchAgentList()
   if (tab === 'modelResources' && !modelLoadedOnce.value) fetchModelList()
   if (tab === 'promptTemplates' && !promptTemplateLoadedOnce.value) fetchPromptTemplateList()
   if (tab === 'tools' && !toolsLoadedOnce.value) fetchToolsList()
-})
+}, { immediate: true })
 
 const maskApiKey = (key) => {
   if (!key) return '***'
@@ -539,7 +652,8 @@ const formatModelDate = (dateStr) => {
 }
 
 const statistics = computed(() => ({
-  analysisOptions: analysisOptionsList.value.length,
+  analysisEngines: agentPagination.value.total,
+  analysisOptions: agentPagination.value.total,
   modelResources: modelPagination.value.total,
   promptTemplates: promptTemplatePagination.value.total,
   tools: toolsList.value.length
@@ -562,18 +676,6 @@ const getCurrentTabLabel = () => {
   const tab = engineTabs.find(t => t.key === activeTab.value)
   return tab?.label ?? ''
 }
-
-const filterByKeyword = (list, fields) => {
-  const kw = searchKeyword.value.trim().toLowerCase()
-  if (!kw) return list
-  return list.filter(item =>
-    fields.some(f => String(item[f] ?? '').toLowerCase().includes(kw))
-  )
-}
-
-const filteredAnalysisOptions = computed(() =>
-  filterByKeyword(analysisOptionsList.value, ['label', 'value', 'description'])
-)
 
 const handleModelPageChange = (page) => {
   modelPagination.value.page = page
@@ -603,6 +705,20 @@ const handlePromptTemplateSearch = () => {
   fetchPromptTemplateList()
 }
 
+const handleAgentPageChange = (page) => {
+  agentPagination.value.page = page
+  fetchAgentList()
+}
+const handleAgentPageSizeChange = (pageSize) => {
+  agentPagination.value.pageSize = pageSize
+  agentPagination.value.page = 1
+  fetchAgentList()
+}
+const handleAgentSearch = () => {
+  agentPagination.value.page = 1
+  fetchAgentList()
+}
+
 const modelDialogVisible = ref(false)
 const modelFormRef = ref(null)
 const modelSubmitLoading = ref(false)
@@ -620,8 +736,95 @@ const modelFormRules = {
   model: [{ required: true, message: '请输入模型', trigger: 'blur' }]
 }
 
+const agentDialogVisible = ref(false)
+const agentFormRef = ref(null)
+const agentSubmitLoading = ref(false)
+const agentFormData = ref({
+  name: '',
+  description: '',
+  prompt_template_id: '',
+  llm_config: {},
+  tools: []
+})
+const agentFormRules = {
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  prompt_template_id: [{ required: true, message: '请选择提示词模板', trigger: 'change' }]
+}
+const agentToolsListOptions = ref([])
+const agentToolsOptionsLoading = ref(false)
+const promptTemplateOptionsForAgent = ref([])
+const agentPromptOptionsLoading = ref(false)
+
+const loadAgentDialogOptions = async () => {
+  agentToolsOptionsLoading.value = true
+  try {
+    const res = await agentApi.getToolsListForAgent()
+    agentToolsListOptions.value = Array.isArray(res?.data) ? res.data : []
+  } catch (e) {
+    agentToolsListOptions.value = []
+  } finally {
+    agentToolsOptionsLoading.value = false
+  }
+  if (promptTemplateOptionsForAgent.value.length === 0) {
+    agentPromptOptionsLoading.value = true
+    try {
+      const result = await getPaginatedData(agentApi.getPromptTemplateList, { page: 1, page_size: 100 })
+      promptTemplateOptionsForAgent.value = result.items || []
+    } catch (e) {
+      promptTemplateOptionsForAgent.value = []
+    } finally {
+      agentPromptOptionsLoading.value = false
+    }
+  }
+}
+
+const resetAgentForm = () => {
+  agentFormData.value = {
+    name: '',
+    description: '',
+    prompt_template_id: '',
+    llm_config: {},
+    tools: []
+  }
+  agentFormRef.value?.resetFields()
+}
+
+const handleAgentDialogClose = () => {
+  agentDialogVisible.value = false
+  resetAgentForm()
+}
+
+const handleAgentSubmit = async () => {
+  if (!agentFormRef.value) return
+  try {
+    await agentFormRef.value.validate()
+    agentSubmitLoading.value = true
+    await agentApi.createAgent({
+      name: agentFormData.value.name,
+      description: agentFormData.value.description || undefined,
+      prompt_template_id: agentFormData.value.prompt_template_id,
+      llm_config: agentFormData.value.llm_config || {},
+      tools: agentFormData.value.tools || []
+    })
+    ElMessage.success('新增成功')
+    handleAgentDialogClose()
+    agentPagination.value.page = 1
+    fetchAgentList()
+  } catch (e) {
+    if (e !== false) console.error('新增分析引擎失败:', e)
+  } finally {
+    agentSubmitLoading.value = false
+  }
+}
+
+const openAgentDialog = () => {
+  agentDialogVisible.value = true
+}
+
 const handleAdd = () => {
-  if (activeTab.value === 'modelResources') {
+  if (activeTab.value === 'analysisEngines') {
+    openAgentDialog()
+  } else if (activeTab.value === 'modelResources') {
     modelDialogVisible.value = true
   } else if (activeTab.value === 'promptTemplates') {
     promptTemplateDialogVisible.value = true

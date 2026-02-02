@@ -8,11 +8,14 @@ from app.schemas.agent.configs import AgentToolsParameterSchema, AgentToolsRespo
 from app.schemas.response import ApiResponseSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.agent.agent import (
+    AgentCreateRequestSchema,
     AgentModelConfigCreateRequestSchema,
     AgentModelConfigSchema,
     AgentPromptTemplateCreateRequestSchema,
     AgentPromptTemplateSchema,
+    AgentSchema,
 )
+from app.models.agent.agent import AgentModel
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 from app.utils.id_lib import generate_id
 from app.service.agent.tools import all_tools
@@ -69,10 +72,7 @@ async def get_agent_model_config_list(
             {"name": {"$regex": pattern}},
             {"description": {"$regex": pattern}},
         ]
-    if query_filters:
-        query = AgentModelConfigModel.find(query_filters)
-    else:
-        query = AgentModelConfigModel.find_all()
+    query = AgentModelConfigModel.find(query_filters)
     total = await query.count()
     items = await query.skip(skip).limit(params.page_size).to_list()
     results = [
@@ -133,10 +133,7 @@ async def get_agent_prompt_template_list(
             {"name": {"$regex": pattern}},
             {"description": {"$regex": pattern}},
         ]
-    if query_filters:
-        query = AgentPromptTemplateModel.find(query_filters)
-    else:
-        query = AgentPromptTemplateModel.find_all()
+    query = AgentPromptTemplateModel.find(query_filters)
     total = await query.count()
     items = await query.skip(skip).limit(params.page_size).to_list()
     results = [
@@ -152,6 +149,71 @@ async def get_agent_prompt_template_list(
         for t in items
     ]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
+
+
+@router.post("/agents", response_model=ApiResponseSchema[AgentSchema], summary="创建智能体")
+async def create_agent(data: AgentCreateRequestSchema):
+    raw = data.name + data.prompt_template_id + str(data.llm_config) + ",".join(data.tools)
+    agent_id = generate_id(raw)
+    existing = await AgentModel.find_one({"_id": agent_id})
+    if existing:
+        return ApiResponseSchema.error(code=400, message="该智能体已存在")
+    existing_by_name = await AgentModel.find_one({"name": data.name})
+    if existing_by_name:
+        return ApiResponseSchema.error(code=400, message=f"智能体名称已存在: {data.name}")
+    doc = AgentModel(
+        id=agent_id,
+        name=data.name,
+        description=data.description,
+        prompt_template_id=data.prompt_template_id,
+        llm_config=data.llm_config,
+        tools=data.tools,
+    )
+    await doc.insert()
+    logger.info(f"成功创建智能体: {agent_id} - {data.name}")
+    return ApiResponseSchema.success(data=AgentSchema(
+        id=doc.id,
+        name=doc.name,
+        description=doc.description,
+        prompt_template_id=doc.prompt_template_id,
+        llm_config=doc.llm_config,
+        tools=doc.tools,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+    ))
+
+
+@router.get("/agents", response_model=PageResponseSchema[AgentSchema], summary="查询智能体列表")
+async def get_agent_list(
+    params: PageParamsSchema = Depends(),
+    search: Optional[str] = Query(None, description="搜索关键词，模糊匹配名称或描述"),
+):
+    skip = (params.page - 1) * params.page_size
+    query_filters = {}
+    if search:
+        pattern = re.compile(re.escape(search), re.IGNORECASE)
+        query_filters["$or"] = [
+            {"name": {"$regex": pattern}},
+            {"description": {"$regex": pattern}},
+        ]
+    query = AgentModel.find(query_filters)
+    total = await query.count()
+    items = await query.skip(skip).limit(params.page_size).to_list()
+    results = [
+        AgentSchema(
+            id=a.id,
+            name=a.name,
+            description=a.description,
+            prompt_template_id=a.prompt_template_id,
+            llm_config=a.llm_config,
+            tools=a.tools,
+            created_at=a.created_at,
+            updated_at=a.updated_at,
+        )
+        for a in items
+    ]
+    return PageResponseSchema.create(results, total, params.page, params.page_size)
+
 
 @router.get("/configs/tools", response_model=ApiResponseSchema[list[AgentToolsResponseSchema]], summary="查询工具列表")
 async def get_agent_tools():
@@ -183,3 +245,8 @@ async def get_agent_tools():
             parameters=params,
         ))
     return ApiResponseSchema.success(data=results)
+
+
+@router.get("/configs/tools-list", response_model=ApiResponseSchema[list[str]], summary="查询工具名称列表")
+async def get_agent_tools_list():
+    return ApiResponseSchema.success(data=list(all_tools.keys()))

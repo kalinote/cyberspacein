@@ -6,6 +6,7 @@ from app.models.action.node import ActionNodeModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.platform.platform import PlatformModel
+from app.models.agent.agent import AgentModel
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 
 
@@ -18,6 +19,7 @@ def get_all_models() -> List[Type[Document]]:
         ActionInstanceNodeModel,
         ActionNodesHandleConfigModel,
         PlatformModel,
+        AgentModel,
         AgentModelConfigModel,
         AgentPromptTemplateModel,
     ]
