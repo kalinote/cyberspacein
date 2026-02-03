@@ -19,6 +19,9 @@ export const agentApi = {
   getToolsListForAgent() {
     return request.get('/agent/configs/tools-list')
   },
+  getModelsList() {
+    return request.get('/agent/configs/models-list')
+  },
   getAgentList(params = { page: 1, page_size: 10 }) {
     return request.get('/agent/agents', params)
   },

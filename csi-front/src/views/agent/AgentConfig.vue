@@ -107,9 +107,6 @@
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
                         <h3 class="text-lg font-bold text-gray-900">{{ item.name }}</h3>
-                        <el-tag size="small" class="border-0 bg-gray-100 text-gray-700">
-                          {{ item.prompt_template_id }}
-                        </el-tag>
                       </div>
                       <p v-if="item.description" class="text-sm text-gray-600 mb-2">{{ item.description }}</p>
                       <div class="flex items-center gap-6 text-sm flex-wrap">
@@ -485,6 +482,22 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="模型" prop="model_id">
+          <el-select
+            v-model="agentFormData.model_id"
+            placeholder="请选择模型"
+            class="w-full"
+            filterable
+            :loading="agentModelOptionsLoading"
+          >
+            <el-option
+              v-for="item in modelOptionsForAgent"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="LLM 配置" prop="llm_config">
           <KeyValueEditor v-model="agentFormData.llm_config" />
         </el-form-item>
@@ -743,17 +756,21 @@ const agentFormData = ref({
   name: '',
   description: '',
   prompt_template_id: '',
+  model_id: '',
   llm_config: {},
   tools: []
 })
 const agentFormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
-  prompt_template_id: [{ required: true, message: '请选择提示词模板', trigger: 'change' }]
+  prompt_template_id: [{ required: true, message: '请选择提示词模板', trigger: 'change' }],
+  model_id: [{ required: true, message: '请选择模型', trigger: 'change' }]
 }
 const agentToolsListOptions = ref([])
 const agentToolsOptionsLoading = ref(false)
 const promptTemplateOptionsForAgent = ref([])
 const agentPromptOptionsLoading = ref(false)
+const modelOptionsForAgent = ref([])
+const agentModelOptionsLoading = ref(false)
 
 const loadAgentDialogOptions = async () => {
   agentToolsOptionsLoading.value = true
@@ -776,6 +793,17 @@ const loadAgentDialogOptions = async () => {
       agentPromptOptionsLoading.value = false
     }
   }
+  if (modelOptionsForAgent.value.length === 0) {
+    agentModelOptionsLoading.value = true
+    try {
+      const res = await agentApi.getModelsList()
+      modelOptionsForAgent.value = Array.isArray(res?.data) ? res.data : []
+    } catch (e) {
+      modelOptionsForAgent.value = []
+    } finally {
+      agentModelOptionsLoading.value = false
+    }
+  }
 }
 
 const resetAgentForm = () => {
@@ -783,6 +811,7 @@ const resetAgentForm = () => {
     name: '',
     description: '',
     prompt_template_id: '',
+    model_id: '',
     llm_config: {},
     tools: []
   }
@@ -803,6 +832,7 @@ const handleAgentSubmit = async () => {
       name: agentFormData.value.name,
       description: agentFormData.value.description || undefined,
       prompt_template_id: agentFormData.value.prompt_template_id,
+      model_id: agentFormData.value.model_id,
       llm_config: agentFormData.value.llm_config || {},
       tools: agentFormData.value.tools || []
     })

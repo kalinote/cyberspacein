@@ -7,8 +7,8 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div class="lg:col-span-2">
-                        <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">智能体</span>配管中心</h1>
-                        <p class="text-gray-600 text-lg mb-6">统一管理智能体，从资源调配、提示词模板到分析引擎的全流程控制平台。</p>
+                        <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">分析引擎</span>配管中心</h1>
+                        <p class="text-gray-600 text-lg mb-6">统一管理分析引擎，从资源调配、提示词模板到分析引擎的全流程控制平台。</p>
                         <div class="flex flex-wrap gap-4">
                             <div
                                 class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
@@ -43,13 +43,13 @@
                         </div>
                     </div>
                     <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">快速创建智能体</h3>
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">快速创建分析引擎</h3>
                         <div class="space-y-4">
                             <button
                                 class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
                                 @click="$router.push('/agent/new')">
                                 <Icon icon="mdi:rocket-launch-outline" />
-                                <span>新建智能体</span>
+                                <span>新建分析引擎</span>
                             </button>
                             <button
                                 class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
@@ -68,17 +68,17 @@
             </div>
         </section>
 
-        <!-- 智能体列表区域 -->
+        <!-- 分析引擎列表区域 -->
         <section class="py-12 bg-linear-to-b from-white to-gray-50">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center mb-8">
                     <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
                         <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
-                        <span><span class="text-blue-500">智能体</span>列表</span>
+                        <span><span class="text-blue-500">分析引擎</span>列表</span>
                     </h2>
                     <el-button type="primary" link>
                         <template #icon><Icon icon="mdi:arrow-right" /></template>
-                        查看全部智能体
+                        查看全部分析引擎
                     </el-button>
                 </div>
 
@@ -148,13 +148,13 @@
             </div>
         </section>
 
-        <!-- 智能体分类统计 -->
+        <!-- 分析引擎分类统计 -->
         <section class="py-12 bg-white">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center mb-8">
                     <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
                         <Icon icon="mdi:chart-bar" class="text-blue-600 text-2xl" />
-                        <span><span class="text-blue-500">智能体</span>分类统计</span>
+                        <span><span class="text-blue-500">分析引擎</span>分类统计</span>
                     </h2>
                     <el-radio-group v-model="statsTimeRange" size="small">
                         <el-radio-button label="week">本周</el-radio-button>
@@ -168,7 +168,7 @@
                         <table class="w-full">
                             <thead>
                                 <tr class="border-b border-gray-200 bg-gray-50">
-                                    <th class="text-left py-3 px-4 text-sm font-medium text-gray-500">智能体类型</th>
+                                    <th class="text-left py-3 px-4 text-sm font-medium text-gray-500">分析引擎类型</th>
                                     <th class="text-left py-3 px-4 text-sm font-medium text-gray-500">数量</th>
                                     <th class="text-left py-3 px-4 text-sm font-medium text-gray-500">使用率</th>
                                     <th class="text-left py-3 px-4 text-sm font-medium text-gray-500">变化趋势</th>
@@ -319,7 +319,7 @@ export default {
             agents: [
                 {
                     id: 1,
-                    name: '网络安全分析智能体',
+                    name: '网络安全分析分析引擎',
                     status: '运行中',
                     statusType: 'success',
                     personality: '技术专家',
@@ -332,7 +332,7 @@ export default {
                 },
                 {
                     id: 2,
-                    name: '舆情监控智能体',
+                    name: '舆情监控分析引擎',
                     status: '运行中',
                     statusType: 'success',
                     personality: '分析师',
@@ -345,7 +345,7 @@ export default {
                 },
                 {
                     id: 3,
-                    name: '情报收集智能体',
+                    name: '情报收集分析引擎',
                     status: '待启动',
                     statusType: 'warning',
                     personality: '研究员',
@@ -358,7 +358,7 @@ export default {
                 },
                 {
                     id: 4,
-                    name: '数据挖掘智能体',
+                    name: '数据挖掘分析引擎',
                     status: '运行中',
                     statusType: 'success',
                     personality: '数据科学家',
@@ -371,7 +371,7 @@ export default {
                 },
                 {
                     id: 5,
-                    name: '威胁检测智能体',
+                    name: '威胁检测分析引擎',
                     status: '暂停',
                     statusType: 'info',
                     personality: '安全专家',
@@ -384,7 +384,7 @@ export default {
                 },
                 {
                     id: 6,
-                    name: '内容分析智能体',
+                    name: '内容分析分析引擎',
                     status: '已完成',
                     statusType: '',
                     personality: '编辑',

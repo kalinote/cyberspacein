@@ -56,7 +56,7 @@ async def get_article_detail(uuid: str):
             author_name=source_data.get("author_name"),
             nsfw=source_data.get("nsfw"),
             aigc=source_data.get("aigc"),
-            translation_content=source_data.get("translation_content"),
+            translate_content=source_data.get("translate_content"),
             keywords=source_data.get("keywords"),
             emotion=source_data.get("emotion"),
             political_bias=source_data.get("political_bias"),

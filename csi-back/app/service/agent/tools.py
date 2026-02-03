@@ -1,9 +1,13 @@
 import json
+import logging
+from typing import Any
 from app.db.elasticsearch import get_es
 from langchain.tools import tool
 from datetime import datetime, timezone
 
-from app.schemas.constants import ENTITY_TYPE_INDEX_MAP, EntityType
+from app.schemas.constants import ENTITY_TYPE_INDEX_MAP
+
+logger = logging.getLogger(__name__)
 
 @tool(parse_docstring=True)
 def get_current_time(time_zone: str = "Asia/Shanghai") -> str:
@@ -23,7 +27,7 @@ async def get_entity(uuid: str, entity_type: str, fields: list[str] | None = Non
     若无命中则返回空或说明。仅用于读取授权字段（如 clean_content）。
     
     Args:
-        uuid: 文档UUID
+        uuid: 实体UUID
         entity_type: 实体类型
         fields: 要读取的字段列表，默认读取所有字段, default: None
     """
@@ -46,9 +50,67 @@ async def get_entity(uuid: str, entity_type: str, fields: list[str] | None = Non
     except Exception as e:
         return json.dumps({"error": str(e), "uuid": uuid, "entity_type": entity_type})
 
+@tool(parse_docstring=True)
+async def modify_entity(uuid: str, entity_type: str, field: str, value: Any) -> str:
+    """
+    修改 Elasticsearch 中的实体字段内容。返回修改结果（JSON 字符串）。
+    在修改前会向用户提交修改申请，申请通过后才会实际上进行修改。
+    
+    Args:
+        uuid: 实体UUID
+        entity_type: 实体类型
+        field: 要修改的字段
+        value: 修改后的值
+    """
+    client = get_es()
+    if not client:
+        return json.dumps({"error": "Elasticsearch连接未初始化", "uuid": uuid, "entity_type": entity_type})
+    index = ENTITY_TYPE_INDEX_MAP.get(entity_type, entity_type)
+    try:
+        search_resp = await client.search(
+            index=index,
+            query={"term": {"uuid": uuid}},
+            size=1,
+        )
+        hits = search_resp.get("hits", {}).get("hits", [])
+        if not hits:
+            return json.dumps({"error": "未找到对应文档", "uuid": uuid, "entity_type": entity_type})
+        doc_id = hits[0]["_id"]
+        await client.update(
+            index=index,
+            id=doc_id,
+            body={"doc": {field: value}},
+        )
+        return json.dumps({
+            "success": True,
+            "message": "字段已更新",
+            "uuid": uuid,
+            "entity_type": entity_type,
+            "field": field,
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({
+            "error": str(e),
+            "uuid": uuid,
+            "entity_type": entity_type,
+            "field": field,
+        }, ensure_ascii=False)
 
+@tool(parse_docstring=True)
+async def notify_user(message: str) -> str:
+    """
+    向用户发送通知，返回通知结果（JSON 字符串）。
+    
+    Args:
+        message: 通知消息
+    """
+    # TODO 通过SSE推送消息
+    logger.info(f"向用户发送通知: {message}")
+    return "已将消息推送到用户"
 
 all_tools = {
     "get_current_time": get_current_time,
     "get_entity": get_entity,
+    "modify_entity": modify_entity,
+    "notify_user": notify_user,
 }

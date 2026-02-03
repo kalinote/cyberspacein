@@ -254,6 +254,15 @@
                                             @mouseup="handleRenderedContentMouseUp"
                                         ></div>
                                     </el-tab-pane>
+                                    <el-tab-pane v-if="forumData.translate_content" label="翻译内容" name="translate">
+                                        <div
+                                            ref="translateContentRef"
+                                            class="prose max-w-none select-text"
+                                            @mouseup="handleTranslateContentMouseUp"
+                                        >
+                                            <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ forumData.translate_content }}</pre>
+                                        </div>
+                                    </el-tab-pane>
                                     <el-tab-pane v-if="forumData.raw_content" label="原始源代码" name="raw">
                                         <MonacoEditor
                                             ref="rawEditorRef"
@@ -375,16 +384,6 @@
                                             </div>
                                         </a>
                                     </div>
-                                </div>
-                            </div>
-
-                            <div v-if="forumData.translation_content" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                                    <Icon icon="mdi:translate" class="text-green-600 mr-2" />
-                                    翻译<span class="text-blue-500">内容</span>
-                                </h3>
-                                <div class="prose max-w-none">
-                                    <p class="text-gray-700 leading-relaxed whitespace-pre-wrap">{{ forumData.translation_content }}</p>
                                 </div>
                             </div>
 
@@ -697,6 +696,7 @@ const rawEditorRef = ref(null)
 const safeRawEditorRef = ref(null)
 const cleanContentRef = ref(null)
 const renderedContentRef = ref(null)
+const translateContentRef = ref(null)
 
 const {
     currentRegion,
@@ -709,6 +709,7 @@ const {
     getSortedMarkingsByRegion,
     handleCleanContentMouseUp,
     handleRenderedContentMouseUp,
+    handleTranslateContentMouseUp,
     handleStyleSelect,
     handleCreateMarking,
     handleUpdateMarking,
@@ -720,6 +721,7 @@ const {
 } = useMarkingHandler({
     cleanContentRef,
     renderedContentRef,
+    translateContentRef,
     activeTab
 })
 

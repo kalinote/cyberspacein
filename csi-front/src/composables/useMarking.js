@@ -47,8 +47,8 @@ export function useMarking() {
       content: '',
       style: style || selectedStyle.value,
       target: {
-        region,
-        ...target
+        ...target,
+        region
       },
       position: {
         top: 0,
@@ -63,7 +63,7 @@ export function useMarking() {
   }
 
   function applyHighlight(element, marking) {
-    if (marking.target.region === 'clean') {
+    if (marking.target.region === 'clean' || marking.target.region === 'translate') {
       applyTextHighlight(element, marking)
     } else {
       applyHtmlHighlight(element, marking)
@@ -205,7 +205,6 @@ export function useMarking() {
       if (targetElement) {
         const rect = targetElement.getBoundingClientRect()
         const container = targetElement.closest('.marking-container')
-        
         if (container) {
           const containerRect = container.getBoundingClientRect()
           marking.position = {
@@ -385,7 +384,7 @@ export function useMarking() {
     let target = null
     let rangeToUse = null
 
-    if (region === 'clean') {
+    if (region === 'clean' || region === 'translate') {
       target = serializeTextSelection(element, selectedText.value)
       rangeToUse = selectedText.value.range
     } else {
@@ -492,7 +491,7 @@ export function useMarking() {
       if (instance) {
         instance.show()
       } else {
-        const element = region === 'clean' 
+        const element = (region === 'clean' || region === 'translate')
           ? document.querySelector(`[data-marking-id="${marking.id}"]`)?.closest('pre')
           : document.getElementById(marking.target.spanId)?.closest('.marking-content')
         if (element) {

@@ -1,6 +1,12 @@
 from typing import Any
 from pydantic import BaseModel, Field
 
+
+class ModelConfigListItemSchema(BaseModel):
+    id: str = Field(description="模型配置ID")
+    name: str = Field(description="模型配置名称")
+
+
 class AgentToolsParameterSchema(BaseModel):
     name: str = Field(description="参数名称")
     description: str = Field(description="参数描述")

@@ -53,7 +53,7 @@ class BaseEntitySchema(BaseModel):
     author_name: str | None = Field(default=None, description="作者昵称")
     nsfw: bool | None = Field(default=None, description="是否为NSFW内容")
     aigc: bool | None = Field(default=None, description="是否为AI生成内容")
-    translation_content: str | None = Field(default=None, description="基于 clean_content 翻译到中文的内容")
+    translate_content: str | None = Field(default=None, description="基于 clean_content 翻译到中文的内容")
     keywords: list[str] | None = Field(default=None, description="基于内容分析得到的关键词列表")
     emotion: float | None = Field(default=None, description="基于内容分析的情感分数，从-1(消极)到1(积极)")
     political_bias: list[str] | None = Field(default=None, description="基于内容分析的政治倾向")

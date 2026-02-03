@@ -86,7 +86,7 @@ const router = createRouter({
       component: TargetManagement
     },
     {
-      // 智能体
+      // 分析引擎
       path: '/agent',
       name: 'agent-monitor',
       component: AgentMonitor

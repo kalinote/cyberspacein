@@ -28,3 +28,4 @@ esprima
 langchain
 langchain-openai
 langgraph-checkpoint-mongodb
+jinja2

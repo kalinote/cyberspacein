@@ -8,7 +8,8 @@ from app.models.action.action import ActionInstanceModel, ActionInstanceNodeMode
 from app.models.platform.platform import PlatformModel
 from app.models.agent.agent import AgentModel
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
-
+from app.models.agent.checkpoint import CheckpointModel, CheckpointWriteModel
+from app.models.agent.agent import AgentSessionModel
 
 def get_all_models() -> List[Type[Document]]:
     """获取所有需要注册的 Beanie Document 模型"""
@@ -22,4 +23,7 @@ def get_all_models() -> List[Type[Document]]:
         AgentModel,
         AgentModelConfigModel,
         AgentPromptTemplateModel,
+        CheckpointModel,
+        CheckpointWriteModel,
+        AgentSessionModel
     ]

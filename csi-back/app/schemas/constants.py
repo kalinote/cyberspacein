@@ -109,3 +109,10 @@ ENTITY_TYPE_INDEX_MAP = {
     EntityType.ARTICLE.value: "article",
     EntityType.FORUM.value: "forum",
 }
+
+class AgentSSEStatusEnum(str, Enum):
+    """
+    Agent SSE状态枚举
+    """
+    APPROVAL_REQUIRED = "approval_required"
+    STATUS = "status"

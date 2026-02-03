@@ -50,7 +50,7 @@
               </transition>
             </div>
             <router-link to="/target" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">目标管理</router-link>
-            <router-link to="/agent" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">智能体</router-link>
+            <router-link to="/agent" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">分析引擎</router-link>
             <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
             <router-link to="/alert" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">告警信息</router-link>
           </nav>
