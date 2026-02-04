@@ -131,6 +131,12 @@
                                 :markings="getMarkingsByRegion(currentRegion)"
                                 :active-marking-id="activeMarkingId"
                             />
+                            <KeywordConnector
+                                :selected-keywords="selectedKeywords"
+                                :keyword-tag-refs="keywordTagRefs"
+                                :keyword-colors="keywordColors"
+                                :active-tab="activeTab"
+                            />
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <div class="flex items-center justify-between mb-4">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
@@ -169,7 +175,7 @@
                                             class="prose max-w-none select-text"
                                             @mouseup="handleCleanContentMouseUp"
                                         >
-                                            <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ articleData.clean_content }}</pre>
+                                            <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed" v-html="highlightedCleanContent"></pre>
                                         </div>
                                     </el-tab-pane>
                                     <el-tab-pane v-if="!articleData.clean_content" label="内容" name="empty">
@@ -192,7 +198,7 @@
                                             class="prose max-w-none select-text"
                                             @mouseup="handleTranslateContentMouseUp"
                                         >
-                                            <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed">{{ articleData.translate_content }}</pre>
+                                            <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed" v-html="highlightedTranslateContent"></pre>
                                         </div>
                                     </el-tab-pane>
                                     <el-tab-pane v-if="articleData.raw_content" label="原始源代码" name="raw">
@@ -212,18 +218,6 @@
                                         />
                                     </el-tab-pane>
                                 </el-tabs>
-                            </div>
-
-                            <div v-if="articleData.keywords && articleData.keywords.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                                    <Icon icon="mdi:tag-multiple" class="text-blue-600 mr-2" />
-                                    关键<span class="text-blue-500">词</span>
-                                </h3>
-                                <div class="flex flex-wrap gap-2">
-                                    <el-tag v-for="keyword in articleData.keywords" :key="keyword" type="primary" size="large">
-                                        {{ keyword }}
-                                    </el-tag>
-                                </div>
                             </div>
 
                             <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -346,6 +340,26 @@
                                             {{ articleData.platform }}
                                         </p>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div v-if="articleData.keywords && articleData.keywords.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                                    关键词<span class="text-blue-500">提取</span>
+                                </h3>
+                                <div class="flex flex-wrap gap-2">
+                                    <el-tag
+                                        v-for="keyword in articleData.keywords"
+                                        :key="keyword"
+                                        :type="selectedKeywords.includes(keyword) ? 'success' : 'primary'"
+                                        size="large"
+                                        class="cursor-pointer"
+                                        :style="selectedKeywords.includes(keyword) && keywordColors[keyword] ? { borderColor: keywordColors[keyword], backgroundColor: keywordColors[keyword] + '22' } : undefined"
+                                        :ref="(el) => setKeywordRef(keyword, el)"
+                                        @click="toggleKeyword(keyword)"
+                                    >
+                                        {{ keyword }}
+                                    </el-tag>
                                 </div>
                             </div>
 
@@ -485,12 +499,14 @@ import MonacoEditor from '@/components/MonacoEditor.vue'
 import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
+import KeywordConnector from '@/components/keyword/KeywordConnector.vue'
 import { articleApi } from '@/api/article'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
 import { useMarkingHandler } from '@/composables/useMarkingHandler'
 import { useHighlight } from '@/composables/useHighlight'
+import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
 
 const route = useRoute()
 const uuid = computed(() => route.params.uuid)
@@ -506,6 +522,22 @@ const safeRawEditorRef = ref(null)
 const cleanContentRef = ref(null)
 const renderedContentRef = ref(null)
 const translateContentRef = ref(null)
+
+const {
+  selectedKeywords,
+  keywordTagRefs,
+  keywordColors,
+  highlightedCleanContent,
+  highlightedTranslateContent,
+  setKeywordRef,
+  toggleKeyword,
+  applyRenderedKeywordHighlight
+} = useKeywordHighlight({
+  getCleanContent: () => articleData.value?.clean_content,
+  getTranslateContent: () => articleData.value?.translate_content,
+  renderedContentRef,
+  activeTab
+})
 
 const {
     currentRegion,
@@ -644,6 +676,13 @@ watch(activeTab, async (newTab, oldTab) => {
     await handleTabChange(newTab, oldTab)
 })
 
+watch([activeTab, selectedKeywords], () => {
+    applyRenderedKeywordHighlight()
+}, { deep: true })
+watch(editableSafeRawContent, () => {
+    if (activeTab.value === 'rendered') applyRenderedKeywordHighlight()
+})
+
 onMounted(() => {
     loadArticleDetail()
     loadAnalyzeOptions()
@@ -734,5 +773,10 @@ onUnmounted(() => {
     padding-right: 8px;
     margin-left: -8px;
     margin-right: -8px;
+}
+
+.marking-container :deep(.keyword-highlight) {
+    background-color: rgba(59, 130, 246, 0.25);
+    border-radius: 2px;
 }
 </style>

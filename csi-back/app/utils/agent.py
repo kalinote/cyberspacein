@@ -8,8 +8,8 @@ def modify_entity_approval_description(tool_call: Any, state: Any, runtime: Any)
     修改实体字段申请提示语
     """
     args = tool_call.get("args", {}) if isinstance(tool_call, dict) else getattr(tool_call, "args", {})
-    field_name = args.get("field_name", "Unknown Field")
-    return f"Agent 尝试修改 {field_name} 字段，请确认是否继续。"
+    field = args.get("field", "Unknown Field")
+    return f"Agent 尝试修改 {field} 字段，请确认是否继续。"
 
 async def update_session_status(thread_id: str, status: str) -> AgentSessionModel | None:
     """

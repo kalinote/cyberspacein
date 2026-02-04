@@ -43,16 +43,16 @@
           <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">快速创建目标</h3>
             <div class="space-y-4">
-              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2">
-                <Icon icon="mdi:clipboard-text-search-outline" />
-                <span>新建分析任务</span>
-              </button>
-              <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/platforms')">
-                <Icon icon="mdi:server-network" />
+              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2" @click="$router.push('/platforms')">
+                <Icon icon="mdi:database-search" />
                 <span>目标平台管理</span>
               </button>
+              <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
+                <Icon icon="mdi:clipboard-text-search-outline" />
+                <span>监控任务管理</span>
+              </button>
               <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
-                <Icon icon="mdi:database" />
+                <Icon icon="mdi:tag-multiple" />
                 <span>重点实体库</span>
               </button>
             </div>
