@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from elasticsearch.exceptions import NotFoundError
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.db.elasticsearch import get_es
@@ -317,7 +317,7 @@ async def start_agent(data: StartAgentRequestSchema):
 
 
 @router.get("/status", summary="获取会话状态（SSE）")
-async def get_agent_status(thread_id: str = Query(..., description="会话ID")):
+async def get_agent_status(request: Request, thread_id: str = Query(..., description="会话ID")):
     doc = await AgentSessionModel.find_one({"thread_id": thread_id})
     if not doc:
         return ApiResponseSchema.error(code=404, message="无该会话")
@@ -335,6 +335,8 @@ async def get_agent_status(thread_id: str = Query(..., description="会话ID")):
             if initial.get("data", {}).get("status") in ("completed", "cancelled"):
                 return
             while True:
+                if await request.is_disconnected():
+                    break
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
