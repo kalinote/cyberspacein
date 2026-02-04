@@ -55,7 +55,7 @@
                         </template>
                         查看原文
                     </el-link>
-                    <router-link v-if="forumData.topic_thread_uuid" :to="`/details/forum/${forumData.topic_thread_uuid}`" class="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                    <router-link v-if="forumData.topic_thread_uuid && forumData.thread_type !== 'thread'" :to="`/details/forum/${forumData.topic_thread_uuid}`" class="text-sm text-blue-600 hover:text-blue-800 flex items-center">
                         <Icon icon="mdi:forum" class="mr-1" />
                         查看主贴
                     </router-link>
