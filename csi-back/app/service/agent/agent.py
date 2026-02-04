@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import uuid
 from datetime import datetime
 
@@ -23,6 +24,7 @@ from app.utils.agent import (
     get_step_detail,
     modify_entity_approval_description,
     normalize_todo,
+    parse_approval_decision,
     update_session_status,
 )
 
@@ -70,12 +72,14 @@ class AgentService:
     @staticmethod
     def session_to_status_payload(doc: AgentSessionModel, is_running: bool) -> AgentStatusPayloadSchema:
         fields = getattr(doc, "fields", {})
+        pending_approval = getattr(doc, "pending_approval", None)
         return AgentStatusPayloadSchema(
             thread_id=doc.thread_id,
             status=doc.status,
             fields=fields,
             steps=doc.steps,
             todos=doc.todos,
+            pending_approval=pending_approval,
             updated_at=doc.updated_at,
             is_running=is_running,
         )
@@ -173,6 +177,7 @@ class AgentService:
                         doc = await AgentSessionModel.find_one({"thread_id": thread_id})
                         if doc:
                             doc.status = "awaiting_approval"
+                            doc.pending_approval = copy.deepcopy(hitl_payload) if hitl_payload else None
                             doc.updated_at = datetime.now()
                             await doc.save()
                         await AgentService.broadcast_sse(
@@ -184,7 +189,27 @@ class AgentService:
                         )
                         q = AgentService.pending_resumes.setdefault(thread_id, asyncio.Queue())
                         decisions = await q.get()
-                        await update_session_status(thread_id, "running")
+                        decision_type = parse_approval_decision(decisions)
+                        decision_detail = copy.deepcopy(decisions[0]) if decisions and isinstance(decisions[0], dict) else None
+                        doc = await AgentSessionModel.find_one({"thread_id": thread_id})
+                        if doc:
+                            if doc.steps:
+                                last_step = doc.steps[-1]
+                                last_step["approval_decision"] = decision_type
+                                last_step["approval_decision_detail"] = decision_detail
+                                last_step["approved_at"] = datetime.now().isoformat()
+                                if doc.pending_approval is not None:
+                                    last_step["approval_payload"] = copy.deepcopy(doc.pending_approval)
+                            doc.pending_approval = None
+                            doc.status = "running"
+                            doc.updated_at = datetime.now()
+                            await doc.save()
+                            await AgentService.broadcast_sse(
+                                thread_id,
+                                AgentService.sse_event("status", AgentService.session_to_status_payload(doc, True)),
+                            )
+                        else:
+                            await update_session_status(thread_id, "running")
                         current_input = Command(resume={"decisions": decisions})
                         interrupted = True
                         break

@@ -28,6 +28,16 @@ def normalize_todo(t: Any) -> dict:
     return {"content": getattr(t, "content", ""), "status": getattr(t, "status", "pending")}
 
 
+def parse_approval_decision(decisions: list[dict]) -> str:
+    if not decisions or not isinstance(decisions[0], dict):
+        return "unknown"
+    first = decisions[0]
+    t = first.get("type")
+    if t in ("approve", "reject", "edit"):
+        return t
+    return "unknown"
+
+
 def get_step_detail(state_update: Any) -> dict:
     """
     从状态更新中获取步骤详情

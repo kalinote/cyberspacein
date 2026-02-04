@@ -80,8 +80,9 @@ class AgentStatusPayloadSchema(BaseModel):
     thread_id: str = Field(description="会话ID")
     status: str = Field(description="会话状态")
     fields: dict[str, Any] = Field(default_factory=dict, description="启动时字段")
-    steps: list[dict] = Field(default_factory=list, description="执行步骤")
+    steps: list[dict] = Field(default_factory=list, description="执行步骤，人审步骤可含 approval_decision、approval_decision_detail、approved_at、approval_payload")
     todos: list[dict] = Field(default_factory=list, description="Todo 项")
+    pending_approval: dict | None = Field(default=None, description="当前待审批上下文，重连时恢复审批 UI")
     updated_at: datetime = Field(description="更新时间")
     is_running: bool = Field(description="是否正在运行")
 
