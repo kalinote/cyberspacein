@@ -47,10 +47,11 @@ TODO_MIDDLEWARE_TOOL_DESCRIPTION = """\
 约束：每轮最多调用一次，每次传入完整列表（整表替换）。"""
 
 RESULT_FORMAT_INSTRUCTION = """
-结束任务前，你必须确保所有 Todos 全部完成，并且所有 Todos 已经实际上被更新为 completed 状态。
-包括输出最终结果的 Todos 项，你必须在实际输出结果前保证输出结果的 Todo 已经设置为完成
+结束任务前，你必须：
+1. 在倒数第二轮：调用 write_todos 将所有任务（包括"输出最终结果"）标记为 completed
+2. 在最后一轮：直接按照 JSON 结构输出最终结果，不要再调用任何工具
 
-任务结束时，你必须按以下 JSON 结构输出最终结果，不要输出其他内容：包含 summary（任务情况总结）、success（是否成功）、failure_reason（失败原因，成功时为 null）。"""
+任务结束时，你必须按要求的 JSON 结构输出最终结果：包含 summary（任务情况总结）、success（是否成功）、failure_reason（失败原因，成功时为 null）。"""
 
 class AgentService:
     task_lock = asyncio.Lock()
