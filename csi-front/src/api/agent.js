@@ -30,5 +30,15 @@ export const agentApi = {
   },
   createAgent(data) {
     return request.post('/agent/agents', data)
+  },
+  startAgent(data) {
+    return request.post('/agent/start', data)
+  },
+  getAgentStatusUrl(threadId) {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+    return `${baseUrl}/agent/status?thread_id=${threadId}`
+  },
+  approveAgent(data) {
+    return request.post('/agent/approve', data)
   }
 }

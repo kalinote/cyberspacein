@@ -77,9 +77,10 @@ class StartAgentResponseSchema(BaseModel):
 
 
 class AgentStatusPayloadSchema(BaseModel):
+    name: str = Field(description="分析会话名称")
     thread_id: str = Field(description="会话ID")
     status: str = Field(description="会话状态")
-    fields: dict[str, Any] = Field(default_factory=dict, description="启动时字段")
+    meta: dict[str, Any] = Field(default_factory=dict, description="meta信息")
     steps: list[dict] = Field(default_factory=list, description="执行步骤，人审步骤可含 approval_decision、approval_decision_detail、approved_at、approval_payload")
     todos: list[dict] = Field(default_factory=list, description="Todo 项")
     pending_approval: dict | None = Field(default=None, description="当前待审批上下文，重连时恢复审批 UI")

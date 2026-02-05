@@ -682,7 +682,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
@@ -701,6 +701,7 @@ import { useHighlight } from '@/composables/useHighlight'
 import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
 
 const route = useRoute()
+const router = useRouter()
 const uuid = computed(() => route.params.uuid)
 
 const forumData = ref(null)
@@ -989,11 +990,40 @@ const handleAnalyze = async () => {
     }
 }
 
-const handleAnalyzeOption = (option) => {
-    ElMessageBox.alert(`开始执行：${option.value}`, '提示', {
-        confirmButtonText: '确定',
-        type: 'info'
-    }).catch(() => {})
+const handleAnalyzeOption = async (option) => {
+    try {
+        await ElMessageBox.confirm(
+            `确定要执行「${option.label}」分析任务吗？`,
+            '确认分析',
+            {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }
+        )
+        
+        analyzing.value = true
+        
+        const response = await agentApi.startAgent({
+            entity_uuid: forumData.value.uuid,
+            entity_type: forumData.value.entity_type,
+            agent_id: option.value
+        })
+        
+        if (response.code === 0 && response.data?.thread_id) {
+            ElMessage.success('分析任务已启动')
+            router.push(`/agent/analysis/${response.data.thread_id}`)
+        } else {
+            ElMessage.error(response.message || '启动分析任务失败')
+        }
+    } catch (err) {
+        if (err !== 'cancel') {
+            console.error('启动分析任务失败:', err)
+            ElMessage.error('启动分析任务失败，请稍后重试')
+        }
+    } finally {
+        analyzing.value = false
+    }
 }
 
 const handleExport = () => {

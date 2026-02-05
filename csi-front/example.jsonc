@@ -6,8 +6,10 @@
         "thread_id": "ec0dce9b-518a-45eb-ad78-782f5a57df1c",
         // 会话状态：running | awaiting_approval | completed | cancelled | paused
         "status": "completed",
-        // 启动分析时传入的字段（entity_uuid、entity_type、agent_id），用于提示词注入
-        "fields": {
+        // 会话名称，作为标题展示
+        "name": "关键词提取",
+        // meta信息，用于展示
+        "meta": {
             "entity_uuid": "a8d093df14bb1fc02c4e73cc873ca996",
             "entity_type": "article",
             "agent_id": "63927dc31c2f44cc1c3603bad327c1bf"

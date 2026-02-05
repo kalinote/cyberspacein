@@ -18,10 +18,11 @@ class AgentModel(Document):
         name = "agents"
         indexes = ["name"]
     
-class AgentSessionModel(Document):
+class AgentAnalysisSessionModel(Document):
     thread_id: str = Field(..., description="会话/线程 ID")
-    status: str = Field("running", description="running | paused | completed | cancelled")
-    fields: dict[str, Any] = Field(default_factory=dict, description="自由字段，用于提示词注入")
+    name: str = Field(..., description="分析会话名称")
+    status: str = Field("pending", description="pending | running | awaiting_approval | paused | completed | cancelled")
+    meta: dict[str, Any] = Field(default_factory=dict, description="meta信息，可能会用于保存一些关联实体之类的，目前还没什么用")
     steps: list[dict] = Field(default_factory=list, description="执行步骤，每步含 node、ts 等，人审步骤可含 approval_decision、approval_decision_detail、approved_at、approval_payload")
     todos: list[dict] = Field(default_factory=list, description="Todo 项，每项含 content、status")
     pending_approval: dict | None = Field(default=None, description="当前待审批上下文，重连时恢复审批 UI，审批提交后清空")
@@ -29,7 +30,7 @@ class AgentSessionModel(Document):
     updated_at: datetime = Field(default_factory=lambda: datetime.now())
 
     class Settings:
-        name = "agent_sessions"
+        name = "agent_analysis_sessions"
         indexes = [
             "thread_id"
         ]

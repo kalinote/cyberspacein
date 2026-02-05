@@ -2,14 +2,33 @@
     <div class="min-h-screen bg-gray-50">
         <Header />
 
+        <div v-if="loading" class="flex items-center justify-center h-96">
+            <div class="text-center">
+                <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin mb-2" />
+                <p class="text-gray-600">正在连接分析会话...</p>
+            </div>
+        </div>
+
+        <div v-else-if="error" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="bg-white rounded-xl shadow-sm border border-red-200 p-8 text-center">
+                <Icon icon="mdi:alert-circle" class="text-red-500 text-5xl mb-4" />
+                <h2 class="text-xl font-bold text-gray-900 mb-2">连接失败</h2>
+                <p class="text-gray-600 mb-4">{{ error }}</p>
+                <button @click="connectSSE" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                    重新连接
+                </button>
+            </div>
+        </div>
+
+        <template v-else>
         <DetailPageHeader
-            title="分析详情"
+            :title="sessionData.name"
             :subtitle="sessionData.thread_id"
         >
             <template #tags>
                 <el-tag :type="statusTagType" size="default">{{ statusLabel }}</el-tag>
-                <el-tag v-if="sessionData.fields?.entity_type" type="info" size="default">
-                    {{ sessionData.fields.entity_type }}
+                <el-tag v-if="sessionData.meta?.entity_type" type="info" size="default">
+                    {{ sessionData.meta.entity_type }}
                 </el-tag>
                 <el-tag v-if="sessionData.is_running" type="warning" size="default">运行中</el-tag>
             </template>
@@ -51,8 +70,8 @@
                         </div>
                         <div class="flex-1 min-w-0">
                             <p class="text-sm text-gray-500">实体</p>
-                            <p class="text-sm font-bold text-gray-900 truncate font-mono">{{ sessionData.fields?.entity_uuid || '-' }}</p>
-                            <p class="text-xs text-gray-500 mt-0.5">agent: {{ sessionData.fields?.agent_id?.slice(0, 8) || '-' }}...</p>
+                            <p class="text-sm font-bold text-gray-900 truncate font-mono">{{ sessionData.meta?.entity_uuid || '-' }}</p>
+                            <p class="text-xs text-gray-500 mt-0.5">agent: {{ sessionData.meta?.agent_id?.slice(0, 8) || '-' }}...</p>
                         </div>
                     </div>
                 </div>
@@ -190,18 +209,70 @@
                 </div>
             </div>
         </section>
+        </template>
+
+        <el-dialog
+            v-model="showApprovalDialog"
+            title="审批请求"
+            width="600px"
+            :close-on-click-modal="false"
+            :show-close="false"
+        >
+            <div v-if="currentApproval">
+                <p class="text-gray-600 mb-4">Agent 正在请求执行以下操作，请确认是否继续：</p>
+                <div
+                    v-for="(request, index) in currentApproval.payload?.action_requests"
+                    :key="index"
+                    class="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200"
+                >
+                    <p class="text-sm font-medium text-gray-900 mb-2">{{ request.description }}</p>
+                    <p class="text-xs text-gray-500 mb-1">操作: {{ request.name }}</p>
+                    <pre class="text-xs bg-white p-2 rounded overflow-x-auto">{{ JSON.stringify(request.args, null, 2) }}</pre>
+                </div>
+            </div>
+            <template #footer>
+                <el-button type="danger" @click="handleReject" :loading="approvalLoading">拒绝</el-button>
+                <el-button type="primary" @click="handleApprove" :loading="approvalLoading">批准</el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import { Icon } from '@iconify/vue'
 import { formatDateTime } from '@/utils/action'
+import { agentApi } from '@/api/agent'
+import { ElMessage } from 'element-plus'
+
+const route = useRoute()
+const threadId = computed(() => route.params.threadId)
 
 const userMessage = ref('')
-const sessionData = computed(() => MOCK_SESSION_DATA)
+const sessionData = ref({
+    name: '加载中...',
+    thread_id: '',
+    status: 'running',
+    meta: {},
+    steps: [],
+    todos: [],
+    pending_approval: null,
+    updated_at: '',
+    is_running: false
+})
+const loading = ref(true)
+const error = ref(null)
+let eventSource = null
+let retryCount = 0
+const maxRetries = 3
+
+const showApprovalDialog = ref(false)
+const currentApproval = ref(null)
+const approvalLoading = ref(false)
+const approvalThreadId = ref('')
 
 function sendMessage() {
     if (!userMessage.value.trim()) return
@@ -272,572 +343,151 @@ function todoStatusIconColor(s) {
     return 'text-gray-400'
 }
 
-const MOCK_SESSION_DATA = {
-    "thread_id": "7afbe117-2751-45e2-9b2d-22e4de239480",
-    "status": "completed",
-    "fields": {
-        "entity_uuid": "26c794c2a721b0d832580b779b65a450",
-        "entity_type": "article",
-        "agent_id": "63927dc31c2f44cc1c3603bad327c1bf"
-    },
-    "steps": [
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:12:04.395723",
-            "tool_calls": [
-                {
-                    "name": "write_todos",
-                    "args": {
-                        "todos": [
-                            {
-                                "content": "创建任务分解和进度跟踪",
-                                "status": "in_progress"
-                            },
-                            {
-                                "content": "读取目标文章的clean_content字段",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "检查clean_content是否为空",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "执行关键词提取（原文提取、去重、排序）",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "将关键词写入keywords字段",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "输出最终结果",
-                                "status": "pending"
-                            }
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:12:04.406682"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:12:04.417740"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:12:04.431514",
-            "result_summary": {
-                "content_length": 346,
-                "preview": "Updated todo list to [{'content': '创建任务分解和进度跟踪', 'status': 'in_progress'}, {'content': '读取目标文章的clean_content字段', 'status': 'pending'}, {'content': '检查..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:12:09.161618",
-            "tool_calls": [
-                {
-                    "name": "write_todos",
-                    "args": {
-                        "todos": [
-                            {
-                                "content": "创建任务分解和进度跟踪",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "读取目标文章的clean_content字段",
-                                "status": "in_progress"
-                            },
-                            {
-                                "content": "检查clean_content是否为空",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "执行关键词提取（原文提取、去重、排序）",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "将关键词写入keywords字段",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "输出最终结果",
-                                "status": "pending"
-                            }
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:12:09.171708"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:12:09.184025"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:12:09.195419",
-            "result_summary": {
-                "content_length": 348,
-                "preview": "Updated todo list to [{'content': '创建任务分解和进度跟踪', 'status': 'completed'}, {'content': '读取目标文章的clean_content字段', 'status': 'in_progress'}, {'content': '..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:12:12.635819",
-            "tool_calls": [
-                {
-                    "name": "get_entity",
-                    "args": {
-                        "uuid": "26c794c2a721b0d832580b779b65a450",
-                        "entity_type": "article",
-                        "fields": [
-                            "clean_content"
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:12:12.648748"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:12:12.660662"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:12:12.684579",
-            "result_summary": {
-                "content_length": 3215,
-                "preview": "{\"clean_content\": \"“Scattered LAPSUS$ Hunters”是一个新的暗网勒索软件团伙，由三大勒索软件团伙Scattered Spider、Lapsus$和ShinyHunters合并而成，近期，该团伙推出了基于Tor的暗网数据泄露网站，其中包含42家受害公司。推出该..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:12:17.640862",
-            "tool_calls": [
-                {
-                    "name": "write_todos",
-                    "args": {
-                        "todos": [
-                            {
-                                "content": "创建任务分解和进度跟踪",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "读取目标文章的clean_content字段",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "检查clean_content是否为空",
-                                "status": "in_progress"
-                            },
-                            {
-                                "content": "执行关键词提取（原文提取、去重、排序）",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "将关键词写入keywords字段",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "输出最终结果",
-                                "status": "pending"
-                            }
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:12:17.654088"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:12:17.668095"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:12:17.684034",
-            "result_summary": {
-                "content_length": 350,
-                "preview": "Updated todo list to [{'content': '创建任务分解和进度跟踪', 'status': 'completed'}, {'content': '读取目标文章的clean_content字段', 'status': 'completed'}, {'content': '检查..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:12:23.127140",
-            "tool_calls": [
-                {
-                    "name": "write_todos",
-                    "args": {
-                        "todos": [
-                            {
-                                "content": "创建任务分解和进度跟踪",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "读取目标文章的clean_content字段",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "检查clean_content是否为空",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "执行关键词提取（原文提取、去重、排序）",
-                                "status": "in_progress"
-                            },
-                            {
-                                "content": "将关键词写入keywords字段",
-                                "status": "pending"
-                            },
-                            {
-                                "content": "输出最终结果",
-                                "status": "pending"
-                            }
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:12:23.138203"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:12:23.151718"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:12:23.169065",
-            "result_summary": {
-                "content_length": 352,
-                "preview": "Updated todo list to [{'content': '创建任务分解和进度跟踪', 'status': 'completed'}, {'content': '读取目标文章的clean_content字段', 'status': 'completed'}, {'content': '检查..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:12:35.626993",
-            "tool_calls": [
-                {
-                    "name": "write_todos",
-                    "args": {
-                        "todos": [
-                            {
-                                "content": "创建任务分解和进度跟踪",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "读取目标文章的clean_content字段",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "检查clean_content是否为空",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "执行关键词提取（原文提取、去重、排序）",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "将关键词写入keywords字段",
-                                "status": "in_progress"
-                            },
-                            {
-                                "content": "输出最终结果",
-                                "status": "pending"
-                            }
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:12:35.639345"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:12:35.654813"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:12:35.670576",
-            "result_summary": {
-                "content_length": 354,
-                "preview": "Updated todo list to [{'content': '创建任务分解和进度跟踪', 'status': 'completed'}, {'content': '读取目标文章的clean_content字段', 'status': 'completed'}, {'content': '检查..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:12:40.781287",
-            "tool_calls": [
-                {
-                    "name": "modify_entity",
-                    "args": {
-                        "uuid": "26c794c2a721b0d832580b779b65a450",
-                        "entity_type": "article",
-                        "field": "keywords",
-                        "value": [
-                            "Scattered LAPSUS$ Hunters",
-                            "Salesforce",
-                            "暗网",
-                            "勒索软件",
-                            "数据泄露",
-                            "OAuth",
-                            "供应链攻击",
-                            "Tor",
-                            "ShinyHunters",
-                            "Telegram"
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "__interrupt__",
-            "ts": "2026-02-04T23:12:40.795218",
-            "approval_decision": "approve",
-            "approval_decision_detail": {
-                "type": "approve"
-            },
-            "approved_at": "2026-02-04T23:12:59.188512",
-            "approval_payload": {
-                "action_requests": [
-                    {
-                        "name": "modify_entity",
-                        "args": {
-                            "uuid": "26c794c2a721b0d832580b779b65a450",
-                            "entity_type": "article",
-                            "field": "keywords",
-                            "value": [
-                                "Scattered LAPSUS$ Hunters",
-                                "Salesforce",
-                                "暗网",
-                                "勒索软件",
-                                "数据泄露",
-                                "OAuth",
-                                "供应链攻击",
-                                "Tor",
-                                "ShinyHunters",
-                                "Telegram"
-                            ]
-                        },
-                        "description": "Agent 尝试修改 keywords 字段，请确认是否继续。"
-                    }
-                ],
-                "review_configs": [
-                    {
-                        "action_name": "modify_entity",
-                        "allowed_decisions": [
-                            "approve",
-                            "reject"
-                        ]
-                    }
-                ]
-            }
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:12:59.213396",
-            "tool_calls": [
-                {
-                    "name": "modify_entity",
-                    "args": {
-                        "uuid": "26c794c2a721b0d832580b779b65a450",
-                        "entity_type": "article",
-                        "field": "keywords",
-                        "value": [
-                            "Scattered LAPSUS$ Hunters",
-                            "Salesforce",
-                            "暗网",
-                            "勒索软件",
-                            "数据泄露",
-                            "OAuth",
-                            "供应链攻击",
-                            "Tor",
-                            "ShinyHunters",
-                            "Telegram"
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:12:59.226880"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:12:59.263928",
-            "result_summary": {
-                "content_length": 128,
-                "preview": "{\"success\": true, \"message\": \"字段已更新\", \"uuid\": \"26c794c2a721b0d832580b779b65a450\", \"entity_type\": \"article\", \"field\": \"keywords\"}"
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:13:03.612662",
-            "tool_calls": [
-                {
-                    "name": "write_todos",
-                    "args": {
-                        "todos": [
-                            {
-                                "content": "创建任务分解和进度跟踪",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "读取目标文章的clean_content字段",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "检查clean_content是否为空",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "执行关键词提取（原文提取、去重、排序）",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "将关键词写入keywords字段",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "输出最终结果",
-                                "status": "in_progress"
-                            }
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:13:03.627763"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:13:03.641602"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:13:03.660672",
-            "result_summary": {
-                "content_length": 356,
-                "preview": "Updated todo list to [{'content': '创建任务分解和进度跟踪', 'status': 'completed'}, {'content': '读取目标文章的clean_content字段', 'status': 'completed'}, {'content': '检查..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:13:18.653897",
-            "tool_calls": [
-                {
-                    "name": "write_todos",
-                    "args": {
-                        "todos": [
-                            {
-                                "content": "创建任务分解和进度跟踪",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "读取目标文章的clean_content字段",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "检查clean_content是否为空",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "执行关键词提取（原文提取、去重、排序）",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "将关键词写入keywords字段",
-                                "status": "completed"
-                            },
-                            {
-                                "content": "输出最终结果",
-                                "status": "completed"
-                            }
-                        ]
-                    }
-                }
-            ]
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:13:18.668498"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:13:18.685538"
-        },
-        {
-            "node": "tools",
-            "ts": "2026-02-04T23:13:18.702646",
-            "result_summary": {
-                "content_length": 354,
-                "preview": "Updated todo list to [{'content': '创建任务分解和进度跟踪', 'status': 'completed'}, {'content': '读取目标文章的clean_content字段', 'status': 'completed'}, {'content': '检查..."
-            }
-        },
-        {
-            "node": "model",
-            "ts": "2026-02-04T23:13:20.396834",
-            "result_summary": {
-                "content_length": 48,
-                "preview": "**任务完成** - 关键词提取任务已成功执行完毕，所有步骤均已完成，关键词已成功写入目标字段。"
-            }
-        },
-        {
-            "node": "HumanInTheLoopMiddleware.after_model",
-            "ts": "2026-02-04T23:13:20.411802"
-        },
-        {
-            "node": "TodoListMiddleware.after_model",
-            "ts": "2026-02-04T23:13:20.430712"
-        }
-    ],
-    "todos": [
-        {
-            "content": "创建任务分解和进度跟踪",
-            "status": "completed"
-        },
-        {
-            "content": "读取目标文章的clean_content字段",
-            "status": "completed"
-        },
-        {
-            "content": "检查clean_content是否为空",
-            "status": "completed"
-        },
-        {
-            "content": "执行关键词提取（原文提取、去重、排序）",
-            "status": "completed"
-        },
-        {
-            "content": "将关键词写入keywords字段",
-            "status": "completed"
-        },
-        {
-            "content": "输出最终结果",
-            "status": "completed"
-        }
-    ],
-    "pending_approval": null,
-    "updated_at": "2026-02-04T23:13:20.443000",
-    "is_running": false
+function handleApprovalRequired(data) {
+    console.log('收到审批请求:', data)
+    currentApproval.value = data
+    approvalThreadId.value = data.thread_id
+    showApprovalDialog.value = true
+    
+    if (data.payload) {
+        sessionData.value.pending_approval = data.payload
+    }
 }
+
+async function handleApprove() {
+    try {
+        approvalLoading.value = true
+        
+        const response = await agentApi.approveAgent({
+            thread_id: approvalThreadId.value,
+            decisions: [{ type: 'approve' }]
+        })
+        
+        if (response.code === 0) {
+            ElMessage.success('已批准审批请求')
+            showApprovalDialog.value = false
+            currentApproval.value = null
+            sessionData.value.pending_approval = null
+        } else {
+            ElMessage.error(response.message || '审批失败')
+        }
+    } catch (err) {
+        console.error('审批失败:', err)
+        ElMessage.error('审批失败，请稍后重试')
+    } finally {
+        approvalLoading.value = false
+    }
+}
+
+async function handleReject() {
+    try {
+        approvalLoading.value = true
+        
+        const response = await agentApi.approveAgent({
+            thread_id: approvalThreadId.value,
+            decisions: [{ type: 'reject' }]
+        })
+        
+        if (response.code === 0) {
+            ElMessage.success('已拒绝审批请求')
+            showApprovalDialog.value = false
+            currentApproval.value = null
+            sessionData.value.pending_approval = null
+        } else {
+            ElMessage.error(response.message || '审批失败')
+        }
+    } catch (err) {
+        console.error('审批失败:', err)
+        ElMessage.error('审批失败，请稍后重试')
+    } finally {
+        approvalLoading.value = false
+    }
+}
+
+function connectSSE() {
+    if (!threadId.value) {
+        error.value = '缺少 thread_id 参数'
+        loading.value = false
+        return
+    }
+
+    try {
+        const url = agentApi.getAgentStatusUrl(threadId.value)
+        eventSource = new EventSource(url)
+
+        eventSource.onopen = () => {
+            console.log('SSE 连接已建立')
+            retryCount = 0
+            error.value = null
+        }
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data)
+                
+                if (data.type === 'status' && data.data) {
+                    sessionData.value = data.data
+                    loading.value = false
+                } else if (data.type === 'approval_required' && data.data) {
+                    handleApprovalRequired(data.data)
+                }
+            } catch (err) {
+                console.error('解析 SSE 数据失败:', err)
+            }
+        }
+
+        eventSource.onerror = (err) => {
+            console.error('SSE 连接错误:', err)
+            
+            if (eventSource) {
+                eventSource.close()
+                eventSource = null
+            }
+
+            if (sessionData.value.status === 'completed' || sessionData.value.status === 'cancelled') {
+                console.log('任务已结束，不再重连')
+                loading.value = false
+                return
+            }
+
+            if (retryCount < maxRetries) {
+                retryCount++
+                const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000)
+                console.log(`${delay}ms 后重试第 ${retryCount} 次...`)
+                
+                setTimeout(() => {
+                    if (retryCount <= maxRetries) {
+                        connectSSE()
+                    }
+                }, delay)
+            } else {
+                error.value = 'SSE 连接失败，请刷新页面重试'
+                loading.value = false
+                ElMessage.error('实时连接中断，请刷新页面')
+            }
+        }
+    } catch (err) {
+        console.error('创建 SSE 连接失败:', err)
+        error.value = '创建连接失败'
+        loading.value = false
+    }
+}
+
+function disconnectSSE() {
+    if (eventSource) {
+        eventSource.close()
+        eventSource = null
+        console.log('SSE 连接已关闭')
+    }
+}
+
+onMounted(() => {
+    connectSSE()
+})
+
+onUnmounted(() => {
+    disconnectSSE()
+})
 </script>
 
 <style scoped>

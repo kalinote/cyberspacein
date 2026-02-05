@@ -7,7 +7,7 @@ from beanie.operators import Set
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from app.models.agent.agent import AgentModel, AgentSessionModel
+from app.models.agent.agent import AgentModel, AgentAnalysisSessionModel
 from app.models.agent.configs import AgentModelConfigModel
 from app.schemas.agent.agent import (
     AgentStatusPayloadSchema,
@@ -70,13 +70,13 @@ class AgentService:
         return {"type": event_type, "data": data}
 
     @staticmethod
-    def session_to_status_payload(doc: AgentSessionModel, is_running: bool) -> AgentStatusPayloadSchema:
-        fields = getattr(doc, "fields", {})
+    def session_to_status_payload(doc: AgentAnalysisSessionModel, is_running: bool) -> AgentStatusPayloadSchema:
         pending_approval = getattr(doc, "pending_approval", None)
         return AgentStatusPayloadSchema(
+            name=doc.name,
             thread_id=doc.thread_id,
             status=doc.status,
-            fields=fields,
+            meta=doc.meta,
             steps=doc.steps,
             todos=doc.todos,
             pending_approval=pending_approval,
@@ -133,7 +133,7 @@ class AgentService:
                         mode, data = "updates", item
                     if mode == "updates" and isinstance(data, dict):
                         for node_name, state_update in data.items():
-                            doc = await AgentSessionModel.find_one({"thread_id": thread_id})
+                            doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
                             if doc:
                                 step = {
                                     "node": node_name,
@@ -149,10 +149,10 @@ class AgentService:
                                 now = datetime.now()
                                 await doc.update(
                                     Set({
-                                        AgentSessionModel.status: "running",
-                                        AgentSessionModel.steps: new_steps,
-                                        AgentSessionModel.todos: new_todos,
-                                        AgentSessionModel.updated_at: now,
+                                        AgentAnalysisSessionModel.status: "running",
+                                        AgentAnalysisSessionModel.steps: new_steps,
+                                        AgentAnalysisSessionModel.todos: new_todos,
+                                        AgentAnalysisSessionModel.updated_at: now,
                                     })
                                 )
                                 doc.status = "running"
@@ -174,7 +174,7 @@ class AgentService:
                                 else ({"value": str(it[0].value)} if it[0].value is not None else {})
                             )
                         )
-                        doc = await AgentSessionModel.find_one({"thread_id": thread_id})
+                        doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
                         if doc:
                             doc.status = "awaiting_approval"
                             doc.pending_approval = copy.deepcopy(hitl_payload) if hitl_payload else None
@@ -191,7 +191,7 @@ class AgentService:
                         decisions = await q.get()
                         decision_type = parse_approval_decision(decisions)
                         decision_detail = copy.deepcopy(decisions[0]) if decisions and isinstance(decisions[0], dict) else None
-                        doc = await AgentSessionModel.find_one({"thread_id": thread_id})
+                        doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
                         if doc:
                             if doc.steps:
                                 last_step = doc.steps[-1]
@@ -228,7 +228,7 @@ class AgentService:
             async with AgentService.task_lock:
                 AgentService.running_tasks.pop(thread_id, None)
             AgentService.pending_resumes.pop(thread_id, None)
-            doc = await AgentSessionModel.find_one({"thread_id": thread_id})
+            doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
             if doc and doc.status == "running":
                 doc = await update_session_status(thread_id, "completed")
                 if doc:
@@ -239,10 +239,12 @@ class AgentService:
     @staticmethod
     async def start_agent(system_prompt: str, user_prompt: str, agent_template: AgentModel, model_config: AgentModelConfigModel, data: StartAgentRequestSchema):
         thread_id = str(uuid.uuid4())
-        await AgentSessionModel(
+        name = data.entity_type.value + "[" + data.entity_uuid[:6] + "]" + agent_template.name + "分析任务"
+        await AgentAnalysisSessionModel(
             thread_id=thread_id,
+            name=name,
+            meta=data.model_dump(),
             status="running",
-            fields=data.model_dump(),
             steps=[],
             todos=[],
         ).insert()

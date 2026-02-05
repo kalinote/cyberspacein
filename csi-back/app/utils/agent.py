@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 from jinja2 import Environment, Undefined
-from app.models.agent.agent import AgentSessionModel
+from app.models.agent.agent import AgentAnalysisSessionModel
 
 def modify_entity_approval_description(tool_call: Any, state: Any, runtime: Any) -> str:
     """
@@ -11,11 +11,11 @@ def modify_entity_approval_description(tool_call: Any, state: Any, runtime: Any)
     field = args.get("field", "Unknown Field")
     return f"Agent 尝试修改 {field} 字段，请确认是否继续。"
 
-async def update_session_status(thread_id: str, status: str) -> AgentSessionModel | None:
+async def update_session_status(thread_id: str, status: str) -> AgentAnalysisSessionModel | None:
     """
     更新会话状态
     """
-    doc = await AgentSessionModel.find_one(AgentSessionModel.thread_id == thread_id)
+    doc = await AgentAnalysisSessionModel.find_one(AgentAnalysisSessionModel.thread_id == thread_id)
     if doc:
         doc.status = status
         doc.updated_at = datetime.now()
