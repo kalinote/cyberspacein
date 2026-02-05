@@ -26,6 +26,8 @@ from app.schemas.agent.agent import (
     ApprovalRequiredPayloadSchema,
     ApproveRequestSchema,
     ApproveResponseSchema,
+    ResultEventPayloadSchema,
+    ResultPayloadSchema,
     StartAgentRequestSchema,
     StartAgentResponseSchema,
 )
@@ -340,8 +342,16 @@ async def get_agent_status(request: Request, thread_id: str = Query(..., descrip
                     ApprovalRequiredPayloadSchema(payload=init_data["pending_approval"], thread_id=thread_id),
                 )
                 yield f"data: {json.dumps(approval_event, ensure_ascii=False)}\n\n"
-            if init_data.get("status") in ("completed", "cancelled"):
-                # 最终态退出连接
+            if init_data.get("status") in ("completed", "cancelled", "paused"):
+                if doc.result:
+                    try:
+                        result_event = AgentService.sse_event(
+                            "result",
+                            ResultEventPayloadSchema(thread_id=thread_id, result=ResultPayloadSchema(**doc.result)),
+                        )
+                        yield f"data: {json.dumps(result_event, ensure_ascii=False)}\n\n"
+                    except Exception:
+                        pass
                 return
             while True:
                 if await request.is_disconnected():
@@ -351,8 +361,13 @@ async def get_agent_status(request: Request, thread_id: str = Query(..., descrip
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                     if (
                         payload.get("type") == "status"
-                        and payload.get("data", {}).get("status") in ("completed", "cancelled")
+                        and payload.get("data", {}).get("status") in ("completed", "cancelled", "paused")
                     ):
+                        try:
+                            next_payload = queue.get_nowait()
+                            yield f"data: {json.dumps(next_payload, ensure_ascii=False)}\n\n"
+                        except asyncio.QueueEmpty:
+                            pass
                         break
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"

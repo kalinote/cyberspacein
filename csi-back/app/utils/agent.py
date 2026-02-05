@@ -11,7 +11,7 @@ def modify_entity_approval_description(tool_call: Any, state: Any, runtime: Any)
     field = args.get("field", "Unknown Field")
     return f"Agent 尝试修改 {field} 字段，请确认是否继续。"
 
-async def update_session_status(thread_id: str, status: str) -> AgentAnalysisSessionModel | None:
+async def update_session_status(thread_id: str, status: str, result: dict | None = None) -> AgentAnalysisSessionModel | None:
     """
     更新会话状态
     """
@@ -19,6 +19,8 @@ async def update_session_status(thread_id: str, status: str) -> AgentAnalysisSes
     if doc:
         doc.status = status
         doc.updated_at = datetime.now()
+        if result is not None:
+            doc.result = result
         await doc.save()
     return doc
 

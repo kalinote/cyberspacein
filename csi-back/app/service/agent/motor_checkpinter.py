@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Sequence
+from datetime import datetime
 from typing import Any, Optional
 
 from langchain_core.runnables import RunnableConfig
@@ -233,10 +234,11 @@ class MotorCheckpointerSaver(BaseCheckpointSaver):
                 "type": type_,
                 "value": serialized_value,
             }
+            update_op: dict[str, Any] = {set_method: update_doc, "$setOnInsert": {"created_at": datetime.utcnow()}}
             operations.append(
                 UpdateOne(
                     filter=upsert_query,
-                    update={set_method: update_doc},
+                    update=update_op,
                     upsert=True,
                 )
             )

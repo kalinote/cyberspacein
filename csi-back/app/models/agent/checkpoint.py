@@ -1,7 +1,9 @@
+from datetime import datetime
 from typing import Any
 
 from beanie import Document
 from pydantic import Field
+from pymongo import ASCENDING, IndexModel
 
 
 class CheckpointModel(Document):
@@ -12,11 +14,15 @@ class CheckpointModel(Document):
     type: str = Field(..., description="checkpoint 序列化类型标识")
     checkpoint: Any = Field(..., description="序列化后的整份 checkpoint 状态（channel_values、channel_versions 等）")
     metadata: Any = Field(..., description="序列化后的元数据（如 step、source）")
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间，用于 TTL 过期")
 
     class Settings:
         name = "agent_checkpointer"
         indexes = [
-            "thread_id", "checkpoint_ns", "checkpoint_id"
+            "thread_id",
+            "checkpoint_ns",
+            "checkpoint_id",
+            IndexModel([("created_at", ASCENDING)], expireAfterSeconds=604800),
         ]
 
 
@@ -30,9 +36,15 @@ class CheckpointWriteModel(Document):
     channel: str = Field(..., description="写入的 channel 名（如 messages）")
     type: str = Field(..., description="该条 value 的序列化类型")
     value: Any = Field(..., description="序列化后的单条写入内容")
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间，用于 TTL 过期")
 
     class Settings:
         name = "agent_checkpointer_writes"
         indexes = [
-            "thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"
+            "thread_id",
+            "checkpoint_ns",
+            "checkpoint_id",
+            "task_id",
+            "idx",
+            IndexModel([("created_at", ASCENDING)], expireAfterSeconds=604800),
         ]

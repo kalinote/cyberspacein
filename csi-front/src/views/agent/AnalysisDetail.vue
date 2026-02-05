@@ -106,11 +106,13 @@
                                     </div>
                                     <div class="flex-1 min-w-0 pt-0.5">
                                         <div class="flex items-center gap-2 flex-wrap mb-1">
-                                            <span class="font-mono text-sm font-semibold text-gray-800">{{ step.node }}</span>
+                                            <span class="font-mono text-sm font-semibold text-gray-800">{{ step.node === 'result' ? '运行结果' : step.node }}</span>
                                             <span class="text-xs text-gray-500">{{ formatDateTime(step.ts, { includeSecond: true }) }}</span>
                                             <Icon v-if="step.approval_decision === 'approve'" icon="mdi:check-circle" class="text-green-600 text-base" title="已通过" />
                                             <Icon v-if="step.approval_decision === 'reject'" icon="mdi:close-circle" class="text-red-600 text-base" title="已拒绝" />
                                             <Icon v-if="step.approval_payload && !step.approved_at" icon="mdi:clock-outline" class="text-amber-600 text-base" title="待审批" />
+                                            <Icon v-if="step.run_result?.success === true" icon="mdi:check-circle" class="text-green-600 text-base" title="成功" />
+                                            <Icon v-if="step.run_result?.success === false" icon="mdi:close-circle" class="text-red-600 text-base" title="失败" />
                                         </div>
                                         <div v-if="step.tool_calls?.length" class="mt-2">
                                             <el-collapse>
@@ -131,9 +133,19 @@
                                                 </el-collapse-item>
                                             </el-collapse>
                                         </div>
-                                        <div v-if="step.result_summary" class="mt-2 p-2 bg-gray-50 rounded-lg border border-gray-100">
-                                            <p class="text-xs text-gray-500 mb-1">结果摘要 ({{ step.result_summary.content_length }} 字符)</p>
-                                            <p class="text-sm text-gray-700 wrap-break-word line-clamp-2">{{ step.result_summary.preview }}</p>
+                                        <div v-if="step.result_summary" class="mt-2 p-3 rounded-lg border" :class="step.run_result?.success === true ? 'bg-green-50 border-green-200' : step.run_result?.success === false ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'">
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <Icon v-if="step.run_result?.success === true" icon="mdi:check-circle" class="text-green-600 text-lg" />
+                                                <Icon v-if="step.run_result?.success === false" icon="mdi:close-circle" class="text-red-600 text-lg" />
+                                                <p class="text-xs font-medium" :class="step.run_result?.success === true ? 'text-green-800' : step.run_result?.success === false ? 'text-red-800' : 'text-gray-600'">
+                                                    {{ step.run_result?.success === true ? '执行成功' : step.run_result?.success === false ? '执行失败' : '结果摘要' }} ({{ step.result_summary.content_length }} 字符)
+                                                </p>
+                                            </div>
+                                            <p class="text-sm whitespace-pre-wrap wrap-break-word" :class="step.run_result?.success === true ? 'text-green-900' : step.run_result?.success === false ? 'text-red-900' : 'text-gray-700'">{{ step.result_summary.preview }}</p>
+                                            <div v-if="step.run_result?.failure_reason" class="mt-3 pt-3 border-t border-red-300">
+                                                <p class="text-xs font-medium text-red-800 mb-1">失败原因</p>
+                                                <p class="text-sm text-red-900 whitespace-pre-wrap wrap-break-word">{{ step.run_result.failure_reason }}</p>
+                                            </div>
                                         </div>
                                         <div v-if="step.approval_payload?.action_requests?.length" class="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
                                             <p class="text-xs font-medium text-amber-800 mb-2">审批内容</p>
@@ -312,6 +324,7 @@ function stepNodeIcon(node) {
     if (node === 'model') return 'mdi:robot'
     if (node === 'tools') return 'mdi:wrench'
     if (node === '__interrupt__') return 'mdi:hand-back-right'
+    if (node === 'result') return 'mdi:flag-checkered'
     return 'mdi:circle-small'
 }
 
@@ -319,6 +332,7 @@ function stepNodeIconBgClass(node) {
     if (node === 'model') return 'bg-blue-100'
     if (node === 'tools') return 'bg-green-100'
     if (node === '__interrupt__') return 'bg-amber-100'
+    if (node === 'result') return 'bg-emerald-100'
     return 'bg-gray-100'
 }
 
@@ -326,6 +340,7 @@ function stepNodeIconColor(node) {
     if (node === 'model') return 'text-blue-600'
     if (node === 'tools') return 'text-green-600'
     if (node === '__interrupt__') return 'text-amber-600'
+    if (node === 'result') return 'text-emerald-600'
     return 'text-gray-500'
 }
 
@@ -404,6 +419,25 @@ async function handleReject() {
     }
 }
 
+function handleResult(data) {
+    const result = data?.result
+    if (!result) return
+    const summary = result.summary ?? ''
+    const newStep = {
+        node: 'result',
+        ts: new Date().toISOString(),
+        result_summary: { preview: summary, content_length: summary.length },
+        run_result: { success: result.success, failure_reason: result.failure_reason }
+    }
+    const steps = sessionData.value.steps || []
+    const last = steps[steps.length - 1]
+    if (last?.node === 'result') {
+        sessionData.value.steps = steps.slice(0, -1).concat(newStep)
+    } else {
+        sessionData.value.steps = [...steps, newStep]
+    }
+}
+
 function connectSSE() {
     if (!threadId.value) {
         error.value = '缺少 thread_id 参数'
@@ -430,6 +464,8 @@ function connectSSE() {
                     loading.value = false
                 } else if (data.type === 'approval_required' && data.data) {
                     handleApprovalRequired(data.data)
+                } else if (data.type === 'result' && data.data) {
+                    handleResult(data.data)
                 }
             } catch (err) {
                 console.error('解析 SSE 数据失败:', err)

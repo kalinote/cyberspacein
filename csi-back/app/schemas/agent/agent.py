@@ -76,6 +76,17 @@ class StartAgentResponseSchema(BaseModel):
     thread_id: str = Field(description="会话ID")
 
 
+class ResultPayloadSchema(BaseModel):
+    summary: str = Field(description="任务情况总结")
+    success: bool = Field(description="是否成功")
+    failure_reason: str | None = Field(default=None, description="失败原因")
+
+
+class ResultEventPayloadSchema(BaseModel):
+    thread_id: str = Field(description="会话ID")
+    result: ResultPayloadSchema = Field(description="最终结果")
+
+
 class AgentStatusPayloadSchema(BaseModel):
     name: str = Field(description="分析会话名称")
     thread_id: str = Field(description="会话ID")

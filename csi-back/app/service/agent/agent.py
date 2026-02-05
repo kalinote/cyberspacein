@@ -12,6 +12,8 @@ from app.models.agent.configs import AgentModelConfigModel
 from app.schemas.agent.agent import (
     AgentStatusPayloadSchema,
     ApprovalRequiredPayloadSchema,
+    ResultEventPayloadSchema,
+    ResultPayloadSchema,
     StartAgentRequestSchema,
 )
 from app.service.agent.motor_checkpinter import MotorCheckpointerSaver
@@ -44,6 +46,12 @@ TODO_MIDDLEWARE_TOOL_DESCRIPTION = """\
 任务状态：pending=未开始，in_progress=进行中，completed=已完成。
 约束：每轮最多调用一次，每次传入完整列表（整表替换）。"""
 
+RESULT_FORMAT_INSTRUCTION = """
+结束任务前，你必须确保所有 Todos 全部完成，并且所有 Todos 已经实际上被更新为 completed 状态。
+包括输出最终结果的 Todos 项，你必须在实际输出结果前保证输出结果的 Todo 已经设置为完成
+
+任务结束时，你必须按以下 JSON 结构输出最终结果，不要输出其他内容：包含 summary（任务情况总结）、success（是否成功）、failure_reason（失败原因，成功时为 null）。"""
+
 class AgentService:
     task_lock = asyncio.Lock()
     sse_lock = asyncio.Lock()
@@ -64,7 +72,7 @@ class AgentService:
                 pass
 
     @staticmethod
-    def sse_event(event_type: str, data: AgentStatusPayloadSchema | ApprovalRequiredPayloadSchema | dict) -> dict:
+    def sse_event(event_type: str, data: AgentStatusPayloadSchema | ApprovalRequiredPayloadSchema | ResultEventPayloadSchema | dict) -> dict:
         if hasattr(data, "model_dump"):
             data = data.model_dump(mode="json")
         return {"type": event_type, "data": data}
@@ -86,6 +94,7 @@ class AgentService:
 
     @staticmethod
     async def create_agent(system_prompt: str, agent_template: AgentModel, model_config: AgentModelConfigModel):
+        system_prompt = system_prompt.rstrip() + RESULT_FORMAT_INSTRUCTION
         return create_agent(
             model=ChatOpenAI(
                 model=model_config.model,
@@ -95,6 +104,7 @@ class AgentService:
             ),
             tools=[tool for tool in all_tools.values() if tool.name in agent_template.tools],
             system_prompt=system_prompt,
+            response_format=ResultPayloadSchema,
             middleware=[
                 TodoListMiddleware(
                     system_prompt=TODO_MIDDLEWARE_SYSTEM_PROMPT,
@@ -163,6 +173,32 @@ class AgentService:
                                     thread_id,
                                     AgentService.sse_event("status", AgentService.session_to_status_payload(doc, True)),
                                 )
+                    elif mode == "values" and isinstance(data, dict) and "__interrupt__" not in data:
+                        raw = data.get("structured_response")
+                        if raw is not None:
+                            try:
+                                if hasattr(raw, "model_dump"):
+                                    parsed = ResultPayloadSchema(**raw.model_dump())
+                                else:
+                                    parsed = ResultPayloadSchema(**raw) if isinstance(raw, dict) else ResultPayloadSchema(**{"summary": str(raw), "success": False, "failure_reason": "格式异常"})
+                                result_dict = parsed.model_dump()
+                                doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
+                                if doc:
+                                    doc.result = result_dict
+                                    doc.status = "completed"
+                                    doc.updated_at = datetime.now()
+                                    await doc.save()
+                                    await AgentService.broadcast_sse(
+                                        thread_id,
+                                        AgentService.sse_event("status", AgentService.session_to_status_payload(doc, False)),
+                                    )
+                                    await AgentService.broadcast_sse(
+                                        thread_id,
+                                        AgentService.sse_event("result", ResultEventPayloadSchema(thread_id=thread_id, result=parsed)),
+                                    )
+                                break
+                            except Exception:
+                                pass
                     elif mode == "values" and isinstance(data, dict) and "__interrupt__" in data:
                         it = data["__interrupt__"]
                         hitl_payload = (
@@ -218,11 +254,28 @@ class AgentService:
         except asyncio.CancelledError:
             reason = AgentService.cancel_reasons.pop(thread_id, "pause")
             status = "paused" if reason == "pause" else "cancelled"
-            doc = await update_session_status(thread_id, status)
+            cancel_result = ResultPayloadSchema(
+                summary="", success=False, failure_reason="用户暂停" if status == "paused" else "用户取消"
+            ).model_dump()
+            doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
             if doc:
+                doc.status = status
+                doc.updated_at = datetime.now()
+                doc.result = cancel_result
+                await doc.save()
                 await AgentService.broadcast_sse(
                     thread_id, AgentService.sse_event("status", AgentService.session_to_status_payload(doc, False))
                 )
+                await AgentService.broadcast_sse(
+                    thread_id,
+                    AgentService.sse_event("result", ResultEventPayloadSchema(thread_id=thread_id, result=ResultPayloadSchema(**cancel_result))),
+                )
+            else:
+                doc = await update_session_status(thread_id, status)
+                if doc:
+                    await AgentService.broadcast_sse(
+                        thread_id, AgentService.sse_event("status", AgentService.session_to_status_payload(doc, False))
+                    )
             raise
         finally:
             async with AgentService.task_lock:
@@ -230,11 +283,21 @@ class AgentService:
             AgentService.pending_resumes.pop(thread_id, None)
             doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
             if doc and doc.status == "running":
-                doc = await update_session_status(thread_id, "completed")
+                failure_result = None
+                if not getattr(doc, "result", None):
+                    failure_result = ResultPayloadSchema(summary="", success=False, failure_reason="任务异常结束").model_dump()
+                doc = await update_session_status(thread_id, "completed", result=failure_result)
+                if doc and failure_result:
+                    doc.result = failure_result
                 if doc:
                     await AgentService.broadcast_sse(
                         thread_id, AgentService.sse_event("status", AgentService.session_to_status_payload(doc, False))
                     )
+                    if doc.result:
+                        parsed = ResultPayloadSchema(**doc.result)
+                        await AgentService.broadcast_sse(
+                            thread_id, AgentService.sse_event("result", ResultEventPayloadSchema(thread_id=thread_id, result=parsed))
+                        )
 
     @staticmethod
     async def start_agent(system_prompt: str, user_prompt: str, agent_template: AgentModel, model_config: AgentModelConfigModel, data: StartAgentRequestSchema):

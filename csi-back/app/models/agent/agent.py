@@ -26,6 +26,7 @@ class AgentAnalysisSessionModel(Document):
     steps: list[dict] = Field(default_factory=list, description="执行步骤，每步含 node、ts 等，人审步骤可含 approval_decision、approval_decision_detail、approved_at、approval_payload")
     todos: list[dict] = Field(default_factory=list, description="Todo 项，每项含 content、status")
     pending_approval: dict | None = Field(default=None, description="当前待审批上下文，重连时恢复审批 UI，审批提交后清空")
+    result: dict | None = Field(default=None, description="最终结果，ResultPayloadSchema.model_dump()")
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     updated_at: datetime = Field(default_factory=lambda: datetime.now())
 
