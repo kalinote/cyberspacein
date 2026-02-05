@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.db.elasticsearch import get_es
-from app.models.agent.agent import AgentModel, AgentSessionModel
+from app.models.agent.agent import AgentModel, AgentAnalysisSessionModel
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 from app.schemas.agent.configs import AgentToolsParameterSchema, AgentToolsResponseSchema, ModelConfigListItemSchema
 from app.schemas.constants import ENTITY_TYPE_INDEX_MAP
@@ -23,6 +23,7 @@ from app.schemas.agent.agent import (
     AgentPromptTemplateCreateRequestSchema,
     AgentPromptTemplateSchema,
     AgentSchema,
+    ApprovalRequiredPayloadSchema,
     ApproveRequestSchema,
     ApproveResponseSchema,
     StartAgentRequestSchema,
@@ -318,7 +319,7 @@ async def start_agent(data: StartAgentRequestSchema):
 
 @router.get("/status", summary="获取会话状态（SSE）")
 async def get_agent_status(request: Request, thread_id: str = Query(..., description="会话ID")):
-    doc = await AgentSessionModel.find_one({"thread_id": thread_id})
+    doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
     if not doc:
         return ApiResponseSchema.error(code=404, message="无该会话")
     queue = asyncio.Queue(maxsize=128)
@@ -332,7 +333,15 @@ async def get_agent_status(request: Request, thread_id: str = Query(..., descrip
     async def event_gen():
         try:
             yield f"data: {json.dumps(initial, ensure_ascii=False)}\n\n"
-            if initial.get("data", {}).get("status") in ("completed", "cancelled"):
+            init_data = initial.get("data") or {}
+            if init_data.get("status") == "awaiting_approval" and init_data.get("pending_approval") is not None:
+                approval_event = AgentService.sse_event(
+                    "approval_required",
+                    ApprovalRequiredPayloadSchema(payload=init_data["pending_approval"], thread_id=thread_id),
+                )
+                yield f"data: {json.dumps(approval_event, ensure_ascii=False)}\n\n"
+            if init_data.get("status") in ("completed", "cancelled"):
+                # 最终态退出连接
                 return
             while True:
                 if await request.is_disconnected():
