@@ -504,6 +504,7 @@ import { articleApi } from '@/api/article'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
+import { convertRelativeLinks } from '@/utils/linkProcessor'
 import { useMarkingHandler } from '@/composables/useMarkingHandler'
 import { useHighlight } from '@/composables/useHighlight'
 import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
@@ -588,7 +589,12 @@ const loadArticleDetail = async () => {
         if (response.code === 0) {
             articleData.value = response.data
             
-            if (articleData.value.safe_raw_content) {
+            if (articleData.value.safe_raw_content && articleData.value.url) {
+                editableSafeRawContent.value = convertRelativeLinks(
+                    articleData.value.safe_raw_content,
+                    articleData.value.url
+                )
+            } else if (articleData.value.safe_raw_content) {
                 editableSafeRawContent.value = articleData.value.safe_raw_content
             }
             

@@ -696,6 +696,7 @@ import { forumApi } from '@/api/forum'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
+import { convertRelativeLinks } from '@/utils/linkProcessor'
 import { useMarkingHandler } from '@/composables/useMarkingHandler'
 import { useHighlight } from '@/composables/useHighlight'
 import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
@@ -777,7 +778,12 @@ const loadForumDetail = async () => {
         if (response.code === 0) {
             forumData.value = response.data
             
-            if (forumData.value.safe_raw_content) {
+            if (forumData.value.safe_raw_content && forumData.value.url) {
+                editableSafeRawContent.value = convertRelativeLinks(
+                    forumData.value.safe_raw_content,
+                    forumData.value.url
+                )
+            } else if (forumData.value.safe_raw_content) {
                 editableSafeRawContent.value = forumData.value.safe_raw_content
             }
             
