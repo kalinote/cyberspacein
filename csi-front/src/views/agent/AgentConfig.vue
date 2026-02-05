@@ -262,11 +262,11 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="handleAction('查看', item.name)">
+                    <el-button type="primary" link @click="openPromptTemplateDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="handleAction('编辑', item.name)">
+                    <el-button type="primary" link @click="openPromptTemplateEdit(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
@@ -388,7 +388,7 @@
 
     <el-dialog
       v-model="promptTemplateDialogVisible"
-      title="新增提示词模板"
+      :title="editingPromptTemplateId ? '编辑提示词模板' : '新增提示词模板'"
       width="960px"
       :close-on-click-modal="false"
       @close="handlePromptTemplateDialogClose"
@@ -437,6 +437,55 @@
       <template #footer>
         <el-button @click="handlePromptTemplateDialogClose">取消</el-button>
         <el-button type="primary" :loading="promptTemplateSubmitLoading" @click="handlePromptTemplateSubmit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="promptTemplateDetailVisible"
+      title="提示词模板详情"
+      width="960px"
+      :close-on-click-modal="true"
+    >
+      <div v-loading="promptTemplateDetailLoading" element-loading-text="加载中..." class="min-h-[200px]">
+        <template v-if="promptTemplateDetail">
+          <div class="space-y-4">
+            <div>
+              <div class="text-sm text-gray-500 mb-1">名称</div>
+              <div class="text-base font-medium text-gray-900">{{ promptTemplateDetail.name }}</div>
+            </div>
+            <div v-if="promptTemplateDetail.description">
+              <div class="text-sm text-gray-500 mb-1">描述</div>
+              <div class="text-sm text-gray-700 whitespace-pre-line">{{ promptTemplateDetail.description }}</div>
+            </div>
+            <div class="flex items-center gap-4 text-sm text-gray-500">
+              <span>创建时间：{{ formatModelDate(promptTemplateDetail.created_at) }}</span>
+              <span>更新时间：{{ formatModelDate(promptTemplateDetail.updated_at) }}</span>
+            </div>
+            <el-tabs v-model="promptTemplateDetailActiveTab">
+              <el-tab-pane label="系统提示词" name="system_prompt">
+                <div class="text-sm text-gray-500 mb-1">系统提示词</div>
+                <MonacoEditor
+                  :model-value="promptTemplateDetail.system_prompt || ''"
+                  language="markdown"
+                  :read-only="true"
+                  :min-height="360"
+                />
+              </el-tab-pane>
+              <el-tab-pane label="用户提示词" name="user_prompt">
+                <div class="text-sm text-gray-500 mb-1">用户提示词</div>
+                <MonacoEditor
+                  :model-value="promptTemplateDetail.user_prompt || ''"
+                  language="markdown"
+                  :read-only="true"
+                  :min-height="360"
+                />
+              </el-tab-pane>
+            </el-tabs>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="promptTemplateDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -528,7 +577,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
@@ -547,6 +596,30 @@ const engineTabs = [
   { key: 'promptTemplates', label: '提示词模板', icon: 'mdi:file-document-edit' },
   { key: 'tools', label: '工具', icon: 'mdi:tools' }
 ]
+
+const statisticsData = ref({
+  agent_count: 0,
+  model_count: 0,
+  prompt_template_count: 0,
+  tools_count: 0
+})
+
+const fetchStatistics = async () => {
+  try {
+    const res = await agentApi.getConfigStatistics()
+    const data = res?.data
+    if (data) {
+      statisticsData.value = {
+        agent_count: data.agent_count ?? 0,
+        model_count: data.model_count ?? 0,
+        prompt_template_count: data.prompt_template_count ?? 0,
+        tools_count: data.tools_count ?? 0
+      }
+    }
+  } catch {
+    statisticsData.value = { agent_count: 0, model_count: 0, prompt_template_count: 0, tools_count: 0 }
+  }
+}
 
 const modelList = ref([])
 const modelListLoading = ref(false)
@@ -641,6 +714,10 @@ watch(activeTab, (tab) => {
   if (tab === 'tools' && !toolsLoadedOnce.value) fetchToolsList()
 }, { immediate: true })
 
+onMounted(() => {
+  fetchStatistics()
+})
+
 const maskApiKey = (key) => {
   if (!key) return '***'
   if (key.length <= 4) return '***'
@@ -665,11 +742,11 @@ const formatModelDate = (dateStr) => {
 }
 
 const statistics = computed(() => ({
-  analysisEngines: agentPagination.value.total,
-  analysisOptions: agentPagination.value.total,
-  modelResources: modelPagination.value.total,
-  promptTemplates: promptTemplatePagination.value.total,
-  tools: toolsList.value.length
+  analysisEngines: statisticsData.value.agent_count,
+  analysisOptions: statisticsData.value.agent_count,
+  modelResources: statisticsData.value.model_count,
+  promptTemplates: statisticsData.value.prompt_template_count,
+  tools: statisticsData.value.tools_count
 }))
 
 const getResourceCount = (tabKey) => statistics.value[tabKey] ?? 0
@@ -840,6 +917,7 @@ const handleAgentSubmit = async () => {
     handleAgentDialogClose()
     agentPagination.value.page = 1
     fetchAgentList()
+    fetchStatistics()
   } catch (e) {
     if (e !== false) console.error('新增分析引擎失败:', e)
   } finally {
@@ -857,6 +935,9 @@ const handleAdd = () => {
   } else if (activeTab.value === 'modelResources') {
     modelDialogVisible.value = true
   } else if (activeTab.value === 'promptTemplates') {
+    editingPromptTemplateId.value = null
+    promptTemplateFormData.value = { name: '', description: '', system_prompt: DEFAULT_SYSTEM_PROMPT_TEMPLATE, user_prompt: DEFAULT_USER_PROMPT_TEMPLATE }
+    promptTemplateActiveTab.value = 'system_prompt'
     promptTemplateDialogVisible.value = true
   } else {
     ElMessage.info('功能开发中')
@@ -885,6 +966,7 @@ const handleModelSubmit = async () => {
     handleModelDialogClose()
     modelPagination.value.page = 1
     fetchModelList()
+    fetchStatistics()
   } catch (e) {
     if (e !== false) console.error('新增模型失败:', e)
   } finally {
@@ -938,6 +1020,7 @@ const DEFAULT_USER_PROMPT_TEMPLATE = `---
 **请按照系统设定的 Workflow 开始执行：创建 Todos -> 读取数据 -> 执行翻译 -> 回写字段。**`
 
 const promptTemplateDialogVisible = ref(false)
+const editingPromptTemplateId = ref(null)
 const promptTemplateActiveTab = ref('system_prompt')
 const promptTemplateFormRef = ref(null)
 const promptTemplateSubmitLoading = ref(false)
@@ -953,8 +1036,57 @@ const promptTemplateFormRules = {
   user_prompt: [{ required: true, message: '请输入用户提示词', trigger: 'blur' }]
 }
 
+const promptTemplateDetailVisible = ref(false)
+const promptTemplateDetail = ref(null)
+const promptTemplateDetailLoading = ref(false)
+const promptTemplateDetailActiveTab = ref('system_prompt')
+
+const openPromptTemplateDetail = async (item) => {
+  if (!item?.id) return
+  promptTemplateDetailVisible.value = true
+  promptTemplateDetail.value = null
+  promptTemplateDetailActiveTab.value = 'system_prompt'
+  promptTemplateDetailLoading.value = true
+  try {
+    const res = await agentApi.getPromptTemplateDetail(item.id)
+    promptTemplateDetail.value = res?.data ?? null
+  } catch (e) {
+    ElMessage.error('获取详情失败')
+  } finally {
+    promptTemplateDetailLoading.value = false
+  }
+}
+
+const openPromptTemplateEdit = async (item) => {
+  if (!item?.id) return
+  editingPromptTemplateId.value = item.id
+  promptTemplateDialogVisible.value = true
+  promptTemplateActiveTab.value = 'system_prompt'
+  promptTemplateFormData.value = { name: '', description: '', system_prompt: '', user_prompt: '' }
+  promptTemplateSubmitLoading.value = true
+  try {
+    const res = await agentApi.getPromptTemplateDetail(item.id)
+    const d = res?.data
+    if (d) {
+      promptTemplateFormData.value = {
+        name: d.name ?? '',
+        description: d.description ?? '',
+        system_prompt: d.system_prompt ?? '',
+        user_prompt: d.user_prompt ?? ''
+      }
+    }
+  } catch (e) {
+    ElMessage.error('获取模板详情失败')
+    promptTemplateDialogVisible.value = false
+    editingPromptTemplateId.value = null
+  } finally {
+    promptTemplateSubmitLoading.value = false
+  }
+}
+
 const handlePromptTemplateDialogClose = () => {
   promptTemplateDialogVisible.value = false
+  editingPromptTemplateId.value = null
   promptTemplateActiveTab.value = 'system_prompt'
   promptTemplateFormRef.value?.resetFields()
   promptTemplateFormData.value = { name: '', description: '', system_prompt: DEFAULT_SYSTEM_PROMPT_TEMPLATE, user_prompt: DEFAULT_USER_PROMPT_TEMPLATE }
@@ -965,22 +1097,29 @@ const handlePromptTemplateSubmit = async () => {
   try {
     await promptTemplateFormRef.value.validate()
     promptTemplateSubmitLoading.value = true
-    await agentApi.createPromptTemplate({
+    const payload = {
       name: promptTemplateFormData.value.name,
       description: promptTemplateFormData.value.description || undefined,
       system_prompt: promptTemplateFormData.value.system_prompt,
       user_prompt: promptTemplateFormData.value.user_prompt
-    })
-    ElMessage.success('新增成功')
+    }
+    if (editingPromptTemplateId.value) {
+      await agentApi.updatePromptTemplate(editingPromptTemplateId.value, payload)
+      ElMessage.success('修改成功')
+    } else {
+      await agentApi.createPromptTemplate(payload)
+      ElMessage.success('新增成功')
+    }
     handlePromptTemplateDialogClose()
     promptTemplatePagination.value.page = 1
     fetchPromptTemplateList()
+    fetchStatistics()
   } catch (e) {
     if (e !== false) {
       const data = promptTemplateFormData.value
       if (!data.system_prompt?.trim()) promptTemplateActiveTab.value = 'system_prompt'
       else if (!data.user_prompt?.trim()) promptTemplateActiveTab.value = 'user_prompt'
-      console.error('新增提示词模板失败:', e)
+      console.error(editingPromptTemplateId.value ? '修改提示词模板失败:' : '新增提示词模板失败:', e)
     }
   } finally {
     promptTemplateSubmitLoading.value = false

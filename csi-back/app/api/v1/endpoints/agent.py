@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime
 from typing import Optional
 
 from elasticsearch.exceptions import NotFoundError
@@ -11,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from app.db.elasticsearch import get_es
 from app.models.agent.agent import AgentModel, AgentAnalysisSessionModel
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
-from app.schemas.agent.configs import AgentToolsParameterSchema, AgentToolsResponseSchema, ModelConfigListItemSchema
+from app.schemas.agent.configs import AgentConfigsStatisticsResponse, AgentToolsParameterSchema, AgentToolsResponseSchema, ModelConfigListItemSchema
 from app.schemas.constants import ENTITY_TYPE_INDEX_MAP
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
@@ -171,6 +172,47 @@ async def get_agent_prompt_template_list(
     ]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
+@router.get("/configs/prompt-template/{prompt_template_id}", response_model=ApiResponseSchema[AgentPromptTemplateSchema], summary="查询提示词模板详情")
+async def get_agent_prompt_template_detail(prompt_template_id: str):
+    doc = await AgentPromptTemplateModel.find_one({"_id": prompt_template_id})
+    if not doc:
+        return ApiResponseSchema.error(code=404, message="提示词模板不存在")
+    return ApiResponseSchema.success(data=AgentPromptTemplateSchema(
+        id=doc.id,
+        name=doc.name,
+        description=doc.description,
+        system_prompt=doc.system_prompt,
+        user_prompt=doc.user_prompt,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+    ))
+
+
+@router.put("/configs/prompt-template/{prompt_template_id}", response_model=ApiResponseSchema[AgentPromptTemplateSchema], summary="编辑提示词模板")
+async def update_agent_prompt_template(prompt_template_id: str, data: AgentPromptTemplateCreateRequestSchema):
+    doc = await AgentPromptTemplateModel.find_one({"_id": prompt_template_id})
+    if not doc:
+        return ApiResponseSchema.error(code=404, message="提示词模板不存在")
+    if data.name != doc.name:
+        existing_by_name = await AgentPromptTemplateModel.find_one({"name": data.name})
+        if existing_by_name and existing_by_name.id != prompt_template_id:
+            return ApiResponseSchema.error(code=400, message=f"提示词模板名称已存在: {data.name}")
+    doc.name = data.name
+    doc.description = data.description
+    doc.system_prompt = data.system_prompt
+    doc.user_prompt = data.user_prompt
+    doc.updated_at = datetime.now()
+    await doc.save()
+    return ApiResponseSchema.success(data=AgentPromptTemplateSchema(
+        id=doc.id,
+        name=doc.name,
+        description=doc.description,
+        system_prompt=doc.system_prompt,
+        user_prompt=doc.user_prompt,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+    ))
+
 
 @router.post("/agents", response_model=ApiResponseSchema[AgentSchema], summary="创建分析引擎")
 async def create_agent(data: AgentCreateRequestSchema):
@@ -280,6 +322,19 @@ async def get_agent_tools():
 async def get_agent_tools_list():
     return ApiResponseSchema.success(data=list(all_tools.keys()))
 
+
+@router.get("/configs/statistics", response_model=ApiResponseSchema[AgentConfigsStatisticsResponse], summary="配置资源数量统计")
+async def get_configs_statistics():
+    agent_count = await AgentModel.find().count()
+    model_count = await AgentModelConfigModel.find().count()
+    prompt_template_count = await AgentPromptTemplateModel.find().count()
+    tools_count = len(all_tools)
+    return ApiResponseSchema.success(data=AgentConfigsStatisticsResponse(
+        agent_count=agent_count,
+        model_count=model_count,
+        prompt_template_count=prompt_template_count,
+        tools_count=tools_count,
+    ))
 
 
 @router.post("/start", response_model=ApiResponseSchema[StartAgentResponseSchema], summary="启动分析引擎")

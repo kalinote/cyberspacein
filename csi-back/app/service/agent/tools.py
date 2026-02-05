@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any
+from typing import Any, Literal
 from app.db.elasticsearch import get_es
 from langchain.tools import tool
 from datetime import datetime, timezone
@@ -51,7 +51,7 @@ async def get_entity(uuid: str, entity_type: str, fields: list[str] | None = Non
         return json.dumps({"error": str(e), "uuid": uuid, "entity_type": entity_type})
 
 @tool(parse_docstring=True)
-async def modify_entity(uuid: str, entity_type: str, field: str, value: Any) -> str:
+async def modify_entity(uuid: str, entity_type: str, field: str, value: str, value_type: Literal["string", "number", "boolean", "array", "object"] = "string") -> str:
     """
     修改 Elasticsearch 中的实体字段内容。返回修改结果（JSON 字符串）。
     在修改前会向用户提交修改申请，申请通过后才会实际上进行修改。
@@ -60,11 +60,23 @@ async def modify_entity(uuid: str, entity_type: str, field: str, value: Any) -> 
         uuid: 实体UUID
         entity_type: 实体类型
         field: 要修改的字段
-        value: 修改后的值
+        value: 修改后的值，字符串类型，工具会根据 value_type 自动转换为相应的类型
+        value_type: 修改后的值类型，默认 string，可选 number, boolean, array, object，其中 array 和 object 需要是有效的 JSON 字符串
     """
     client = get_es()
     if not client:
         return json.dumps({"error": "Elasticsearch连接未初始化", "uuid": uuid, "entity_type": entity_type})
+    try:
+        if value_type == "string":
+            value = str(value)
+        elif value_type == "number":
+            value = float(value)
+        elif value_type == "boolean":
+            value = bool(value)
+        elif value_type in ["array", "object"]:
+            value = json.loads(value)
+    except Exception as e:
+        return json.dumps({"error": f"转换值类型失败: {str(e)}", "uuid": uuid, "entity_type": entity_type, "value_type": value_type})
     index = ENTITY_TYPE_INDEX_MAP.get(entity_type, entity_type)
     try:
         search_resp = await client.search(

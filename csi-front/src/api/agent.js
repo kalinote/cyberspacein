@@ -10,8 +10,14 @@ export const agentApi = {
   getPromptTemplateList(params = { page: 1, page_size: 10 }) {
     return request.get('/agent/configs/prompt-templates', params)
   },
+  getPromptTemplateDetail(promptTemplateId) {
+    return request.get(`/agent/configs/prompt-template/${promptTemplateId}`)
+  },
   createPromptTemplate(data) {
     return request.post('/agent/configs/prompt-templates', data)
+  },
+  updatePromptTemplate(promptTemplateId, data) {
+    return request.put(`/agent/configs/prompt-template/${promptTemplateId}`, data)
   },
   getToolsList() {
     return request.get('/agent/configs/tools')
@@ -27,6 +33,9 @@ export const agentApi = {
   },
   getAgentsConfigList() {
     return request.get('/agent/configs/agents-list')
+  },
+  getConfigStatistics() {
+    return request.get('/agent/configs/statistics')
   },
   createAgent(data) {
     return request.post('/agent/agents', data)
