@@ -38,6 +38,9 @@
                     <el-tag :type="getThreadTypeTag(forumData.thread_type)" size="default">
                         {{ getThreadTypeText(forumData.thread_type) }}
                     </el-tag>
+                    <el-tag v-for="flag in forumData.status_flags" :key="flag" :type="getStatusFlagType(flag)" size="default">
+                        {{ getStatusFlagText(flag) }}
+                    </el-tag>
                     <el-tag v-if="forumData.nsfw" type="danger" size="default">
                         NSFW
                     </el-tag>
@@ -59,12 +62,6 @@
                         <Icon icon="mdi:forum" class="mr-1" />
                         查看主贴
                     </router-link>
-                    <template v-if="forumData.status_flags && forumData.status_flags.length > 0">
-                        <el-tag v-for="flag in forumData.status_flags" :key="flag" :type="getStatusFlagType(flag)" size="default">
-                            <Icon :icon="getStatusFlagIcon(flag)" class="mr-1" />
-                            {{ getStatusFlagText(flag) }}
-                        </el-tag>
-                    </template>
                 </template>
             </DetailPageHeader>
 
