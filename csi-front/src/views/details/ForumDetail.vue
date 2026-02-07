@@ -38,7 +38,7 @@
                     <el-tag :type="getThreadTypeTag(forumData.thread_type)" size="default">
                         {{ getThreadTypeText(forumData.thread_type) }}
                     </el-tag>
-                    <el-tag v-for="flag in forumData.status_flags" :key="flag" :type="getStatusFlagType(flag)" size="default">
+                    <el-tag v-for="flag in forumData.status_flags" :key="flag" type="primary" size="default">
                         {{ getStatusFlagText(flag) }}
                     </el-tag>
                     <el-tag v-if="forumData.nsfw" type="danger" size="default">
@@ -873,16 +873,6 @@ const getThreadTypeText = (type) => {
         'featured': '点评'
     }
     return typeMap[type] || type
-}
-
-const getStatusFlagType = (flag) => {
-    const flagMap = {
-        'stickied': 'warning',
-        'essence': 'success',
-        'locked': 'danger',
-        'solved': 'success'
-    }
-    return flagMap[flag] || 'info'
 }
 
 const getStatusFlagIcon = (flag) => {

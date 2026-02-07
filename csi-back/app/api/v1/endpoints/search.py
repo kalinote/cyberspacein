@@ -83,7 +83,15 @@ async def search_entity(params: EntitySearchRequestSchema):
             }
         
         if params.sort_by == "relevance":
-            pass
+            # TODO: 暂时按照时间排序
+            query_body["sort"] = [
+                {
+                    "crawled_at": {
+                        "order": "desc",
+                        "missing": "_last"
+                    }
+                }
+            ]
         elif params.sort_by in ["crawled_at", "last_edit_at"]:
             sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
             query_body["sort"] = [
