@@ -41,7 +41,7 @@ def get_embedding(text: str, prefix: str | None = None) -> List[float]:
             url,
             json={"text": full_text},
             headers={"Content-Type": "application/json"},
-            timeout=30
+            timeout=90
         )
         response.raise_for_status()
         
@@ -55,14 +55,14 @@ def get_embedding(text: str, prefix: str | None = None) -> List[float]:
         if not data:
             raise ValueError("接口返回数据为空")
         
-        embedding = data.get("embedding")
-        if not embedding:
+        vector = data.get("vector")
+        if not vector:
             raise ValueError("接口返回的嵌入向量为空")
         
-        if not isinstance(embedding, list):
+        if not isinstance(vector, list):
             raise ValueError("接口返回的嵌入向量格式错误")
         
-        return embedding
+        return vector
         
     except requests.exceptions.RequestException as e:
         logger.error(f"HTTP请求失败: {e}")

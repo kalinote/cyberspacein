@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     OUT_SERVICE_PROXY: Optional[str] = None
     MAX_LOGO_SIZE: int = 5 * 1024 * 1024
 
+    EMBEDDING_MODEL: str = "Qwen/Qwen3-Embedding-8B"
+    EMBEDDING_MODEL_URL: str = "https://api.siliconflow.cn/v1/embeddings"
+    EMBEDDING_MODEL_API_KEY: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

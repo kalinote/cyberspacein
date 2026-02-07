@@ -6,16 +6,54 @@ from .forums import FORUMS_SCHEMA, DATE_FIELDS as FORUMS_DATE_FIELDS
 
 logger = logging.getLogger(__name__)
 
+COMMON_DATE_FORMATS = [
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S.%f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S.%f",
+    "%Y-%m-%dT%H:%M:%S.%fZ",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%d",
+    "%Y/%m/%d %H:%M:%S",
+    "%Y/%m/%d %H:%M",
+    "%Y/%m/%d",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y",
+    "%d-%m-%Y %H:%M:%S",
+    "%d-%m-%Y",
+    "%Y%m%d %H:%M:%S",
+    "%Y%m%d %H:%M",
+    "%Y%m%d",
+    "%Y.%m.%d %H:%M:%S",
+    "%Y.%m.%d",
+]
+
+
 def parse_date(date_str: str) -> Optional[str]:
-    """将 yyyy-MM-dd HH:mm:ss 转换为 ISO 8601 格式"""
-    if not date_str:
+    """将常见时间字符串转换为 ISO 8601 格式"""
+    if not date_str or not isinstance(date_str, str):
         return None
+    raw = date_str.strip()
+    if not raw:
+        return None
+    for fmt in COMMON_DATE_FORMATS:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            return dt.isoformat()
+        except ValueError:
+            continue
     try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-        return dt.isoformat()
-    except ValueError:
-        logger.warning(f"无法解析日期格式: {date_str}")
-        return None
+        ts = float(raw)
+        if 1e10 <= ts <= 2e10 or 1e12 <= ts <= 2e12:
+            sec = ts if ts < 1e11 else ts / 1000
+            dt = datetime.fromtimestamp(sec)
+            return dt.isoformat()
+    except (ValueError, OSError):
+        pass
+    logger.warning(f"无法解析日期格式: {date_str}")
+    return None
 
 def validate_and_transform(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
