@@ -285,6 +285,13 @@
                                 </el-tabs>
                             </div>
 
+                            <Timeline
+                                v-if="forumData.entity_type && forumData.source_id"
+                                :entity-type="forumData.entity_type"
+                                :source-id="forumData.source_id"
+                                :current-uuid="forumData.uuid"
+                            />
+
                             <div v-if="forumData.thread_type === 'thread' && featuredComments.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6" v-loading="featuredLoading">
                                 <div class="flex items-center justify-between mb-6">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
@@ -689,6 +696,7 @@ import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import KeywordConnector from '@/components/keyword/KeywordConnector.vue'
+import Timeline from '@/components/Timeline.vue'
 import { forumApi } from '@/api/forum'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'

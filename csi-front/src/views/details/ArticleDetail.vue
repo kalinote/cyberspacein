@@ -220,6 +220,13 @@
                                 </el-tabs>
                             </div>
 
+                            <Timeline
+                                v-if="articleData.entity_type && articleData.source_id"
+                                :entity-type="articleData.entity_type"
+                                :source-id="articleData.source_id"
+                                :current-uuid="articleData.uuid"
+                            />
+
                             <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:emoticon-happy-outline" class="text-amber-600 mr-2" />
@@ -500,6 +507,7 @@ import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import KeywordConnector from '@/components/keyword/KeywordConnector.vue'
+import Timeline from '@/components/Timeline.vue'
 import { articleApi } from '@/api/article'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'

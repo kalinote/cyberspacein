@@ -1,7 +1,20 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import action, article, forum, highlight, platform, search, html_analyze, agent, embedding
+
+from app.api.v1.endpoints import (
+    action,
+    agent,
+    article,
+    embedding,
+    forum,
+    highlight,
+    html_analyze,
+    platform,
+    search,
+    timeline
+)
 
 api_router = APIRouter()
+
 api_router.include_router(action.router)
 api_router.include_router(article.router)
 api_router.include_router(forum.router)
@@ -11,3 +24,4 @@ api_router.include_router(search.router)
 api_router.include_router(html_analyze.router)
 api_router.include_router(agent.router)
 api_router.include_router(embedding.router)
+api_router.include_router(timeline.router)
