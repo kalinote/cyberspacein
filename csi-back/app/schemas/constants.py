@@ -96,6 +96,12 @@ class EntityType(str, Enum):
     FORUM = "forum"
 
 
+class SearchModeEnum(str, Enum):
+    KEYWORD = "keyword"
+    VECTOR = "vector"
+    HYBRID = "hybrid"
+
+
 ENTITY_TYPE_NAMES = {
     EntityType.ARTICLE: "文章",
     EntityType.FORUM: "论坛"

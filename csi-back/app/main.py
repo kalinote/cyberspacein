@@ -16,6 +16,7 @@ from app.db import (
     init_rabbitmq, close_rabbitmq
 )
 from app.utils.cos import init_cos, close_cos
+from app.utils.embedding import init_embedding_client, close_embedding_client
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -43,9 +44,11 @@ async def lifespan(app: FastAPI):
     await init_elasticsearch()
     await init_rabbitmq()
     await init_cos()
+    await init_embedding_client()
     
     yield
     
+    await close_embedding_client()
     await close_cos()
     await close_rabbitmq()
     await close_mariadb()

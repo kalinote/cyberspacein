@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_URL: str = "https://api.siliconflow.cn/v1/embeddings"
     EMBEDDING_MODEL_API_KEY: str = ""
 
+    HYBRID_TOTAL_CAP: int = 10000
+    RRF_K: int = 60
+    VECTOR_NUM_CANDIDATES_MULTIPLIER: int = 10
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

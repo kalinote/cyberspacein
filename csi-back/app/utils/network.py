@@ -2,6 +2,7 @@ import socket
 import logging
 import platform
 import subprocess
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -55,4 +56,40 @@ def get_local_ip() -> str:
     except Exception as e:
         logger.error(f"获取本机 IP 失败: {e}")
         return "127.0.0.1"
+
+
+def log_http_error_response(response: httpx.Response):
+    request = response.request
+    if response.status_code >= 400:
+        try:
+            response.read()
+            error_body = response.text
+            
+            logger.error(
+                f"HTTP请求失败 - 方法: {request.method} URL: {request.url} "
+                f"状态码: {response.status_code} 响应体: {error_body}"
+            )
+        except Exception as e:
+            logger.error(
+                f"HTTP请求失败 - 方法: {request.method} URL: {request.url} "
+                f"状态码: {response.status_code} 响应体解析失败: {e}"
+            )
+
+
+async def log_http_error_response_async(response: httpx.Response):
+    request = response.request
+    if response.status_code >= 400:
+        try:
+            await response.aread()
+            error_body = response.text
+            
+            logger.error(
+                f"HTTP请求失败 - 方法: {request.method} URL: {request.url} "
+                f"状态码: {response.status_code} 响应体: {error_body}"
+            )
+        except Exception as e:
+            logger.error(
+                f"HTTP请求失败 - 方法: {request.method} URL: {request.url} "
+                f"状态码: {response.status_code} 响应体解析失败: {e}"
+            )
 

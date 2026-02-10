@@ -1,12 +1,15 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 from app.schemas.general import PageParamsSchema
+from app.schemas.constants import SearchModeEnum
+
 
 class EntitySearchRequestSchema(PageParamsSchema):
     """
     实体搜索请求参数
     """
     keywords: str | None = Field(default=None, description="关键词搜索，可搜索title(模糊匹配)、clean_content(模糊匹配)、keywords(精确匹配)、author_name(精确匹配)")
+    search_mode: SearchModeEnum = Field(default=SearchModeEnum.KEYWORD, description="搜索模式：keyword关键词、vector向量、hybrid融合")
     platform: str | None = Field(default=None, description="平台过滤，精确匹配")
     author: str | None = Field(default=None, description="作者名过滤，精确匹配")
     aigc: bool | None = Field(default=None, description="AIGC内容过滤")
