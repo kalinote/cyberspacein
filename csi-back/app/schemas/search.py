@@ -11,10 +11,13 @@ class EntitySearchRequestSchema(PageParamsSchema):
     keywords: str | None = Field(default=None, description="关键词搜索，可搜索title(模糊匹配)、clean_content(模糊匹配)、keywords(精确匹配)、author_name(精确匹配)")
     search_mode: SearchModeEnum = Field(default=SearchModeEnum.KEYWORD, description="搜索模式：keyword关键词、vector向量、hybrid融合")
     platform: str | None = Field(default=None, description="平台过滤，精确匹配")
+    entity_type: list[str] | None = Field(default=None, description="实体类型过滤，传列表，ES 按或条件匹配")
     author: str | None = Field(default=None, description="作者名过滤，精确匹配")
     aigc: bool | None = Field(default=None, description="AIGC内容过滤")
     nsfw: bool | None = Field(default=None, description="NSFW内容过滤")
     is_highlighted: bool | None = Field(default=None, description="重点目标过滤")
+    start_at: datetime | None = Field(default=None, description="last_edit_at 起始时间（含），用于时间范围过滤")
+    end_at: datetime | None = Field(default=None, description="last_edit_at 截止时间（含），用于时间范围过滤")
     sort_by: str | None = Field(default=None, description="排序字段，可选值：crawled_at、last_edit_at、relevance（相关性）")
     sort_order: str | None = Field(default="desc", description="排序方向，可选值：asc、desc，默认为desc")
 

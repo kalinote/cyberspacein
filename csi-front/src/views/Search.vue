@@ -215,48 +215,6 @@
       </div>
     </section>
 
-    <section class="py-12 bg-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="mb-10">
-          <h2 class="text-3xl font-bold text-gray-900 mb-2">检索<span class="text-blue-500">趋势分析</span></h2>
-          <p class="text-gray-600">用户检索行为与系统响应趋势</p>
-        </div>
-
-        <div class="grid grid-cols-1 gap-8">
-          <div class="bg-linear-to-br from-white to-blue-50 rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div class="flex justify-between items-center mb-6">
-              <h3 class="text-xl font-bold text-gray-900">检索量与响应时间趋势</h3>
-              <el-radio-group v-model="currentSearchRange" @change="switchSearchRange" size="small">
-                <el-radio-button label="12">12小时</el-radio-button>
-                <el-radio-button label="24">24小时</el-radio-button>
-                <el-radio-button label="7">7天</el-radio-button>
-              </el-radio-group>
-            </div>
-
-            <div class="h-80">
-              <div id="search-trend-chart" class="w-full h-full"></div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 pt-6 border-t border-gray-100">
-              <div class="text-center">
-                <p class="text-sm text-gray-500">总检索量</p>
-                <p class="text-2xl font-bold text-gray-900">{{ currentSearchStats.totalSearches.toLocaleString() }}</p>
-              </div>
-              <div class="text-center">
-                <p class="text-sm text-gray-500">平均响应时间</p>
-                <p class="text-2xl font-bold text-gray-900">{{ currentSearchStats.avgResponse }}<span
-                    class="text-lg">秒</span></p>
-              </div>
-              <div class="text-center">
-                <p class="text-sm text-gray-500">检索成功率</p>
-                <p class="text-2xl font-bold text-green-600">{{ stats.successRate }}<span class="text-lg">%</span></p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <section id="search-results" class="py-10 bg-gray-50 scroll-mt-24" v-if="searchResults.length > 0">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="mb-8 flex flex-col sm:flex-row sm:items-center justify-between">
@@ -438,7 +396,6 @@
 
 <script>
 import { Icon } from '@iconify/vue'
-import * as echarts from 'echarts'
 import Header from '@/components/Header.vue'
 import { searchApi } from '@/api/search'
 import { highlightApi } from '@/api/highlight'
@@ -454,7 +411,6 @@ export default {
       searchQuery: '',
       nsfwFilter: 1,
       aigcFilter: 1,
-      currentSearchRange: '12',
       timeRange: 'all',
       categories: [],
       sources: [],
@@ -490,23 +446,6 @@ export default {
           { value: '零信任', label: '零信任' }
         ]
       },
-      searchTrendData: {
-        '12': {
-          dates: ['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00'],
-          searchVolume: [45, 38, 32, 55, 78, 92, 110],
-          responseTime: [1.2, 1.1, 1.0, 1.3, 1.5, 1.6, 1.8]
-        },
-        '24': {
-          dates: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'],
-          searchVolume: [82, 65, 110, 156, 142, 168, 95],
-          responseTime: [1.3, 1.2, 1.7, 2.0, 1.8, 1.9, 1.4]
-        },
-        '7': {
-          dates: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-          searchVolume: [850, 920, 1050, 980, 1120, 750, 680],
-          responseTime: [1.5, 1.6, 1.8, 1.7, 1.9, 1.4, 1.3]
-        }
-      },
 
       searchTemplates: [
         {
@@ -517,9 +456,11 @@ export default {
           create_time: '2025-12-11 12:16:38',
           rules: {
             timeRange: '7d',
-            categories: ['Forum'],
+            entityType: ['Forum'],
             sources: ['明网'],
-            priorities: ['高']
+            priorities: ['高'],
+            nsfw: 1,
+            aigc: 1
           }
         },
         {
@@ -530,9 +471,11 @@ export default {
           create_time: '2025-12-10 09:30:15',
           rules: {
             timeRange: '30d',
-            categories: ['Article'],
+            entityType: ['Article'],
             sources: ['明网', 'Tor'],
-            priorities: ['中', '高']
+            priorities: ['中', '高'],
+            nsfw: 1,
+            aigc: 2
           }
         },
         {
@@ -543,9 +486,11 @@ export default {
           create_time: '2025-12-09 14:22:45',
           rules: {
             timeRange: '24h',
-            categories: ['Article'],
+            entityType: ['Article'],
             sources: ['明网'],
-            priorities: ['高', '中']
+            priorities: ['高', '中'],
+            nsfw: 1,
+            aigc: 0
           }
         },
         {
@@ -556,9 +501,11 @@ export default {
           create_time: '2025-12-08 16:45:20',
           rules: {
             timeRange: '7d',
-            categories: ['Article'],
+            entityType: ['Article'],
             sources: ['明网', 'Tor'],
-            priorities: ['高', '中']
+            priorities: ['高', '中'],
+            nsfw: 2,
+            aigc: 1
           }
         },
         {
@@ -569,9 +516,11 @@ export default {
           create_time: '2025-12-07 11:15:30',
           rules: {
             timeRange: '24h',
-            categories: ['Forum'],
+            entityType: ['Forum'],
             sources: ['明网', 'Tor'],
-            priorities: ['高']
+            priorities: ['高'],
+            nsfw: 0,
+            aigc: 1
           }
         },
         {
@@ -582,41 +531,28 @@ export default {
           create_time: '2025-12-06 10:00:00',
           rules: {
             timeRange: '7d',
-            categories: ['Forum', 'Article'],
+            entityType: ['Forum', 'Article'],
             sources: ['明网', 'Tor'],
-            priorities: ['高', '中', '低']
+            priorities: ['高', '中', '低'],
+            nsfw: 1,
+            aigc: 1
           }
         }
       ],
 
-      stats: {
-        sourceCount: 147,
-        successRate: 97.8
-      },
-
-      searchResults: [],
-      searchTrendChart: null
+      searchResults: []
     }
   },
 
   computed: {
-    currentSearchStats() {
-      const data = this.searchTrendData[this.currentSearchRange]
-      const totalSearches = data.searchVolume.reduce((a, b) => a + b, 0)
-      const avgResponse = (data.responseTime.reduce((a, b) => a + b, 0) / data.responseTime.length).toFixed(1)
-
-      return {
-        totalSearches,
-        avgResponse
-      }
-    },
-
     filterRulesText() {
       const rule = {
         timeRange: this.timeRange,
         categories: this.categories,
         sources: this.sources,
-        priorities: this.priorities
+        priorities: this.priorities,
+        nsfw: this.nsfwFilter,
+        aigc: this.aigcFilter
       }
 
       return this.Rules2Text(rule)
@@ -749,8 +685,9 @@ export default {
         }
       }
 
-      if (rule.categories && rule.categories.length > 0) {
-        const categoryLabels = rule.categories.map(cat => {
+      const cats = rule.entityType || rule.categories
+      if (cats && cats.length > 0) {
+        const categoryLabels = cats.map(cat => {
           const option = this.filterOptions.categories.find(opt => opt.value === cat)
           return option ? option.label : cat
         })
@@ -773,6 +710,14 @@ export default {
         conditions.push(priorityLabels.join(', ') + '置信度')
       }
 
+      if (rule.nsfw !== undefined && rule.nsfw !== null) {
+        conditions.push(this.formatNsfwTooltip(rule.nsfw))
+      }
+
+      if (rule.aigc !== undefined && rule.aigc !== null) {
+        conditions.push(this.formatAigcTooltip(rule.aigc))
+      }
+
       return conditions.length > 0 ? conditions.join(' • ') : ''
     },
 
@@ -789,14 +734,40 @@ export default {
       return iconConfigs[index]
     },
 
+    getTimeRangeBounds() {
+      if (!this.timeRange || this.timeRange === 'all') {
+        return { start_at: null, end_at: null }
+      }
+      const end = new Date()
+      let start = new Date()
+      if (this.timeRange === '24h') {
+        start.setHours(start.getHours() - 24)
+      } else if (this.timeRange === '7d') {
+        start.setDate(start.getDate() - 7)
+      } else if (this.timeRange === '30d') {
+        start.setDate(start.getDate() - 30)
+      } else if (this.timeRange === 'custom') {
+        return { start_at: null, end_at: null }
+      } else {
+        return { start_at: null, end_at: null }
+      }
+      return {
+        start_at: start.toISOString(),
+        end_at: end.toISOString()
+      }
+    },
+
     async performSearch() {
       try {
         this.loading = true
+        const { start_at, end_at } = this.getTimeRangeBounds()
         const params = {
           page: this.currentPage,
           page_size: this.pageSize,
-          keywords: this.searchQuery || null,
-          sort_by: this.sortBy
+          keywords: this.searchQuery || undefined,
+          search_mode: 'keyword',
+          sort_by: this.sortBy,
+          sort_order: 'desc'
         }
 
         if (this.nsfwFilter === 0) {
@@ -811,20 +782,11 @@ export default {
           params.aigc = true
         }
 
-        if (this.timeRange && this.timeRange !== 'all') {
-          params.time_range = this.timeRange
-        }
+        if (start_at) params.start_at = start_at
+        if (end_at) params.end_at = end_at
 
         if (this.categories && this.categories.length > 0) {
-          params.categories = this.categories
-        }
-
-        if (this.sources && this.sources.length > 0) {
-          params.sources = this.sources
-        }
-
-        if (this.priorities && this.priorities.length > 0) {
-          params.priorities = this.priorities
+          params.entity_type = [...this.categories]
         }
 
         const response = await searchApi.searchEntity(params)
@@ -832,7 +794,13 @@ export default {
         if (response.code === 0 && response.data) {
           this.searchResults = response.data.items || []
           this.totalResults = response.data.total || 0
-          
+          if (this.searchResults.length === 0) {
+            this.$message({
+              message: '没有找到相关内容',
+              type: 'error',
+              duration: 4000
+            })
+          }
           this.$nextTick(() => {
             const resultsSection = document.getElementById('search-results')
             if (resultsSection) {
@@ -870,10 +838,6 @@ export default {
       }
     },
 
-    switchSearchRange() {
-      this.updateSearchTrendChart()
-    },
-
     resetFilters() {
       this.timeRange = 'all'
       this.categories = []
@@ -900,9 +864,9 @@ export default {
         this.timeRange = rules.timeRange
       }
 
-      // 应用分类
-      if (rules.categories && Array.isArray(rules.categories)) {
-        this.categories = [...rules.categories]
+      const entityTypes = rules.entityType || rules.categories
+      if (entityTypes && Array.isArray(entityTypes)) {
+        this.categories = [...entityTypes]
       } else {
         this.categories = []
       }
@@ -921,6 +885,14 @@ export default {
         this.priorities = []
       }
 
+      if (rules.nsfw !== undefined && rules.nsfw !== null) {
+        this.nsfwFilter = rules.nsfw
+      }
+
+      if (rules.aigc !== undefined && rules.aigc !== null) {
+        this.aigcFilter = rules.aigc
+      }
+
       this.$message.success('已应用模板筛选条件')
     },
 
@@ -930,79 +902,6 @@ export default {
 
     handleDialogClose(done) {
       done()
-    },
-
-    updateSearchTrendChart() {
-      if (!this.searchTrendChart) return
-
-      const data = this.searchTrendData[this.currentSearchRange]
-
-      this.searchTrendChart.setOption({
-        xAxis: {
-          data: data.dates
-        },
-        series: [
-          { data: data.searchVolume },
-          { data: data.responseTime }
-        ]
-      })
-    },
-
-    initCharts() {
-      this.$nextTick(() => {
-        const searchTrendChartEl = document.getElementById('search-trend-chart')
-
-        if (searchTrendChartEl) {
-          this.searchTrendChart = echarts.init(searchTrendChartEl)
-          const searchData = this.searchTrendData[this.currentSearchRange]
-
-          this.searchTrendChart.setOption({
-            grid: { left: '3%', right: '4%', bottom: '10%', top: '10%', containLabel: true },
-            xAxis: {
-              type: 'category',
-              data: searchData.dates,
-              axisLine: { lineStyle: { color: '#e5e7eb' } },
-              axisLabel: { color: '#6b7280', fontSize: 12 }
-            },
-            yAxis: [
-              {
-                type: 'value',
-                name: '检索量',
-                axisLine: { lineStyle: { color: '#e5e7eb' } },
-                axisLabel: { color: '#6b7280' }
-              },
-              {
-                type: 'value',
-                name: '响应时间(s)',
-                axisLine: { lineStyle: { color: '#e5e7eb' } },
-                axisLabel: { color: '#6b7280' }
-              }
-            ],
-            series: [
-              {
-                name: '检索量',
-                data: searchData.searchVolume,
-                type: 'bar',
-                itemStyle: { color: '#3b82f6' }
-              },
-              {
-                name: '响应时间',
-                data: searchData.responseTime,
-                type: 'line',
-                yAxisIndex: 1,
-                lineStyle: { color: '#f59e0b', width: 2 },
-                itemStyle: { color: '#f59e0b' }
-              }
-            ],
-            tooltip: { trigger: 'axis' },
-            legend: { data: ['检索量', '响应时间'], top: 0 }
-          })
-        }
-
-        window.addEventListener('resize', () => {
-          this.searchTrendChart?.resize()
-        })
-      })
     },
 
     async toggleHighlight(result) {
@@ -1035,7 +934,6 @@ export default {
   },
 
   mounted() {
-    this.initCharts()
     this.initSearchFromQuery()
   }
 }

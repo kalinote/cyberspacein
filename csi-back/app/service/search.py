@@ -22,6 +22,8 @@ def build_filter_must(params: EntitySearchRequestSchema) -> list:
     must = []
     if params.platform:
         must.append({"term": {"platform.keyword": params.platform}})
+    if params.entity_type:
+        must.append({"terms": {"entity_type.keyword": params.entity_type}})
     if params.author:
         must.append({"term": {"author_name.keyword": params.author}})
     if params.aigc is not None:
@@ -30,6 +32,13 @@ def build_filter_must(params: EntitySearchRequestSchema) -> list:
         must.append({"term": {"nsfw": params.nsfw}})
     if params.is_highlighted is not None:
         must.append({"term": {"is_highlighted": params.is_highlighted}})
+    if params.start_at is not None or params.end_at is not None:
+        range_clause = {}
+        if params.start_at is not None:
+            range_clause["gte"] = params.start_at.isoformat()
+        if params.end_at is not None:
+            range_clause["lte"] = params.end_at.isoformat()
+        must.append({"range": {"last_edit_at": range_clause}})
     return must
 
 
