@@ -62,7 +62,7 @@ async def get_forum_detail(uuid: str):
                     "size": 1,
                     "_source": ["uuid"]
                 }
-                logger.info(f"查询论坛详情: {query_body}")
+                # logger.info(f"查询论坛详情: {query_body}")
                 search_result = await es.search(index="forum", body=query_body)
                 hits = search_result.get("hits", {}).get("hits", [])
                 if hits:

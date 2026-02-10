@@ -50,7 +50,9 @@ class Settings(BaseSettings):
 
     HYBRID_TOTAL_CAP: int = 10000
     RRF_K: int = 60
-    VECTOR_NUM_CANDIDATES_MULTIPLIER: int = 10
+    VECTOR_NUM_CANDIDATES_MULTIPLIER: int = 100
+    VECTOR_NUM_CANDIDATES_MIN: int = 2000
+    VECTOR_NUM_CANDIDATES_MAX: int = 10000
 
     model_config = SettingsConfigDict(
         env_file=".env",

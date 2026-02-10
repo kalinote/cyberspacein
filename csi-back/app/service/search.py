@@ -163,7 +163,10 @@ async def search_vector(es, params: EntitySearchRequestSchema, query_vector: lis
     from_ = (params.page - 1) * params.page_size
     size = params.page_size
     k = max(from_ + size, 10)
-    num_candidates = min(10000, max(k * settings.VECTOR_NUM_CANDIDATES_MULTIPLIER, 100))
+    num_candidates = min(
+        settings.VECTOR_NUM_CANDIDATES_MAX,
+        max(k * settings.VECTOR_NUM_CANDIDATES_MULTIPLIER, settings.VECTOR_NUM_CANDIDATES_MIN)
+    )
     knn = {
         "field": "clean_content_vector",
         "query_vector": query_vector,
@@ -201,7 +204,10 @@ async def search_entity(es, params: EntitySearchRequestSchema, instruct: str = "
         keyword_body = keyword_query_body(params, 0, hybrid_size)
         filter_must = build_filter_must(params)
         vec_k = hybrid_size
-        vec_num_candidates = min(10000, max(vec_k * settings.VECTOR_NUM_CANDIDATES_MULTIPLIER, 100))
+        vec_num_candidates = min(
+            settings.VECTOR_NUM_CANDIDATES_MAX,
+            max(vec_k * settings.VECTOR_NUM_CANDIDATES_MULTIPLIER, settings.VECTOR_NUM_CANDIDATES_MIN)
+        )
         knn = {
             "field": "clean_content_vector",
             "query_vector": query_vector,
