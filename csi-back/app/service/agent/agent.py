@@ -10,6 +10,7 @@ from langgraph.types import Command
 from app.models.agent.agent import AgentModel, AgentAnalysisSessionModel
 from app.models.agent.configs import AgentModelConfigModel
 from app.schemas.agent.agent import (
+    ALL_EVENT_PAYLOAD_SCHEMAS,
     AgentStatusPayloadSchema,
     ApprovalRequiredPayloadSchema,
     ResultEventPayloadSchema,
@@ -73,13 +74,13 @@ class AgentService:
                 pass
 
     @staticmethod
-    def sse_event(event_type: str, data: AgentStatusPayloadSchema | ApprovalRequiredPayloadSchema | ResultEventPayloadSchema | dict) -> dict:
+    def sse_event(event_type: str, data: ALL_EVENT_PAYLOAD_SCHEMAS) -> dict:
         if hasattr(data, "model_dump"):
             data = data.model_dump(mode="json")
         return {"type": event_type, "data": data}
 
     @staticmethod
-    def session_to_status_payload(doc: AgentAnalysisSessionModel, is_running: bool) -> AgentStatusPayloadSchema:
+    def session_to_status_payload(doc: AgentAnalysisSessionModel | dict, is_running: bool) -> AgentStatusPayloadSchema:
         pending_approval = getattr(doc, "pending_approval", None)
         return AgentStatusPayloadSchema(
             name=doc.name,

@@ -1,11 +1,16 @@
 import json
 import logging
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools.base import InjectedToolArg
 from app.db.elasticsearch import get_es
 from langchain.tools import tool
 from datetime import datetime, timezone
 
+from app.schemas.agent.agent import MessageEventPayloadSchema
 from app.schemas.constants import ENTITY_TYPE_INDEX_MAP
+from app.service.agent.agent import AgentService
 
 logger = logging.getLogger(__name__)
 
@@ -109,16 +114,29 @@ async def modify_entity(uuid: str, entity_type: str, field: str, value: str, val
         }, ensure_ascii=False)
 
 @tool(parse_docstring=True)
-async def notify_user(message: str) -> str:
+async def notify_user(
+    message: str,
+    level: Literal["info", "warning", "error"] = "info",
+    config: Annotated[RunnableConfig | None, InjectedToolArg] = None,
+) -> str:
     """
     向用户发送通知，返回通知结果（JSON 字符串）。
     
     Args:
         message: 通知消息
+        level: 消息级别，默认 info，可选 warning, error
     """
-    # TODO 通过SSE推送消息
-    logger.info(f"向用户发送通知: {message}")
-    return "已将消息推送到用户"
+    if isinstance(config, dict):
+        thread_id = (config.get("configurable") or {}).get("thread_id")
+    else:
+        configurable = getattr(config, "configurable", None) if config else None
+        thread_id = configurable.get("thread_id") if isinstance(configurable, dict) else None
+    if not thread_id:
+        logger.warning("notify_user: 无 thread_id，跳过 SSE 推送")
+        return json.dumps({"success": False, "message": "无法推送：缺少会话上下文"}, ensure_ascii=False)
+    payload = MessageEventPayloadSchema(thread_id=thread_id, message=message, level=level)
+    await AgentService.broadcast_sse(thread_id, AgentService.sse_event("message", payload))
+    return json.dumps({"success": True, "message": "已将消息推送到用户"}, ensure_ascii=False)
 
 all_tools = {
     "get_current_time": get_current_time,

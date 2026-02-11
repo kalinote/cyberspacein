@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.constants import EntityType
@@ -83,6 +83,7 @@ class ResultPayloadSchema(BaseModel):
 
 
 class ResultEventPayloadSchema(BaseModel):
+    """结果回报事件"""
     thread_id: str = Field(description="会话ID")
     result: ResultPayloadSchema = Field(description="最终结果")
 
@@ -100,6 +101,7 @@ class AgentStatusPayloadSchema(BaseModel):
 
 
 class ApprovalRequiredPayloadSchema(BaseModel):
+    """审批请求事件"""
     payload: dict[str, Any] = Field(default_factory=dict, description="审批上下文")
     thread_id: str = Field(description="会话ID")
 
@@ -117,3 +119,17 @@ class ApproveRequestSchema(BaseModel):
 class ApproveResponseSchema(BaseModel):
     thread_id: str = Field(description="会话ID")
     status: str = Field(description="操作状态")
+
+class MessageEventPayloadSchema(BaseModel):
+    """消息事件"""
+    thread_id: str = Field(description="会话ID")
+    message: str = Field(description="消息文本")
+    level: Literal["info", "warning", "error"] = Field(default="info", description="消息级别")
+    created_at: datetime = Field(default_factory=datetime.now, description="消息时间")
+
+ALL_EVENT_PAYLOAD_SCHEMAS = [
+    AgentStatusPayloadSchema,
+    ApprovalRequiredPayloadSchema,
+    ResultEventPayloadSchema,
+    MessageEventPayloadSchema
+]
