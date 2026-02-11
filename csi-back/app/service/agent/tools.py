@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from app.schemas.agent.agent import MessageEventPayloadSchema
 from app.schemas.constants import ENTITY_TYPE_INDEX_MAP
-from app.service.agent.agent import AgentService
+
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,8 @@ async def notify_user(
         logger.warning("notify_user: 无 thread_id，跳过 SSE 推送")
         return json.dumps({"success": False, "message": "无法推送：缺少会话上下文"}, ensure_ascii=False)
     payload = MessageEventPayloadSchema(thread_id=thread_id, message=message, level=level)
+    
+    from app.service.agent.agent import AgentService
     await AgentService.broadcast_sse(thread_id, AgentService.sse_event("message", payload))
     return json.dumps({"success": True, "message": "已将消息推送到用户"}, ensure_ascii=False)
 
