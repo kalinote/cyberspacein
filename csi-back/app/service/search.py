@@ -114,6 +114,8 @@ async def search_filter_only(es, params: EntitySearchRequestSchema) -> PageRespo
             {"last_edit_at": {"order": sort_order, "missing": "_last"}},
             {"publish_at": {"order": sort_order, "missing": "_last"}}
         ]
+    elif params.sort_by == "publish_at":
+        query_body["sort"] = [{"publish_at": {"order": "desc", "missing": "_last"}}]
     elif params.sort_by == "crawled_at":
         query_body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last"}}]
         
