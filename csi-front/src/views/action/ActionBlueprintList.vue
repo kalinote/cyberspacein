@@ -253,6 +253,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'ActionBlueprintList' })
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'

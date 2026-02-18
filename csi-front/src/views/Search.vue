@@ -35,6 +35,12 @@
               </template>
               高级筛选
             </el-button>
+            <el-select v-model="sortBy" placeholder="选择排序" size="default" style="width: 140px">
+              <el-option label="相关性" value="relevance" />
+              <el-option label="更新时间" value="time" />
+              <el-option label="发布时间" value="publish_at" />
+              <el-option label="采集时间" value="crawled_at" />
+            </el-select>
             <div class="flex flex-col items-center gap-0">
               <el-slider
                 v-model="nsfwFilter"
@@ -221,15 +227,6 @@
             <p class="text-gray-600">共 <span class="font-bold text-blue-600">{{ totalResults }}</span> 条相关情报</p>
           </div>
           <div class="flex items-center space-x-4 mt-4 sm:mt-0">
-            <div class="flex items-center">
-              <span class="text-gray-700 mr-2">排序:</span>
-              <el-select v-model="sortBy" placeholder="选择排序" size="default" style="width: 140px">
-                <el-option label="相关性" value="relevance" />
-                <el-option label="更新时间" value="time" />
-                <el-option label="发布时间" value="publish_at" />
-                <el-option label="采集时间" value="crawled_at" />
-              </el-select>
-            </div>
             <el-button type="primary">
               <template #icon>
                 <Icon icon="mdi:chart-bar" />
@@ -253,6 +250,12 @@
                 </template>
               </el-input>
             </div>
+            <el-select v-model="sortBy" placeholder="选择排序" size="default" style="width: 140px">
+              <el-option label="相关性" value="relevance" />
+              <el-option label="更新时间" value="time" />
+              <el-option label="发布时间" value="publish_at" />
+              <el-option label="采集时间" value="crawled_at" />
+            </el-select>
             <div class="flex flex-col items-center gap-0">
               <el-slider
                 v-model="nsfwFilter"

@@ -25,18 +25,21 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: Home
+      component: Home,
+      meta: { keepAlive: true }
     },
     {
       path: '/search',
       name: 'search',
-      component: Search
+      component: Search,
+      meta: { keepAlive: true }
     },
     {
       // 行动部署中心
       path: '/action',
       name: 'action-monitor',
-      component: ActionMonitor
+      component: ActionMonitor,
+      meta: { keepAlive: true }
     },
     {
       // 新建行动蓝图
@@ -54,19 +57,22 @@ const router = createRouter({
       // 历史行动
       path: '/action/history',
       name: 'action-history',
-      component: ActionHistory
+      component: ActionHistory,
+      meta: { keepAlive: true }
     },
     {
       // 行动蓝图列表
       path: '/action/blueprints',
       name: 'action-blueprint-list',
-      component: ActionBlueprintList
+      component: ActionBlueprintList,
+      meta: { keepAlive: true }
     },
     {
       // 任务管理
       path: '/action/tasks',
       name: 'task-management',
-      component: TaskManagement
+      component: TaskManagement,
+      meta: { keepAlive: true }
     },
     {
       // 行动详情
@@ -78,19 +84,22 @@ const router = createRouter({
       // 告警信息
       path: '/alert',
       name: 'alert',
-      component: Alert
+      component: Alert,
+      meta: { keepAlive: true }
     },
     {
       // 目标管理
       path: '/target',
       name: 'target-management',
-      component: TargetManagement
+      component: TargetManagement,
+      meta: { keepAlive: true }
     },
     {
       // 分析引擎
       path: '/agent',
       name: 'agent-monitor',
-      component: AgentMonitor
+      component: AgentMonitor,
+      meta: { keepAlive: true }
     },
     {
       // 配置分析引擎
@@ -132,7 +141,8 @@ const router = createRouter({
       // 平台列表页
       path: '/platforms',
       name: 'platform-list',
-      component: PlatformList
+      component: PlatformList,
+      meta: { keepAlive: true }
     },
 
   ],
