@@ -104,13 +104,19 @@ async def search_filter_only(es, params: EntitySearchRequestSchema) -> PageRespo
         "from": from_,
         "size": params.page_size
     }
+    
     if params.sort_by == "relevance":
+        # 预留
         pass
-    elif params.sort_by in ["crawled_at", "last_edit_at"]:
+    elif params.sort_by in ["last_edit_at", "time"]:
         sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
-        query_body["sort"] = [{params.sort_by: {"order": sort_order, "missing": "_last"}}]
-    else:
+        query_body["sort"] = [
+            {"last_edit_at": {"order": sort_order, "missing": "_last"}},
+            {"publish_at": {"order": sort_order, "missing": "_last"}}
+        ]
+    elif params.sort_by == "crawled_at":
         query_body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last"}}]
+        
     result = await es.search(index=ALL_INDEX, body=query_body)
     total = _get_es_total(result)
     hits = result["hits"]["hits"]
@@ -159,9 +165,15 @@ def keyword_query_body(params: EntitySearchRequestSchema, from_: int, size: int)
         }
     if params.sort_by == "relevance":
         pass
-    elif params.sort_by in ["crawled_at", "last_edit_at"]:
+    elif params.sort_by in ["last_edit_at", "time"]:
         sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
-        body["sort"] = [{params.sort_by: {"order": sort_order, "missing": "_last"}}]
+        body["sort"] = [
+            {"last_edit_at": {"order": sort_order, "missing": "_last"}},
+            {"publish_at": {"order": sort_order, "missing": "_last"}}
+        ]
+    elif params.sort_by == "crawled_at":
+        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
+        body["sort"] = [{"crawled_at": {"order": sort_order, "missing": "_last"}}]
     else:
         body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last"}}]
     return body

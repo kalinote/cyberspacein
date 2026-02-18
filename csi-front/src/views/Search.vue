@@ -3,7 +3,7 @@
     <Header />
 
     <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-16">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center">
           <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-4">信息<span class="text-blue-500">检索</span></h1>
           <p class="text-xl text-gray-600 max-w-3xl mx-auto mb-8">从超过4.2亿条情报数据中快速定位关键信息,支持高级筛选与语义搜索</p>
@@ -67,11 +67,9 @@
         </div>
       </div>
 
-      <div
-        class="absolute top-10 right-10 w-64 h-64 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20">
-      </div>
-      <div
-        class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20">
+      <div class="absolute inset-0 pointer-events-none z-0">
+        <div class="absolute top-10 right-10 w-64 h-64 bg-blue-200 rounded-full mix-blend-multiply blur-3xl opacity-20"></div>
+        <div class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply blur-3xl opacity-20"></div>
       </div>
     </section>
 

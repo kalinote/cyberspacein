@@ -45,7 +45,7 @@
 -->
 <template>
   <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-8">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <el-button 
         type="primary" 
         link 
@@ -115,9 +115,11 @@
         </div>
       </div>
     </div>
-    
-    <div class="absolute top-10 right-10 w-64 h-64 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-    <div class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+
+    <div class="absolute inset-0 pointer-events-none z-0">
+      <div class="absolute top-10 right-10 w-64 h-64 bg-blue-200 rounded-full mix-blend-multiply blur-3xl opacity-20"></div>
+      <div class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply blur-3xl opacity-20"></div>
+    </div>
   </section>
 </template>
 
