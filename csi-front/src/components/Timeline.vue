@@ -3,7 +3,7 @@
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-xl font-bold text-gray-900 flex items-center">
                 <Icon icon="mdi:timeline-clock" class="text-blue-600 mr-2" />
-                页面变更<span class="text-blue-500">溯源</span>
+                实体变更<span class="text-blue-500">溯源</span>
             </h3>
             <span v-if="total > 0" class="text-sm text-gray-500">
                 共 {{ total }} 条记录
