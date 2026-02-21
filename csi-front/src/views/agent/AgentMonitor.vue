@@ -49,7 +49,7 @@
                                 class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
                                 @click="$router.push('/agent/new')">
                                 <Icon icon="mdi:clipboard-text-search-outline" />
-                                <span>新建分析计划</span>
+                                <span>研究任务管理</span>
                             </button>
                             <button
                                 class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"

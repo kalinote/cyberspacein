@@ -9,7 +9,7 @@
       <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center">
           <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            情报系统<span class="text-blue-500">概览</span>
+            系统<span class="text-blue-500">概览</span>
           </h1>
           <p class="text-xl text-gray-600 max-w-3xl mx-auto mb-8">
             实时监控、分析并展示来自全球数据源的情报信息，为您提供数据驱动的决策支持
