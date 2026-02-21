@@ -1,11 +1,12 @@
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useMarking } from './useMarking'
 
 export function useMarkingHandler(options = {}) {
-  const { cleanContentRef, renderedContentRef, translateContentRef, activeTab } = options
+  const { cleanContentRef, renderedContentRef, translateContentRef, activeTab, entityUuid, entityType } = options
 
-  const marking = useMarking()
+  const marking = useMarking({ entityUuid, entityType })
   const activeMarkingId = ref(null)
+  const pendingLoadMarkings = ref(false)
 
   const currentRegion = computed(() => {
     if (activeTab?.value === 'clean') return 'clean'
@@ -62,7 +63,7 @@ export function useMarkingHandler(options = {}) {
     marking.selectedStyle.value = style
   }
 
-  function handleCreateMarking() {
+  async function handleCreateMarking() {
     if (!marking.selectedText.value) return
 
     let element = null
@@ -86,7 +87,7 @@ export function useMarkingHandler(options = {}) {
     }
 
     if (element && region) {
-      const newMarking = marking.createMarkingFromSelection(element, region, marking.selectedStyle.value)
+      const newMarking = await marking.createMarkingFromSelection(element, region, marking.selectedStyle.value)
       if (newMarking) {
         nextTick(() => {
           marking.updateMarkingPosition(newMarking)
@@ -95,12 +96,12 @@ export function useMarkingHandler(options = {}) {
     }
   }
 
-  function handleUpdateMarking(id, content) {
-    marking.updateMarkingContent(id, content)
+  async function handleUpdateMarking(id, content) {
+    await marking.updateMarkingContent(id, content)
   }
 
-  function handleDeleteMarking(id) {
-    marking.deleteMarking(id)
+  async function handleDeleteMarking(id) {
+    await marking.deleteMarking(id)
     if (activeMarkingId.value === id) {
       activeMarkingId.value = null
     }
@@ -152,6 +153,37 @@ export function useMarkingHandler(options = {}) {
     }
   }
 
+  async function loadMarkings() {
+    await nextTick()
+    const cleanEl = cleanContentRef?.value
+    const renderedEl = renderedContentRef?.value
+    const translateEl = translateContentRef?.value
+    const hasAnyEl = (cleanEl instanceof HTMLElement && cleanEl.querySelector('pre')) || (renderedEl instanceof HTMLElement) || (translateEl instanceof HTMLElement && translateEl.querySelector('pre'))
+    if (hasAnyEl) {
+      await marking.loadAndRestoreMarkings(cleanEl, renderedEl, translateEl)
+    } else {
+      pendingLoadMarkings.value = true
+    }
+  }
+
+  watch(
+    () => [cleanContentRef?.value, renderedContentRef?.value, translateContentRef?.value],
+    () => {
+      if (!pendingLoadMarkings.value) return
+      const cleanEl = cleanContentRef?.value
+      const renderedEl = renderedContentRef?.value
+      const translateEl = translateContentRef?.value
+      const hasAnyEl = (cleanEl instanceof HTMLElement && cleanEl.querySelector('pre')) || (renderedEl instanceof HTMLElement) || (translateEl instanceof HTMLElement && translateEl.querySelector('pre'))
+      if (hasAnyEl) {
+        pendingLoadMarkings.value = false
+        nextTick(() => {
+          marking.loadAndRestoreMarkings(cleanEl, renderedEl, translateEl)
+        })
+      }
+    },
+    { flush: 'post' }
+  )
+
   function setupEventListeners() {
     document.addEventListener('mousedown', handleMouseDown)
     window.addEventListener('scroll', handleScroll, true)
@@ -177,6 +209,7 @@ export function useMarkingHandler(options = {}) {
     handleDeleteMarking,
     handleMarkingHover,
     handleTabChange,
+    loadMarkings,
     setupEventListeners,
     cleanupEventListeners
   }

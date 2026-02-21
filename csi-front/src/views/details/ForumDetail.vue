@@ -756,13 +756,16 @@ const {
     handleDeleteMarking,
     handleMarkingHover,
     handleTabChange,
+    loadMarkings,
     setupEventListeners,
     cleanupEventListeners
 } = useMarkingHandler({
     cleanContentRef,
     renderedContentRef,
     translateContentRef,
-    activeTab
+    activeTab,
+    entityUuid: uuid,
+    entityType: 'forum'
 })
 
 const featuredComments = ref([])
@@ -806,6 +809,9 @@ const loadForumDetail = async () => {
                     loadComments()
                 ])
             }
+
+            await nextTick()
+            loadMarkings()
         } else {
             error.value = response.message || '加载帖子详情失败'
         }

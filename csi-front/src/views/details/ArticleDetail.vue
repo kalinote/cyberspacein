@@ -567,13 +567,16 @@ const {
     handleDeleteMarking,
     handleMarkingHover,
     handleTabChange,
+    loadMarkings,
     setupEventListeners,
     cleanupEventListeners
 } = useMarkingHandler({
     cleanContentRef,
     renderedContentRef,
     translateContentRef,
-    activeTab
+    activeTab,
+    entityUuid: uuid,
+    entityType: 'article'
 })
 
 const analyzeOptions = ref([])
@@ -613,6 +616,9 @@ const loadArticleDetail = async () => {
             } else {
                 activeTab.value = 'empty'
             }
+
+            await nextTick()
+            loadMarkings()
         } else {
             error.value = response.message || '加载文章详情失败'
         }

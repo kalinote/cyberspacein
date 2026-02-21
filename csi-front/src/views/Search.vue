@@ -417,7 +417,7 @@ export default {
       categories: [],
       sources: [],
       priorities: [],
-      sortBy: 'relevance',
+      sortBy: 'crawled_at',
       currentPage: 1,
       pageSize: 5,
       totalResults: 0,

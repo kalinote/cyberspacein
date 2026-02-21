@@ -63,6 +63,52 @@ export function getElementByXPath(xpath) {
   return result.singleNodeValue
 }
 
+/**
+ * 从 Range 对象计算其在 element 的 textContent 中的字符偏移量。
+ * 选区起点/终点在元素节点（如图片）时，用 comparePoint 判定位置，避免 start/end 错误为 0。
+ * comparePoint: -1 点在 range 前，0 在边界上，1 在 range 后。
+ */
+export function computeTextOffsetFromRange(element, range) {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null)
+  let currentOffset = 0
+  let startOffset = 0
+  let endOffset = 0
+  let foundStart = false
+  let foundEnd = false
+
+  let node
+  while ((node = walker.nextNode())) {
+    const len = node.textContent.length
+
+    if (!foundStart) {
+      for (let i = 0; i <= len; i++) {
+        if (range.comparePoint(node, i) >= 0) {
+          startOffset = currentOffset + i
+          foundStart = true
+          break
+        }
+      }
+    }
+    if (!foundEnd) {
+      for (let i = 0; i <= len; i++) {
+        if (range.comparePoint(node, i) > 0) {
+          endOffset = currentOffset + i
+          foundEnd = true
+          break
+        }
+      }
+    }
+
+    currentOffset += len
+    if (foundStart && foundEnd) break
+  }
+
+  if (!foundEnd) {
+    endOffset = currentOffset
+  }
+  return { start: startOffset, end: endOffset }
+}
+
 export function serializeTextSelection(element, selection) {
   if (!selection) return null
 
@@ -76,16 +122,19 @@ export function serializeTextSelection(element, selection) {
   }
 }
 
-export function serializeHtmlSelection(element, span) {
-  if (!span) return null
-
-  const xpath = getXPath(span)
-  const html = span.outerHTML
+/**
+ * 序列化 HTML 区域的选区，使用字符偏移量（与纯文本区域保持一致）
+ * selection 需包含 start、end、text 字段
+ */
+export function serializeHtmlSelection(element, selection) {
+  if (!selection) return null
 
   return {
     region: 'rendered',
-    spanId: span.id,
-    xpath: xpath,
-    html: html
+    textOffset: {
+      start: selection.start,
+      end: selection.end,
+      text: selection.text
+    }
   }
 }

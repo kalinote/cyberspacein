@@ -122,3 +122,32 @@ class AgentSSEStatusEnum(str, Enum):
     """
     APPROVAL_REQUIRED = "approval_required"
     STATUS = "status"
+
+
+class AnnotationTypeEnum(str, Enum):
+    """
+    批注类型枚举
+    """
+    TEXT = "text"
+    ENTITY_REF = "entity_ref"
+
+
+class AnnotationStyleEnum(str, Enum):
+    """
+    批注样式枚举
+    """
+    UNDERLINE = "underline"
+    HIGHLIGHT = "highlight"
+    BOX = "box"
+    BRACKET = "bracket"
+    CIRCLE = "circle"
+    STRIKE_THROUGH = "strike-through"
+
+
+class ContentRegionEnum(str, Enum):
+    """
+    内容区域枚举
+    """
+    CLEAN = "clean"
+    RENDERED = "rendered"
+    TRANSLATE = "translate"

@@ -1,9 +1,10 @@
 import { ref, computed, nextTick } from 'vue'
 import { annotate } from 'rough-notation'
-import { createSpanWrapper, serializeTextSelection, serializeHtmlSelection } from '@/utils/textSelection'
+import { createSpanWrapper, serializeTextSelection, serializeHtmlSelection, computeTextOffsetFromRange } from '@/utils/textSelection'
 import { getStyleColor, createMarkingConfig } from '@/utils/markingStyles'
+import { annotationApi } from '@/api/annotation'
 
-export function useMarking() {
+export function useMarking({ entityUuid, entityType } = {}) {
   const markings = ref([])
   const selectedText = ref(null)
   const selectedStyle = ref('highlight')
@@ -63,11 +64,7 @@ export function useMarking() {
   }
 
   function applyHighlight(element, marking) {
-    if (marking.target.region === 'clean' || marking.target.region === 'translate') {
-      applyTextHighlight(element, marking)
-    } else {
-      applyHtmlHighlight(element, marking)
-    }
+    applyTextHighlight(element, marking)
   }
 
   function applyTextHighlight(element, marking) {
@@ -110,7 +107,7 @@ export function useMarking() {
       let endOffset = 0
 
       let node
-      while (node = walker.nextNode()) {
+      while ((node = walker.nextNode())) {
         const nodeLength = node.textContent.length
         
         if (!startNode && currentOffset + nodeLength > textOffset.start) {
@@ -165,27 +162,6 @@ export function useMarking() {
     } catch (e) {
       console.error('应用文本高亮失败:', e)
     }
-  }
-
-  function applyHtmlHighlight(element, marking) {
-    const { spanId } = marking.target
-    if (!spanId) return
-
-    nextTick(() => {
-      setTimeout(() => {
-        const highlightElement = document.getElementById(spanId)
-        if (highlightElement) {
-          const range = document.createRange()
-          range.selectNodeContents(highlightElement)
-          const isMultiline = checkIfMultiline(range)
-          const config = createMarkingConfig(marking.style, isMultiline)
-          const instance = annotate(highlightElement, config)
-          instance.show()
-          markingInstances.value.set(marking.id, instance)
-          updateMarkingPosition(marking)
-        }
-      }, 50)
-    })
   }
 
   function updateMarkingPosition(marking) {
@@ -256,35 +232,9 @@ export function useMarking() {
       originalTexts.value.set(elementId, originalText)
     }
 
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      null
-    )
+    const { start: startOffset, end: endOffset } = computeTextOffsetFromRange(element, range)
 
-    let currentOffset = 0
-    let startOffset = 0
-    let endOffset = 0
-    let foundStart = false
-
-    let node
-    while (node = walker.nextNode()) {
-      const nodeLength = node.textContent.length
-      
-      if (!foundStart && range.startContainer === node) {
-        startOffset = currentOffset + range.startOffset
-        foundStart = true
-      }
-      
-      if (range.endContainer === node) {
-        endOffset = currentOffset + range.endOffset
-        break
-      }
-      
-      currentOffset += nodeLength
-    }
-
-    if (!foundStart) {
+    if (startOffset === 0 && endOffset === 0 && selectedTextValue) {
       hideToolbar()
       return
     }
@@ -321,9 +271,13 @@ export function useMarking() {
       return
     }
 
+    const { start, end } = computeTextOffsetFromRange(element, range)
+
     selectedText.value = {
       range: range.cloneRange(),
-      text: selectedTextValue
+      text: selectedTextValue,
+      start,
+      end
     }
 
     showToolbar(range)
@@ -378,44 +332,94 @@ export function useMarking() {
     isMultilineSelection.value = false
   }
 
-  function createMarkingFromSelection(element, region, style) {
+  async function createMarkingFromSelection(element, region, style) {
     if (!selectedText.value) return null
 
     let target = null
-    let rangeToUse = null
 
     if (region === 'clean' || region === 'translate') {
       target = serializeTextSelection(element, selectedText.value)
-      rangeToUse = selectedText.value.range
     } else {
-      rangeToUse = selectedText.value.range
-      const spanId = `marking-span-${generateId()}`
-      const span = createSpanWrapper(rangeToUse.cloneRange(), spanId)
-      if (span) {
-        target = serializeHtmlSelection(element, span)
+      // rendered 区域：使用偏移量（与纯文本区域统一），span 注入仅用于当次视觉渲染
+      target = serializeHtmlSelection(element, selectedText.value)
+      if (target && selectedText.value.range) {
+        const spanId = `marking-span-${generateId()}`
+        createSpanWrapper(selectedText.value.range.cloneRange(), spanId)
       }
     }
 
     if (!target) return null
 
     const marking = createMarking(element, region, target, style)
+
+    // 对 rendered 区域，applyHighlight 使用 applyTextHighlight，需要先确保 spanId 未被设置
+    // （spanId 在 applyTextHighlight 内部生成）
+    if (region === 'rendered') {
+      // 清除临时注入的 span（applyTextHighlight 会自行注入）
+      const tmpSpan = element.querySelector(`[data-marking-id^="marking-span-"]`)
+      if (tmpSpan && tmpSpan.id.startsWith('marking-span-marking-')) {
+        const parent = tmpSpan.parentNode
+        if (parent) {
+          while (tmpSpan.firstChild) {
+            parent.insertBefore(tmpSpan.firstChild, tmpSpan)
+          }
+          parent.removeChild(tmpSpan)
+        }
+      }
+    }
+
     applyHighlight(element, marking)
     
     window.getSelection()?.removeAllRanges()
     hideToolbar()
 
+    // 持久化到后端
+    if (entityUuid?.value || entityUuid) {
+      try {
+        const uuid = typeof entityUuid === 'object' ? entityUuid.value : entityUuid
+        const type = typeof entityType === 'object' ? entityType.value : entityType
+        const res = await annotationApi.create({
+          entity_uuid: uuid,
+          entity_type: type,
+          annotation_type: 'text',
+          style: marking.style,
+          content: marking.content,
+          target: {
+            region: marking.target.region,
+            text_offset: {
+              start: marking.target.textOffset.start,
+              end: marking.target.textOffset.end,
+              text: marking.target.textOffset.text
+            }
+          },
+          meta: {}
+        })
+        if (res.code === 0 && res.data?.id) {
+          marking.id = res.data.id
+        }
+      } catch (e) {
+        console.error('保存批注失败:', e)
+      }
+    }
+
     return marking
   }
 
-  function updateMarkingContent(id, content) {
+  async function updateMarkingContent(id, content) {
     const marking = markings.value.find(a => a.id === id)
     if (marking) {
       marking.content = content
       marking.updatedAt = new Date()
+
+      try {
+        await annotationApi.update(id, { content })
+      } catch (e) {
+        console.error('更新批注失败:', e)
+      }
     }
   }
 
-  function deleteMarking(id) {
+  async function deleteMarking(id) {
     const index = markings.value.findIndex(a => a.id === id)
     if (index > -1) {
       const marking = markings.value[index]
@@ -450,6 +454,12 @@ export function useMarking() {
       }
 
       markings.value.splice(index, 1)
+
+      try {
+        await annotationApi.delete(id)
+      } catch (e) {
+        console.error('删除批注失败:', e)
+      }
     }
   }
 
@@ -491,9 +501,12 @@ export function useMarking() {
       if (instance) {
         instance.show()
       } else {
-        const element = (region === 'clean' || region === 'translate')
-          ? document.querySelector(`[data-marking-id="${marking.id}"]`)?.closest('pre')
-          : document.getElementById(marking.target.spanId)?.closest('.marking-content')
+        let element = null
+        if (region === 'clean' || region === 'translate') {
+          element = document.querySelector(`[data-marking-id="${marking.id}"]`)?.closest('pre')
+        } else {
+          element = document.querySelector(`[data-marking-id="${marking.id}"]`)?.closest('.marking-content')
+        }
         if (element) {
           applyHighlight(element, marking)
         }
@@ -517,6 +530,54 @@ export function useMarking() {
     }
     return markingStyles.filter(style => style.supportsMultiline)
   })
+
+  /**
+   * 从后端加载批注列表并在 DOM 上恢复高亮
+   */
+  async function loadAndRestoreMarkings(cleanEl, renderedEl, translateEl) {
+    const uuid = typeof entityUuid === 'object' ? entityUuid?.value : entityUuid
+    const type = typeof entityType === 'object' ? entityType?.value : entityType
+    if (!uuid || !type) return
+
+    try {
+      const res = await annotationApi.list(uuid, type)
+      if (res.code !== 0 || !res.data) return
+
+      const regionElMap = {
+        clean: cleanEl instanceof HTMLElement ? cleanEl.querySelector('pre') : null,
+        translate: translateEl instanceof HTMLElement ? translateEl.querySelector('pre') : null,
+        rendered: renderedEl instanceof HTMLElement ? renderedEl : null
+      }
+
+      for (const item of res.data) {
+        const marking = {
+          id: item.id,
+          type: 'marking',
+          content: item.content,
+          style: item.style,
+          target: {
+            region: item.target.region,
+            textOffset: {
+              start: item.target.text_offset.start,
+              end: item.target.text_offset.end,
+              text: item.target.text_offset.text
+            }
+          },
+          position: { top: 0, left: 0 },
+          createdAt: new Date(item.created_at),
+          updatedAt: new Date(item.updated_at)
+        }
+        markings.value.push(marking)
+
+        const el = regionElMap[item.target.region]
+        if (el) {
+          applyTextHighlight(el, marking)
+        }
+      }
+    } catch (e) {
+      console.error('加载批注失败:', e)
+    }
+  }
 
   return {
     markings,
@@ -542,6 +603,7 @@ export function useMarking() {
     showMarkingsByRegion,
     hideMarkingsByRegion,
     sortedMarkings,
-    hideToolbar
+    hideToolbar,
+    loadAndRestoreMarkings
   }
 }
