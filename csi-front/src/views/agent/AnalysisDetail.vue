@@ -86,8 +86,12 @@
                             <Icon icon="mdi:timeline-text" class="text-blue-600 mr-2" />
                             执行步骤
                         </h2>
-                        <div class="overflow-y-auto px-4 pb-4 border-t border-gray-100" style="height: 70vh">
-                            <div class="relative">
+                        <div ref="stepsScrollEl" class="overflow-y-auto px-4 pb-4 border-t border-gray-100" style="height: 70vh" @scroll="onStepsScroll">
+                            <div v-if="!sessionData.steps?.length" class="flex flex-col items-center justify-center h-full min-h-[280px] text-gray-400">
+                                <Icon icon="mdi:loading" class="text-2xl text-blue-500 animate-spin mb-2" />
+                                <p class="text-sm font-medium text-gray-500">分析中</p>
+                            </div>
+                            <div v-else class="relative">
                                 <div
                                     v-for="(step, index) in sessionData.steps"
                                     :key="index"
@@ -183,7 +187,11 @@
                         </h2>
                         <div class="flex flex-col border-t border-gray-100 min-h-0" style="height: 70vh">
                             <div class="flex-4 flex flex-col min-h-0 overflow-y-auto px-4 pt-3">
-                                <ul class="space-y-2 min-w-0">
+                                <div v-if="!sessionData.todos?.length" class="flex flex-col items-center justify-center flex-1 min-h-[200px] text-gray-400">
+                                    <Icon icon="mdi:loading" class="text-2xl text-blue-500 animate-spin mb-2" />
+                                    <p class="text-sm font-medium text-gray-500">分析中</p>
+                                </div>
+                                <ul v-else class="space-y-2 min-w-0">
                                     <li
                                         v-for="(todo, index) in sessionData.todos"
                                         :key="index"
@@ -251,7 +259,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
@@ -285,6 +293,27 @@ const showApprovalDialog = ref(false)
 const currentApproval = ref(null)
 const approvalLoading = ref(false)
 const approvalThreadId = ref('')
+
+const stepsScrollEl = ref(null)
+const isStepsScrollAtBottom = ref(true)
+
+function onStepsScroll() {
+    const el = stepsScrollEl.value
+    if (!el) return
+    isStepsScrollAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
+}
+
+watch(
+    () => sessionData.value.steps?.length,
+    (newLen, oldLen) => {
+        const prevLen = oldLen ?? 0
+        if (newLen <= prevLen || !isStepsScrollAtBottom.value || !stepsScrollEl.value) return
+        nextTick(() => {
+            const el = stepsScrollEl.value
+            if (el) el.scrollTop = el.scrollHeight
+        })
+    }
+)
 
 function sendMessage() {
     if (!userMessage.value.trim()) return
