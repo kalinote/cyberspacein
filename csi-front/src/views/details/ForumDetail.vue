@@ -290,6 +290,9 @@
                                 :entity-type="forumData.entity_type"
                                 :source-id="forumData.source_id"
                                 :current-uuid="forumData.uuid"
+                                :current-raw-content="forumData.raw_content || ''"
+                                :current-title="forumData.title || ''"
+                                :current-last-edit-at="forumData.last_edit_at || ''"
                             />
 
                             <div v-if="forumData.thread_type === 'thread' && featuredComments.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6" v-loading="featuredLoading">

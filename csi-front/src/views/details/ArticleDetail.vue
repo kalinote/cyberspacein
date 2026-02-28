@@ -225,6 +225,9 @@
                                 :entity-type="articleData.entity_type"
                                 :source-id="articleData.source_id"
                                 :current-uuid="articleData.uuid"
+                                :current-raw-content="articleData.raw_content || ''"
+                                :current-title="articleData.title || ''"
+                                :current-last-edit-at="articleData.last_edit_at || ''"
                             />
 
                             <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

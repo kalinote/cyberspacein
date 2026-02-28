@@ -2,6 +2,12 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from app.schemas.constants import EntityType
 
+class TimelineDiffCompareResponseSchema(BaseModel):
+    raw_content: str = Field(description="原始内容，用于变更对比")
+    last_edit_at: datetime | None = Field(default=None, description="最后编辑时间")
+    title: str = Field(default="", description="标题")
+
+
 class TimelineResponseSchema(BaseModel):
     uuid: str = Field(description="UUID")
     entity_type: EntityType = Field(description="实体类型")

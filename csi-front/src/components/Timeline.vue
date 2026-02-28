@@ -191,6 +191,30 @@
                 {{ entry.label }}
             </button>
         </div>
+
+        <el-dialog
+            v-model="diffDialog.visible"
+            title="溯源对比"
+            width="calc(100vw - 64px)"
+            top="32px"
+            :destroy-on-close="true"
+            class="diff-dialog"
+        >
+            <div v-if="diffDialog.loading" class="flex justify-center py-20">
+                <Icon icon="mdi:loading" class="animate-spin text-4xl text-blue-500" />
+            </div>
+            <template v-else-if="diffDialog.visible">
+                <div class="flex mb-3 text-sm text-gray-600 font-mono">
+                    <div class="flex-1">UUID: {{ diffDialog.originalUuid }}</div>
+                    <div class="flex-1 text-right">UUID: {{ diffDialog.modifiedUuid }}</div>
+                </div>
+                <MonacoDiffEditor
+                    :original="diffDialog.original"
+                    :modified="diffDialog.modified"
+                    :min-height="diffEditorHeight"
+                />
+            </template>
+        </el-dialog>
     </div>
 </template>
 
@@ -201,6 +225,7 @@ import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import { timelineApi } from '@/api/timeline'
 import { formatDateTime } from '@/utils/action'
+import MonacoDiffEditor from '@/components/MonacoDiffEditor.vue'
 
 const contextMenuItems = [
     { label: '溯源比对', key: 'trace-compare', icon: 'mdi:file-compare' }
@@ -218,6 +243,18 @@ const props = defineProps({
     currentUuid: {
         type: String,
         required: true
+    },
+    currentRawContent: {
+        type: String,
+        default: ''
+    },
+    currentTitle: {
+        type: String,
+        default: ''
+    },
+    currentLastEditAt: {
+        type: String,
+        default: ''
     }
 })
 
@@ -240,6 +277,8 @@ const svgHeight = ref(0)
 const dotElements = ref({})
 const gradientId = ref(`timeline-gradient-${Math.random().toString(36).substr(2, 9)}`)
 const contextMenu = ref({ visible: false, x: 0, y: 0, item: null })
+const diffDialog = ref({ visible: false, loading: false, original: '', modified: '', originalUuid: '', modifiedUuid: '' })
+const diffEditorHeight = computed(() => Math.max(400, window.innerHeight - 160))
 
 let scrollTimeout = null
 let resizeObserver = null
@@ -422,7 +461,18 @@ const isContextMenuEntryDisabled = (entry) => {
     return false
 }
 
-const onContextMenuAction = (key) => {
+const wrapContent = (rawContent, title, lastEditAt) => {
+    return [
+        `<!-- 实体标题: ${title || 'null'} -->`,
+        `<!-- 最后修改时间: ${lastEditAt || 'null'} -->`,
+        '',
+        '<!-- 原始源代码内容开始 -->',
+        rawContent,
+        '<!-- 原始源代码内容结束 -->'
+    ].join('\n')
+}
+
+const onContextMenuAction = async (key) => {
     const item = contextMenu.value.item
     if (key === 'trace-compare' && item?.uuid === props.currentUuid) {
         closeContextMenu()
@@ -430,7 +480,48 @@ const onContextMenuAction = (key) => {
     }
     closeContextMenu()
     if (key === 'trace-compare') {
-        ElMessage.info(`溯源比对：${item?.uuid ?? ''}`)
+        diffDialog.value = { visible: true, loading: true, original: '', modified: '', originalUuid: '', modifiedUuid: '' }
+        try {
+            const res = await timelineApi.getDiffCompare(props.entityType, item.uuid)
+            if (res.code !== 0) {
+                ElMessage.error(res.message || '获取对比数据失败')
+                diffDialog.value.visible = false
+                return
+            }
+            const targetRaw = res.data?.raw_content || ''
+            const currentRaw = props.currentRawContent || ''
+            const targetWrapped = wrapContent(targetRaw, res.data?.title, res.data?.last_edit_at)
+            const currentWrapped = wrapContent(currentRaw, props.currentTitle, props.currentLastEditAt)
+
+            if (!targetRaw || !currentRaw) {
+                diffDialog.value.original = currentWrapped
+                diffDialog.value.modified = targetWrapped
+                diffDialog.value.originalUuid = props.currentUuid
+                diffDialog.value.modifiedUuid = item.uuid
+            } else {
+                const currentItem = timelineItems.value.find(t => t.uuid === props.currentUuid)
+                const currentTime = currentItem ? new Date(currentItem.crawled_at).getTime() : null
+                const targetTime = res.data?.last_edit_at ? new Date(res.data.last_edit_at).getTime() : null
+
+                if (currentTime && targetTime && targetTime < currentTime) {
+                    diffDialog.value.original = targetWrapped
+                    diffDialog.value.modified = currentWrapped
+                    diffDialog.value.originalUuid = item.uuid
+                    diffDialog.value.modifiedUuid = props.currentUuid
+                } else {
+                    diffDialog.value.original = currentWrapped
+                    diffDialog.value.modified = targetWrapped
+                    diffDialog.value.originalUuid = props.currentUuid
+                    diffDialog.value.modifiedUuid = item.uuid
+                }
+            }
+        } catch {
+            ElMessage.error('获取对比数据失败')
+            diffDialog.value.visible = false
+            return
+        } finally {
+            diffDialog.value.loading = false
+        }
     }
 }
 

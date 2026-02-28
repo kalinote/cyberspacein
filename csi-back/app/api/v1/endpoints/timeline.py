@@ -5,7 +5,7 @@ from app.db.elasticsearch import get_es
 from app.schemas.constants import EntityType
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
-from app.schemas.timeline import TimelineResponseSchema
+from app.schemas.timeline import TimelineDiffCompareResponseSchema, TimelineResponseSchema
 from app.utils.date_time import parse_datetime
 
 
@@ -69,3 +69,22 @@ async def get_timeline(
         ))
 
     return PageResponseSchema.create(items=items, total=total, page=params.page, page_size=params.page_size)
+
+@router.get("/{entity_type}/{uuid}/diff-compare", response_model=ApiResponseSchema[TimelineDiffCompareResponseSchema], summary="获取指定uuid的raw_content用于变更对比")
+async def get_timeline_diff_compare(
+    entity_type: EntityType = Path(..., description="实体类型：article 或 forum"),
+    uuid: str = Path(..., description="实体uuid"),
+):
+    es = get_es()
+    if not es:
+        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+
+    index_name = entity_type.value
+    result = await es.get(index=index_name, id=uuid, _source_includes=["raw_content", "last_edit_at", "title"])
+    source_data = result.get("_source", {})
+    last_edit_at = parse_datetime(source_data.get("last_edit_at")) or parse_datetime(source_data.get("update_at")) or parse_datetime(source_data.get("crawled_at"))
+    return ApiResponseSchema.success(data=TimelineDiffCompareResponseSchema(
+        raw_content=source_data.get("raw_content", ""),
+        last_edit_at=last_edit_at,
+        title=source_data.get("title", ""),
+    ))
