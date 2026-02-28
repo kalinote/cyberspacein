@@ -318,6 +318,43 @@
                         <div class="space-y-6">
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-4">
+                                    快速<span class="text-blue-500">操作</span>
+                                </h3>
+                                <div class="space-y-3">
+                                    <SplitButton
+                                        :main-button-text="'分析此实体'"
+                                        :loading-text="'分析实体中...'"
+                                        :disabled="analyzing"
+                                        :loading="analyzing"
+                                        :options="analyzeOptions"
+                                        main-button-icon="mdi:brain"
+                                        @main-click="handleAnalyze"
+                                        @option-click="handleAnalyzeOption"
+                                    />
+                                    <button 
+                                        @click="handleExport"
+                                        class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
+                                    >
+                                        <Icon icon="mdi:download" />
+                                        <span>媒体文件本地化</span>
+                                    </button>
+                                    <button 
+                                        @click="togglePriorityTarget"
+                                        :class="[
+                                            'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2',
+                                            isPriorityTarget 
+                                                ? 'bg-amber-500 hover:bg-amber-600 text-white border-2 border-amber-500' 
+                                                : 'border-2 border-gray-200 text-gray-600 hover:bg-gray-50'
+                                        ]"
+                                    >
+                                        <Icon :icon="isPriorityTarget ? 'mdi:star' : 'mdi:star-outline'" />
+                                        <span>{{ isPriorityTarget ? '取消重点目标' : '设置重点目标' }}</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <h3 class="text-lg font-bold text-gray-900 mb-4">
                                     文章<span class="text-blue-500">信息</span>
                                 </h3>
                                 <div class="space-y-4">
@@ -415,43 +452,6 @@
                                         <p class="text-sm text-gray-500 mb-1">标记理由</p>
                                         <p class="font-medium text-gray-900 text-sm">{{ articleData.highlight_reason }}</p>
                                     </div>
-                                </div>
-                            </div>
-
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    快速<span class="text-blue-500">操作</span>
-                                </h3>
-                                <div class="space-y-3">
-                                    <SplitButton
-                                        :main-button-text="'分析此实体'"
-                                        :loading-text="'分析实体中...'"
-                                        :disabled="analyzing"
-                                        :loading="analyzing"
-                                        :options="analyzeOptions"
-                                        main-button-icon="mdi:brain"
-                                        @main-click="handleAnalyze"
-                                        @option-click="handleAnalyzeOption"
-                                    />
-                                    <button 
-                                        @click="handleExport"
-                                        class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
-                                    >
-                                        <Icon icon="mdi:download" />
-                                        <span>媒体文件本地化</span>
-                                    </button>
-                                    <button 
-                                        @click="togglePriorityTarget"
-                                        :class="[
-                                            'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2',
-                                            isPriorityTarget 
-                                                ? 'bg-amber-500 hover:bg-amber-600 text-white border-2 border-amber-500' 
-                                                : 'border-2 border-gray-200 text-gray-600 hover:bg-gray-50'
-                                        ]"
-                                    >
-                                        <Icon :icon="isPriorityTarget ? 'mdi:star' : 'mdi:star-outline'" />
-                                        <span>{{ isPriorityTarget ? '取消重点目标' : '设置重点目标' }}</span>
-                                    </button>
                                 </div>
                             </div>
                         </div>

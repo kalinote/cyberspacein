@@ -36,7 +36,7 @@ async def get_timeline(
                 "must_not": [{"term": {"thread_type": "featured"}}]
             }
         },
-        "sort": [{"crawled_at": {"order": "asc", "missing": "_last"}}],
+        "sort": [{"crawled_at": {"order": "desc", "missing": "_last"}}],
         "from": from_,
         "size": params.page_size
     }

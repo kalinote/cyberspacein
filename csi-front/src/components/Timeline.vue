@@ -72,6 +72,7 @@
                             >
                                 <div
                                     @click="handleCardClick(item)"
+                                    @contextmenu.prevent="onCardContextMenu($event, item)"
                                     class="p-4 rounded-lg border-2 transition-all mb-4"
                                     :class="getCardClass(item)"
                                     style="width: 280px;"
@@ -171,6 +172,25 @@
                 </button>
             </div>
         </div>
+
+        <div
+            v-show="contextMenu.visible"
+            class="context-menu-floating rounded-lg shadow-lg border border-gray-200 bg-white py-1 min-w-[120px]"
+            :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        >
+            <button
+                v-for="entry in contextMenuItems"
+                :key="entry.key"
+                type="button"
+                class="w-full px-4 py-2 text-left text-sm transition-colors flex items-center gap-2"
+                :class="isContextMenuEntryDisabled(entry) ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50 cursor-pointer'"
+                :disabled="isContextMenuEntryDisabled(entry)"
+                @click.stop="onContextMenuAction(entry.key)"
+            >
+                <Icon v-if="entry.icon" :icon="entry.icon" class="shrink-0 text-base" :class="isContextMenuEntryDisabled(entry) ? 'text-gray-400' : 'text-gray-500'" />
+                {{ entry.label }}
+            </button>
+        </div>
     </div>
 </template>
 
@@ -178,8 +198,13 @@
 import { ref, watch, onMounted, computed, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
+import { ElMessage } from 'element-plus'
 import { timelineApi } from '@/api/timeline'
 import { formatDateTime } from '@/utils/action'
+
+const contextMenuItems = [
+    { label: '溯源比对', key: 'trace-compare', icon: 'mdi:file-compare' }
+]
 
 const props = defineProps({
     entityType: {
@@ -214,6 +239,7 @@ const svgWidth = ref(0)
 const svgHeight = ref(0)
 const dotElements = ref({})
 const gradientId = ref(`timeline-gradient-${Math.random().toString(36).substr(2, 9)}`)
+const contextMenu = ref({ visible: false, x: 0, y: 0, item: null })
 
 let scrollTimeout = null
 let resizeObserver = null
@@ -380,6 +406,34 @@ const handleCardClick = (item) => {
     router.push(targetRoute)
 }
 
+const closeContextMenu = () => {
+    contextMenu.value.visible = false
+}
+
+const onCardContextMenu = (e, item) => {
+    e.stopPropagation()
+    contextMenu.value = { visible: true, x: e.clientX, y: e.clientY, item }
+}
+
+const isContextMenuEntryDisabled = (entry) => {
+    if (entry.key === 'trace-compare') {
+        return contextMenu.value.item?.uuid === props.currentUuid
+    }
+    return false
+}
+
+const onContextMenuAction = (key) => {
+    const item = contextMenu.value.item
+    if (key === 'trace-compare' && item?.uuid === props.currentUuid) {
+        closeContextMenu()
+        return
+    }
+    closeContextMenu()
+    if (key === 'trace-compare') {
+        ElMessage.info(`溯源比对：${item?.uuid ?? ''}`)
+    }
+}
+
 watch([() => props.entityType, () => props.sourceId], () => {
     currentPage.value = 1
     timelineItems.value = []
@@ -396,6 +450,7 @@ onMounted(() => {
     if (timelineContent.value) {
         resizeObserver.observe(timelineContent.value)
     }
+    document.addEventListener('click', closeContextMenu)
 })
 
 onUnmounted(() => {
@@ -405,6 +460,7 @@ onUnmounted(() => {
     if (resizeObserver) {
         resizeObserver.disconnect()
     }
+    document.removeEventListener('click', closeContextMenu)
 })
 </script>
 
@@ -450,5 +506,10 @@ onUnmounted(() => {
 
 .timeline-scroll::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
+}
+
+.context-menu-floating {
+    position: fixed;
+    z-index: 1000;
 }
 </style>

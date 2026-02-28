@@ -140,6 +140,14 @@ async def get_comments(
     if thread_type not in ["comment", "featured"]:
         return ApiResponseSchema.error(code=400, message="thread_type参数只能是comment或featured")
     
+    platform_id = None
+    try:
+        platform_obj = await PlatformModel.find_one({"name": platform})
+        if platform_obj:
+            platform_id = platform_obj.id
+    except Exception as e:
+        logger.warning(f"查询平台ID失败: {e}, platform_name: {platform}")
+
     try:
         query_body = {
             "query": {
@@ -151,43 +159,61 @@ async def get_comments(
                     ]
                 }
             },
-            "sort": [
-                {
-                    "floor": {
-                        "order": "asc",
-                        "missing": "_last"
+            "aggs": {
+                "dedup_groups": {
+                    "terms": {
+                        **(
+                            {
+                                "script": {
+                                    "source": (
+                                        "String sid = doc['source_id.keyword'].size() > 0 ? doc['source_id.keyword'].value : '_';"
+                                        "String fl = doc['floor'].size() > 0 ? String.valueOf((long)doc['floor'].value) : '0';"
+                                        "return sid + '|' + fl;"
+                                    )
+                                }
+                            }
+                            if thread_type == "featured"
+                            else {"field": "source_id.keyword"}
+                        ),
+                        "size": 10000
+                    },
+                    "aggs": {
+                        "latest": {
+                            "top_hits": {
+                                "sort": [{"last_edit_at": {"order": "desc", "missing": "_last"}}],
+                                "size": 1
+                            }
+                        },
+                        "floor_val": {
+                            "max": {"field": "floor"}
+                        }
                     }
                 }
-            ],
-            "from": (params.page - 1) * params.page_size,
-            "size": params.page_size
+            },
+            "size": 0
         }
         
         logger.info(f"查询论坛{thread_type}: platform={platform}, source_id={source_id}, page={params.page}, page_size={params.page_size}")
         result = await es.search(index="forum", body=query_body)
-        total = result["hits"]["total"]["value"] if isinstance(result["hits"]["total"], dict) else result["hits"]["total"]
-        hits = result["hits"]["hits"]
+        buckets = result.get("aggregations", {}).get("dedup_groups", {}).get("buckets", [])
+        
+        buckets.sort(key=lambda b: (b.get("floor_val", {}).get("value") is None, b.get("floor_val", {}).get("value") or 0))
+        
+        total = len(buckets)
+        start = (params.page - 1) * params.page_size
+        page_buckets = buckets[start: start + params.page_size]
         
         search_results = []
-        for hit in hits:
-            source_data = hit.get("_source", {})
-            
-            platform_name = source_data.get("platform")
-            platform_id = None
-            if platform_name:
-                try:
-                    platform_obj = await PlatformModel.find_one({"name": platform_name})
-                    if platform_obj:
-                        platform_id = platform_obj.id
-                except Exception as e:
-                    logger.warning(f"查询平台ID失败: {e}, platform_name: {platform_name}")
+        for bucket in page_buckets:
+            latest_hit = bucket["latest"]["hits"]["hits"][0]
+            source_data = latest_hit.get("_source", {})
             
             search_result = CommentResultSchema(
-                uuid=source_data.get("uuid", hit.get("_id", "")),
+                uuid=source_data.get("uuid", latest_hit.get("_id", "")),
                 entity_type=source_data.get("entity_type", ""),
                 source_id=source_data.get("source_id", ""),
                 data_version=source_data.get("data_version", 0),
-                platform=platform_name or "",
+                platform=source_data.get("platform") or "",
                 platform_id=platform_id,
                 section=source_data.get("section", ""),
                 update_at=parse_datetime(source_data.get("update_at")),
