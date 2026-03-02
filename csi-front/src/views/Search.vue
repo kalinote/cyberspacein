@@ -28,12 +28,12 @@
           </div>
 
           <div class="flex flex-wrap gap-3 mb-4">
-            <el-button plain @click="showAdvancedFilters = true"
+            <el-button plain @click="showAdvancedFilters = !showAdvancedFilters"
               :class="{ 'bg-blue-400! text-white!': hasActiveFilters }">
               <template #icon>
-                <Icon icon="mdi:filter" />
+                <Icon :icon="showAdvancedFilters ? 'mdi:chevron-up' : 'mdi:filter'" />
               </template>
-              高级筛选
+              {{ showAdvancedFilters ? '收起高级筛选' : '高级筛选' }}
             </el-button>
             <el-select v-model="sortBy" placeholder="选择排序" size="default" style="width: 140px">
               <el-option label="相关性" value="relevance" />
@@ -67,6 +67,93 @@
             </div>
           </div>
 
+          <el-collapse-transition>
+            <div v-show="showAdvancedFilters" class="pt-4 mt-4 border-t border-gray-200">
+              <div class="flex items-center mb-4">
+                <Icon icon="mdi:filter" class="text-xl mr-2 text-blue-500" />
+                <span class="text-xl font-bold">高级<span class="text-blue-500">筛选器</span></span>
+              </div>
+              <div class="mb-4">
+                <p class="text-gray-600">通过多维度条件精确缩小检索范围</p>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                  <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                      <Icon icon="mdi:calendar-range" class="text-blue-600" />
+                    </div>
+                    <h3 class="font-bold text-gray-900">时间范围</h3>
+                  </div>
+                  <div class="space-y-3">
+                    <div v-for="(option, index) in filterOptions.timeRange" :key="index" class="flex items-center">
+                      <input type="radio" :id="`time-${index}`" v-model="timeRange" :value="option.value"
+                        class="h-4 w-4 text-blue-500 border-gray-300 focus:ring-blue-400">
+                      <label :for="`time-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                  <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+                      <Icon icon="mdi:tag" class="text-green-600" />
+                    </div>
+                    <h3 class="font-bold text-gray-900">实体类型</h3>
+                  </div>
+                  <div class="space-y-3">
+                    <div v-for="(option, index) in filterOptions.categories" :key="index" class="flex items-center">
+                      <input type="checkbox" :id="`cat-${index}`" v-model="categories" :value="option.value"
+                        class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
+                      <label :for="`cat-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                  <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+                      <Icon icon="mdi:source-repository" class="text-purple-600" />
+                    </div>
+                    <h3 class="font-bold text-gray-900">网络类型</h3>
+                  </div>
+                  <div class="space-y-3">
+                    <div v-for="(option, index) in filterOptions.sources" :key="index" class="flex items-center">
+                      <input type="checkbox" :id="`source-${index}`" v-model="sources" :value="option.value"
+                        class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
+                      <label :for="`source-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                  <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
+                      <Icon icon="mdi:priority-high" class="text-amber-600" />
+                    </div>
+                    <h3 class="font-bold text-gray-900">置信度</h3>
+                  </div>
+                  <div class="space-y-3">
+                    <div v-for="(option, index) in filterOptions.priorities" :key="index" class="flex items-center">
+                      <input type="checkbox" :id="`priority-${index}`" v-model="priorities" :value="option.value"
+                        class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
+                      <label :for="`priority-${index}`" class="ml-2 text-gray-700 flex items-center">
+                        <span :class="getPriorityColorClass(option.value)" class="inline-block w-3 h-3 rounded-full mr-2"></span>
+                        {{ option.label }}
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3 pt-4 pb-4 border-t border-gray-100">
+                <div class="flex flex-wrap gap-3">
+                  <el-button plain>快速保存到模板</el-button>
+                  <el-button @click="resetFilters">重置筛选</el-button>
+                  <el-button type="primary" @click="applyFilters">应用筛选</el-button>
+                </div>
+              </div>
+            </div>
+          </el-collapse-transition>
+
           <div v-if="filterRulesText" class="text-sm text-gray-600 pt-3 border-t border-gray-200">
             <span class="font-medium text-gray-900">当前筛选条件:</span> {{ filterRulesText }}
           </div>
@@ -78,102 +165,6 @@
         <div class="absolute bottom-10 left-10 w-64 h-64 bg-cyan-200 rounded-full mix-blend-multiply blur-3xl opacity-20"></div>
       </div>
     </section>
-
-    <el-dialog v-model="showAdvancedFilters" title="高级筛选器" width="90%" :before-close="handleDialogClose"
-      class="filter-dialog">
-      <template #header>
-        <div class="flex items-center">
-          <Icon icon="mdi:filter" class="text-xl mr-2 text-blue-500" />
-          <span class="text-xl font-bold">高级<span class="text-blue-500">筛选器</span></span>
-        </div>
-      </template>
-
-      <div class="mb-4">
-        <p class="text-gray-600">通过多维度条件精确缩小检索范围</p>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
-          <div class="flex items-center mb-4">
-            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-              <Icon icon="mdi:calendar-range" class="text-blue-600" />
-            </div>
-            <h3 class="font-bold text-gray-900">时间范围</h3>
-          </div>
-          <div class="space-y-3">
-            <div v-for="(option, index) in filterOptions.timeRange" :key="index" class="flex items-center">
-              <input type="radio" :id="`time-${index}`" v-model="timeRange" :value="option.value"
-                class="h-4 w-4 text-blue-500 border-gray-300 focus:ring-blue-400">
-              <label :for="`time-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
-          <div class="flex items-center mb-4">
-            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-              <Icon icon="mdi:tag" class="text-green-600" />
-            </div>
-            <h3 class="font-bold text-gray-900">实体类型</h3>
-          </div>
-          <div class="space-y-3">
-            <div v-for="(option, index) in filterOptions.categories" :key="index" class="flex items-center">
-              <input type="checkbox" :id="`cat-${index}`" v-model="categories" :value="option.value"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label :for="`cat-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
-          <div class="flex items-center mb-4">
-            <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-              <Icon icon="mdi:source-repository" class="text-purple-600" />
-            </div>
-            <h3 class="font-bold text-gray-900">网络类型</h3>
-          </div>
-          <div class="space-y-3">
-            <div v-for="(option, index) in filterOptions.sources" :key="index" class="flex items-center">
-              <input type="checkbox" :id="`source-${index}`" v-model="sources" :value="option.value"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label :for="`source-${index}`" class="ml-2 text-gray-700">{{ option.label }}</label>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
-          <div class="flex items-center mb-4">
-            <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
-              <Icon icon="mdi:priority-high" class="text-amber-600" />
-            </div>
-            <h3 class="font-bold text-gray-900">置信度</h3>
-          </div>
-          <div class="space-y-3">
-            <div v-for="(option, index) in filterOptions.priorities" :key="index" class="flex items-center">
-              <input type="checkbox" :id="`priority-${index}`" v-model="priorities" :value="option.value"
-                class="h-4 w-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400">
-              <label :for="`priority-${index}`" class="ml-2 text-gray-700 flex items-center">
-                <span :class="getPriorityColorClass(option.value)" class="inline-block w-3 h-3 rounded-full mr-2"></span>
-                {{ option.label }}
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <div class="flex justify-between items-center">
-          <div class="text-sm text-gray-600">
-            <span class="font-medium text-gray-900">当前筛选条件:</span> {{ filterRulesText || '未设置' }}
-          </div>
-          <div class="flex space-x-3">
-            <el-button plain>快速保存到模板</el-button>
-            <el-button @click="resetFilters">重置筛选</el-button>
-            <el-button type="primary" @click="applyFilters">应用筛选</el-button>
-          </div>
-        </div>
-      </template>
-    </el-dialog>
 
     <section class="py-10 bg-gray-50">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -900,10 +891,6 @@ export default {
 
     handleEditTemplate(template) {
       this.$message.info('编辑模板功能开发中')
-    },
-
-    handleDialogClose(done) {
-      done()
     },
 
     async toggleHighlight(result) {

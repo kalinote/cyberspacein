@@ -138,6 +138,30 @@
 
                     <!-- 右侧：详细信息 -->
                     <div class="space-y-6">
+                        <!-- 操作按钮 -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <h3 class="text-lg font-bold text-gray-900 mb-4">
+                                快速<span class="text-blue-500">操作</span>
+                            </h3>
+                            <div class="space-y-3">
+                                <button @click="refreshData"
+                                    class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2">
+                                    <Icon icon="mdi:spider" />
+                                    <span>执行常规采集</span>
+                                </button>
+                                <button @click="exportData"
+                                    class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
+                                    <Icon icon="mdi:download" />
+                                    <span>导出数据</span>
+                                </button>
+                                <button @click="configurePlatform"
+                                    class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
+                                    <Icon icon="mdi:cog" />
+                                    <span>配置平台</span>
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- 平台属性 -->
                         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                             <h3 class="text-lg font-bold text-gray-900 mb-4">
@@ -204,40 +228,6 @@
                                 <el-tag v-for="section in platformDetail.sections" :key="section" type="primary" size="default">
                                     {{ section }}
                                 </el-tag>
-                            </div>
-                        </div>
-
-                        <!-- 操作按钮 -->
-                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                快速<span class="text-blue-500">操作</span>
-                            </h3>
-                            <div class="space-y-3">
-                                <button @click="refreshData"
-                                    class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2">
-                                    <Icon icon="mdi:refresh" />
-                                    <span>刷新数据</span>
-                                </button>
-                                <button @click="exportData"
-                                    class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
-                                    <Icon icon="mdi:download" />
-                                    <span>导出数据</span>
-                                </button>
-                                <button @click="configurePlatform"
-                                    class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
-                                    <Icon icon="mdi:cog" />
-                                    <span>配置平台</span>
-                                </button>
-                                <button @click="createAction"
-                                    class="w-full bg-yellow-400 hover:bg-yellow-500 text-yellow-900 py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2">
-                                    <Icon icon="mdi:plus" />
-                                    <span>创建专项行动</span>
-                                </button>
-                                <button
-                                    class="w-full bg-red-400 hover:bg-red-500 text-red-900 py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2">
-                                    <Icon icon="mdi:security" />
-                                    <span>标记零信任</span>
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -890,15 +880,6 @@ export default {
                 duration: 3000,
             });
             // 路由示例: this.$router.push(`/platforms/${this.platformId}/config`)
-        },
-        createAction() {
-            this.$notify({
-                title: "创建专项行动",
-                message: "正在打开创建专项行动页面...",
-                type: "info",
-                position: "top-right",
-                duration: 3000,
-            });
         },
         async loadRelatedIntelligence() {
             if (!this.platformDetail.name) return;
