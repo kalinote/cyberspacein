@@ -15,6 +15,7 @@ import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import AgentConfig from '../views/agent/AgentConfig.vue'
 import AnalysisDetail from '../views/agent/AnalysisDetail.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
+import HighlightTargetList from '../views/target/HighlightTargetList.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
 import ForumDetail from '../views/details/ForumDetail.vue'
 import PlatformList from '../views/platform/PlatformList.vue'
@@ -92,6 +93,13 @@ const router = createRouter({
       path: '/target',
       name: 'target-management',
       component: TargetManagement,
+      meta: { keepAlive: true }
+    },
+    {
+      // 重点实体库
+      path: '/target/highlights',
+      name: 'highlight-target-list',
+      component: HighlightTargetList,
       meta: { keepAlive: true }
     },
     {

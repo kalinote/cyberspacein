@@ -51,7 +51,7 @@
                 <Icon icon="mdi:clipboard-text-search-outline" />
                 <span>监控任务管理</span>
               </button>
-              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
+              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/target/highlights')">
                 <Icon icon="mdi:tag-multiple" />
                 <span>重点实体库</span>
               </button>
