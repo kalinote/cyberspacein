@@ -7,8 +7,8 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div class="lg:col-span-2">
-            <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">任务</span>管理</h1>
-            <p class="text-gray-600 text-lg mb-6">统一管理和监控所有任务执行状态，从任务创建、分配到完成的全流程跟踪平台。</p>
+            <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">基础组件</span>任务</h1>
+            <p class="text-gray-600 text-lg mb-6">统一管理和监控所有基础组件独立任务执行状态，从任务创建、分配到完成的全流程跟踪平台。</p>
             <div class="flex flex-wrap gap-4">
               <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
                 <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -47,8 +47,8 @@
                 <span>创建新任务</span>
               </button>
               <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
-                <Icon icon="mdi:filter-outline" />
-                <span>筛选任务</span>
+                <Icon icon="mdi:cog" />
+                <span>任务配置管理</span>
               </button>
               <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
                 <Icon icon="mdi:export" />

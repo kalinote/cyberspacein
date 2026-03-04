@@ -44,7 +44,7 @@
                     :class="$route.path === '/action/tasks' ? 'text-blue-600 bg-blue-50' : ''"
                     @click="showActionDropdown = false"
                   >
-                    任务管理
+                    基础组件任务
                   </router-link>
                 </div>
               </transition>
