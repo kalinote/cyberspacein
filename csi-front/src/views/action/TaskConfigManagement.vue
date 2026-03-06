@@ -286,14 +286,11 @@
                     class="w-full"
                     controls-position="right"
                   />
-                  <el-input
+                  <MonacoEditor
                     v-else-if="row.valueType === 'array' || row.valueType === 'object'"
                     v-model="row.value"
-                    type="textarea"
-                    :rows="3"
-                    :placeholder="row.valueType === 'array' ? getArrayPlaceholder() : getObjectPlaceholder()"
-                    size="small"
-                    class="font-mono"
+                    language="json"
+                    :min-height="140"
                   />
                 </div>
               </div>
@@ -369,14 +366,11 @@
                       controls-position="right"
                     />
                     <el-switch v-else-if="row.valueType === 'boolean'" v-model="row.value" />
-                    <el-input
+                    <MonacoEditor
                       v-else-if="row.valueType === 'array' || row.valueType === 'object'"
                       v-model="row.value"
-                      type="textarea"
-                      :rows="3"
-                      :placeholder="row.valueType === 'array' ? getArrayPlaceholder() : getObjectPlaceholder()"
-                      size="small"
-                      class="font-mono"
+                      language="json"
+                      :min-height="140"
                     />
                   </template>
                   <TagInput
@@ -521,9 +515,6 @@ function detectValueType(val) {
 function parseJsonField(str, fallback) {
   try { return JSON.parse(str) } catch { return fallback }
 }
-
-function getArrayPlaceholder() { return '如：["item1", 2, true]' }
-function getObjectPlaceholder() { return '如：{"key": "value"}' }
 
 function buildConfigData() {
   const config = {}
