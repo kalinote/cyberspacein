@@ -49,6 +49,19 @@ export const getStatusDotClass = (status) => {
   return classMap[status] || 'bg-gray-400'
 }
 
+export const getActionStatusIcon = (status) => {
+  const map = {
+    running: { icon: 'mdi:loading', bgClass: 'bg-blue-100', iconClass: 'text-blue-600 animate-spin' },
+    completed: { icon: 'mdi:check-circle', bgClass: 'bg-green-100', iconClass: 'text-green-600' },
+    paused: { icon: 'mdi:pause', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
+    stopped: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
+    cancelled: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
+    failed: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' },
+    timeout: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' }
+  }
+  return map[status] || { icon: 'mdi:clock-outline', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' }
+}
+
 // 获取日志级别样式类
 export const getLogLevelClass = (level) => {
   const classMap = {

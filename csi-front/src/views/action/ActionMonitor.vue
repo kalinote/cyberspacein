@@ -346,8 +346,13 @@
                     <p class="text-sm text-gray-600 line-clamp-2 mb-3">{{ action.description }}</p>
                   </div>
                   <div class="ml-3 shrink-0">
-                    <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center animate-pulse">
-                      <Icon icon="mdi:loading" class="text-blue-600 text-2xl animate-spin" />
+                    <div
+                      :class="['w-12 h-12 rounded-xl flex items-center justify-center', getActionStatusIcon(action.status).bgClass]"
+                    >
+                      <Icon
+                        :icon="getActionStatusIcon(action.status).icon"
+                        :class="['text-2xl', getActionStatusIcon(action.status).iconClass]"
+                      />
                     </div>
                   </div>
                 </div>
@@ -520,6 +525,7 @@ import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import TemplateParamsDialog from '@/components/action/template/TemplateParamsDialog.vue'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
+import { getActionStatusIcon } from '@/utils/action'
 
 export default {
   name: 'Action',
@@ -537,44 +543,14 @@ export default {
       selectedBlueprintForRun: null,
       loadingRunningActions: false,
       loadingBlueprints: false,
-      // 占位数据：模拟正在执行的行动，等待后端API完成
-      runningActions: [
-        {
-          id: 'action-001',
-          name: '社交媒体舆情监控',
-          description: '监控Twitter、Reddit等平台的技术讨论趋势和热点话题',
-          startTime: new Date(Date.now() - 2 * 3600 * 1000),
-          duration: 2 * 3600 * 1000,
-          progress: 45,
-          completedSteps: 5,
-          totalSteps: 11
-        },
-        {
-          id: 'action-002',
-          name: '技术论坛情报收集',
-          description: '收集Stack Overflow、GitHub等平台的技术漏洞和安全信息',
-          startTime: new Date(Date.now() - 5 * 3600 * 1000),
-          duration: 5 * 3600 * 1000,
-          progress: 78,
-          completedSteps: 7,
-          totalSteps: 9
-        },
-        {
-          id: 'action-003',
-          name: '新闻媒体事件追踪',
-          description: '追踪全球主要新闻媒体的网络安全相关报道和事件',
-          startTime: new Date(Date.now() - 30 * 60 * 1000),
-          duration: 30 * 60 * 1000,
-          progress: 12,
-          completedSteps: 1,
-          totalSteps: 8
-        }
-      ],
+      runningActions: [],
       commonBlueprints: []
     }
   },
   
   methods: {
+    getActionStatusIcon,
+
     async createActionFromBlueprint(blueprint) {
       if (!blueprint || !blueprint.id) {
         this.$message.error('蓝图ID不存在')
@@ -657,6 +633,30 @@ export default {
         return `${minutes}分钟`
       } else {
         return `${seconds}秒`
+      }
+    },
+
+    async fetchRunningActions() {
+      this.loadingRunningActions = true
+      try {
+        const result = await getPaginatedData(actionApi.getActionHistory, {
+          page: 1,
+          page_size: 3
+        })
+        this.runningActions = (result.items || []).map(item => ({
+          ...item,
+          startTime: item.start_at || null,
+          endTime: item.finished_at || null,
+          completedSteps: item.completed_steps || 0,
+          totalSteps: item.total_steps || 0,
+          duration: item.duration ? item.duration * 1000 : 0,
+          progress: item.progress ?? 0
+        }))
+      } catch (error) {
+        console.error('获取行动列表失败:', error)
+        this.runningActions = []
+      } finally {
+        this.loadingRunningActions = false
       }
     },
 
@@ -766,6 +766,7 @@ export default {
   },
   
   mounted() {
+    this.fetchRunningActions()
     this.fetchCommonBlueprints()
   }
 }
