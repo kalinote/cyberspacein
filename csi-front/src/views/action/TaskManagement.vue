@@ -48,14 +48,17 @@
               </button>
               <button
                 class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
+                @click="router.push('/action/component-tasks')"
+              >
+                <Icon icon="mdi:clipboard-text-outline" />
+                <span>组件任务管理</span>
+              </button>
+              <button
+                class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2"
                 @click="router.push('/action/task-configs')"
               >
                 <Icon icon="mdi:cog" />
                 <span>任务配置管理</span>
-              </button>
-              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
-                <Icon icon="mdi:export" />
-                <span>导出任务列表</span>
               </button>
             </div>
           </div>
