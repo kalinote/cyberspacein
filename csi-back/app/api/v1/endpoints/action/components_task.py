@@ -4,23 +4,25 @@ import re
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query
 from beanie.operators import Set
-from app.models.action.base_components import BaseComponentsTaskConfigModel, BaseComponentsConfigModel
-from app.schemas.action.base_components import (
+from app.models.action.components_task import BaseComponentsTaskConfigModel, BaseComponentsConfigModel
+from app.schemas.action.components_task import (
     BaseComponentsTaskConfigCreateRequest,
     BaseComponentsTaskConfigUpdateRequest,
     BaseComponentsTaskConfigResponse,
     BaseComponentsConfigSchema,
+    BaseComponentsTaskResponse,
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
+from app.service.component import get_base_component_tasks
 from app.utils.id_lib import generate_id
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["基础组件任务配置"])
+router = APIRouter(prefix="/components-task", tags=["基础组件任务"])
 
 
-@router.post("/task-configs", response_model=ApiResponseSchema[BaseComponentsTaskConfigResponse], summary="创建基础组件任务配置")
+@router.post("/configs", response_model=ApiResponseSchema[BaseComponentsTaskConfigResponse], summary="创建基础组件任务配置")
 async def create_base_component_task_config(data: BaseComponentsTaskConfigCreateRequest):
     config_id = generate_id(data.name + data.type + data.version + data.config_data.meta.node_instance_id)
     existing = await BaseComponentsTaskConfigModel.find_one({"node_instance_id": data.config_data.meta.node_instance_id})
@@ -51,7 +53,7 @@ async def create_base_component_task_config(data: BaseComponentsTaskConfigCreate
     ))
 
 
-@router.get("/task-configs", response_model=PageResponseSchema[BaseComponentsTaskConfigResponse], summary="获取基础组件任务配置列表")
+@router.get("/configs", response_model=PageResponseSchema[BaseComponentsTaskConfigResponse], summary="获取基础组件任务配置列表")
 async def get_base_component_task_configs(
     params: PageParamsSchema = Depends(),
     keyword: Optional[str] = Query(None, description="关键词，匹配标题、描述、config_data.meta.node_instance_id"),
@@ -85,7 +87,7 @@ async def get_base_component_task_configs(
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 
-@router.get("/task-configs/detail/{config_id}", response_model=ApiResponseSchema[BaseComponentsTaskConfigResponse], summary="获取基础组件任务配置详情")
+@router.get("/configs/detail/{config_id}", response_model=ApiResponseSchema[BaseComponentsTaskConfigResponse], summary="获取基础组件任务配置详情")
 async def get_base_component_task_config_detail(config_id: str):
     doc = await BaseComponentsTaskConfigModel.find_one({"_id": config_id, "is_deleted": False})
     if not doc:
@@ -103,7 +105,7 @@ async def get_base_component_task_config_detail(config_id: str):
     ))
 
 
-@router.patch("/task-configs/{config_id}", response_model=ApiResponseSchema[BaseComponentsTaskConfigResponse], summary="更新基础组件任务配置")
+@router.patch("/configs/{config_id}", response_model=ApiResponseSchema[BaseComponentsTaskConfigResponse], summary="更新基础组件任务配置")
 async def update_base_component_task_config(config_id: str, data: BaseComponentsTaskConfigUpdateRequest):
     doc = await BaseComponentsTaskConfigModel.find_one({"_id": config_id, "is_deleted": False})
     if not doc:
@@ -127,7 +129,7 @@ async def update_base_component_task_config(config_id: str, data: BaseComponents
     ))
 
 
-@router.delete("/task-configs/{config_id}", response_model=ApiResponseSchema[None], summary="删除基础组件任务配置")
+@router.delete("/configs/{config_id}", response_model=ApiResponseSchema[None], summary="删除基础组件任务配置")
 async def delete_base_component_task_config(config_id: str):
     doc = await BaseComponentsTaskConfigModel.find_one({"_id": config_id, "is_deleted": False})
     if not doc:
@@ -137,3 +139,22 @@ async def delete_base_component_task_config(config_id: str):
         BaseComponentsTaskConfigModel.updated_at: datetime.now(),
     }))
     return ApiResponseSchema.success()
+
+@router.get("/tasks", response_model=PageResponseSchema[BaseComponentsTaskResponse], summary="获取基础组件任务列表")
+async def get_base_component_task_list(
+    params: PageParamsSchema = Depends(),
+):
+    tasks = await get_base_component_tasks(params.page, params.page_size)
+    return PageResponseSchema.create([BaseComponentsTaskResponse(
+        id=task.get("_id"),
+        base_components_id=task.get("spider_id"),
+        status=task.get("status"),
+        created_at=datetime.fromisoformat(task.get("stat", {}).get("create_ts").replace("Z", "+00:00")) if task.get("stat", {}).get("create_ts") else None,
+        start_at=datetime.fromisoformat(task.get("stat", {}).get("start_ts").replace("Z", "+00:00")) if task.get("stat", {}).get("start_ts") else None,
+        end_at=datetime.fromisoformat(task.get("stat", {}).get("end_ts").replace("Z", "+00:00")) if task.get("stat", {}).get("end_ts") else None,
+        config_id="",
+        error_message=task.get("error"),
+        schedule_id=task.get("schedule_id"),
+        priority=task.get("priority"),
+        total_duration=task.get("stat", {}).get("total_duration"),
+    ) for task in tasks], len(tasks), params.page, params.page_size)

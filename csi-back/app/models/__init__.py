@@ -2,7 +2,7 @@ from typing import List, Type
 from beanie import Document
 
 from app.models.action.configs import ActionNodesHandleConfigModel
-from app.models.action.base_components import BaseComponentsTaskConfigModel
+from app.models.action.components_task import BaseComponentsTaskConfigModel
 from app.models.action.node import ActionNodeModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel

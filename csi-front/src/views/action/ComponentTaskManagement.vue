@@ -108,8 +108,8 @@ export default {
         schedule_count: 0
       },
       sidebarTabs: [
-        { key: 'tasks', label: '任务', icon: 'mdi:clipboard-text-outline' },
-        { key: 'schedule', label: '调度', icon: 'mdi:calendar-clock' }
+        { key: 'tasks', label: '执行任务', icon: 'mdi:clipboard-text-outline' },
+        { key: 'schedule', label: '调度计划', icon: 'mdi:calendar-clock' }
       ]
     }
   },

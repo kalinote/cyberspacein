@@ -3,7 +3,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, BackgroundTasks
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.configs import ActionNodesHandleConfigModel
-from app.models.action.base_components import BaseComponentsTaskConfigModel
+from app.models.action.components_task import BaseComponentsTaskConfigModel
 from app.models.action.node import ActionNodeModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.schemas.action.action import ActionConfigMeta, ActionNodeConfigInitResponse
@@ -15,10 +15,10 @@ from app.utils.dict_helper import unpack_dict
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["行动SDK"])
+router = APIRouter(prefix="/sdk", tags=["行动SDK"])
 
 
-@router.get("/sdk/{node_instance_id}/init", response_model=ApiResponseSchema[ActionNodeConfigInitResponse], summary="获取节点配置初始化")
+@router.get("/{node_instance_id}/init", response_model=ApiResponseSchema[ActionNodeConfigInitResponse], summary="获取节点配置初始化")
 async def get_node_config_init(node_instance_id: str):
     logger.info(f"获取节点配置初始化: {node_instance_id}")
     task_config = await BaseComponentsTaskConfigModel.find_one({"node_instance_id": node_instance_id})
@@ -94,7 +94,7 @@ async def get_node_config_init(node_instance_id: str):
     return ApiResponseSchema.success(data=response_data)
 
 
-@router.post("/sdk/{node_instance_id}/result", response_model=ApiResponseSchema[Dict[str, Any]], summary="上报节点配置结果")
+@router.post("/{node_instance_id}/result", response_model=ApiResponseSchema[Dict[str, Any]], summary="上报节点配置结果")
 async def report_action_node_result(
     node_instance_id: str,
     result: SDKResultRequest,
@@ -105,7 +105,7 @@ async def report_action_node_result(
     return ApiResponseSchema.success()
 
 
-@router.post("/sdk/{node_instance_id}/heartbeat", response_model=ApiResponseSchema[Dict[str, Any]], summary="上报节点心跳")
+@router.post("/{node_instance_id}/heartbeat", response_model=ApiResponseSchema[Dict[str, Any]], summary="上报节点心跳")
 async def report_action_node_heartbeat(
     node_instance_id: str, data: Dict[str, Any],
     background_tasks: BackgroundTasks

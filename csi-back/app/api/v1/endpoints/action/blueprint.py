@@ -24,10 +24,10 @@ from app.utils.workflow import count_workflow_paths, graph_model2schemas
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["行动蓝图"])
+router = APIRouter(prefix="/blueprint", tags=["行动蓝图"])
 
 
-@router.post("/blueprint", response_model=ApiResponseSchema[ActionBlueprintDetailResponseSchema], summary="创建蓝图")
+@router.post("", response_model=ApiResponseSchema[ActionBlueprintDetailResponseSchema], summary="创建蓝图")
 async def create_blueprint(data: ActionBlueprintSchema):
     if data.is_template:
         param_names = [p.name for p in data.template.params]
@@ -128,7 +128,7 @@ async def create_blueprint(data: ActionBlueprintSchema):
     return ApiResponseSchema.success(data=response_data)
 
 
-@router.get("/blueprint/list", response_model=PageResponseSchema[ActionBlueprintBaseInfoResponse], summary="获取蓝图列表")
+@router.get("/list", response_model=PageResponseSchema[ActionBlueprintBaseInfoResponse], summary="获取蓝图列表")
 async def get_blueprints(
     params: PageParamsSchema = Depends()
 ):
@@ -159,7 +159,7 @@ async def get_blueprints(
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 
-@router.get("/blueprint/detail/{blueprint_id}", response_model=ApiResponseSchema[ActionBlueprintDetailResponseSchema], summary="获取蓝图详情")
+@router.get("/detail/{blueprint_id}", response_model=ApiResponseSchema[ActionBlueprintDetailResponseSchema], summary="获取蓝图详情")
 async def get_blueprint(blueprint_id: str):
     blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
     if not blueprint:

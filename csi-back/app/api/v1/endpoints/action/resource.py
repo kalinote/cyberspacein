@@ -14,13 +14,15 @@ from app.schemas.action.node import (
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.schemas.constants import ActionNodeTypeEnum
-from app.service.component import get_components_by_project_id, get_components_project_by_name
+from app.service.component import get_components
 from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 from app.utils.dict_helper import pack_dict, unpack_dict
 
-router = APIRouter(tags=["行动资源"])
-@router.get("/resource/nodes", response_model=ApiResponseSchema[List[ActionNodeResponse]], summary="获取节点列表")
+router = APIRouter(prefix="/resource", tags=["行动资源"])
+
+
+@router.get("/nodes", response_model=ApiResponseSchema[List[ActionNodeResponse]], summary="获取节点列表")
 async def get_actions():
     nodes = await ActionNodeModel.find_all().to_list()
 
@@ -85,7 +87,7 @@ async def get_actions():
     return ApiResponseSchema.success(data=results)
 
 
-@router.post("/resource/nodes", response_model=ApiResponseSchema[ActionNodeResponse], summary="创建节点")
+@router.post("/nodes", response_model=ApiResponseSchema[ActionNodeResponse], summary="创建节点")
 async def create_node(data: ActionNode):
     node_id = generate_id(data.name + data.type.value + data.version)
 
@@ -179,12 +181,11 @@ async def create_node(data: ActionNode):
     return ApiResponseSchema.success(data=response_data)
 
 
-@router.get("/resource/base_components", response_model=PageResponseSchema[BaseComponent], summary="获取基础组件列表")
+@router.get("/base_components", response_model=PageResponseSchema[BaseComponent], summary="获取基础组件列表")
 async def get_base_components(
     params: PageParamsSchema = Depends()
 ):
-    project_id = await get_components_project_by_name("csi_base_components")
-    components = await get_components_by_project_id(project_id, params.page, params.page_size)
+    components = await get_components(params.page, params.page_size)
 
     results = []
     for component in components:

@@ -14,10 +14,10 @@ from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 from app.utils.dict_helper import pack_dict, unpack_dict
 
-router = APIRouter(tags=["节点配置"])
+router = APIRouter(prefix="/configs", tags=["节点配置"])
 
 
-@router.get("/configs/statistics", response_model=ApiResponseSchema[ActionConfigsStatisticsResponse], summary="获取节点配置统计信息")
+@router.get("/statistics", response_model=ApiResponseSchema[ActionConfigsStatisticsResponse], summary="获取节点配置统计信息")
 async def get_node_configs_statistics():
     node_count = await ActionNodeModel.find_all().count()
     handle_count = await ActionNodesHandleConfigModel.find_all().count()
@@ -30,7 +30,7 @@ async def get_node_configs_statistics():
     return ApiResponseSchema.success(data=statistics)
 
 
-@router.get("/configs/handles/all", response_model=ApiResponseSchema[List[ActionNodesHandleConfigAllResponse]], summary="获取所有节点配置handle列表")
+@router.get("/handles/all", response_model=ApiResponseSchema[List[ActionNodesHandleConfigAllResponse]], summary="获取所有节点配置handle列表")
 async def get_all_node_configs_handles():
     handles = await ActionNodesHandleConfigModel.find_all().to_list()
     results = []
@@ -42,7 +42,7 @@ async def get_all_node_configs_handles():
     return ApiResponseSchema.success(data=results)
 
 
-@router.get("/configs/handles", response_model=PageResponseSchema[ActionNodesHandleConfigResponse], summary="获取节点配置handle列表")
+@router.get("/handles", response_model=PageResponseSchema[ActionNodesHandleConfigResponse], summary="获取节点配置handle列表")
 async def get_node_configs_handles(
     params: PageParamsSchema = Depends()
 ):
@@ -62,7 +62,7 @@ async def get_node_configs_handles(
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 
-@router.post("/configs/handles", response_model=ApiResponseSchema[ActionNodesHandleConfigResponse], summary="创建节点配置handle")
+@router.post("/handles", response_model=ApiResponseSchema[ActionNodesHandleConfigResponse], summary="创建节点配置handle")
 async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
     handle_id = generate_id(data.handle_name + data.type.value)
 
