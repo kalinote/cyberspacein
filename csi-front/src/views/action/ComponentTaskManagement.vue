@@ -44,6 +44,12 @@
               <span class="w-5"></span>
               <Icon :icon="tab.icon" class="text-xl shrink-0" />
               <span>{{ tab.label }}</span>
+              <span
+                class="ml-auto text-xs px-2 py-0.5 rounded-full"
+                :class="activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+              >
+                {{ getSidebarCount(tab.key) }}
+              </span>
             </div>
           </div>
         </div>
@@ -392,6 +398,11 @@ export default {
     },
     handleAdd() {
       this.$message.info(`新增${this.currentTabLabel}功能开发中`)
+    },
+    getSidebarCount(tabKey) {
+      if (tabKey === 'tasks') return this.statistics.task_count
+      if (tabKey === 'schedule') return this.statistics.schedule_count
+      return 0
     }
   },
   computed: {

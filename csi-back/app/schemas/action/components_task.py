@@ -63,3 +63,5 @@ class BaseComponentsScheduleResponse(BaseModel):
     priority: int = Field(description="优先级")
     base_components_id: str = Field(description="基础组件ID")
     component_name: str = Field(description="基础组件名称")
+    config_id: str | None = Field(default=None, description="配置ID")
+    
