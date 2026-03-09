@@ -103,3 +103,47 @@ async def get_base_component_tasks(page: int = 1, page_size: int = 10):
     except Exception as e:
         logger.error(f"获取基础组件任务列表失败: {e}")
         return None, 0
+    
+async def get_base_component_schedules(page: int = 1, page_size: int = 10):
+    try:
+        url = settings.CRAWLAB_BASE_URL + f"/schedules"
+        response = await async_get(
+            url,
+            params={
+                "page": page,
+                "size": page_size,
+                "sort": "[]"
+            },
+            headers={"Authorization": settings.CRAWLAB_TOKEN}
+        )
+        if not isinstance(response, dict):
+            return None, 0
+        data = response.get("data")
+        raw_total = response.get("total", 0)
+        total = int(raw_total) if raw_total is not None else 0
+        if data is None:
+            return None, 0
+        data = data if isinstance(data, list) else []
+
+        component_names = await async_get(
+            settings.CRAWLAB_BASE_URL + "/filters/spiders",
+            headers={"Authorization": settings.CRAWLAB_TOKEN}
+        )
+        component_names_data = unwrap_response(component_names) or []
+        component_map = {
+            item["value"]: item["label"]
+            for item in (component_names_data if isinstance(component_names_data, list) else [])
+            if isinstance(item, dict) and item.get("value")
+        }
+
+        for schedule in data:
+            if not isinstance(schedule, dict):
+                continue
+            spider_id = schedule.get("spider_id")
+            if spider_id and spider_id in component_map:
+                schedule["component_name"] = component_map[spider_id]
+
+        return data, total
+    except Exception as e:
+        logger.error(f"获取基础组件调度计划列表失败: {e}")
+        return None, 0

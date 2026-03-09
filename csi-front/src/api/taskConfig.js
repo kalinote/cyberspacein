@@ -10,6 +10,9 @@ export const taskConfigApi = {
   getConfigDetail(configId) {
     return request.get(`/action/components-task/configs/detail/${configId}`)
   },
+  getScheduleList(params = { page: 1, page_size: 10 }) {
+    return request.get('/action/components-task/schedules', params)
+  },
   createConfig(data) {
     return request.post('/action/components-task/configs', data)
   },

@@ -17,6 +17,8 @@
     "@vue-flow/core": "^1.48.0",
     "@vue-flow/minimap": "^1.5.4",
     "axios": "^1.13.2",
+    "cron-parser": "^5.5.0",
+    "cronstrue": "^3.13.0",
     "echarts": "^6.0.0",
     "element-plus": "^2.12.0",
     "highlight.js": "^11.11.1",

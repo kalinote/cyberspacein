@@ -54,3 +54,12 @@ class BaseComponentsTaskResponse(BaseModel):
     component_name: str | None = Field(default=None, description="基础组件名称")
     schedule_name: str | None = Field(default=None, description="调度计划名称")
     
+class BaseComponentsScheduleResponse(BaseModel):
+    id: str = Field(description="调度计划ID")
+    name: str = Field(description="调度计划名称")
+    cron_expression: str = Field(description="调度计划表达式")
+    description: str = Field(description="调度计划描述")
+    enabled: bool = Field(description="是否启用")
+    priority: int = Field(description="优先级")
+    base_components_id: str = Field(description="基础组件ID")
+    component_name: str = Field(description="基础组件名称")

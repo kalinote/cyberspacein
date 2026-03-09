@@ -11,10 +11,11 @@ from app.schemas.action.components_task import (
     BaseComponentsTaskConfigResponse,
     BaseComponentsConfigSchema,
     BaseComponentsTaskResponse,
+    BaseComponentsScheduleResponse,
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
-from app.service.component import get_base_component_tasks
+from app.service.component import get_base_component_tasks, get_base_component_schedules
 from app.utils.id_lib import generate_id
 
 logger = logging.getLogger(__name__)
@@ -162,3 +163,21 @@ async def get_base_component_task_list(
         component_name=task.get("component_name"),
         schedule_name=task.get("schedule_name"),
     ) for task in tasks], total, params.page, params.page_size)
+    
+@router.get("/schedules", response_model=PageResponseSchema[BaseComponentsScheduleResponse], summary="获取基础组件任务调度计划列表")
+async def get_base_component_schedule_list(
+    params: PageParamsSchema = Depends(),
+):
+    schedules, total = await get_base_component_schedules(params.page, params.page_size)
+    if schedules is None:
+        schedules = []
+    return PageResponseSchema.create([BaseComponentsScheduleResponse(
+        id=schedule.get("_id"),
+        name=schedule.get("name"),
+        description=schedule.get("description"),
+        cron_expression=schedule.get("cron"),
+        enabled=schedule.get("enabled"),
+        priority=schedule.get("priority"),
+        base_components_id=schedule.get("spider_id"),
+        component_name=schedule.get("component_name") or "",
+    ) for schedule in schedules], total, params.page, params.page_size)
