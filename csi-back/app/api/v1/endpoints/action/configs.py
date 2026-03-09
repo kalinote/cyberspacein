@@ -2,6 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
+from app.schemas.constants import ActionNodeTypeEnum
 from app.schemas.action.configs import (
     ActionConfigsStatisticsResponse,
     ActionNodesHandleConfigAllResponse,
@@ -92,3 +93,8 @@ async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
         other_compatible_interfaces=data.other_compatible_interfaces,
         custom_style=unpack_dict(data.custom_style)
     ))
+
+@router.get("/filter/node_type", response_model=ApiResponseSchema[List[dict[str, str]]], summary="获取节点类型过滤列表")
+async def get_node_type_filter_list():
+    data = [{e.label: e.value} for e in ActionNodeTypeEnum]
+    return ApiResponseSchema.success(data=data)

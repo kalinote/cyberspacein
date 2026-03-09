@@ -52,5 +52,9 @@ export const actionApi = {
   // 获取资源统计数据
   getStatistics() {
     return request.get('/action/configs/statistics')
+  },
+  // 获取节点类型过滤列表（用于节点类型下拉）
+  getNodeTypeFilter() {
+    return request.get('/action/configs/filter/node_type')
   }
 }

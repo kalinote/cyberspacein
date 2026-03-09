@@ -3,6 +3,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.schemas.action.action import ActionConfigIO, ActionConfigMeta
+from app.schemas.constants import ActionNodeTypeEnum
 
 
 class BaseComponentsConfigSchema(BaseModel):
@@ -33,7 +34,7 @@ class BaseComponentsTaskConfigResponse(BaseModel):
     node_instance_id: str = Field(description="节点实例ID")
     name: str = Field(description="基础组件配置名称")
     description: str = Field(description="基础组件配置描述")
-    type: str = Field(description="基础组件配置类型")
+    type: ActionNodeTypeEnum = Field(description="基础组件配置类型")
     version: str = Field(description="基础组件配置版本")
     config_data: BaseComponentsConfigSchema = Field(description="基础组件配置")
     created_at: datetime = Field(description="创建时间")

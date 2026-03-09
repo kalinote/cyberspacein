@@ -444,17 +444,18 @@
             />
           </el-form-item>
           <el-form-item label="节点类型" prop="type">
-            <el-select v-model="formData.type" placeholder="请选择节点类型" class="w-full">
-              <!-- 占位数据：硬编码的节点类型选项，TODO: 通过后端接口动态获取 -->
-              <el-option label="构造器" value="construct" />
-              <el-option label="采集节点" value="crawler" />
-              <el-option label="存储节点" value="storage" />
-              <el-option label="中间件节点" value="middleware" />
-              <el-option label="处理器节点" value="processor" />
-              <el-option label="基本逻辑节点" value="logic" />
-              <el-option label="简单运算节点" value="simple_operation" />
-              <el-option label="输出节点" value="output" />
-              <el-option label="输入节点" value="input" />
+            <el-select
+              v-model="formData.type"
+              placeholder="请选择节点类型"
+              class="w-full"
+              :loading="nodeTypeOptionsLoading"
+            >
+              <el-option
+                v-for="opt in nodeTypeOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="版本号" prop="version">
@@ -749,6 +750,8 @@ const submitting = ref(false)
 const componentsLoading = ref(false)
 const componentListForSelect = ref([])
 const nodeHandlesForSelect = ref([])
+const nodeTypeOptions = ref([])
+const nodeTypeOptionsLoading = ref(false)
 const nodeHandlesLoading = ref(false)
 
 const pagination = ref({
@@ -1029,7 +1032,8 @@ const handleDialogOpen = async () => {
   resetForm()
   await Promise.all([
     fetchComponentsForSelect(),
-    fetchNodeHandlesForSelect()
+    fetchNodeHandlesForSelect(),
+    fetchNodeTypeFilter()
   ])
 }
 
@@ -1070,6 +1074,27 @@ const fetchNodeHandlesForSelect = async () => {
     nodeHandlesForSelect.value = []
   } finally {
     nodeHandlesLoading.value = false
+  }
+}
+
+const fetchNodeTypeFilter = async () => {
+  nodeTypeOptionsLoading.value = true
+  try {
+    const response = await actionApi.getNodeTypeFilter()
+    if (response.code === 0 && Array.isArray(response.data)) {
+      nodeTypeOptions.value = response.data.map(item => {
+        const entry = Object.entries(item)[0]
+        return entry ? { label: entry[0], value: entry[1] } : null
+      }).filter(Boolean)
+    } else {
+      ElMessage.error(response.message || '获取节点类型列表失败')
+      nodeTypeOptions.value = []
+    }
+  } catch (error) {
+    ElMessage.error('获取节点类型列表失败')
+    nodeTypeOptions.value = []
+  } finally {
+    nodeTypeOptionsLoading.value = false
   }
 }
 

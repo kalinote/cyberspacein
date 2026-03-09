@@ -1,9 +1,19 @@
 from enum import Enum
 
+_ACTION_NODE_TYPE_LABELS = {
+    "construct": "构造器",
+    "crawler": "采集节点",
+    "storage": "存储节点",
+    "middleware": "中间件节点",
+    "processor": "处理器节点",
+    "logic": "基本逻辑节点",
+    "simple_operation": "简单运算节点",
+    "output": "输出节点",
+    "input": "输入节点",
+}
+
+
 class ActionNodeTypeEnum(str, Enum):
-    """
-    行动节点类型枚举
-    """
     CONSTRUCTOR = "construct"
     CRAWLER = "crawler"
     STORAGE = "storage"
@@ -13,7 +23,12 @@ class ActionNodeTypeEnum(str, Enum):
     SIMPLE_OPERATION = "simple_operation"
     OUTPUT = "output"
     INPUT = "input"
-    
+
+    @property
+    def label(self) -> str:
+        return _ACTION_NODE_TYPE_LABELS.get(self.value, self.value)
+
+
 class ActionFlowStatusEnum(str, Enum):
     """
     行动实例化流程状态枚举

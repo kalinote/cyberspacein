@@ -44,13 +44,16 @@
               placeholder="全部类型"
               clearable
               class="w-full"
+              :loading="nodeTypeOptionsLoading"
               @change="handleSearch"
             >
               <el-option label="全部类型" value="" />
-              <el-option label="采集器" value="crawler" />
-              <el-option label="分析器" value="analyzer" />
-              <el-option label="报告生成器" value="reporter" />
-              <el-option label="自定义" value="custom" />
+              <el-option
+                v-for="opt in nodeTypeOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
             </el-select>
           </div>
           <div class="md:col-span-2 flex items-end justify-end">
@@ -193,11 +196,19 @@
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-600 mb-1">组件类型 <span class="text-red-500">*</span></label>
-              <el-select v-model="formState.type" placeholder="选择组件类型" size="small" class="w-full">
-                <el-option label="采集器" value="crawler" />
-                <el-option label="分析器" value="analyzer" />
-                <el-option label="报告生成器" value="reporter" />
-                <el-option label="自定义" value="custom" />
+              <el-select
+                v-model="formState.type"
+                placeholder="选择组件类型"
+                size="small"
+                class="w-full"
+                :loading="nodeTypeOptionsLoading"
+              >
+                <el-option
+                  v-for="opt in nodeTypeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
               </el-select>
             </div>
             <div>
@@ -473,6 +484,7 @@ import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
 import { taskConfigApi } from '@/api/taskConfig'
+import { actionApi } from '@/api/action'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -486,6 +498,8 @@ const editingConfigId = ref(null)
 const editMode = ref('table')
 const jsonString = ref('')
 const jsonError = ref('')
+const nodeTypeOptions = ref([])
+const nodeTypeOptionsLoading = ref(false)
 
 const filterParams = reactive({ keyword: '', component_type: '' })
 
@@ -836,8 +850,8 @@ function removeOutputRow(index) {
 }
 
 function getComponentTypeLabel(type) {
-  const labels = { crawler: '采集器', analyzer: '分析器', reporter: '报告生成器', custom: '自定义' }
-  return labels[type] || type || '未知'
+  const opt = nodeTypeOptions.value.find((o) => o.value === type)
+  return opt ? opt.label : (type || '未知')
 }
 
 function getConfigCount(config) {
@@ -858,5 +872,25 @@ function formatDate(dateStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+async function fetchNodeTypeFilter() {
+  nodeTypeOptionsLoading.value = true
+  try {
+    const response = await actionApi.getNodeTypeFilter()
+    if (response.code === 0 && Array.isArray(response.data)) {
+      nodeTypeOptions.value = response.data.map((item) => {
+        const entry = Object.entries(item)[0]
+        return entry ? { label: entry[0], value: entry[1] } : null
+      }).filter(Boolean)
+    } else {
+      nodeTypeOptions.value = []
+    }
+  } catch {
+    nodeTypeOptions.value = []
+  } finally {
+    nodeTypeOptionsLoading.value = false
+  }
+}
+
 fetchConfigList()
+fetchNodeTypeFilter()
 </script>
