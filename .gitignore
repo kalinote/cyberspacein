@@ -94,3 +94,4 @@ env.bak/
 venv.bak/
 
 models_bin/
+tmp_docs/

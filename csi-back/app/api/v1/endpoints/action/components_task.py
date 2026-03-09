@@ -144,7 +144,9 @@ async def delete_base_component_task_config(config_id: str):
 async def get_base_component_task_list(
     params: PageParamsSchema = Depends(),
 ):
-    tasks = await get_base_component_tasks(params.page, params.page_size)
+    tasks, total = await get_base_component_tasks(params.page, params.page_size)
+    if tasks is None:
+        tasks = []
     return PageResponseSchema.create([BaseComponentsTaskResponse(
         id=task.get("_id"),
         base_components_id=task.get("spider_id"),
@@ -157,4 +159,6 @@ async def get_base_component_task_list(
         schedule_id=task.get("schedule_id"),
         priority=task.get("priority"),
         total_duration=task.get("stat", {}).get("total_duration"),
-    ) for task in tasks], len(tasks), params.page, params.page_size)
+        component_name=task.get("component_name"),
+        schedule_name=task.get("schedule_name"),
+    ) for task in tasks], total, params.page, params.page_size)

@@ -55,7 +55,51 @@ async def get_base_component_tasks(page: int = 1, page_size: int = 10):
             },
             headers={"Authorization": settings.CRAWLAB_TOKEN}
         )
-        return unwrap_response(response)
+        if not isinstance(response, dict):
+            return None, 0
+        data = response.get("data")
+        raw_total = response.get("total", 0)
+        total = int(raw_total) if raw_total is not None else 0
+        if data is None:
+            return None, 0
+        data = data if isinstance(data, list) else []
+
+        component_names = await async_get(
+            settings.CRAWLAB_BASE_URL + f"/filters/spiders",
+            headers={"Authorization": settings.CRAWLAB_TOKEN}
+        )
+
+        component_names_data = unwrap_response(component_names) or []
+
+        component_map = {
+            item["value"]: item["label"]
+            for item in (component_names_data if isinstance(component_names_data, list) else [])
+            if isinstance(item, dict) and item.get("value")
+        }
+
+        schedules_res = await async_get(
+            settings.CRAWLAB_BASE_URL + "/filters/schedules",
+            headers={"Authorization": settings.CRAWLAB_TOKEN}
+        )
+        schedules_data = unwrap_response(schedules_res) or []
+        schedule_map = {
+            item["value"]: item["label"]
+            for item in (schedules_data if isinstance(schedules_data, list) else [])
+            if isinstance(item, dict) and item.get("value")
+        }
+
+        tasks = data
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            spider_id = task.get("spider_id")
+            if spider_id and spider_id in component_map:
+                task["component_name"] = component_map[spider_id]
+            schedule_id = task.get("schedule_id")
+            if schedule_id and schedule_id in schedule_map:
+                task["schedule_name"] = schedule_map[schedule_id]
+
+        return tasks, total
     except Exception as e:
         logger.error(f"获取基础组件任务列表失败: {e}")
-        return None
+        return None, 0

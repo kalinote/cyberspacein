@@ -1,6 +1,9 @@
 import { request } from '@/utils/request'
 
 export const taskConfigApi = {
+  getTaskList(params = { page: 1, page_size: 10 }) {
+    return request.get('/action/components-task/tasks', params)
+  },
   getConfigList(params = { page: 1, page_size: 10 }) {
     return request.get('/action/components-task/configs', params)
   },

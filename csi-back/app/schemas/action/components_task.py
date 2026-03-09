@@ -46,9 +46,11 @@ class BaseComponentsTaskResponse(BaseModel):
     created_at: datetime | None = Field(default=None, description="创建时间")
     start_at: datetime | None = Field(default=None, description="开始时间")
     end_at: datetime | None = Field(default=None, description="结束时间")
-    config_id: str = Field(description="配置ID")
+    config_id: str | None = Field(default=None, description="配置ID")
     error_message: str | None = Field(default=None, description="错误信息")
     schedule_id: str | None = Field(default=None, description="调度计划ID")
     priority: int | None = Field(default=None, description="优先级")
     total_duration: int | None = Field(default=0, description="总运行时长(毫秒)")
+    component_name: str | None = Field(default=None, description="基础组件名称")
+    schedule_name: str | None = Field(default=None, description="调度计划名称")
     
