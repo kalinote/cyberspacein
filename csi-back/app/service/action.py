@@ -2,13 +2,20 @@
 from datetime import datetime
 import random
 from typing import Any
+from beanie.operators import In
 from app.core.config import settings
 from app.models.action.action import ActionConfigIOModel, ActionInstanceModel, ActionInstanceNodeModel
 import logging
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
+from app.schemas.action.node import (
+    ActionNodeHandleResponse,
+    ActionNodeInputResponse,
+    ActionNodeOption,
+    ActionNodeResponse,
+)
 from app.schemas.action.sdk import SDKResultRequest
-from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
 from app.service.component import run_component
 from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id
@@ -18,6 +25,60 @@ from app.db.rabbitmq import delete_queue
 from app.db.redis import get_redis
 
 logger = logging.getLogger(__name__)
+
+
+async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:
+    handle_ids = [h.id for h in node.handles]
+    handle_configs = await ActionNodesHandleConfigModel.find(In(ActionNodesHandleConfigModel.id, handle_ids)).to_list()
+    handle_config_map = {c.id: c for c in handle_configs}
+    handles_response = []
+    for handle in node.handles:
+        handle_config = handle_config_map.get(handle.id)
+        custom_style = unpack_dict(handle_config.custom_style) if handle_config else {}
+        custom_style = dict(custom_style)
+        custom_style.update(unpack_dict(handle.custom_style) or {})
+        handles_response.append(ActionNodeHandleResponse(
+            id=handle.id,
+            relabel=handle.relabel,
+            type=handle.type,
+            position=handle.position,
+            custom_style=custom_style,
+            handle_name=handle_config.handle_name if handle_config else "",
+            data_type=handle_config.type if handle_config else "value",
+            label=handle_config.label if handle_config else "",
+            color=handle_config.color if handle_config else "",
+            other_compatible_interfaces=handle_config.other_compatible_interfaces if handle_config else [],
+        ))
+    inputs_response = []
+    for input_item in node.inputs:
+        options = [ActionNodeOption(**opt) for opt in input_item.options] if input_item.options else None
+        inputs_response.append(ActionNodeInputResponse(
+            id=input_item.id,
+            name=input_item.name,
+            type=input_item.type,
+            position=input_item.position,
+            label=input_item.label,
+            description=input_item.description,
+            required=input_item.required,
+            default=input_item.default,
+            options=options,
+            custom_style=unpack_dict(input_item.custom_style),
+            custom_props=unpack_dict(input_item.custom_props)
+        ))
+    return ActionNodeResponse(
+        id=node.id,
+        name=node.name,
+        description=node.description,
+        type=ActionNodeTypeEnum(node.type),
+        version=node.version,
+        handles=handles_response,
+        inputs=inputs_response,
+        default_configs=unpack_dict(node.default_configs),
+        related_components=node.related_components,
+        command=node.command,
+        command_args=node.command_args
+    )
+
 
 # TODO: 节点失败需要增加检测任务是否完成(失败)的逻辑
 
@@ -81,7 +142,7 @@ class ActionInstanceService:
         except Exception as e:
             logger.warning(f"从Redis读取节点定义缓存失败: {e}")
         
-        node_definition = await ActionNodeModel.find_one({"_id": node_definition_id})
+        node_definition = await ActionNodeModel.find_one({"_id": node_definition_id, "is_deleted": False})
         if node_definition:
             try:
                 redis_client = get_redis()

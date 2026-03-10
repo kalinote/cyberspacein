@@ -37,7 +37,7 @@ async def get_node_config_init(node_instance_id: str):
     if not node_instance:
         return ApiResponseSchema.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
 
-    node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id})
+    node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id, "is_deleted": False})
     if not node_definition:
         return ApiResponseSchema.error(code=404, message=f"节点定义不存在，ID: {node_instance.definition_id}")
 

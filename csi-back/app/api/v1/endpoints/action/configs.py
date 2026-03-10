@@ -20,7 +20,7 @@ router = APIRouter(prefix="/configs", tags=["节点配置"])
 
 @router.get("/statistics", response_model=ApiResponseSchema[ActionConfigsStatisticsResponse], summary="获取节点配置统计信息")
 async def get_node_configs_statistics():
-    node_count = await ActionNodeModel.find_all().count()
+    node_count = await ActionNodeModel.find(ActionNodeModel.is_deleted == False).count()
     handle_count = await ActionNodesHandleConfigModel.find_all().count()
 
     statistics = ActionConfigsStatisticsResponse(

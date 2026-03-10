@@ -4,4 +4,5 @@ export * from './cron'
 export * from './formatters'
 export * from './status'
 export * from './node'
+export * from './inspect'
 

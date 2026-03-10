@@ -162,7 +162,7 @@
                       <div class="flex items-center gap-2">
                         <Icon icon="mdi:terminal" class="text-gray-900" />
                         <span class="text-gray-600">运行命令:</span>
-                        <span class="font-mono text-xs text-gray-900">{{ node.command }} {{ node.command_args.join(' ') }}</span>
+                        <span class="font-mono text-xs text-gray-900">{{ node.command }} {{ (node.command_args || []).join(' ') }}</span>
                       </div>
                     </div>
                   </div>
@@ -395,15 +395,6 @@
             </div>
           </div>
 
-          <!-- 语料库占位页面 -->
-          <!-- <div v-else-if="activeTab === 'corpus'" class="space-y-4">
-            <div class="flex flex-col items-center justify-center py-16">
-              <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
-              <p class="text-gray-500 text-lg mb-2">功能开发中</p>
-              <p class="text-gray-400 text-sm">语料库管理功能即将上线</p>
-            </div>
-          </div> -->
-
           <div v-else class="flex flex-col items-center justify-center py-16">
             <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
             <p class="text-gray-500 text-lg mb-2">功能开发中</p>
@@ -416,13 +407,15 @@
     <!-- 新增行动节点弹窗 -->
     <el-dialog
       v-model="dialogVisible"
-      title="新增行动节点"
+      :title="nodeDialogMode === 'edit' ? '编辑行动节点' : '新增行动节点'"
       width="900px"
       :close-on-click-modal="false"
       @open="handleDialogOpen"
-      @close="handleDialogClose"
+      @closed="handleDialogClosed"
     >
+      <div v-loading="nodeDialogMode === 'edit' && nodeFormLoading" :element-loading-text="'加载节点数据...'" class="min-h-[200px]">
       <el-form
+        v-show="!(nodeDialogMode === 'edit' && nodeFormLoading)"
         ref="formRef"
         :model="formData"
         :rules="formRules"
@@ -633,6 +626,7 @@
           </div>
         </div>
       </el-form>
+      </div>
 
       <template #footer>
         <div class="flex justify-end gap-3">
@@ -640,6 +634,191 @@
           <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
         </div>
       </template>
+    </el-dialog>
+
+    <!-- 节点详情弹窗 -->
+    <el-dialog
+      v-model="nodeDetailDialogVisible"
+      title="节点详情"
+      width="900px"
+      class="node-detail-dialog"
+      @close="nodeDetailData = null"
+    >
+      <div v-loading="nodeDetailLoading" class="min-h-[200px]">
+        <template v-if="nodeDetailData">
+          <el-descriptions :column="2" border class="mb-4">
+            <el-descriptions-item label="节点ID">{{ nodeDetailData.id }}</el-descriptions-item>
+            <el-descriptions-item label="节点名称">{{ nodeDetailData.name }}</el-descriptions-item>
+            <el-descriptions-item label="节点类型">{{ nodeDetailData.type }}</el-descriptions-item>
+            <el-descriptions-item label="版本">{{ nodeDetailData.version }}</el-descriptions-item>
+            <el-descriptions-item label="描述" :span="2">{{ nodeDetailData.description || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="运行命令">{{ nodeDetailData.command || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="运行参数">
+              {{ Array.isArray(nodeDetailData.command_args) ? nodeDetailData.command_args.join(' ') : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="关联组件" :span="2">
+              {{ Array.isArray(nodeDetailData.related_components) && nodeDetailData.related_components.length ? nodeDetailData.related_components.join(', ') : '-' }}
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-divider content-position="left">接口配置 (handles)</el-divider>
+          <div v-if="Array.isArray(nodeDetailData.handles) && nodeDetailData.handles.length" class="mb-4">
+            <el-table :data="nodeDetailData.handles" border size="small" max-height="240" class="detail-table">
+              <el-table-column prop="id" label="连接点 ID" min-width="120" show-overflow-tooltip />
+              <el-table-column label="标签" min-width="100">
+                <template #default="{ row }">
+                  {{ row.relabel || row.label || row.handle_name || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="type" label="类型" width="80" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.type === 'source' ? 'success' : 'info'" size="small">{{ row.type === 'source' ? '输出' : '输入' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="position" label="位置" width="80" align="center" />
+              <el-table-column label="数据类型" width="80" align="center">
+                <template #default="{ row }">{{ row.data_type === 'reference' ? '引用' : row.data_type === 'value' ? '值' : (row.data_type || '-') }}</template>
+              </el-table-column>
+              <el-table-column label="颜色" width="90" align="center">
+                <template #default="{ row }">
+                  <span v-if="row.color" class="inline-flex items-center gap-1">
+                    <span class="w-4 h-4 rounded border border-gray-300 shrink-0" :style="{ backgroundColor: row.color }" />
+                    <span class="text-xs truncate max-w-[52px]" :title="row.color">{{ row.color }}</span>
+                  </span>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="兼容接口" min-width="100">
+                <template #default="{ row }">
+                  {{ Array.isArray(row.other_compatible_interfaces) && row.other_compatible_interfaces.length ? row.other_compatible_interfaces.join(', ') : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column v-if="hasAnyHandleCustomStyle(nodeDetailData.handles)" label="自定义样式" width="100">
+                <template #default="{ row }">
+                  <el-popover v-if="row.custom_style && Object.keys(row.custom_style).length" placement="left" width="220" trigger="hover">
+                    <template #reference>
+                      <el-button link type="primary" size="small">查看</el-button>
+                    </template>
+                    <pre class="text-xs m-0 p-2 bg-gray-50 rounded overflow-auto max-h-32">{{ formatJson(row.custom_style) }}</pre>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div v-else class="text-gray-500 text-sm py-2">暂无接口配置</div>
+
+          <el-divider content-position="left">输入项配置 (inputs)</el-divider>
+          <div v-if="Array.isArray(nodeDetailData.inputs) && nodeDetailData.inputs.length" class="mb-4">
+            <el-table :data="nodeDetailData.inputs" border size="small" max-height="280" class="detail-table">
+              <el-table-column label="ID/名称" min-width="100" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.id || row.name || '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="label" label="标签" min-width="90" show-overflow-tooltip />
+              <el-table-column prop="type" label="类型" width="90" align="center" />
+              <el-table-column prop="position" label="位置" width="80" align="center" />
+              <el-table-column label="必填" width="64" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.required" type="danger" size="small">是</el-tag>
+                  <span v-else class="text-gray-400">否</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="默认值" min-width="80" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.default !== undefined && row.default !== '' ? String(row.default) : '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="description" label="描述" min-width="100" show-overflow-tooltip />
+              <el-table-column label="选项" width="70" align="center">
+                <template #default="{ row }">
+                  <el-popover v-if="Array.isArray(row.options) && row.options.length" placement="left" width="200" trigger="hover">
+                    <template #reference>
+                      <el-tag size="small">{{ row.options.length }} 项</el-tag>
+                    </template>
+                    <ul class="text-xs m-0 pl-4 space-y-1 max-h-32 overflow-auto">
+                      <li v-for="(opt, i) in row.options" :key="i">{{ opt.label ?? opt.value ?? opt }}</li>
+                    </ul>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="hasAnyInputExtra(nodeDetailData.inputs)" label="扩展" width="70" align="center">
+                <template #default="{ row }">
+                  <el-popover v-if="hasInputExtra(row)" placement="left" width="260" trigger="hover">
+                    <template #reference>
+                      <el-button link type="primary" size="small">查看</el-button>
+                    </template>
+                    <div class="text-xs space-y-2">
+                      <div v-if="row.custom_style && Object.keys(row.custom_style).length">
+                        <div class="font-medium text-gray-600">custom_style</div>
+                        <pre class="m-0 p-2 bg-gray-50 rounded overflow-auto max-h-24">{{ formatJson(row.custom_style) }}</pre>
+                      </div>
+                      <div v-if="row.custom_props && Object.keys(row.custom_props).length">
+                        <div class="font-medium text-gray-600">custom_props</div>
+                        <pre class="m-0 p-2 bg-gray-50 rounded overflow-auto max-h-24">{{ formatJson(row.custom_props) }}</pre>
+                      </div>
+                    </div>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div v-else class="text-gray-500 text-sm py-2">暂无输入项配置</div>
+
+          <el-divider content-position="left">默认配置 (default_configs)</el-divider>
+          <div v-if="nodeDetailData.default_configs && Object.keys(nodeDetailData.default_configs).length" class="mb-2">
+            <el-table
+              :data="Object.entries(nodeDetailData.default_configs).map(([key, value]) => ({ key, value }))"
+              border
+              size="small"
+              class="detail-table"
+              max-height="260"
+            >
+              <el-table-column prop="key" label="配置键" min-width="140" show-overflow-tooltip />
+              <el-table-column label="值类型" width="90" align="center">
+                <template #default="{ row }">
+                  {{ getValueType(row.value) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="值预览" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ getValuePreview(row.value) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="详情" width="80" align="center">
+                <template #default="{ row }">
+                  <el-popover
+                    v-if="isComplexValue(row.value)"
+                    placement="left"
+                    width="280"
+                    trigger="hover"
+                  >
+                    <template #reference>
+                      <el-button link type="primary" size="small">查看</el-button>
+                    </template>
+                    <pre class="m-0 p-2 bg-gray-50 rounded text-xs max-h-60 overflow-auto">
+{{ formatJson(row.value) }}
+                    </pre>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div v-else class="text-gray-500 text-sm py-3 px-1">暂无默认配置</div>
+
+          <el-divider content-position="left">节点预览</el-divider>
+          <div class="flex justify-center py-4">
+            <GenericNode
+              v-if="nodePreviewData"
+              :id="`preview-${nodeDetailData.id}`"
+              :data="nodePreviewData"
+              :show-handle="false"
+              :disabled="true"
+            />
+            <span v-else class="text-gray-400 text-sm">暂无预览</span>
+          </div>
+        </template>
+      </div>
     </el-dialog>
 
     <!-- 新增节点接口弹窗 -->
@@ -727,7 +906,8 @@ import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
-import { INPUT_TYPES, formatDateTime } from '@/utils/action'
+import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData } from '@/utils/action'
+import GenericNode from '@/components/action/nodes/GenericNode.vue'
 
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
@@ -745,6 +925,12 @@ const statistics = ref({
 })
 
 const dialogVisible = ref(false)
+const nodeDialogMode = ref('create')
+const currentNodeId = ref(null)
+const nodeFormLoading = ref(false)
+const nodeDetailDialogVisible = ref(false)
+const nodeDetailLoading = ref(false)
+const nodeDetailData = ref(null)
 const formRef = ref(null)
 const submitting = ref(false)
 const componentsLoading = ref(false)
@@ -798,7 +984,7 @@ const handleFormData = ref({
   other_compatible_interfaces: []
 })
 
-const inputTypes = ref(INPUT_TYPES)
+const inputTypes = INPUT_TYPES
 
 const validateName = (rule, value, callback) => {
   if (!value) {
@@ -890,82 +1076,14 @@ const handleFormRules = {
   ]
 }
 
-const filteredNodeList = computed(() => {
-  if (!searchKeyword.value.trim()) {
-    return nodeList.value
-  }
-  const keyword = searchKeyword.value.toLowerCase()
-  return nodeList.value.filter(node => 
-    node.name.toLowerCase().includes(keyword) ||
-    node.description.toLowerCase().includes(keyword) ||
-    node.id.toLowerCase().includes(keyword) ||
-    node.type.toLowerCase().includes(keyword)
-  )
+const filteredNodeList = computed(() => filterByKeyword(nodeList.value, ['name', 'description', 'id', 'type'], searchKeyword.value))
+const filteredComponentList = computed(() => filterByKeyword(componentList.value, ['name', 'description', 'id', 'status'], searchKeyword.value))
+const filteredHandleList = computed(() => filterByKeyword(handleList.value, ['handle_name', 'type', 'label', 'id'], searchKeyword.value))
+
+const nodePreviewData = computed(() => {
+  if (!nodeDetailData.value) return null
+  return getDefaultData(nodeDetailData.value)
 })
-
-const filteredComponentList = computed(() => {
-  if (!searchKeyword.value.trim()) {
-    return componentList.value
-  }
-  const keyword = searchKeyword.value.toLowerCase()
-  return componentList.value.filter(component => 
-    component.name.toLowerCase().includes(keyword) ||
-    component.description.toLowerCase().includes(keyword) ||
-    component.id.toLowerCase().includes(keyword) ||
-    component.status.toLowerCase().includes(keyword)
-  )
-})
-
-const filteredHandleList = computed(() => {
-  if (!searchKeyword.value.trim()) {
-    return handleList.value
-  }
-  const keyword = searchKeyword.value.toLowerCase()
-  return handleList.value.filter(handle => 
-    handle.handle_name?.toLowerCase().includes(keyword) ||
-    handle.type?.toLowerCase().includes(keyword) ||
-    handle.label?.toLowerCase().includes(keyword) ||
-    handle.id?.toLowerCase().includes(keyword)
-  )
-})
-
-const getCurrentTabIcon = () => {
-  for (const tab of resourceTabs) {
-    if (tab.key === activeTab.value) {
-      return tab.icon || 'mdi:help'
-    }
-    if (tab.children) {
-      const child = tab.children.find(c => c.key === activeTab.value)
-      if (child) {
-        return child.icon || 'mdi:help'
-      }
-    }
-  }
-  return 'mdi:help'
-}
-
-const getCurrentTabLabel = () => {
-  for (const tab of resourceTabs) {
-    if (tab.key === activeTab.value) {
-      return tab.label || ''
-    }
-    if (tab.children) {
-      const child = tab.children.find(c => c.key === activeTab.value)
-      if (child) {
-        return child.label || ''
-      }
-    }
-  }
-  return ''
-}
-
-const toggleExpand = (tabKey) => {
-  if (expandedTabs.value.has(tabKey)) {
-    expandedTabs.value.delete(tabKey)
-  } else {
-    expandedTabs.value.add(tabKey)
-  }
-}
 
 const getResourceCount = (tabKey) => {
   const countMap = {
@@ -978,6 +1096,43 @@ const getResourceCount = (tabKey) => {
     'corpus': statistics.value.corpus_count
   }
   return countMap[tabKey] || 0
+}
+
+const getCurrentTab = () => {
+  for (const tab of resourceTabs) {
+    if (tab.key === activeTab.value) return tab
+    if (tab.children) {
+      const child = tab.children.find(c => c.key === activeTab.value)
+      if (child) return child
+    }
+  }
+  return null
+}
+
+const getCurrentTabIcon = () => getCurrentTab()?.icon || 'mdi:help'
+const getCurrentTabLabel = () => getCurrentTab()?.label || ''
+
+const toggleExpand = (tabKey) => {
+  if (expandedTabs.value.has(tabKey)) {
+    expandedTabs.value.delete(tabKey)
+  } else {
+    expandedTabs.value.add(tabKey)
+  }
+}
+
+const hasAnyHandleCustomStyle = (handles) => {
+  return Array.isArray(handles) && handles.some(h => h && h.custom_style && Object.keys(h.custom_style).length > 0)
+}
+
+const hasAnyInputExtra = (inputs) => {
+  return Array.isArray(inputs) && inputs.some(inp => hasInputExtra(inp))
+}
+
+const hasInputExtra = (row) => {
+  if (!row) return false
+  const hasStyle = row.custom_style && Object.keys(row.custom_style).length > 0
+  const hasProps = row.custom_props && Object.keys(row.custom_props).length > 0
+  return hasStyle || hasProps
 }
 
 // 节点类型样式配置
@@ -1018,6 +1173,8 @@ const handleAdd = (tabKey) => {
     return
   }
   if (tabKey === 'nodes') {
+    nodeDialogMode.value = 'create'
+    currentNodeId.value = null
     dialogVisible.value = true
   } else if (tabKey === 'nodeHandles') {
     handleDialogVisible.value = true
@@ -1029,15 +1186,26 @@ const handleAdd = (tabKey) => {
 }
 
 const handleDialogOpen = async () => {
-  resetForm()
+  if (nodeDialogMode.value === 'edit' && currentNodeId.value) {
+    nodeFormLoading.value = true
+  }
   await Promise.all([
     fetchComponentsForSelect(),
     fetchNodeHandlesForSelect(),
     fetchNodeTypeFilter()
   ])
+  if (nodeDialogMode.value === 'edit' && currentNodeId.value) {
+    await loadNodeForEdit()
+    nodeFormLoading.value = false
+  } else {
+    resetForm()
+  }
 }
 
-const handleDialogClose = () => {
+const handleDialogClosed = () => {
+  nodeDialogMode.value = 'create'
+  currentNodeId.value = null
+  nodeFormLoading.value = false
   resetForm()
 }
 
@@ -1056,6 +1224,56 @@ const resetForm = () => {
   }
   if (formRef.value) {
     formRef.value.clearValidate()
+  }
+}
+
+const loadNodeForEdit = async () => {
+  if (!currentNodeId.value) return
+  try {
+    const response = await actionApi.getNodeDetail(currentNodeId.value)
+    if (response.code !== 0 || !response.data) {
+      ElMessage.error(response.message || '获取节点详情失败')
+      dialogVisible.value = false
+      nodeFormLoading.value = false
+      return
+    }
+    const d = response.data
+    formData.value = {
+      name: d.name || '',
+      description: d.description || '',
+      type: d.type || '',
+      version: d.version || '1.0.0',
+      command: d.command || '',
+      command_args: Array.isArray(d.command_args) ? [...d.command_args] : [],
+      related_components: Array.isArray(d.related_components) ? [...d.related_components] : [],
+      default_configs: d.default_configs && typeof d.default_configs === 'object' ? { ...d.default_configs } : {},
+      handles: (d.handles || []).map(h => ({
+        id: h.id || '',
+        type: h.type || '',
+        relabel: h.relabel || '',
+        position: h.position || '',
+        custom_style: h.custom_style && typeof h.custom_style === 'object' ? { ...h.custom_style } : {}
+      })),
+      inputs: (d.inputs || []).map(i => ({
+        name: i.name || '',
+        type: i.type || '',
+        position: i.position || 'center',
+        label: i.label || '',
+        description: i.description || '',
+        required: !!i.required,
+        default: i.default !== undefined && i.default !== null ? String(i.default) : '',
+        options: Array.isArray(i.options) ? [...i.options] : [],
+        custom_style: i.custom_style && typeof i.custom_style === 'object' ? { ...i.custom_style } : {},
+        custom_props: i.custom_props && typeof i.custom_props === 'object' ? { ...i.custom_props } : {}
+      }))
+    }
+    if (formRef.value) {
+      formRef.value.clearValidate()
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '节点不存在或已删除')
+    dialogVisible.value = false
+    nodeFormLoading.value = false
   }
 }
 
@@ -1200,37 +1418,69 @@ const handleSubmit = async () => {
       })
     }
     
-    const response = await actionApi.createNode(submitData)
+    const response = nodeDialogMode.value === 'edit'
+      ? await actionApi.updateNode(currentNodeId.value, submitData)
+      : await actionApi.createNode(submitData)
     
     if (response.code === 0) {
-      ElMessage.success('新增行动节点成功')
+      ElMessage.success(nodeDialogMode.value === 'edit' ? '更新行动节点成功' : '新增行动节点成功')
       dialogVisible.value = false
       await fetchNodeList()
       await fetchStatistics()
     } else {
-      ElMessage.error(`新增行动节点失败: ${response.message}`)
+      ElMessage.error((nodeDialogMode.value === 'edit' ? '更新' : '新增') + `行动节点失败: ${response.message}`)
     }
   } catch (error) {
-    ElMessage.error(`新增行动节点失败: ${error.message}`)
+    ElMessage.error((nodeDialogMode.value === 'edit' ? '更新' : '新增') + `行动节点失败: ${error?.message || '节点不存在或已删除'}`)
   } finally {
     submitting.value = false
   } 
 }
 
-// 占位方法：查看节点详情，等待功能实现
-const handleView = (node) => {
-  ElMessage.info(`查看节点: ${node.name}`)
+// 查看节点/组件详情
+const handleView = async (item) => {
+  const isNode = item.handles !== undefined
+  if (isNode) {
+    if (!item?.id) return
+    nodeDetailDialogVisible.value = true
+    nodeDetailData.value = null
+    nodeDetailLoading.value = true
+    try {
+      const response = await actionApi.getNodeDetail(item.id)
+      if (response.code === 0 && response.data) {
+        nodeDetailData.value = response.data
+      } else {
+        ElMessage.error(response.message || '获取节点详情失败')
+        nodeDetailDialogVisible.value = false
+      }
+    } catch (error) {
+      ElMessage.error(error?.message || '节点不存在或已删除')
+      nodeDetailDialogVisible.value = false
+    } finally {
+      nodeDetailLoading.value = false
+    }
+  } else {
+    ElMessage.info(`查看组件: ${item.name}`)
+  }
 }
 
-// 占位方法：编辑节点，等待功能实现
-const handleEdit = (node) => {
-  ElMessage.info(`编辑节点: ${node.name}`)
+// 编辑节点/组件
+const handleEdit = (item) => {
+  const isNode = item.handles !== undefined
+  if (isNode && item?.id) {
+    nodeDialogMode.value = 'edit'
+    currentNodeId.value = item.id
+    dialogVisible.value = true
+  } else {
+    ElMessage.info(`编辑组件: ${item?.name}`)
+  }
 }
 
 const handleDelete = (item) => {
-  const itemType = item.handles ? '节点' : '组件'
+  const isNode = item.handles !== undefined
+  const itemType = isNode ? '节点' : '组件'
   ElMessageBox.confirm(
-    `确定要删除${itemType}"${item.name}"吗？此操作不可恢复。`,
+    `确定要删除${itemType}"${item.name}"吗？` + (isNode ? '删除后可在后端恢复（逻辑删除）。' : '此操作不可恢复。'),
     '确认删除',
     {
       confirmButtonText: '确定删除',
@@ -1238,8 +1488,19 @@ const handleDelete = (item) => {
       type: 'warning'
     }
   )
-    .then(() => {
-      ElMessage.success(`已删除${itemType}: ${item.name}`)
+    .then(async () => {
+      if (isNode) {
+        try {
+          await actionApi.deleteNode(item.id)
+          ElMessage.success(`已删除${itemType}: ${item.name}`)
+          await fetchNodeList()
+          await fetchStatistics()
+        } catch (error) {
+          ElMessage.error(error?.message || '删除失败，节点不存在或已删除')
+        }
+      } else {
+        ElMessage.success(`已删除${itemType}: ${item.name}`)
+      }
     })
     .catch(() => {
       ElMessage.info('已取消删除')
@@ -1344,10 +1605,7 @@ const fetchComponentList = async () => {
       ...pagination.value,
       ...result.pagination
     }
-    
-    // console.log('获取基础组件列表成功:', result)
   } catch (error) {
-    // console.error('获取基础组件列表失败:', error)
     ElMessage.error('获取基础组件列表失败')
   } finally {
     loading.value = false

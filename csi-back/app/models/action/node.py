@@ -58,7 +58,7 @@ class ActionNodeModel(Document):
     class Settings:
         name = "action_nodes"
         indexes = [
-            "id"
+            "id",
             "name",
             "type",
             "version",
