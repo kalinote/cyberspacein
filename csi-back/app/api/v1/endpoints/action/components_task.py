@@ -26,21 +26,34 @@ router = APIRouter(prefix="/components-task", tags=["基础组件任务"])
 @router.post("/configs", response_model=ApiResponseSchema[BaseComponentsTaskConfigResponse], summary="创建基础组件任务配置")
 async def create_base_component_task_config(data: BaseComponentsTaskConfigCreateRequest):
     config_id = generate_id(data.name + data.type + data.version + data.config_data.meta.node_instance_id)
-    existing = await BaseComponentsTaskConfigModel.find_one({"node_instance_id": data.config_data.meta.node_instance_id})
+    node_instance_id = data.config_data.meta.node_instance_id
+    existing = await BaseComponentsTaskConfigModel.find_one({"node_instance_id": node_instance_id})
     if existing:
-        return ApiResponseSchema.error(code=400, message=f"基础组件任务配置已存在，ID: {config_id}")
-    config_data_model = BaseComponentsConfigModel(**data.config_data.model_dump())
-    doc = BaseComponentsTaskConfigModel(
-        id=config_id,
-        node_instance_id=data.config_data.meta.node_instance_id,
-        name=data.name,
-        description=data.description,
-        type=data.type,
-        version=data.version,
-        config_data=config_data_model,
-    )
-    await doc.insert()
-    logger.info(f"成功创建基础组件任务配置: {config_id}")
+        if not existing.is_deleted:
+            return ApiResponseSchema.error(code=400, message=f"基础组件任务配置已存在，ID: {existing.id}")
+        await existing.update({"$set": {
+            "name": data.name,
+            "description": data.description,
+            "type": data.type,
+            "version": data.version,
+            "config_data": BaseComponentsConfigModel(**data.config_data.model_dump()).model_dump(),
+            "is_deleted": False,
+            "updated_at": datetime.now(),
+        }})
+        doc = await BaseComponentsTaskConfigModel.get(existing.id)
+    else:
+        config_data_model = BaseComponentsConfigModel(**data.config_data.model_dump())
+        doc = BaseComponentsTaskConfigModel(
+            id=config_id,
+            node_instance_id=node_instance_id,
+            name=data.name,
+            description=data.description,
+            type=data.type,
+            version=data.version,
+            config_data=config_data_model,
+        )
+        await doc.insert()
+    logger.info(f"成功创建基础组件任务配置: {doc.id}")
     return ApiResponseSchema.success(data=BaseComponentsTaskConfigResponse(
         id=doc.id,
         node_instance_id=doc.node_instance_id,
@@ -155,7 +168,6 @@ async def get_base_component_task_list(
         created_at=datetime.fromisoformat(task.get("stat", {}).get("create_ts").replace("Z", "+00:00")) if task.get("stat", {}).get("create_ts") else None,
         start_at=datetime.fromisoformat(task.get("stat", {}).get("start_ts").replace("Z", "+00:00")) if task.get("stat", {}).get("start_ts") else None,
         end_at=datetime.fromisoformat(task.get("stat", {}).get("end_ts").replace("Z", "+00:00")) if task.get("stat", {}).get("end_ts") else None,
-        config_id="",
         error_message=task.get("error"),
         schedule_id=task.get("schedule_id"),
         priority=task.get("priority"),

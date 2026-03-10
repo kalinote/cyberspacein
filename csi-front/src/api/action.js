@@ -13,6 +13,18 @@ export const actionApi = {
   createNode(data) {
     return request.post('/action/resource/nodes', data)
   },
+  // 获取行动节点详情
+  getNodeDetail(nodeId) {
+    return request.get(`/action/resource/nodes/${nodeId}`)
+  },
+  // 更新行动节点
+  updateNode(nodeId, data) {
+    return request.put(`/action/resource/nodes/${nodeId}`, data)
+  },
+  // 删除行动节点（逻辑删除）
+  deleteNode(nodeId) {
+    return request.delete(`/action/resource/nodes/${nodeId}`)
+  },
   // 创建行动蓝图
   createActionBlueprint(data) {
     return request.post('/action/blueprint', data)

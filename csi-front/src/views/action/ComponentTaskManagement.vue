@@ -111,7 +111,7 @@
                         >
                           {{ getTaskStatusText(task.status) }}
                         </el-tag>
-                        <el-tag v-if="task.priority != null" size="small" class="border-0" type="info">
+                        <el-tag v-if="task.priority != null" size="small" class="border-0" type="warning">
                           优先级 {{ task.priority }}
                         </el-tag>
                       </div>
