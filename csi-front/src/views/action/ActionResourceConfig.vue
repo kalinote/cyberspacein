@@ -639,36 +639,182 @@
     <el-dialog
       v-model="nodeDetailDialogVisible"
       title="节点详情"
-      width="800px"
+      width="900px"
+      class="node-detail-dialog"
       @close="nodeDetailData = null"
     >
       <div v-loading="nodeDetailLoading" class="min-h-[200px]">
         <template v-if="nodeDetailData">
-          <el-descriptions :column="1" border class="mb-4">
+          <el-descriptions :column="2" border class="mb-4">
             <el-descriptions-item label="节点ID">{{ nodeDetailData.id }}</el-descriptions-item>
             <el-descriptions-item label="节点名称">{{ nodeDetailData.name }}</el-descriptions-item>
             <el-descriptions-item label="节点类型">{{ nodeDetailData.type }}</el-descriptions-item>
             <el-descriptions-item label="版本">{{ nodeDetailData.version }}</el-descriptions-item>
-            <el-descriptions-item label="描述">{{ nodeDetailData.description }}</el-descriptions-item>
-            <el-descriptions-item label="运行命令">{{ nodeDetailData.command }}</el-descriptions-item>
+            <el-descriptions-item label="描述" :span="2">{{ nodeDetailData.description || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="运行命令">{{ nodeDetailData.command || '-' }}</el-descriptions-item>
             <el-descriptions-item label="运行参数">
               {{ Array.isArray(nodeDetailData.command_args) ? nodeDetailData.command_args.join(' ') : '-' }}
             </el-descriptions-item>
-            <el-descriptions-item label="关联组件">
-              {{ Array.isArray(nodeDetailData.related_components) ? nodeDetailData.related_components.join(', ') : '-' }}
+            <el-descriptions-item label="关联组件" :span="2">
+              {{ Array.isArray(nodeDetailData.related_components) && nodeDetailData.related_components.length ? nodeDetailData.related_components.join(', ') : '-' }}
             </el-descriptions-item>
           </el-descriptions>
-          <div class="mb-4">
-            <h4 class="text-sm font-semibold text-gray-700 mb-2">接口配置 (handles)</h4>
-            <pre class="p-3 bg-gray-50 rounded border border-gray-200 text-xs overflow-auto max-h-48">{{ formatJson(nodeDetailData.handles) }}</pre>
+
+          <el-divider content-position="left">接口配置 (handles)</el-divider>
+          <div v-if="Array.isArray(nodeDetailData.handles) && nodeDetailData.handles.length" class="mb-4">
+            <el-table :data="nodeDetailData.handles" border size="small" max-height="240" class="detail-table">
+              <el-table-column prop="id" label="连接点 ID" min-width="120" show-overflow-tooltip />
+              <el-table-column label="标签" min-width="100">
+                <template #default="{ row }">
+                  {{ row.relabel || row.label || row.handle_name || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="type" label="类型" width="80" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.type === 'source' ? 'success' : 'info'" size="small">{{ row.type === 'source' ? '输出' : '输入' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="position" label="位置" width="80" align="center" />
+              <el-table-column label="数据类型" width="80" align="center">
+                <template #default="{ row }">{{ row.data_type === 'reference' ? '引用' : row.data_type === 'value' ? '值' : (row.data_type || '-') }}</template>
+              </el-table-column>
+              <el-table-column label="颜色" width="90" align="center">
+                <template #default="{ row }">
+                  <span v-if="row.color" class="inline-flex items-center gap-1">
+                    <span class="w-4 h-4 rounded border border-gray-300 shrink-0" :style="{ backgroundColor: row.color }" />
+                    <span class="text-xs truncate max-w-[52px]" :title="row.color">{{ row.color }}</span>
+                  </span>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="兼容接口" min-width="100">
+                <template #default="{ row }">
+                  {{ Array.isArray(row.other_compatible_interfaces) && row.other_compatible_interfaces.length ? row.other_compatible_interfaces.join(', ') : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column v-if="hasAnyHandleCustomStyle(nodeDetailData.handles)" label="自定义样式" width="100">
+                <template #default="{ row }">
+                  <el-popover v-if="row.custom_style && Object.keys(row.custom_style).length" placement="left" width="220" trigger="hover">
+                    <template #reference>
+                      <el-button link type="primary" size="small">查看</el-button>
+                    </template>
+                    <pre class="text-xs m-0 p-2 bg-gray-50 rounded overflow-auto max-h-32">{{ formatJson(row.custom_style) }}</pre>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
           </div>
-          <div class="mb-4">
-            <h4 class="text-sm font-semibold text-gray-700 mb-2">输入项配置 (inputs)</h4>
-            <pre class="p-3 bg-gray-50 rounded border border-gray-200 text-xs overflow-auto max-h-48">{{ formatJson(nodeDetailData.inputs) }}</pre>
+          <div v-else class="text-gray-500 text-sm py-2">暂无接口配置</div>
+
+          <el-divider content-position="left">输入项配置 (inputs)</el-divider>
+          <div v-if="Array.isArray(nodeDetailData.inputs) && nodeDetailData.inputs.length" class="mb-4">
+            <el-table :data="nodeDetailData.inputs" border size="small" max-height="280" class="detail-table">
+              <el-table-column label="ID/名称" min-width="100" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.id || row.name || '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="label" label="标签" min-width="90" show-overflow-tooltip />
+              <el-table-column prop="type" label="类型" width="90" align="center" />
+              <el-table-column prop="position" label="位置" width="80" align="center" />
+              <el-table-column label="必填" width="64" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.required" type="danger" size="small">是</el-tag>
+                  <span v-else class="text-gray-400">否</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="默认值" min-width="80" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.default !== undefined && row.default !== '' ? String(row.default) : '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="description" label="描述" min-width="100" show-overflow-tooltip />
+              <el-table-column label="选项" width="70" align="center">
+                <template #default="{ row }">
+                  <el-popover v-if="Array.isArray(row.options) && row.options.length" placement="left" width="200" trigger="hover">
+                    <template #reference>
+                      <el-tag size="small">{{ row.options.length }} 项</el-tag>
+                    </template>
+                    <ul class="text-xs m-0 pl-4 space-y-1 max-h-32 overflow-auto">
+                      <li v-for="(opt, i) in row.options" :key="i">{{ opt.label ?? opt.value ?? opt }}</li>
+                    </ul>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="hasAnyInputExtra(nodeDetailData.inputs)" label="扩展" width="70" align="center">
+                <template #default="{ row }">
+                  <el-popover v-if="hasInputExtra(row)" placement="left" width="260" trigger="hover">
+                    <template #reference>
+                      <el-button link type="primary" size="small">查看</el-button>
+                    </template>
+                    <div class="text-xs space-y-2">
+                      <div v-if="row.custom_style && Object.keys(row.custom_style).length">
+                        <div class="font-medium text-gray-600">custom_style</div>
+                        <pre class="m-0 p-2 bg-gray-50 rounded overflow-auto max-h-24">{{ formatJson(row.custom_style) }}</pre>
+                      </div>
+                      <div v-if="row.custom_props && Object.keys(row.custom_props).length">
+                        <div class="font-medium text-gray-600">custom_props</div>
+                        <pre class="m-0 p-2 bg-gray-50 rounded overflow-auto max-h-24">{{ formatJson(row.custom_props) }}</pre>
+                      </div>
+                    </div>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
           </div>
-          <div>
-            <h4 class="text-sm font-semibold text-gray-700 mb-2">默认配置 (default_configs)</h4>
-            <pre class="p-3 bg-gray-50 rounded border border-gray-200 text-xs overflow-auto max-h-32">{{ formatJson(nodeDetailData.default_configs) }}</pre>
+          <div v-else class="text-gray-500 text-sm py-2">暂无输入项配置</div>
+
+          <el-divider content-position="left">默认配置 (default_configs)</el-divider>
+          <div v-if="nodeDetailData.default_configs && Object.keys(nodeDetailData.default_configs).length" class="mb-2">
+            <el-table
+              :data="Object.entries(nodeDetailData.default_configs).map(([key, value]) => ({ key, value }))"
+              border
+              size="small"
+              class="detail-table"
+              max-height="260"
+            >
+              <el-table-column prop="key" label="配置键" min-width="140" show-overflow-tooltip />
+              <el-table-column label="值类型" width="90" align="center">
+                <template #default="{ row }">
+                  {{ getValueType(row.value) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="值预览" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ getValuePreview(row.value) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="详情" width="80" align="center">
+                <template #default="{ row }">
+                  <el-popover
+                    v-if="isComplexValue(row.value)"
+                    placement="left"
+                    width="280"
+                    trigger="hover"
+                  >
+                    <template #reference>
+                      <el-button link type="primary" size="small">查看</el-button>
+                    </template>
+                    <pre class="m-0 p-2 bg-gray-50 rounded text-xs max-h-60 overflow-auto">
+{{ formatJson(row.value) }}
+                    </pre>
+                  </el-popover>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div v-else class="text-gray-500 text-sm py-3 px-1">暂无默认配置</div>
+
+          <el-divider content-position="left">节点预览</el-divider>
+          <div class="flex justify-center py-4">
+            <GenericNode
+              v-if="nodePreviewData"
+              :id="`preview-${nodeDetailData.id}`"
+              :data="nodePreviewData"
+              :show-handle="false"
+              :disabled="true"
+            />
+            <span v-else class="text-gray-400 text-sm">暂无预览</span>
           </div>
         </template>
       </div>
@@ -759,7 +905,8 @@ import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
-import { INPUT_TYPES, formatDateTime } from '@/utils/action'
+import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData } from '@/utils/action'
+import GenericNode from '@/components/action/nodes/GenericNode.vue'
 
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
@@ -926,15 +1073,14 @@ const handleFormRules = {
   ]
 }
 
-const filterByKeyword = (list, fields) => {
-  if (!searchKeyword.value.trim()) return list
-  const k = searchKeyword.value.toLowerCase()
-  return list.filter(item => fields.some(f => String(item[f] ?? '').toLowerCase().includes(k)))
-}
+const filteredNodeList = computed(() => filterByKeyword(nodeList.value, ['name', 'description', 'id', 'type'], searchKeyword.value))
+const filteredComponentList = computed(() => filterByKeyword(componentList.value, ['name', 'description', 'id', 'status'], searchKeyword.value))
+const filteredHandleList = computed(() => filterByKeyword(handleList.value, ['handle_name', 'type', 'label', 'id'], searchKeyword.value))
 
-const filteredNodeList = computed(() => filterByKeyword(nodeList.value, ['name', 'description', 'id', 'type']))
-const filteredComponentList = computed(() => filterByKeyword(componentList.value, ['name', 'description', 'id', 'status']))
-const filteredHandleList = computed(() => filterByKeyword(handleList.value, ['handle_name', 'type', 'label', 'id']))
+const nodePreviewData = computed(() => {
+  if (!nodeDetailData.value) return null
+  return getDefaultData(nodeDetailData.value)
+})
 
 const getResourceCount = (tabKey) => {
   const countMap = {
@@ -971,13 +1117,19 @@ const toggleExpand = (tabKey) => {
   }
 }
 
-const formatJson = (val) => {
-  if (val === null || val === undefined) return '-'
-  try {
-    return typeof val === 'string' ? val : JSON.stringify(val, null, 2)
-  } catch {
-    return String(val)
-  }
+const hasAnyHandleCustomStyle = (handles) => {
+  return Array.isArray(handles) && handles.some(h => h && h.custom_style && Object.keys(h.custom_style).length > 0)
+}
+
+const hasAnyInputExtra = (inputs) => {
+  return Array.isArray(inputs) && inputs.some(inp => hasInputExtra(inp))
+}
+
+const hasInputExtra = (row) => {
+  if (!row) return false
+  const hasStyle = row.custom_style && Object.keys(row.custom_style).length > 0
+  const hasProps = row.custom_props && Object.keys(row.custom_props).length > 0
+  return hasStyle || hasProps
 }
 
 // 节点类型样式配置

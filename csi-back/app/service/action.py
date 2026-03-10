@@ -73,6 +73,7 @@ async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:
         version=node.version,
         handles=handles_response,
         inputs=inputs_response,
+        default_configs=unpack_dict(node.default_configs),
         related_components=node.related_components,
         command=node.command,
         command_args=node.command_args
