@@ -98,7 +98,7 @@
                       <Icon
                         :icon="getTaskStatusIcon(task.status)"
                         class="text-2xl"
-                        :class="getTaskStatusIconClass(task.status)"
+                        :class="[getTaskStatusIconClass(task.status), task.status === 'running' ? 'animate-spin' : '']"
                       />
                     </div>
                     <div class="flex-1">

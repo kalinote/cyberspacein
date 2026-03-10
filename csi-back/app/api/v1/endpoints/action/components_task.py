@@ -126,7 +126,13 @@ async def update_base_component_task_config(config_id: str, data: BaseComponents
         return ApiResponseSchema.error(code=404, message=f"基础组件任务配置不存在或已删除，ID: {config_id}")
     update_data = data.model_dump(exclude_unset=True)
     if "config_data" in update_data and update_data["config_data"] is not None:
-        update_data["config_data"] = BaseComponentsConfigModel(**update_data["config_data"]).model_dump()
+        config_data_model = BaseComponentsConfigModel(**update_data["config_data"])
+        update_data["config_data"] = config_data_model.model_dump()
+        meta = getattr(config_data_model, "meta", None)
+        if meta is not None:
+            meta_node_instance_id = getattr(meta, "node_instance_id", None)
+            if meta_node_instance_id is not None:
+                update_data["node_instance_id"] = meta_node_instance_id
     update_data["updated_at"] = datetime.now()
     await doc.update({"$set": update_data})
     updated = await BaseComponentsTaskConfigModel.get(config_id)
