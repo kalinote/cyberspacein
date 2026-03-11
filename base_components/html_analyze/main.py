@@ -124,9 +124,15 @@ def main():
         download_size_limit = _parse_size_limit(download_size_limit_str)
 
         queue_name = component.inputs.get("data_in", {}).get("value")
+        if queue_name is not None and isinstance(queue_name, str):
+            queue_names = [queue_name]
+        elif isinstance(queue_name, list):
+            queue_names = [q for q in queue_name if isinstance(q, str) and q]
+        else:
+            queue_names = []
         dict_value = component.inputs.get("dict_in", {}).get("value")
         
-        has_queue_input = bool(queue_name)
+        has_queue_input = bool(queue_names)
         has_dict_input = bool(dict_value)
         
         processed_count = 0
@@ -147,45 +153,46 @@ def main():
                 
                 heartbeat_callback = create_heartbeat_callback(component.rabbitmq)
                 
-                logger.info(f"开始处理队列: {queue_name}")
-                
-                while True:
-                    message = component.rabbitmq.get_message(queue_name)
-                    if not message:
-                        break
+                for queue_name in queue_names:
+                    logger.info(f"开始处理队列: {queue_name}")
                     
-                    try:
-                        data = json.loads(message['body'])
+                    while True:
+                        message = component.rabbitmq.get_message(queue_name)
+                        if not message:
+                            break
                         
                         try:
-                            data = process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content,
-                                                      enable_media_localization, base_url_field, download_size_limit,
-                                                      heartbeat_callback=heartbeat_callback)
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"{e}，跳过处理")
-                            component.rabbitmq.ack_message(message['delivery_tag'])
-                            continue
-                        
-                        success_count = component.rabbitmq.send_messages_batch(output_queue_names, data)
-                        
-                        if success_count == len(output_queue_names):
-                            component.rabbitmq.ack_message(message['delivery_tag'])
-                            processed_count += 1
-                            if processed_count % 10 == 0:
-                                logger.info(f"已处理 {processed_count} 条消息")
-                        else:
-                            logger.error(f"发送消息失败，成功: {success_count}/{len(output_queue_names)}")
+                            data = json.loads(message['body'])
+                            
+                            try:
+                                data = process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content,
+                                                          enable_media_localization, base_url_field, download_size_limit,
+                                                          heartbeat_callback=heartbeat_callback)
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"{e}，跳过处理")
+                                component.rabbitmq.ack_message(message['delivery_tag'])
+                                continue
+                            
+                            success_count = component.rabbitmq.send_messages_batch(output_queue_names, data)
+                            
+                            if success_count == len(output_queue_names):
+                                component.rabbitmq.ack_message(message['delivery_tag'])
+                                processed_count += 1
+                                if processed_count % 10 == 0:
+                                    logger.info(f"已处理 {processed_count} 条消息")
+                            else:
+                                logger.error(f"发送消息失败，成功: {success_count}/{len(output_queue_names)}")
+                                component.rabbitmq.nack_message(message['delivery_tag'], requeue=True)
+                                failed_count += 1
+                                
+                        except json.JSONDecodeError as e:
+                            logger.error(f"消息解析失败: {e}")
+                            component.rabbitmq.nack_message(message['delivery_tag'], requeue=False)
+                            failed_count += 1
+                        except Exception as e:
+                            logger.error(f"处理消息时发生错误: {e}")
                             component.rabbitmq.nack_message(message['delivery_tag'], requeue=True)
                             failed_count += 1
-                            
-                    except json.JSONDecodeError as e:
-                        logger.error(f"消息解析失败: {e}")
-                        component.rabbitmq.nack_message(message['delivery_tag'], requeue=False)
-                        failed_count += 1
-                    except Exception as e:
-                        logger.error(f"处理消息时发生错误: {e}")
-                        component.rabbitmq.nack_message(message['delivery_tag'], requeue=True)
-                        failed_count += 1
                 
                 logger.info(f"队列处理完成，成功: {processed_count}，失败: {failed_count}")
             
