@@ -47,13 +47,13 @@
                         <div class="space-y-4">
                             <button
                                 class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
-                                @click="$router.push('/agent/new')">
+                                @click="router.push('/agent/new')">
                                 <Icon icon="mdi:clipboard-text-search-outline" />
                                 <span>研究任务管理</span>
                             </button>
                             <button
                                 class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
-                                @click="$router.push('/agent/engine-config')">
+                                @click="router.push('/agent/engine-config')">
                                 <Icon icon="mdi:brain" />
                                 <span>配置分析引擎</span>
                             </button>
@@ -303,20 +303,17 @@
     </div>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
 
-export default {
-    name: 'AgentMonitor',
-    components: {
-        Header,
-        Icon
-    },
-    data() {
-        return {
-            statsTimeRange: 'week',
-            agents: [
+defineOptions({ name: 'AgentMonitor' })
+
+const router = useRouter()
+const statsTimeRange = ref('week')
+const agents = ref([
                 {
                     id: 1,
                     name: '网络安全分析分析引擎',
@@ -395,8 +392,8 @@ export default {
                     typeBgColor: 'bg-indigo-100',
                     typeIconColor: 'text-indigo-600'
                 }
-            ],
-            agentStats: [
+            ])
+const agentStats = ref([
                 {
                     type: '网络安全',
                     count: '15',
@@ -437,8 +434,8 @@ export default {
                     trendClass: 'text-green-600',
                     trendIcon: 'mdi:trending-up'
                 }
-            ],
-            engineStats: [
+            ])
+const engineStats = ref([
                 {
                     id: 1,
                     name: 'GPT-4 Turbo',
@@ -484,8 +481,5 @@ export default {
                     avgResponseTime: '2.3s',
                     availability: 94.2
                 }
-            ]
-        }
-    }
-}
+            ])
 </script>

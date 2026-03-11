@@ -128,157 +128,155 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, watch, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
+import { ElMessage } from 'element-plus'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import { searchApi } from '@/api/search'
 import { highlightApi } from '@/api/highlight'
 import { formatDateTime as formatDateTimeUtil } from '@/utils/action/formatters'
 
-export default {
-  name: 'HighlightTargetList',
-  components: {
-    Header,
-    FunctionalPageHeader,
-    Icon
-  },
-  data() {
-    return {
-      keywords: '',
-      timeRange: 'all',
-      entityTypes: [],
-      sortBy: 'time',
-      categoryOptions: [
-        { value: 'Forum', label: 'Forum' },
-        { value: 'Article', label: 'Article' }
-      ],
-      loading: false,
-      items: [],
-      total: 0,
-      currentPage: 1,
-      pageSize: 10
-    }
-  },
-  mounted() {
-    this.loadData()
-  },
-  watch: {
-    currentPage() {
-      if (this.items.length > 0 || this.total > 0) {
-        this.loadData()
-      }
-    }
-  },
-  methods: {
-    formatDateTime(val) {
-      return formatDateTimeUtil(val) || '—'
-    },
-    truncateContent(content, maxLength) {
-      if (!content) return ''
-      const tempDiv = document.createElement('div')
-      tempDiv.innerHTML = content
-      const text = (tempDiv.textContent || tempDiv.innerText || '').trim()
-      if (text.length <= maxLength) return text
-      return text.slice(0, maxLength) + '...'
-    },
-    getConfidenceInfo(confidence) {
-      if (confidence === 0) {
-        return { text: '零信任', type: 'danger' }
-      }
-      if (confidence > 0 && confidence <= 0.4) {
-        return { text: '低', type: 'info' }
-      }
-      if (confidence > 0.4 && confidence <= 0.7) {
-        return { text: '中', type: '' }
-      }
-      return { text: '高', type: 'warning' }
-    },
-    getDetailRoute(entityType, uuid) {
-      return `/details/${entityType}/${uuid}`
-    },
-    getTimeRangeBounds() {
-      if (!this.timeRange || this.timeRange === 'all') {
-        return { start_at: null, end_at: null }
-      }
-      const end = new Date()
-      const start = new Date()
-      if (this.timeRange === '24h') {
-        start.setHours(start.getHours() - 24)
-      } else if (this.timeRange === '7d') {
-        start.setDate(start.getDate() - 7)
-      } else if (this.timeRange === '30d') {
-        start.setDate(start.getDate() - 30)
-      } else {
-        return { start_at: null, end_at: null }
-      }
-      return {
-        start_at: start.toISOString(),
-        end_at: end.toISOString()
-      }
-    },
-    applyFilters() {
-      this.currentPage = 1
-      this.loadData()
-    },
-    async loadData() {
-      try {
-        this.loading = true
-        const { start_at, end_at } = this.getTimeRangeBounds()
-        const params = {
-          page: this.currentPage,
-          page_size: this.pageSize,
-          is_highlighted: true,
-          search_mode: 'keyword',
-          sort_by: this.sortBy,
-          sort_order: 'desc'
-        }
-        if (this.keywords && this.keywords.trim()) {
-          params.keywords = this.keywords.trim()
-        }
-        if (start_at) params.start_at = start_at
-        if (end_at) params.end_at = end_at
-        if (this.entityTypes && this.entityTypes.length > 0) {
-          params.entity_type = [...this.entityTypes]
-        }
-        const response = await searchApi.searchEntity(params)
-        if (response.code === 0 && response.data) {
-          this.items = response.data.items || []
-          this.total = response.data.total || 0
-        } else {
-          this.items = []
-          this.total = 0
-        }
-      } catch (err) {
-        console.error('加载重点实体失败:', err)
-        this.$message.error('加载失败，请稍后重试')
-        this.items = []
-        this.total = 0
-      } finally {
-        this.loading = false
-      }
-    },
-    async cancelHighlight(result) {
-      const entityType = result.entity_type
-      if (!entityType || !result.uuid) return
-      result._highlightLoading = true
-      try {
-        const res = await highlightApi.setHighlight(entityType, result.uuid, { is_highlighted: false })
-        if (res && res.code === 0) {
-          this.$message.success('已取消重点目标')
-          const idx = this.items.findIndex((i) => i.uuid === result.uuid)
-          if (idx !== -1) this.items.splice(idx, 1)
-          this.total = Math.max(0, (this.total || 1) - 1)
-        } else {
-          this.$message.error(res?.message || '操作失败')
-        }
-      } catch (err) {
-        console.error('取消重点失败:', err)
-        this.$message.error('操作失败，请稍后重试')
-      } finally {
-        result._highlightLoading = false
-      }
-    }
+defineOptions({ name: 'HighlightTargetList' })
+
+const keywords = ref('')
+const timeRange = ref('all')
+const entityTypes = ref([])
+const sortBy = ref('time')
+const categoryOptions = [
+  { value: 'Forum', label: 'Forum' },
+  { value: 'Article', label: 'Article' }
+]
+const loading = ref(false)
+const items = ref([])
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
+
+function formatDateTime(val) {
+  return formatDateTimeUtil(val) || '—'
+}
+
+function truncateContent(content, maxLength) {
+  if (!content) return ''
+  const tempDiv = document.createElement('div')
+  tempDiv.innerHTML = content
+  const text = (tempDiv.textContent || tempDiv.innerText || '').trim()
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength) + '...'
+}
+
+function getConfidenceInfo(confidence) {
+  if (confidence === 0) {
+    return { text: '零信任', type: 'danger' }
+  }
+  if (confidence > 0 && confidence <= 0.4) {
+    return { text: '低', type: 'info' }
+  }
+  if (confidence > 0.4 && confidence <= 0.7) {
+    return { text: '中', type: '' }
+  }
+  return { text: '高', type: 'warning' }
+}
+
+function getDetailRoute(entityType, uuid) {
+  return `/details/${entityType}/${uuid}`
+}
+
+function getTimeRangeBounds() {
+  if (!timeRange.value || timeRange.value === 'all') {
+    return { start_at: null, end_at: null }
+  }
+  const end = new Date()
+  const start = new Date()
+  if (timeRange.value === '24h') {
+    start.setHours(start.getHours() - 24)
+  } else if (timeRange.value === '7d') {
+    start.setDate(start.getDate() - 7)
+  } else if (timeRange.value === '30d') {
+    start.setDate(start.getDate() - 30)
+  } else {
+    return { start_at: null, end_at: null }
+  }
+  return {
+    start_at: start.toISOString(),
+    end_at: end.toISOString()
   }
 }
+
+function applyFilters() {
+  currentPage.value = 1
+  loadData()
+}
+
+async function loadData() {
+  try {
+    loading.value = true
+    const { start_at, end_at } = getTimeRangeBounds()
+    const params = {
+      page: currentPage.value,
+      page_size: pageSize.value,
+      is_highlighted: true,
+      search_mode: 'keyword',
+      sort_by: sortBy.value,
+      sort_order: 'desc'
+    }
+    if (keywords.value && keywords.value.trim()) {
+      params.keywords = keywords.value.trim()
+    }
+    if (start_at) params.start_at = start_at
+    if (end_at) params.end_at = end_at
+    if (entityTypes.value && entityTypes.value.length > 0) {
+      params.entity_type = [...entityTypes.value]
+    }
+    const response = await searchApi.searchEntity(params)
+    if (response.code === 0 && response.data) {
+      items.value = response.data.items || []
+      total.value = response.data.total || 0
+    } else {
+      items.value = []
+      total.value = 0
+    }
+  } catch (err) {
+    console.error('加载重点实体失败:', err)
+    ElMessage.error('加载失败，请稍后重试')
+    items.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+async function cancelHighlight(result) {
+  const entityType = result.entity_type
+  if (!entityType || !result.uuid) return
+  result._highlightLoading = true
+  try {
+    const res = await highlightApi.setHighlight(entityType, result.uuid, { is_highlighted: false })
+    if (res && res.code === 0) {
+      ElMessage.success('已取消重点目标')
+      const idx = items.value.findIndex((i) => i.uuid === result.uuid)
+      if (idx !== -1) items.value.splice(idx, 1)
+      total.value = Math.max(0, (total.value || 1) - 1)
+    } else {
+      ElMessage.error(res?.message || '操作失败')
+    }
+  } catch (err) {
+    console.error('取消重点失败:', err)
+    ElMessage.error('操作失败，请稍后重试')
+  } finally {
+    result._highlightLoading = false
+  }
+}
+
+watch(currentPage, () => {
+  if (items.value.length > 0 || total.value > 0) {
+    loadData()
+  }
+})
+
+onMounted(() => {
+  loadData()
+})
 </script>

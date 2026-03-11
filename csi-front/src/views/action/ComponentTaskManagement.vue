@@ -263,8 +263,10 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, watch, onMounted, computed } from 'vue'
 import { Icon } from '@iconify/vue'
+import { ElMessage } from 'element-plus'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import { taskConfigApi } from '@/api/taskConfig'
@@ -280,161 +282,165 @@ const TASK_STATUS_CONFIG = {
 }
 const DEFAULT_TASK_STATUS = { text: '', tagType: '', icon: 'mdi:help-circle', iconClass: 'text-gray-600', bgClass: 'bg-gray-100' }
 
-export default {
-  name: 'ComponentTaskManagement',
-  components: {
-    Header,
-    Icon,
-    FunctionalPageHeader
-  },
-  data() {
-    return {
-      activeTab: 'tasks',
-      searchKeyword: '',
-      taskList: [],
-      taskLoading: false,
-      taskPagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
-      scheduleList: [],
-      scheduleLoading: false,
-      schedulePagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
-      statistics: {
-        task_count: 0,
-        schedule_count: 0
-      },
-      sidebarTabs: [
-        { key: 'tasks', label: '执行任务', icon: 'mdi:clipboard-text-outline' },
-        { key: 'schedule', label: '调度计划', icon: 'mdi:calendar-clock' }
-      ]
-    }
-  },
-  watch: {
-    activeTab(val) {
-      if (val === 'tasks') this.fetchTaskList()
-      if (val === 'schedule') this.fetchScheduleList()
-    }
-  },
-  mounted() {
-    if (this.activeTab === 'tasks') this.fetchTaskList()
-    if (this.activeTab === 'schedule') this.fetchScheduleList()
-  },
-  methods: {
-    getTaskStatusConfig(status, configKey) {
-      const config = TASK_STATUS_CONFIG[status] || DEFAULT_TASK_STATUS
-      return configKey ? config[configKey] : config
-    },
-    getTaskStatusText(status) {
-      return this.getTaskStatusConfig(status, 'text') || status
-    },
-    getTaskStatusTagType(status) {
-      return this.getTaskStatusConfig(status, 'tagType')
-    },
-    getTaskStatusIcon(status) {
-      return this.getTaskStatusConfig(status, 'icon')
-    },
-    getTaskStatusIconClass(status) {
-      return this.getTaskStatusConfig(status, 'iconClass')
-    },
-    getTaskStatusBgClass(status) {
-      return this.getTaskStatusConfig(status, 'bgClass')
-    },
-    getCronDescription(cronExpression) {
-      return cronToDescription(cronExpression) ?? null
-    },
-    getNextCronRunFormatted(cronExpression) {
-      const next = getNextCronRun(cronExpression)
-      return next ? formatDateTime(next, { defaultValue: '-' }) : '-'
-    },
-    formatDateTime,
-    formatDuration,
-    async fetchTaskList() {
-      this.taskLoading = true
-      try {
-        const result = await getPaginatedData(taskConfigApi.getTaskList, {
-          page: this.taskPagination.page,
-          page_size: this.taskPagination.pageSize
-        })
-        this.taskList = result.items
-        this.taskPagination = { ...this.taskPagination, ...result.pagination }
-        this.statistics.task_count = result.pagination?.total ?? 0
-      } catch {
-        this.taskList = []
-      } finally {
-        this.taskLoading = false
-      }
-    },
-    handleTaskPageChange(page) {
-      this.taskPagination.page = page
-      this.fetchTaskList()
-    },
-    handleTaskPageSizeChange(pageSize) {
-      this.taskPagination.pageSize = pageSize
-      this.taskPagination.page = 1
-      this.fetchTaskList()
-    },
-    async fetchScheduleList() {
-      this.scheduleLoading = true
-      try {
-        const result = await getPaginatedData(taskConfigApi.getScheduleList, {
-          page: this.schedulePagination.page,
-          page_size: this.schedulePagination.pageSize
-        })
-        this.scheduleList = result.items
-        this.schedulePagination = { ...this.schedulePagination, ...result.pagination }
-        this.statistics.schedule_count = result.pagination?.total ?? 0
-      } catch {
-        this.scheduleList = []
-      } finally {
-        this.scheduleLoading = false
-      }
-    },
-    handleSchedulePageChange(page) {
-      this.schedulePagination.page = page
-      this.fetchScheduleList()
-    },
-    handleSchedulePageSizeChange(pageSize) {
-      this.schedulePagination.pageSize = pageSize
-      this.schedulePagination.page = 1
-      this.fetchScheduleList()
-    },
-    handleAdd() {
-      this.$message.info(`新增${this.currentTabLabel}功能开发中`)
-    },
-    getSidebarCount(tabKey) {
-      if (tabKey === 'tasks') return this.statistics.task_count
-      if (tabKey === 'schedule') return this.statistics.schedule_count
-      return 0
-    }
-  },
-  computed: {
-    filteredTaskList() {
-      if (!this.searchKeyword?.trim()) return this.taskList
-      const kw = this.searchKeyword.trim().toLowerCase()
-      return this.taskList.filter(
-        t =>
-          (t.component_name && t.component_name.toLowerCase().includes(kw)) ||
-          (t.schedule_name && t.schedule_name.toLowerCase().includes(kw)) ||
-          (t.id && t.id.toLowerCase().includes(kw))
-      )
-    },
-    filteredScheduleList() {
-      if (!this.searchKeyword?.trim()) return this.scheduleList
-      const kw = this.searchKeyword.trim().toLowerCase()
-      return this.scheduleList.filter(
-        s =>
-          (s.name && s.name.toLowerCase().includes(kw)) ||
-          (s.description && s.description.toLowerCase().includes(kw)) ||
-          (s.component_name && s.component_name.toLowerCase().includes(kw)) ||
-          (s.id && s.id.toLowerCase().includes(kw))
-      )
-    },
-    currentTabIcon() {
-      const tab = this.sidebarTabs.find(t => t.key === this.activeTab)
-      return tab ? tab.icon : 'mdi:help'
-    },
-    currentTabLabel() {
-      const tab = this.sidebarTabs.find(t => t.key === this.activeTab)
-      return tab ? tab.label : ''
-    }
+defineOptions({ name: 'ComponentTaskManagement' })
+
+const activeTab = ref('tasks')
+const searchKeyword = ref('')
+const taskList = ref([])
+const taskLoading = ref(false)
+const taskPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+const scheduleList = ref([])
+const scheduleLoading = ref(false)
+const schedulePagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+const statistics = ref({
+  task_count: 0,
+  schedule_count: 0
+})
+const sidebarTabs = [
+  { key: 'tasks', label: '执行任务', icon: 'mdi:clipboard-text-outline' },
+  { key: 'schedule', label: '调度计划', icon: 'mdi:calendar-clock' }
+]
+
+function getTaskStatusConfig(status, configKey) {
+  const config = TASK_STATUS_CONFIG[status] || DEFAULT_TASK_STATUS
+  return configKey ? config[configKey] : config
+}
+
+function getTaskStatusText(status) {
+  return getTaskStatusConfig(status, 'text') || status
+}
+
+function getTaskStatusTagType(status) {
+  return getTaskStatusConfig(status, 'tagType')
+}
+
+function getTaskStatusIcon(status) {
+  return getTaskStatusConfig(status, 'icon')
+}
+
+function getTaskStatusIconClass(status) {
+  return getTaskStatusConfig(status, 'iconClass')
+}
+
+function getTaskStatusBgClass(status) {
+  return getTaskStatusConfig(status, 'bgClass')
+}
+
+function getCronDescription(cronExpression) {
+  return cronToDescription(cronExpression) ?? null
+}
+
+function getNextCronRunFormatted(cronExpression) {
+  const next = getNextCronRun(cronExpression)
+  return next ? formatDateTime(next, { defaultValue: '-' }) : '-'
+}
+
+const filteredTaskList = computed(() => {
+  if (!searchKeyword.value?.trim()) return taskList.value
+  const kw = searchKeyword.value.trim().toLowerCase()
+  return taskList.value.filter(
+    t =>
+      (t.component_name && t.component_name.toLowerCase().includes(kw)) ||
+      (t.schedule_name && t.schedule_name.toLowerCase().includes(kw)) ||
+      (t.id && t.id.toLowerCase().includes(kw))
+  )
+})
+
+const filteredScheduleList = computed(() => {
+  if (!searchKeyword.value?.trim()) return scheduleList.value
+  const kw = searchKeyword.value.trim().toLowerCase()
+  return scheduleList.value.filter(
+    s =>
+      (s.name && s.name.toLowerCase().includes(kw)) ||
+      (s.description && s.description.toLowerCase().includes(kw)) ||
+      (s.component_name && s.component_name.toLowerCase().includes(kw)) ||
+      (s.id && s.id.toLowerCase().includes(kw))
+  )
+})
+
+const currentTabIcon = computed(() => {
+  const tab = sidebarTabs.find(t => t.key === activeTab.value)
+  return tab ? tab.icon : 'mdi:help'
+})
+
+const currentTabLabel = computed(() => {
+  const tab = sidebarTabs.find(t => t.key === activeTab.value)
+  return tab ? tab.label : ''
+})
+
+async function fetchTaskList() {
+  taskLoading.value = true
+  try {
+    const result = await getPaginatedData(taskConfigApi.getTaskList, {
+      page: taskPagination.value.page,
+      page_size: taskPagination.value.pageSize
+    })
+    taskList.value = result.items
+    taskPagination.value = { ...taskPagination.value, ...result.pagination }
+    statistics.value.task_count = result.pagination?.total ?? 0
+  } catch {
+    taskList.value = []
+  } finally {
+    taskLoading.value = false
   }
 }
+
+function handleTaskPageChange(page) {
+  taskPagination.value.page = page
+  fetchTaskList()
+}
+
+function handleTaskPageSizeChange(pageSize) {
+  taskPagination.value.pageSize = pageSize
+  taskPagination.value.page = 1
+  fetchTaskList()
+}
+
+async function fetchScheduleList() {
+  scheduleLoading.value = true
+  try {
+    const result = await getPaginatedData(taskConfigApi.getScheduleList, {
+      page: schedulePagination.value.page,
+      page_size: schedulePagination.value.pageSize
+    })
+    scheduleList.value = result.items
+    schedulePagination.value = { ...schedulePagination.value, ...result.pagination }
+    statistics.value.schedule_count = result.pagination?.total ?? 0
+  } catch {
+    scheduleList.value = []
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
+function handleSchedulePageChange(page) {
+  schedulePagination.value.page = page
+  fetchScheduleList()
+}
+
+function handleSchedulePageSizeChange(pageSize) {
+  schedulePagination.value.pageSize = pageSize
+  schedulePagination.value.page = 1
+  fetchScheduleList()
+}
+
+function handleAdd() {
+  ElMessage.info(`新增${currentTabLabel.value}功能开发中`)
+}
+
+function getSidebarCount(tabKey) {
+  if (tabKey === 'tasks') return statistics.value.task_count
+  if (tabKey === 'schedule') return statistics.value.schedule_count
+  return 0
+}
+
+watch(activeTab, (val) => {
+  if (val === 'tasks') fetchTaskList()
+  if (val === 'schedule') fetchScheduleList()
+})
+
+onMounted(() => {
+  if (activeTab.value === 'tasks') fetchTaskList()
+  if (activeTab.value === 'schedule') fetchScheduleList()
+})
 </script>

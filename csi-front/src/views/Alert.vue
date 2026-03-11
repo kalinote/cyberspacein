@@ -203,22 +203,17 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import { ElMessage } from 'element-plus'
 
-export default {
-  name: 'Alert',
-  components: {
-    Header,
-    Icon
-  },
-  data() {
-    return {
-      filterLevel: '',
-      filterStatus: '',
-      alerts: [
+defineOptions({ name: 'Alert' })
+
+const filterLevel = ref('')
+const filterStatus = ref('')
+const alerts = ref([
         {
           id: 1,
           name: '代理节点异常断开连接',
@@ -399,123 +394,124 @@ export default {
           triggeredAt: '2024-12-09 18:42:30',
           recoveredAt: '2024-12-09 19:15:45'
         }
-      ]
-    }
-  },
-  computed: {
-    alertStats() {
-      const total = this.alerts.length
-      const active = this.alerts.filter(a => a.status === 'alerting').length
-      const recovered = this.alerts.filter(a => a.status !== 'alerting').length
-      const critical = this.alerts.filter(a => a.level === 'critical' && a.status === 'alerting').length
-      
-      return {
-        total,
-        active,
-        recovered,
-        critical
-      }
-    },
-    filteredAlerts() {
-      // FIXME: 这个过滤应该是后端做，后续可以去掉
-      let filtered = [...this.alerts]
-      
-      if (this.filterLevel) {
-        filtered = filtered.filter(a => a.level === this.filterLevel)
-      }
-      
-      if (this.filterStatus) {
-        filtered = filtered.filter(a => a.status === this.filterStatus)
-      }
-      
-      return filtered
-    }
-  },
-  methods: {
-    getAlertIcon(level) {
-      const icons = {
-        critical: 'mdi:alert-octagon',
-        error: 'mdi:alert',
-        warning: 'mdi:alert-circle',
-        info: 'mdi:information'
-      }
-      return icons[level] || 'mdi:alert-circle'
-    },
-    getAlertIconClass(level) {
-      const classes = {
-        critical: 'text-red-600',
-        error: 'text-orange-600',
-        warning: 'text-amber-600',
-        info: 'text-blue-600'
-      }
-      return classes[level] || 'text-gray-600'
-    },
-    getLevelText(level) {
-      const texts = {
-        critical: '致命',
-        error: '严重',
-        warning: '重要',
-        info: '一般'
-      }
-      return texts[level] || level
-    },
-    getLevelTagType(level) {
-      const types = {
-        critical: 'danger',
-        error: 'danger',
-        warning: 'warning',
-        info: 'primary'
-      }
-      return types[level] || 'info'
-    },
-    getStatusText(status) {
-      const texts = {
-        alerting: '告警中',
-        auto_recovered: '自动恢复',
-        manual_recovered: '手动恢复'
-      }
-      return texts[status] || status
-    },
-    getStatusTagType(status) {
-      const types = {
-        alerting: 'danger',
-        auto_recovered: 'success',
-        manual_recovered: 'success'
-      }
-      return types[status] || 'info'
-    },
-    recoverAlert(alert) {
-      ElMessage.success(`已手动恢复告警：${alert.name}`)
-      alert.status = 'manual_recovered'
-      alert.recoveredAt = new Date().toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      }).replace(/\//g, '-')
-    },
-    upgradeLevel(alert) {
-      const levels = ['info', 'warning', 'error', 'critical']
-      const currentIndex = levels.indexOf(alert.level)
-      if (currentIndex < levels.length - 1) {
-        alert.level = levels[currentIndex + 1]
-        ElMessage.warning(`已提升告警等级至：${this.getLevelText(alert.level)}`)
-      }
-    },
-    downgradeLevel(alert) {
-      const levels = ['info', 'warning', 'error', 'critical']
-      const currentIndex = levels.indexOf(alert.level)
-      if (currentIndex > 0) {
-        alert.level = levels[currentIndex - 1]
-        ElMessage.info(`已降低告警等级至：${this.getLevelText(alert.level)}`)
-      }
-    },
-    stopMonitoring(alert) {
-      ElMessage.error(`已停止该类告警监控：${alert.name}`)
-    }
+      ])
+
+const alertStats = computed(() => {
+  const list = alerts.value
+  const total = list.length
+  const active = list.filter(a => a.status === 'alerting').length
+  const recovered = list.filter(a => a.status !== 'alerting').length
+  const critical = list.filter(a => a.level === 'critical' && a.status === 'alerting').length
+  return {
+    total,
+    active,
+    recovered,
+    critical
   }
+})
+
+const filteredAlerts = computed(() => {
+  let filtered = [...alerts.value]
+  if (filterLevel.value) {
+    filtered = filtered.filter(a => a.level === filterLevel.value)
+  }
+  if (filterStatus.value) {
+    filtered = filtered.filter(a => a.status === filterStatus.value)
+  }
+  return filtered
+})
+
+function getAlertIcon(level) {
+  const icons = {
+    critical: 'mdi:alert-octagon',
+    error: 'mdi:alert',
+    warning: 'mdi:alert-circle',
+    info: 'mdi:information'
+  }
+  return icons[level] || 'mdi:alert-circle'
+}
+
+function getAlertIconClass(level) {
+  const classes = {
+    critical: 'text-red-600',
+    error: 'text-orange-600',
+    warning: 'text-amber-600',
+    info: 'text-blue-600'
+  }
+  return classes[level] || 'text-gray-600'
+}
+
+function getLevelText(level) {
+  const texts = {
+    critical: '致命',
+    error: '严重',
+    warning: '重要',
+    info: '一般'
+  }
+  return texts[level] || level
+}
+
+function getLevelTagType(level) {
+  const types = {
+    critical: 'danger',
+    error: 'danger',
+    warning: 'warning',
+    info: 'primary'
+  }
+  return types[level] || 'info'
+}
+
+function getStatusText(status) {
+  const texts = {
+    alerting: '告警中',
+    auto_recovered: '自动恢复',
+    manual_recovered: '手动恢复'
+  }
+  return texts[status] || status
+}
+
+function getStatusTagType(status) {
+  const types = {
+    alerting: 'danger',
+    auto_recovered: 'success',
+    manual_recovered: 'success'
+  }
+  return types[status] || 'info'
+}
+
+function recoverAlert(alert) {
+  ElMessage.success(`已手动恢复告警：${alert.name}`)
+  alert.status = 'manual_recovered'
+  alert.recoveredAt = new Date().toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).replace(/\//g, '-')
+}
+
+function upgradeLevel(alert) {
+  const levels = ['info', 'warning', 'error', 'critical']
+  const currentIndex = levels.indexOf(alert.level)
+  if (currentIndex < levels.length - 1) {
+    alert.level = levels[currentIndex + 1]
+    ElMessage.warning(`已提升告警等级至：${getLevelText(alert.level)}`)
+  }
+}
+
+function downgradeLevel(alert) {
+  const levels = ['info', 'warning', 'error', 'critical']
+  const currentIndex = levels.indexOf(alert.level)
+  if (currentIndex > 0) {
+    alert.level = levels[currentIndex - 1]
+    ElMessage.info(`已降低告警等级至：${getLevelText(alert.level)}`)
+  }
+}
+
+function stopMonitoring(alert) {
+  ElMessage.error(`已停止该类告警监控：${alert.name}`)
 }
 </script>

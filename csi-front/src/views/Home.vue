@@ -361,232 +361,60 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
 
-export default {
-  name: "Home",
-  components: {
-    Header,
-    Icon,
-  },
-  data() {
-    return {
-      currentRange: "trend30d",
-      statsTimeRange: "week",
+defineOptions({ name: "Home" });
 
-      intelligenceStats: [
-        {
-          category: "网络安全",
-          count: "3,842",
-          percentage: "24%",
-          trend: "+8.2%",
-          status: "已分析",
-          colorClass: "bg-blue-500",
-          trendClass: "text-green-600",
-          trendIcon: "mdi:trending-up",
-          statusType: "primary"
-        },
-        {
-          category: "市场动态",
-          count: "2,956",
-          percentage: "18%",
-          trend: "+5.7%",
-          status: "处理中",
-          colorClass: "bg-green-500",
-          trendClass: "text-green-600",
-          trendIcon: "mdi:trending-up",
-          statusType: "success"
-        },
-        {
-          category: "政策法规",
-          count: "1,874",
-          percentage: "12%",
-          trend: "-1.3%",
-          status: "已归档",
-          colorClass: "bg-purple-500",
-          trendClass: "text-gray-600",
-          trendIcon: "mdi:minus",
-          statusType: ""
-        },
-        {
-          category: "技术发展",
-          count: "2,431",
-          percentage: "15%",
-          trend: "+12.4%",
-          status: "待审核",
-          colorClass: "bg-amber-500",
-          trendClass: "text-green-600",
-          trendIcon: "mdi:trending-up",
-          statusType: "warning"
-        }
-      ],
+const currentRange = ref("trend30d");
+const statsTimeRange = ref("week");
 
-      trendData: {
-        trend30d: {
-          dates: [
-            "1日",
-            "3日",
-            "5日",
-            "7日",
-            "9日",
-            "11日",
-            "13日",
-            "15日",
-            "17日",
-            "19日",
-            "21日",
-            "23日",
-            "25日",
-            "27日",
-            "29日",
-          ],
-          values: [
-            7200, 7850, 8320, 7980, 8450, 9010, 9320, 9100, 8650, 8920, 9240,
-            9560, 9880, 10120, 10450,
-          ],
-          weekGrowth: "+12.5%",
-          dailyAvg: "8,742条",
-        },
-        trend90d: {
-          dates: [
-            "1月",
-            "2月",
-            "3月",
-            "4月",
-            "5月",
-            "6月",
-            "7日",
-            "14日",
-            "21日",
-            "28日",
-            "35日",
-            "42日",
-            "49日",
-            "56日",
-            "63日",
-            "70日",
-            "77日",
-            "84日",
-          ],
-          values: [
-            6200, 6580, 6920, 7350, 7810, 8020, 8320, 8450, 8620, 8910, 9020,
-            9250, 9420, 9680, 9810, 10020, 10250, 10450,
-          ],
-          weekGrowth: "+8.3%",
-          dailyAvg: "8,210条",
-        },
-        trend1y: {
-          dates: [
-            "1月",
-            "2月",
-            "3月",
-            "4月",
-            "5月",
-            "6月",
-            "7月",
-            "8月",
-            "9月",
-            "10月",
-            "11月",
-            "12月",
-          ],
-          values: [
-            5200, 5800, 6320, 6850, 7350, 7920, 8320, 8620, 9020, 9420, 9810,
-            10450,
-          ],
-          weekGrowth: "+15.8%",
-          dailyAvg: "7,850条",
-        },
-      },
+const intelligenceStats = ref([
+  { category: "网络安全", count: "3,842", percentage: "24%", trend: "+8.2%", status: "已分析", colorClass: "bg-blue-500", trendClass: "text-green-600", trendIcon: "mdi:trending-up", statusType: "primary" },
+  { category: "市场动态", count: "2,956", percentage: "18%", trend: "+5.7%", status: "处理中", colorClass: "bg-green-500", trendClass: "text-green-600", trendIcon: "mdi:trending-up", statusType: "success" },
+  { category: "政策法规", count: "1,874", percentage: "12%", trend: "-1.3%", status: "已归档", colorClass: "bg-purple-500", trendClass: "text-gray-600", trendIcon: "mdi:minus", statusType: "" },
+  { category: "技术发展", count: "2,431", percentage: "15%", trend: "+12.4%", status: "待审核", colorClass: "bg-amber-500", trendClass: "text-green-600", trendIcon: "mdi:trending-up", statusType: "warning" }
+]);
 
-      dataSummary: {
-        total: 4202512,
-        today: 12000,
-        alarm: 47,
-        lastUpdate: "2025-12-11 10:00:00",
-      },
+const trendData = ref({
+  trend30d: { dates: ["1日","3日","5日","7日","9日","11日","13日","15日","17日","19日","21日","23日","25日","27日","29日"], values: [7200,7850,8320,7980,8450,9010,9320,9100,8650,8920,9240,9560,9880,10120,10450], weekGrowth: "+12.5%", dailyAvg: "8,742条" },
+  trend90d: { dates: ["1月","2月","3月","4月","5月","6月","7日","14日","21日","28日","35日","42日","49日","56日","63日","70日","77日","84日"], values: [6200,6580,6920,7350,7810,8020,8320,8450,8620,8910,9020,9250,9420,9680,9810,10020,10250,10450], weekGrowth: "+8.3%", dailyAvg: "8,210条" },
+  trend1y: { dates: ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"], values: [5200,5800,6320,6850,7350,7920,8320,8620,9020,9420,9810,10450], weekGrowth: "+15.8%", dailyAvg: "7,850条" }
+});
 
-      latestIntelligence: [
-        {
-          id: 1,
-          category: "网络安全",
-          // TODO: 这里的样式还需要再考虑一下具体如何实现
-          tagType: "primary",
-          tagClass: "",
-          time: "2小时前",
-          title: "新型钓鱼攻击模式在亚太地区活跃",
-          description: "监测发现针对金融行业的针对性攻击，涉及新型社会工程学手段...",
-          sourceIcon: "mdi:source-repository",
-          sourceName: "威胁情报库",
-          sourceBgColor: "bg-blue-100",
-          sourceIconColor: "text-blue-600",
-          priority: "高优先级",
-          priorityColor: "text-amber-500",
-        },
-        {
-          id: 2,
-          category: "市场动态",
-          tagType: "success",
-          tagClass: "",
-          time: "5小时前",
-          title: "科技行业并购活动Q3增长显著",
-          description: "人工智能与数据安全领域成为投资热点，多家初创公司获得大额融资...",
-          sourceIcon: "mdi:finance",
-          sourceName: "商业数据源",
-          sourceBgColor: "bg-green-100",
-          sourceIconColor: "text-green-600",
-          priority: "中优先级",
-          priorityColor: "text-blue-500",
-        },
-        {
-          id: 3,
-          category: "政策法规",
-          tagType: "",
-          tagClass: "bg-purple-50! text-purple-700!",
-          time: "1天前",
-          title: "多国更新数据隐私保护法规",
-          description: "欧盟、美国及亚太地区相继出台或修订数据跨境传输相关规定...",
-          sourceIcon: "mdi:scale-balance",
-          sourceName: "政策数据库",
-          sourceBgColor: "bg-purple-100",
-          sourceIconColor: "text-purple-600",
-          priority: "中优先级",
-          priorityColor: "text-blue-500",
-        },
-      ],
+const dataSummary = ref({ total: 4202512, today: 12000, alarm: 47, lastUpdate: "2025-12-11 10:00:00" });
 
-      sourceDistribution: [
-        { name: "公开数据源", value: 42, color: "#3b82f6" },
-        { name: "合作伙伴", value: 28, color: "#06b6d4" },
-        { name: "内部采集", value: 18, color: "#10b981" },
-        { name: "其他来源", value: 12, color: "#f59e0b" },
-      ],
+const latestIntelligence = ref([
+  { id: 1, category: "网络安全", tagType: "primary", tagClass: "", time: "2小时前", title: "新型钓鱼攻击模式在亚太地区活跃", description: "监测发现针对金融行业的针对性攻击，涉及新型社会工程学手段...", sourceIcon: "mdi:source-repository", sourceName: "威胁情报库", sourceBgColor: "bg-blue-100", sourceIconColor: "text-blue-600", priority: "高优先级", priorityColor: "text-amber-500" },
+  { id: 2, category: "市场动态", tagType: "success", tagClass: "", time: "5小时前", title: "科技行业并购活动Q3增长显著", description: "人工智能与数据安全领域成为投资热点，多家初创公司获得大额融资...", sourceIcon: "mdi:finance", sourceName: "商业数据源", sourceBgColor: "bg-green-100", sourceIconColor: "text-green-600", priority: "中优先级", priorityColor: "text-blue-500" },
+  { id: 3, category: "政策法规", tagType: "", tagClass: "bg-purple-50! text-purple-700!", time: "1天前", title: "多国更新数据隐私保护法规", description: "欧盟、美国及亚太地区相继出台或修订数据跨境传输相关规定...", sourceIcon: "mdi:scale-balance", sourceName: "政策数据库", sourceBgColor: "bg-purple-100", sourceIconColor: "text-purple-600", priority: "中优先级", priorityColor: "text-blue-500" }
+]);
 
-      metrics: {
-        report: { count: 312, percent: 78, trend: "+5.2%", color: "#3b82f6" },
-        security: { score: 94, percent: 94, status: "稳定", color: "#10b981" },
-        speed: { time: 2.3, percent: 65, status: "需优化", color: "#f59e0b" },
-      },
+const sourceDistribution = ref([
+  { name: "公开数据源", value: 42, color: "#3b82f6" },
+  { name: "合作伙伴", value: 28, color: "#06b6d4" },
+  { name: "内部采集", value: 18, color: "#10b981" },
+  { name: "其他来源", value: 12, color: "#f59e0b" }
+]);
 
-      trendChart: null,
-      sourceChart: null,
-      reportChart: null,
-      securityChart: null,
-      speedChart: null,
-    };
-  },
+const metrics = ref({
+  report: { count: 312, percent: 78, trend: "+5.2%", color: "#3b82f6" },
+  security: { score: 94, percent: 94, status: "稳定", color: "#10b981" },
+  speed: { time: 2.3, percent: 65, status: "需优化", color: "#f59e0b" }
+});
 
-  computed: {
-    currentTrendData() {
-      return this.trendData[this.currentRange];
-    },
-  },
+const trendChart = ref(null);
+const sourceChart = ref(null);
+const reportChart = ref(null);
+const securityChart = ref(null);
+const speedChart = ref(null);
 
-  methods: {
-    getStatusClass(type) {
+const currentTrendData = computed(() => trendData.value[currentRange.value]);
+
+function getStatusClass(type) {
       const statusMap = {
         primary: 'bg-blue-100 text-blue-700',
         success: 'bg-green-100 text-green-700',
@@ -594,263 +422,101 @@ export default {
         '': 'bg-purple-100 text-purple-700'
       }
       return statusMap[type] || 'bg-gray-100 text-gray-700'
-    },
-    
-    switchRange(range) {
+    }
+
+    function switchRange(range) {
       if (typeof range === 'string') {
-        this.currentRange = range;
-        this.setTrendChart(range);
+        currentRange.value = range;
+        setTrendChart(range);
       } else {
-        this.setTrendChart(this.currentRange);
+        setTrendChart(currentRange.value);
       }
-    },
+    }
 
-    setTrendChart(dataType) {
-      if (!this.trendChart) return;
+    function setTrendChart(dataType) {
+      if (!trendChart.value) return;
 
-      const data = this.trendData[dataType];
+      const data = trendData.value[dataType];
 
       const option = {
-        grid: {
-          left: "3%",
-          right: "4%",
-          bottom: "10%",
-          top: "10%",
-          containLabel: true,
-        },
-        xAxis: {
-          type: "category",
-          data: data.dates,
-          axisLine: {
-            lineStyle: {
-              color: "#e5e7eb",
-            },
-          },
-          axisLabel: {
-            color: "#6b7280",
-            fontSize: 12,
-          },
-        },
-        yAxis: {
-          type: "value",
-          axisLine: {
-            lineStyle: {
-              color: "#e5e7eb",
-            },
-          },
-          axisLabel: {
-            color: "#6b7280",
-            fontSize: 12,
-            formatter: (value) => {
-              return (value / 1000).toFixed(0) + "k";
-            },
-          },
-          splitLine: {
-            lineStyle: {
-              color: "#f3f4f6",
-              type: "dashed",
-            },
-          },
-        },
-        series: [
-          {
-            data: data.values,
-            type: "line",
-            smooth: true,
-            symbol: "circle",
-            symbolSize: 6,
-            lineStyle: {
-              width: 3,
-              color: "#3b82f6",
-            },
-            itemStyle: {
-              color: "#3b82f6",
-              borderColor: "#ffffff",
-              borderWidth: 2,
-            },
-            areaStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
-                { offset: 1, color: "rgba(59, 130, 246, 0.05)" },
-              ]),
-            },
-          },
-        ],
-        tooltip: {
-          trigger: "axis",
-          backgroundColor: "rgba(255, 255, 255, 0.95)",
-          borderColor: "#e5e7eb",
-          borderWidth: 1,
-          textStyle: {
-            color: "#1f2937",
-          },
-          formatter: (params) => {
-            const value = params[0].value;
-            return `${
-              params[0].name
-            }<br/>情报数量: <b>${value.toLocaleString()}条</b>`;
-          },
-        },
+        grid: { left: "3%", right: "4%", bottom: "10%", top: "10%", containLabel: true },
+        xAxis: { type: "category", data: data.dates, axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12 } },
+        yAxis: { type: "value", axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12, formatter: (value) => (value / 1000).toFixed(0) + "k" }, splitLine: { lineStyle: { color: "#f3f4f6", type: "dashed" } } },
+        series: [{
+          data: data.values,
+          type: "line",
+          smooth: true,
+          symbol: "circle",
+          symbolSize: 6,
+          lineStyle: { width: 3, color: "#3b82f6" },
+          itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 },
+          areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(59, 130, 246, 0.3)" }, { offset: 1, color: "rgba(59, 130, 246, 0.05)" }]) }
+        }],
+        tooltip: { trigger: "axis", backgroundColor: "rgba(255, 255, 255, 0.95)", borderColor: "#e5e7eb", borderWidth: 1, textStyle: { color: "#1f2937" }, formatter: (params) => `${params[0].name}<br/>情报数量: <b>${params[0].value.toLocaleString()}条</b>` }
       };
 
-      this.trendChart.setOption(option);
-    },
+      trendChart.value.setOption(option);
+    }
 
-    setSourceChart() {
-      if (!this.sourceChart) return;
+    function setSourceChart() {
+      if (!sourceChart.value) return;
 
-      const data = this.sourceDistribution;
+      const data = sourceDistribution.value;
 
       const option = {
-        tooltip: {
-          trigger: "item",
-          formatter: "{a} <br/>{b}: {c}% ({d}%)",
-        },
-        legend: {
-          orient: "vertical",
-          left: "60%",
-          top: "center",
-          textStyle: {
-            color: "#6b7280",
-            fontSize: 12,
-          },
-          itemGap: 15,
-          formatter: (name) => {
-            const item = data.find((d) => d.name === name);
-            return `${name}: ${item.value}%`;
-          },
-        },
-        series: [
-          {
-            name: "情报来源分布",
-            type: "pie",
-            radius: ["40%", "70%"],
-            center: ["30%", "50%"],
-            avoidLabelOverlap: false,
-            itemStyle: {
-              borderRadius: 8,
-              borderColor: "#fff",
-              borderWidth: 2,
-            },
-            label: {
-              show: false,
-            },
-            emphasis: {
-              label: {
-                show: true,
-                fontSize: 14,
-                fontWeight: "bold",
-              },
-            },
-            labelLine: {
-              show: false,
-            },
-            data: data.map((item) => ({
-              name: item.name,
-              value: item.value,
-              itemStyle: {
-                color: item.color,
-              },
-            })),
-          },
-        ],
+        tooltip: { trigger: "item", formatter: "{a} <br/>{b}: {c}% ({d}%)" },
+        legend: { orient: "vertical", left: "60%", top: "center", textStyle: { color: "#6b7280", fontSize: 12 }, itemGap: 15, formatter: (name) => { const item = data.find((d) => d.name === name); return `${name}: ${item.value}%` } },
+        series: [{ name: "情报来源分布", type: "pie", radius: ["40%", "70%"], center: ["30%", "50%"], avoidLabelOverlap: false, itemStyle: { borderRadius: 8, borderColor: "#fff", borderWidth: 2 }, label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: "bold" } }, labelLine: { show: false }, data: data.map((item) => ({ name: item.name, value: item.value, itemStyle: { color: item.color } })) }]
       };
 
-      this.sourceChart.setOption(option);
-    },
+      sourceChart.value.setOption(option);
+    }
 
-    setMetricsCharts() {
-      const metrics = this.metrics;
+    function setMetricsCharts() {
+      const m = metrics.value;
 
-      if (this.reportChart) {
-        this.reportChart.setOption({
-          grid: { left: 0, right: 0, top: 0, bottom: 0 },
-          xAxis: { show: false },
-          yAxis: { show: false },
-          series: [
-            {
-              type: "bar",
-              data: [metrics.report.percent],
-              barWidth: "100%",
-              itemStyle: {
-                color: metrics.report.color,
-                borderRadius: 4,
-              },
-              label: { show: false },
-            },
-          ],
-        });
+      if (reportChart.value) {
+        reportChart.value.setOption({ grid: { left: 0, right: 0, top: 0, bottom: 0 }, xAxis: { show: false }, yAxis: { show: false }, series: [{ type: "bar", data: [m.report.percent], barWidth: "100%", itemStyle: { color: m.report.color, borderRadius: 4 }, label: { show: false } }] });
       }
 
-      if (this.securityChart) {
-        this.securityChart.setOption({
-          grid: { left: 0, right: 0, top: 0, bottom: 0 },
-          xAxis: { show: false },
-          yAxis: { show: false },
-          series: [
-            {
-              type: "bar",
-              data: [metrics.security.percent],
-              barWidth: "100%",
-              itemStyle: {
-                color: metrics.security.color,
-                borderRadius: 4,
-              },
-              label: { show: false },
-            },
-          ],
-        });
+      if (securityChart.value) {
+        securityChart.value.setOption({ grid: { left: 0, right: 0, top: 0, bottom: 0 }, xAxis: { show: false }, yAxis: { show: false }, series: [{ type: "bar", data: [m.security.percent], barWidth: "100%", itemStyle: { color: m.security.color, borderRadius: 4 }, label: { show: false } }] });
       }
 
-      if (this.speedChart) {
-        this.speedChart.setOption({
-          grid: { left: 0, right: 0, top: 0, bottom: 0 },
-          xAxis: { show: false },
-          yAxis: { show: false },
-          series: [
-            {
-              type: "bar",
-              data: [metrics.speed.percent],
-              barWidth: "100%",
-              itemStyle: {
-                color: metrics.speed.color,
-                borderRadius: 4,
-              },
-              label: { show: false },
-            },
-          ],
-        });
+      if (speedChart.value) {
+        speedChart.value.setOption({ grid: { left: 0, right: 0, top: 0, bottom: 0 }, xAxis: { show: false }, yAxis: { show: false }, series: [{ type: "bar", data: [m.speed.percent], barWidth: "100%", itemStyle: { color: m.speed.color, borderRadius: 4 }, label: { show: false } }] });
       }
-    },
+    }
 
-    initCharts() {
-      this.$nextTick(() => {
-        this.trendChart = echarts.init(document.getElementById("trend-chart"));
-        this.sourceChart = echarts.init(
-          document.getElementById("source-chart")
-        );
-        this.reportChart = echarts.init(
-          document.getElementById("report-chart")
-        );
-        this.securityChart = echarts.init(
-          document.getElementById("security-chart")
-        );
-        this.speedChart = echarts.init(document.getElementById("speed-chart"));
+let resizeHandler = null;
 
-        this.setTrendChart("trend30d");
-        this.setSourceChart();
-        this.setMetricsCharts();
+    function initCharts() {
+      nextTick(() => {
+        trendChart.value = echarts.init(document.getElementById("trend-chart"));
+        sourceChart.value = echarts.init(document.getElementById("source-chart"));
+        reportChart.value = echarts.init(document.getElementById("report-chart"));
+        securityChart.value = echarts.init(document.getElementById("security-chart"));
+        speedChart.value = echarts.init(document.getElementById("speed-chart"));
 
-        window.addEventListener("resize", () => {
-          this.trendChart?.resize();
-          this.sourceChart?.resize();
-        });
+        setTrendChart("trend30d");
+        setSourceChart();
+        setMetricsCharts();
+
+        resizeHandler = () => {
+          trendChart.value?.resize();
+          sourceChart.value?.resize();
+        };
+        window.addEventListener("resize", resizeHandler);
       });
-    },
-  },
+    }
 
-  mounted() {
-    this.initCharts();
-  },
-};
+onMounted(() => {
+  initCharts();
+});
+
+onBeforeUnmount(() => {
+  if (resizeHandler) {
+    window.removeEventListener("resize", resizeHandler);
+  }
+});
 </script>

@@ -235,24 +235,16 @@
   </div>
 </template>
 
-<script>
-import { Icon } from '@iconify/vue'
+<script setup>
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Header from '@/components/Header.vue'
+import { Icon } from '@iconify/vue'
 
-export default {
-  name: 'TaskManagement',
-  components: {
-    Header,
-    Icon
-  },
-  setup() {
-    const router = useRouter()
-    return { router }
-  },
-  data() {
-    return {
-      placeholderTasks: [
+defineOptions({ name: 'TaskManagement' })
+
+const router = useRouter()
+const placeholderTasks = ref([
         {
           id: 'task-001',
           name: '数据采集任务',
@@ -289,8 +281,5 @@ export default {
           completedSteps: 0,
           totalSteps: 10
         }
-      ]
-    }
-  }
-}
+      ])
 </script>

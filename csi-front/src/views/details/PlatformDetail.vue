@@ -511,8 +511,11 @@
     </div>
 </template>
 
-<script>
+<script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { useRoute } from "vue-router";
 import { Icon } from "@iconify/vue";
+import { ElMessage, ElNotification } from "element-plus";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
 import DetailPageHeader from "@/components/page-header/DetailPageHeader.vue";
@@ -521,479 +524,213 @@ import { platformApi } from "@/api/platform";
 import { searchApi } from "@/api/search";
 import { highlightApi } from "@/api/highlight";
 
-export default {
-    name: "PlatformDetail",
-    components: {
-        Header,
-        Icon,
-        DetailPageHeader,
-    },
-    props: {
-        id: {
-            type: String,
-            required: false,
-        },
-    },
-    computed: {
-        platformId() {
-            return this.id || this.$route.params.id;
-        },
-        snapshotPreviewList() {
-            return this.snapshots.map((s) => s.image);
-        },
-    },
-    watch: {
-        '$route.params.id'() {
-            this.loadPlatformDetail();
-        },
-        intelligenceCurrentPage() {
-            this.loadRelatedIntelligence();
-        },
-        intelligenceSortBy() {
-            this.intelligenceCurrentPage = 1;
-            this.loadRelatedIntelligence();
-        },
-    },
-    data() {
-        return {
-            currentRange: "7d",
-            trendChart: null,
-            // TODO: 从接口获取平台详情数据
-            platformDetail: {
-                uuid: "",
-                name: "",
-                description:"",
-                type: "",
-                status: "",
-                netType: "",
-                createdAt: "",
-                updatedAt: "",
-                spiderName: "",
-                url: "",
-                logo: "",
-                tags: [],
-                sections: [],
-                category: "",
-                subCategory: "",
-            },
-            // TODO: 从接口获取平台统计信息（数据总量、采集次数、最后更新、今日新增）
-            statistics: {
-                totalData: 125430,
-                related_actions: 3420,
-                lastUpdate: "2小时前",
-                todayNew: 1250,
-            },
-            // TODO: 从接口获取数据趋势数据（根据时间范围：7天、30天、90天）
-            trendData: {
-                "7d": {
-                    dates: ["01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"],
-                    values: [1200, 1350, 1420, 1380, 1520, 1280, 1250],
-                },
-                "30d": {
-                    dates: ["12-17", "12-18", "12-19", "12-20", "12-21", "12-22", "12-23", "12-24", "12-25", "12-26", "12-27", "12-28", "12-29", "12-30", "12-31", "01-01", "01-02", "01-03", "01-04", "01-05", "01-06", "01-07", "01-08", "01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"],
-                    values: [8500, 9200, 8800, 9500, 9100, 9300, 8700, 9600, 8900, 9400, 9200, 8800, 9500, 9100, 9300, 8700, 9600, 8900, 9400, 9200, 8800, 9500, 9100, 9300, 8700, 9600, 8900, 9400, 9200, 8800],
-                },
-                "90d": {
-                    dates: ["10-18", "10-19", "10-20", "10-21", "10-22", "10-23", "10-24", "10-25", "10-26", "10-27", "10-28", "10-29", "10-30", "10-31", "11-01", "11-02", "11-03", "11-04", "11-05", "11-06", "11-07", "11-08", "11-09", "11-10", "11-11", "11-12", "11-13", "11-14", "11-15", "11-16", "11-17", "11-18", "11-19", "11-20", "11-21", "11-22", "11-23", "11-24", "11-25", "11-26", "11-27", "11-28", "11-29", "11-30", "12-01", "12-02", "12-03", "12-04", "12-05", "12-06", "12-07", "12-08", "12-09", "12-10", "12-11", "12-12", "12-13", "12-14", "12-15", "12-16", "12-17", "12-18", "12-19", "12-20", "12-21", "12-22", "12-23", "12-24", "12-25", "12-26", "12-27", "12-28", "12-29", "12-30", "12-31", "01-01", "01-02", "01-03", "01-04", "01-05", "01-06", "01-07", "01-08", "01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"],
-                    values: [35000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000, 42000, 48000, 45000, 46000, 47000, 44000, 49000, 43000, 50000],
-                },
-            },
-            // TODO: 从接口获取数据分类统计数据
-            categoryStats: [
-                {
-                    name: "视频内容",
-                    count: 45230,
-                    percentage: 36,
-                    color: "bg-blue-500",
-                },
-                {
-                    name: "用户评论",
-                    count: 38240,
-                    percentage: 30,
-                    color: "bg-green-500",
-                },
-                {
-                    name: "弹幕数据",
-                    count: 25120,
-                    percentage: 20,
-                    color: "bg-purple-500",
-                },
-                {
-                    name: "其他数据",
-                    count: 16840,
-                    percentage: 14,
-                    color: "bg-amber-500",
-                },
-            ],
-            // TODO: 从接口获取平台快照数据
-            snapshots: [
-                {
-                    date: "2024-01-01",
-                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
-                },
-                {
-                    date: "2024-03-15",
-                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
-                },
-                {
-                    date: "2024-06-20",
-                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
-                },
-                {
-                    date: "2024-09-10",
-                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
-                },
-                {
-                    date: "2024-12-25",
-                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
-                },
-                {
-                    date: "2025-01-01",
-                    image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg",
-                },
-            ],
-            relatedIntelligence: [],
-            intelligenceSortBy: "relevance",
-            intelligenceCurrentPage: 1,
-            intelligencePageSize: 5,
-            intelligenceTotalResults: 0,
-            intelligenceLoading: false,
-        };
-    },
-    mounted() {
-        this.loadPlatformDetail();
-        this.initChart();
-    },
-    beforeUnmount() {
-        if (this.trendChart) {
-            this.trendChart.dispose();
+defineOptions({ name: "PlatformDetail" });
+
+const props = defineProps({
+    id: { type: String, required: false }
+});
+
+const route = useRoute();
+const platformId = computed(() => props.id || route.params.id);
+
+const currentRange = ref("7d");
+const trendChart = ref(null);
+const platformDetail = ref({
+    uuid: "", name: "", description: "", type: "", status: "", netType: "", createdAt: "", updatedAt: "", spiderName: "", url: "", logo: "", tags: [], sections: [], category: "", subCategory: ""
+});
+const statistics = ref({ totalData: 125430, related_actions: 3420, lastUpdate: "2小时前", todayNew: 1250 });
+const trendData = ref({
+    "7d": { dates: ["01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"], values: [1200, 1350, 1420, 1380, 1520, 1280, 1250] },
+    "30d": { dates: ["12-17","12-18","12-19","12-20","12-21","12-22","12-23","12-24","12-25","12-26","12-27","12-28","12-29","12-30","12-31","01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","01-09","01-10","01-11","01-12","01-13","01-14","01-15"], values: [8500,9200,8800,9500,9100,9300,8700,9600,8900,9400,9200,8800,9500,9100,9300,8700,9600,8900,9400,9200,8800,9500,9100,9300,8700,9600,8900,9400,9200,8800] },
+    "90d": { dates: ["10-18","10-19","10-20","10-21","10-22","10-23","10-24","10-25","10-26","10-27","10-28","10-29","10-30","10-31","11-01","11-02","11-03","11-04","11-05","11-06","11-07","11-08","11-09","11-10","11-11","11-12","11-13","11-14","11-15","11-16","11-17","11-18","11-19","11-20","11-21","11-22","11-23","11-24","11-25","11-26","11-27","11-28","11-29","11-30","12-01","12-02","12-03","12-04","12-05","12-06","12-07","12-08","12-09","12-10","12-11","12-12","12-13","12-14","12-15","12-16","12-17","12-18","12-19","12-20","12-21","12-22","12-23","12-24","12-25","12-26","12-27","12-28","12-29","12-30","12-31","01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","01-09","01-10","01-11","01-12","01-13","01-14","01-15"], values: [35000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000] }
+});
+const categoryStats = ref([
+    { name: "视频内容", count: 45230, percentage: 36, color: "bg-blue-500" },
+    { name: "用户评论", count: 38240, percentage: 30, color: "bg-green-500" },
+    { name: "弹幕数据", count: 25120, percentage: 20, color: "bg-purple-500" },
+    { name: "其他数据", count: 16840, percentage: 14, color: "bg-amber-500" }
+]);
+const snapshots = ref([
+    { date: "2024-01-01", image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg" },
+    { date: "2024-03-15", image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg" },
+    { date: "2024-06-20", image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg" },
+    { date: "2024-09-10", image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg" },
+    { date: "2024-12-25", image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg" },
+    { date: "2025-01-01", image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg" }
+]);
+const relatedIntelligence = ref([]);
+const intelligenceSortBy = ref("relevance");
+const intelligenceCurrentPage = ref(1);
+const intelligencePageSize = ref(5);
+const intelligenceTotalResults = ref(0);
+const intelligenceLoading = ref(false);
+
+const snapshotPreviewList = computed(() => snapshots.value.map((s) => s.image));
+
+watch(() => route.params.id, () => loadPlatformDetail());
+watch(intelligenceCurrentPage, () => loadRelatedIntelligence());
+watch(intelligenceSortBy, () => {
+    intelligenceCurrentPage.value = 1;
+    loadRelatedIntelligence();
+});
+
+let handleResize = null;
+async function loadPlatformDetail() {
+        try {
+            const response = await platformApi.getPlatformDetail(platformId.value);
+            if (response.code === 0 && response.data) {
+                const data = response.data;
+                platformDetail.value = {
+                    uuid: data.id || "", name: data.name || "", description: data.description || "", type: data.type || "", status: data.status || "", netType: data.net_type || "", createdAt: formatDate(data.created_at), updatedAt: formatDate(data.updated_at), url: data.url || "", logo: data.logo || "", tags: data.tags || [], sections: data.sections || [], category: data.category || "", subCategory: data.sub_category || "", spiderName: data.spider_name || ""
+                };
+                loadRelatedIntelligence();
+            }
+        } catch (error) {
+            console.error("加载平台详情失败:", error);
+            ElNotification({ title: "加载失败", message: "获取平台详情失败，请稍后重试", type: "error", position: "top-right", duration: 3000 });
         }
-        window.removeEventListener("resize", this.handleResize);
-    },
-    methods: {
-        // 调用接口获取平台详情数据
-        async loadPlatformDetail() {
-            try {
-                const response = await platformApi.getPlatformDetail(this.platformId);
-                if (response.code === 0 && response.data) {
-                    const data = response.data;
-                    this.platformDetail = {
-                        uuid: data.id || "",
-                        name: data.name || "",
-                        description: data.description || "",
-                        type: data.type || "",
-                        status: data.status || "",
-                        netType: data.net_type || "",
-                        createdAt: this.formatDate(data.created_at),
-                        updatedAt: this.formatDate(data.updated_at),
-                        url: data.url || "",
-                        logo: data.logo || "",
-                        tags: data.tags || [],
-                        sections: data.sections || [],
-                        category: data.category || "",
-                        subCategory: data.sub_category || "",
-                        spiderName: data.spider_name || "",
-                    };
-                    this.loadRelatedIntelligence();
-                }
-            } catch (error) {
-                console.error("加载平台详情失败:", error);
-                this.$notify({
-                    title: "加载失败",
-                    message: "获取平台详情失败，请稍后重试",
-                    type: "error",
-                    position: "top-right",
-                    duration: 3000,
-                });
+    }
+    function formatDate(dateString) {
+        if (!dateString) return "-";
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+        } catch (error) {
+            return dateString;
+        }
+    }
+    function getStatusType(status) {
+        const statusMap = { 正常: "success", 异常: "danger", 维护中: "warning", 已停用: "info" };
+        return statusMap[status] || "info";
+    }
+    function getLogoUrl(logo) {
+        return getCosUrl(logo);
+    }
+    function switchRange(range) {
+        updateChart();
+    }
+    function initChart() {
+        nextTick(() => {
+            const chartDom = document.getElementById("trend-chart");
+            if (!chartDom) return;
+            trendChart.value = echarts.init(chartDom);
+            updateChart();
+            handleResize = () => trendChart.value?.resize();
+            window.addEventListener("resize", handleResize);
+        });
+    }
+    function updateChart() {
+        if (!trendChart.value) return;
+        const data = trendData.value[currentRange.value];
+        const dateCount = data.dates.length;
+        let labelInterval = 0;
+        if (dateCount > 30) labelInterval = Math.floor(dateCount / 15);
+        else if (dateCount > 7) labelInterval = Math.floor(dateCount / 10);
+        const option = {
+            grid: { left: "3%", right: "4%", bottom: "15%", top: "10%", containLabel: true },
+            xAxis: { type: "category", data: data.dates, axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12, rotate: 45, interval: labelInterval, formatter: (v) => v } },
+            yAxis: { type: "value", axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12, formatter: (v) => (v >= 1000 ? (v / 1000).toFixed(1) + "k" : v) }, splitLine: { lineStyle: { color: "#f3f4f6", type: "dashed" } } },
+            series: [{ data: data.values, type: "line", smooth: true, symbol: "circle", symbolSize: 6, lineStyle: { width: 3, color: "#3b82f6" }, itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(59, 130, 246, 0.3)" }, { offset: 1, color: "rgba(59, 130, 246, 0.05)" }]) } }],
+            tooltip: { trigger: "axis", backgroundColor: "rgba(255, 255, 255, 0.95)", borderColor: "#e5e7eb", borderWidth: 1, textStyle: { color: "#1f2937" }, formatter: (params) => `${params[0].name}<br/>数据量: <b>${params[0].value.toLocaleString()}条</b>` }
+        };
+        trendChart.value.setOption(option);
+    }
+    function refreshData() {
+        ElNotification({ title: "刷新数据", message: "正在刷新平台数据，请稍候...", type: "info", position: "top-right", duration: 3000 });
+    }
+    function exportData() {
+        ElNotification({ title: "导出数据", message: "正在准备导出数据，请稍候...", type: "info", position: "top-right", duration: 3000 });
+    }
+    function configurePlatform() {
+        ElNotification({ title: "配置平台", message: "正在打开平台配置页面...", type: "info", position: "top-right", duration: 3000 });
+    }
+    async function loadRelatedIntelligence() {
+        if (!platformDetail.value.name) return;
+        try {
+            intelligenceLoading.value = true;
+            const params = { page: intelligenceCurrentPage.value, page_size: intelligencePageSize.value, sort_by: intelligenceSortBy.value, platform: platformDetail.value.name };
+            const response = await searchApi.searchEntity(params);
+            if (response.code === 0 && response.data) {
+                relatedIntelligence.value = response.data.items || [];
+                intelligenceTotalResults.value = response.data.total || 0;
             }
-        },
-        formatDate(dateString) {
-            if (!dateString) return "-";
-            try {
-                const date = new Date(dateString);
-                return date.toLocaleDateString("zh-CN", {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                });
-            } catch (error) {
-                return dateString;
+        } catch (error) {
+            console.error("加载关联情报失败:", error);
+            ElMessage.error("加载关联情报失败，请稍后重试");
+            relatedIntelligence.value = [];
+            intelligenceTotalResults.value = 0;
+        } finally {
+            intelligenceLoading.value = false;
+        }
+    }
+    function truncateContent(content, maxLength) {
+        if (!content) return "";
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = content;
+        const textContent = tempDiv.textContent || tempDiv.innerText || "";
+        if (textContent.length <= maxLength) return content;
+        let truncated = "";
+        let currentLength = 0;
+        const walk = (node) => {
+            if (currentLength >= maxLength) return;
+            if (node.nodeType === Node.TEXT_NODE) {
+                const remaining = maxLength - currentLength;
+                if (node.textContent.length <= remaining) { truncated += node.textContent; currentLength += node.textContent.length; }
+                else { truncated += node.textContent.substring(0, remaining) + "..."; currentLength = maxLength; }
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                truncated += `<${node.tagName.toLowerCase()}>`;
+                for (const child of node.childNodes) walk(child);
+                truncated += `</${node.tagName.toLowerCase()}>`;
             }
-        },
-        getStatusType(status) {
-            const statusMap = {
-                正常: "success",
-                异常: "danger",
-                维护中: "warning",
-                已停用: "info",
-            };
-            return statusMap[status] || "info";
-        },
-        getLogoUrl(logo) {
-            return getCosUrl(logo);
-        },
-        switchRange(range) {
-            this.updateChart();
-        },
-        initChart() {
-            this.$nextTick(() => {
-                const chartDom = document.getElementById("trend-chart");
-                if (!chartDom) return;
-
-                this.trendChart = echarts.init(chartDom);
-                this.updateChart();
-
-                this.handleResize = () => {
-                    this.trendChart?.resize();
-                };
-                window.addEventListener("resize", this.handleResize);
-            });
-        },
-        updateChart() {
-            if (!this.trendChart) return;
-
-            const data = this.trendData[this.currentRange];
-            const dateCount = data.dates.length;
-            let labelInterval = 0;
-            if (dateCount > 30) {
-                labelInterval = Math.floor(dateCount / 15);
-            } else if (dateCount > 7) {
-                labelInterval = Math.floor(dateCount / 10);
-            }
-
-            const option = {
-                grid: {
-                    left: "3%",
-                    right: "4%",
-                    bottom: "15%",
-                    top: "10%",
-                    containLabel: true,
-                },
-                xAxis: {
-                    type: "category",
-                    data: data.dates,
-                    axisLine: {
-                        lineStyle: {
-                            color: "#e5e7eb",
-                        },
-                    },
-                    axisLabel: {
-                        color: "#6b7280",
-                        fontSize: 12,
-                        rotate: 45,
-                        interval: labelInterval,
-                        formatter: (value) => {
-                            return value;
-                        },
-                    },
-                },
-                yAxis: {
-                    type: "value",
-                    axisLine: {
-                        lineStyle: {
-                            color: "#e5e7eb",
-                        },
-                    },
-                    axisLabel: {
-                        color: "#6b7280",
-                        fontSize: 12,
-                        formatter: (value) => {
-                            if (value >= 1000) {
-                                return (value / 1000).toFixed(1) + "k";
-                            }
-                            return value;
-                        },
-                    },
-                    splitLine: {
-                        lineStyle: {
-                            color: "#f3f4f6",
-                            type: "dashed",
-                        },
-                    },
-                },
-                series: [
-                    {
-                        data: data.values,
-                        type: "line",
-                        smooth: true,
-                        symbol: "circle",
-                        symbolSize: 6,
-                        lineStyle: {
-                            width: 3,
-                            color: "#3b82f6",
-                        },
-                        itemStyle: {
-                            color: "#3b82f6",
-                            borderColor: "#ffffff",
-                            borderWidth: 2,
-                        },
-                        areaStyle: {
-                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
-                                { offset: 1, color: "rgba(59, 130, 246, 0.05)" },
-                            ]),
-                        },
-                    },
-                ],
-                tooltip: {
-                    trigger: "axis",
-                    backgroundColor: "rgba(255, 255, 255, 0.95)",
-                    borderColor: "#e5e7eb",
-                    borderWidth: 1,
-                    textStyle: {
-                        color: "#1f2937",
-                    },
-                    formatter: (params) => {
-                        const value = params[0].value;
-                        return `${params[0].name
-                            }<br/>数据量: <b>${value.toLocaleString()}条</b>`;
-                    },
-                },
-            };
-
-            this.trendChart.setOption(option);
-        },
-        refreshData() {
-            this.$notify({
-                title: "刷新数据",
-                message: "正在刷新平台数据，请稍候...",
-                type: "info",
-                position: "top-right",
-                duration: 3000,
-            });
-        },
-        exportData() {
-            this.$notify({
-                title: "导出数据",
-                message: "正在准备导出数据，请稍候...",
-                type: "info",
-                position: "top-right",
-                duration: 3000,
-            });
-        },
-        configurePlatform() {
-            this.$notify({
-                title: "配置平台",
-                message: "正在打开平台配置页面...",
-                type: "info",
-                position: "top-right",
-                duration: 3000,
-            });
-            // 路由示例: this.$router.push(`/platforms/${this.platformId}/config`)
-        },
-        async loadRelatedIntelligence() {
-            if (!this.platformDetail.name) return;
-            
-            try {
-                this.intelligenceLoading = true;
-                const params = {
-                    page: this.intelligenceCurrentPage,
-                    page_size: this.intelligencePageSize,
-                    sort_by: this.intelligenceSortBy,
-                    platform: this.platformDetail.name,
-                };
-
-                const response = await searchApi.searchEntity(params);
-                
-                if (response.code === 0 && response.data) {
-                    this.relatedIntelligence = response.data.items || [];
-                    this.intelligenceTotalResults = response.data.total || 0;
-                }
-            } catch (error) {
-                console.error("加载关联情报失败:", error);
-                this.$message.error("加载关联情报失败，请稍后重试");
-                this.relatedIntelligence = [];
-                this.intelligenceTotalResults = 0;
-            } finally {
-                this.intelligenceLoading = false;
-            }
-        },
-        truncateContent(content, maxLength) {
-            if (!content) return "";
-            const tempDiv = document.createElement("div");
-            tempDiv.innerHTML = content;
-            const textContent = tempDiv.textContent || tempDiv.innerText || "";
-            if (textContent.length <= maxLength) return content;
-            let truncated = "";
-            let currentLength = 0;
-            const walk = (node) => {
-                if (currentLength >= maxLength) return;
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const remaining = maxLength - currentLength;
-                    if (node.textContent.length <= remaining) {
-                        truncated += node.textContent;
-                        currentLength += node.textContent.length;
-                    } else {
-                        truncated += node.textContent.substring(0, remaining) + "...";
-                        currentLength = maxLength;
-                    }
-                } else if (node.nodeType === Node.ELEMENT_NODE) {
-                    truncated += `<${node.tagName.toLowerCase()}>`;
-                    for (const child of node.childNodes) {
-                        walk(child);
-                    }
-                    truncated += `</${node.tagName.toLowerCase()}>`;
-                }
-            };
-            for (const child of tempDiv.childNodes) {
-                walk(child);
-            }
-            return truncated;
-        },
-        getConfidenceInfo(confidence) {
-            if (confidence === 0) {
-                return { text: "零信任", type: "danger" };
-            } else if (confidence > 0 && confidence <= 0.4) {
-                return { text: "低", type: "info" };
-            } else if (confidence > 0.4 && confidence <= 0.7) {
-                return { text: "中", type: "" };
+        };
+        for (const child of tempDiv.childNodes) walk(child);
+        return truncated;
+    }
+    function getConfidenceInfo(confidence) {
+        if (confidence === 0) return { text: "零信任", type: "danger" };
+        if (confidence > 0 && confidence <= 0.4) return { text: "低", type: "info" };
+        if (confidence > 0.4 && confidence <= 0.7) return { text: "中", type: "" };
+        return { text: "高", type: "warning" };
+    }
+    function getDetailRoute(entityType, uuid) {
+        return `/details/${entityType}/${uuid}`;
+    }
+    function formatDateTime(dateTime) {
+        if (!dateTime) return "";
+        const date = new Date(dateTime);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+    }
+    async function toggleHighlight(result) {
+        if (!result || !result.uuid) return;
+        result._highlightLoading = true;
+        try {
+            const isHighlighted = result.is_highlighted;
+            const entityType = result.entity_type?.toLowerCase() || "article";
+            const requestData = isHighlighted ? { is_highlighted: false } : { is_highlighted: true, highlight_reason: "用户在平台详情页标记" };
+            const response = await highlightApi.setHighlight(entityType, result.uuid, requestData);
+            if (response.code === 0) {
+                result.is_highlighted = !isHighlighted;
+                ElMessage.success(isHighlighted ? "已取消重点目标" : "已设置为重点目标");
             } else {
-                return { text: "高", type: "warning" };
+                ElMessage.error(response.message || (isHighlighted ? "取消重点目标失败" : "设置重点目标失败"));
             }
-        },
-        getDetailRoute(entityType, uuid) {
-            return `/details/${entityType}/${uuid}`;
-        },
-        formatDateTime(dateTime) {
-            if (!dateTime) return "";
-            const date = new Date(dateTime);
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, "0");
-            const day = String(date.getDate()).padStart(2, "0");
-            const hours = String(date.getHours()).padStart(2, "0");
-            const minutes = String(date.getMinutes()).padStart(2, "0");
-            const seconds = String(date.getSeconds()).padStart(2, "0");
-            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-        },
-        async toggleHighlight(result) {
-            if (!result || !result.uuid) return;
+        } catch (err) {
+            console.error("操作重点目标失败:", err);
+            ElMessage.error("操作失败，请稍后重试");
+        } finally {
+            result._highlightLoading = false;
+        }
+    }
 
-            result._highlightLoading = true;
+onMounted(() => {
+    loadPlatformDetail();
+    initChart();
+});
 
-            try {
-                const isHighlighted = result.is_highlighted;
-                const entityType = result.entity_type?.toLowerCase() || "article";
-                const requestData = isHighlighted
-                    ? { is_highlighted: false }
-                    : { is_highlighted: true, highlight_reason: "用户在平台详情页标记" };
-
-                const response = await highlightApi.setHighlight(entityType, result.uuid, requestData);
-
-                if (response.code === 0) {
-                    result.is_highlighted = !isHighlighted;
-                    this.$message.success(isHighlighted ? "已取消重点目标" : "已设置为重点目标");
-                } else {
-                    this.$message.error(response.message || (isHighlighted ? "取消重点目标失败" : "设置重点目标失败"));
-                }
-            } catch (err) {
-                console.error("操作重点目标失败:", err);
-                this.$message.error("操作失败，请稍后重试");
-            } finally {
-                result._highlightLoading = false;
-            }
-        },
-    },
-};
+onBeforeUnmount(() => {
+    if (trendChart.value) trendChart.value.dispose();
+    if (handleResize) window.removeEventListener("resize", handleResize);
+});
 </script>
 
 <style scoped>
