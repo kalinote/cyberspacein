@@ -387,196 +387,95 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import { searchApi } from '@/api/search'
 import { highlightApi } from '@/api/highlight'
 
-export default {
-  name: 'Search',
-  components: {
-    Header,
-    Icon
-  },
-  data() {
-    return {
-      searchQuery: '',
-      nsfwFilter: 1,
-      aigcFilter: 1,
-      timeRange: 'all',
-      categories: [],
-      sources: [],
-      priorities: [],
-      sortBy: 'crawled_at',
-      currentPage: 1,
-      pageSize: 5,
-      totalResults: 0,
-      loading: false,
+defineOptions({ name: 'Search' })
 
-      // 高级筛选器
-      showAdvancedFilters: false,
-      filterOptions: {
-        timeRange: [
-          { value: 'all', label: '全部' },
-          { value: '24h', label: '最近24小时' },
-          { value: '7d', label: '最近7天' },
-          { value: '30d', label: '最近30天' },
-          { value: 'custom', label: '自定义' }
-        ],
-        categories: [
-          { value: 'Forum', label: 'Forum' },
-          { value: 'Article', label: 'Article' }
-        ],
-        sources: [
-          { value: '明网', label: '明网' },
-          { value: 'Tor', label: 'Tor' }
-        ],
-        priorities: [
-          { value: '高', label: '高' },
-          { value: '中', label: '中' },
-          { value: '低', label: '低' },
-          { value: '零信任', label: '零信任' }
-        ]
-      },
+const route = useRoute()
+const searchQuery = ref('')
+const nsfwFilter = ref(1)
+const aigcFilter = ref(1)
+const timeRange = ref('all')
+const categories = ref([])
+const sources = ref([])
+const priorities = ref([])
+const sortBy = ref('crawled_at')
+const currentPage = ref(1)
+const pageSize = ref(5)
+const totalResults = ref(0)
+const loading = ref(false)
+const showAdvancedFilters = ref(false)
 
-      searchTemplates: [
-        {
-          id: 1,
-          searchQuery: "近期新发现的高危漏洞",
-          title: '网络安全威胁',
-          description: '监控最新的网络攻击、漏洞和威胁情报',
-          create_time: '2025-12-11 12:16:38',
-          rules: {
-            timeRange: '7d',
-            entityType: ['Forum'],
-            sources: ['明网'],
-            priorities: ['高'],
-            nsfw: 1,
-            aigc: 1
-          }
-        },
-        {
-          id: 2,
-          searchQuery: "市场投资动态",
-          title: '市场投资动态',
-          description: '追踪科技行业融资、并购和市场趋势',
-          create_time: '2025-12-10 09:30:15',
-          rules: {
-            timeRange: '30d',
-            entityType: ['Article'],
-            sources: ['明网', 'Tor'],
-            priorities: ['中', '高'],
-            nsfw: 1,
-            aigc: 2
-          }
-        },
-        {
-          id: 3,
-          searchQuery: "最新政策法规更新",
-          title: '政策法规更新',
-          description: '关注最新的政策法规变化和合规要求',
-          create_time: '2025-12-09 14:22:45',
-          rules: {
-            timeRange: '24h',
-            entityType: ['Article'],
-            sources: ['明网'],
-            priorities: ['高', '中'],
-            nsfw: 1,
-            aigc: 0
-          }
-        },
-        {
-          id: 4,
-          searchQuery: "人工智能 量子计算",
-          title: '技术发展前沿',
-          description: '追踪人工智能、量子计算等前沿技术突破',
-          create_time: '2025-12-08 16:45:20',
-          rules: {
-            timeRange: '7d',
-            entityType: ['Article'],
-            sources: ['明网', 'Tor'],
-            priorities: ['高', '中'],
-            nsfw: 2,
-            aigc: 1
-          }
-        },
-        {
-          id: 5,
-          searchQuery: "近期发生的安全事件",
-          title: '紧急安全事件',
-          description: '实时监控紧急和高级别的安全威胁事件',
-          create_time: '2025-12-07 11:15:30',
-          rules: {
-            timeRange: '24h',
-            entityType: ['Forum'],
-            sources: ['明网', 'Tor'],
-            priorities: ['高'],
-            nsfw: 0,
-            aigc: 1
-          }
-        },
-        {
-          id: 6,
-          searchQuery: "综合情报汇总",
-          title: '综合情报汇总',
-          description: '涵盖所有分类的综合性情报检索',
-          create_time: '2025-12-06 10:00:00',
-          rules: {
-            timeRange: '7d',
-            entityType: ['Forum', 'Article'],
-            sources: ['明网', 'Tor'],
-            priorities: ['高', '中', '低'],
-            nsfw: 1,
-            aigc: 1
-          }
-        }
-      ],
+const filterOptions = {
+  timeRange: [
+    { value: 'all', label: '全部' },
+    { value: '24h', label: '最近24小时' },
+    { value: '7d', label: '最近7天' },
+    { value: '30d', label: '最近30天' },
+    { value: 'custom', label: '自定义' }
+  ],
+  categories: [
+    { value: 'Forum', label: 'Forum' },
+    { value: 'Article', label: 'Article' }
+  ],
+  sources: [
+    { value: '明网', label: '明网' },
+    { value: 'Tor', label: 'Tor' }
+  ],
+  priorities: [
+    { value: '高', label: '高' },
+    { value: '中', label: '中' },
+    { value: '低', label: '低' },
+    { value: '零信任', label: '零信任' }
+  ]
+}
 
-      searchResults: []
-    }
-  },
+const searchTemplates = [
+  { id: 1, searchQuery: '近期新发现的高危漏洞', title: '网络安全威胁', description: '监控最新的网络攻击、漏洞和威胁情报', create_time: '2025-12-11 12:16:38', rules: { timeRange: '7d', entityType: ['Forum'], sources: ['明网'], priorities: ['高'], nsfw: 1, aigc: 1 } },
+  { id: 2, searchQuery: '市场投资动态', title: '市场投资动态', description: '追踪科技行业融资、并购和市场趋势', create_time: '2025-12-10 09:30:15', rules: { timeRange: '30d', entityType: ['Article'], sources: ['明网', 'Tor'], priorities: ['中', '高'], nsfw: 1, aigc: 2 } },
+  { id: 3, searchQuery: '最新政策法规更新', title: '政策法规更新', description: '关注最新的政策法规变化和合规要求', create_time: '2025-12-09 14:22:45', rules: { timeRange: '24h', entityType: ['Article'], sources: ['明网'], priorities: ['高', '中'], nsfw: 1, aigc: 0 } },
+  { id: 4, searchQuery: '人工智能 量子计算', title: '技术发展前沿', description: '追踪人工智能、量子计算等前沿技术突破', create_time: '2025-12-08 16:45:20', rules: { timeRange: '7d', entityType: ['Article'], sources: ['明网', 'Tor'], priorities: ['高', '中'], nsfw: 2, aigc: 1 } },
+  { id: 5, searchQuery: '近期发生的安全事件', title: '紧急安全事件', description: '实时监控紧急和高级别的安全威胁事件', create_time: '2025-12-07 11:15:30', rules: { timeRange: '24h', entityType: ['Forum'], sources: ['明网', 'Tor'], priorities: ['高'], nsfw: 0, aigc: 1 } },
+  { id: 6, searchQuery: '综合情报汇总', title: '综合情报汇总', description: '涵盖所有分类的综合性情报检索', create_time: '2025-12-06 10:00:00', rules: { timeRange: '7d', entityType: ['Forum', 'Article'], sources: ['明网', 'Tor'], priorities: ['高', '中', '低'], nsfw: 1, aigc: 1 } }
+]
 
-  computed: {
-    filterRulesText() {
-      const rule = {
-        timeRange: this.timeRange,
-        categories: this.categories,
-        sources: this.sources,
-        priorities: this.priorities,
-        nsfw: this.nsfwFilter,
-        aigc: this.aigcFilter
-      }
+const searchResults = ref([])
 
-      return this.Rules2Text(rule)
-    },
+const filterRulesText = computed(() => {
+  const rule = {
+    timeRange: timeRange.value,
+    categories: categories.value,
+    sources: sources.value,
+    priorities: priorities.value,
+    nsfw: nsfwFilter.value,
+    aigc: aigcFilter.value
+  }
+  return Rules2Text(rule)
+})
 
-    hasActiveFilters() {
-      return this.filterRulesText.length > 0
-    },
+const hasActiveFilters = computed(() => filterRulesText.value.length > 0)
 
-    nsfwFilterText() {
-      return this.formatNsfwTooltip(this.nsfwFilter)
-    },
+const nsfwFilterText = computed(() => formatNsfwTooltip(nsfwFilter.value))
 
-    aigcFilterText() {
-      return this.formatAigcTooltip(this.aigcFilter)
-    }
-  },
+const aigcFilterText = computed(() => formatAigcTooltip(aigcFilter.value))
 
-  watch: {
-    currentPage() {
-      if (this.searchResults.length > 0) {
-        this.performSearch()
-      }
-    },
-    '$route.query.q'() {
-      this.initSearchFromQuery()
-    }
-  },
+watch(currentPage, () => {
+  if (searchResults.value.length > 0) {
+    performSearch()
+  }
+})
 
-  methods: {
-    truncateContent(content, maxLength) {
+watch(() => route.query.q, () => {
+  initSearchFromQuery()
+})
+function truncateContent(content, maxLength) {
       if (!content) return ''
       const tempDiv = document.createElement('div')
       tempDiv.innerHTML = content
@@ -607,27 +506,27 @@ export default {
         walk(child)
       }
       return truncated
-    },
+    }
 
-    formatNsfwTooltip(value) {
+    function formatNsfwTooltip(value) {
       const tooltips = {
         0: '无NSFW',
         1: '包含NSFW',
         2: '仅NSFW'
       }
       return tooltips[value] || '默认'
-    },
+    }
 
-    formatAigcTooltip(value) {
+    function formatAigcTooltip(value) {
       const tooltips = {
         0: '无AIGC',
         1: '包含AIGC',
         2: '仅AIGC'
       }
       return tooltips[value] || '默认'
-    },
+    }
 
-    getConfidenceInfo(confidence) {
+    function getConfidenceInfo(confidence) {
       if (confidence === 0) {
         return { text: '零信任', type: 'danger' }
       } else if (confidence > 0 && confidence <= 0.4) {
@@ -637,13 +536,13 @@ export default {
       } else {
         return { text: '高', type: 'warning' }
       }
-    },
+    }
 
-    getDetailRoute(entityType, uuid) {
+    function getDetailRoute(entityType, uuid) {
       return `/details/${entityType}/${uuid}`
-    },
+    }
 
-    formatDateTime(dateTime) {
+    function formatDateTime(dateTime) {
       if (!dateTime) return ''
       const date = new Date(dateTime)
       const year = date.getFullYear()
@@ -653,9 +552,9 @@ export default {
       const minutes = String(date.getMinutes()).padStart(2, '0')
       const seconds = String(date.getSeconds()).padStart(2, '0')
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-    },
+    }
 
-    getPriorityColorClass(value) {
+    function getPriorityColorClass(value) {
       const colorMap = {
         '高': 'bg-red-500',
         '中': 'bg-amber-500',
@@ -663,16 +562,14 @@ export default {
         '零信任': 'bg-gray-400'
       }
       return colorMap[value] || 'bg-gray-400'
-    },
+    }
 
-    // 查询筛选模板规则转字符串
-    // 筛选列表后续通过接口获取，当前只是临时数据
-    Rules2Text(rule) {
+    function Rules2Text(rule) {
       if (!rule) return ''
       const conditions = []
-      
+
       if (rule.timeRange && rule.timeRange !== 'all') {
-        const timeRangeOption = this.filterOptions.timeRange.find(opt => opt.value === rule.timeRange)
+        const timeRangeOption = filterOptions.timeRange.find(opt => opt.value === rule.timeRange)
         if (timeRangeOption) {
           conditions.push(timeRangeOption.label)
         }
@@ -681,7 +578,7 @@ export default {
       const cats = rule.entityType || rule.categories
       if (cats && cats.length > 0) {
         const categoryLabels = cats.map(cat => {
-          const option = this.filterOptions.categories.find(opt => opt.value === cat)
+          const option = filterOptions.categories.find(opt => opt.value === cat)
           return option ? option.label : cat
         })
         conditions.push(categoryLabels.join(', '))
@@ -689,7 +586,7 @@ export default {
 
       if (rule.sources && rule.sources.length > 0) {
         const sourceLabels = rule.sources.map(src => {
-          const option = this.filterOptions.sources.find(opt => opt.value === src)
+          const option = filterOptions.sources.find(opt => opt.value === src)
           return option ? option.label : src
         })
         conditions.push(sourceLabels.join(', '))
@@ -697,25 +594,24 @@ export default {
 
       if (rule.priorities && rule.priorities.length > 0) {
         const priorityLabels = rule.priorities.map(pri => {
-          const option = this.filterOptions.priorities.find(opt => opt.value === pri)
+          const option = filterOptions.priorities.find(opt => opt.value === pri)
           return option ? option.label : pri
         })
         conditions.push(priorityLabels.join(', ') + '置信度')
       }
 
       if (rule.nsfw !== undefined && rule.nsfw !== null) {
-        conditions.push(this.formatNsfwTooltip(rule.nsfw))
+        conditions.push(formatNsfwTooltip(rule.nsfw))
       }
 
       if (rule.aigc !== undefined && rule.aigc !== null) {
-        conditions.push(this.formatAigcTooltip(rule.aigc))
+        conditions.push(formatAigcTooltip(rule.aigc))
       }
 
       return conditions.length > 0 ? conditions.join(' • ') : ''
-    },
+    }
 
-    // 临时使用，用于模板图表生成
-    getTemplateIconClass(templateId) {
+    function getTemplateIconClass(templateId) {
       const iconConfigs = [
         { icon: 'mdi:shield', bgClass: 'bg-blue-100', iconClass: 'text-blue-600' },
         { icon: 'mdi:trending-up', bgClass: 'bg-green-100', iconClass: 'text-green-600' },
@@ -725,21 +621,21 @@ export default {
       ]
       const index = (templateId - 1) % iconConfigs.length
       return iconConfigs[index]
-    },
+    }
 
-    getTimeRangeBounds() {
-      if (!this.timeRange || this.timeRange === 'all') {
+    function getTimeRangeBounds() {
+      if (!timeRange.value || timeRange.value === 'all') {
         return { start_at: null, end_at: null }
       }
       const end = new Date()
       let start = new Date()
-      if (this.timeRange === '24h') {
+      if (timeRange.value === '24h') {
         start.setHours(start.getHours() - 24)
-      } else if (this.timeRange === '7d') {
+      } else if (timeRange.value === '7d') {
         start.setDate(start.getDate() - 7)
-      } else if (this.timeRange === '30d') {
+      } else if (timeRange.value === '30d') {
         start.setDate(start.getDate() - 30)
-      } else if (this.timeRange === 'custom') {
+      } else if (timeRange.value === 'custom') {
         return { start_at: null, end_at: null }
       } else {
         return { start_at: null, end_at: null }
@@ -748,53 +644,53 @@ export default {
         start_at: start.toISOString(),
         end_at: end.toISOString()
       }
-    },
+    }
 
-    async performSearch() {
+    async function performSearch() {
       try {
-        this.loading = true
-        const { start_at, end_at } = this.getTimeRangeBounds()
+        loading.value = true
+        const { start_at, end_at } = getTimeRangeBounds()
         const params = {
-          page: this.currentPage,
-          page_size: this.pageSize,
-          keywords: this.searchQuery || undefined,
+          page: currentPage.value,
+          page_size: pageSize.value,
+          keywords: searchQuery.value || undefined,
           search_mode: 'keyword',
-          sort_by: this.sortBy,
+          sort_by: sortBy.value,
           sort_order: 'desc'
         }
 
-        if (this.nsfwFilter === 0) {
+        if (nsfwFilter.value === 0) {
           params.nsfw = false
-        } else if (this.nsfwFilter === 2) {
+        } else if (nsfwFilter.value === 2) {
           params.nsfw = true
         }
 
-        if (this.aigcFilter === 0) {
+        if (aigcFilter.value === 0) {
           params.aigc = false
-        } else if (this.aigcFilter === 2) {
+        } else if (aigcFilter.value === 2) {
           params.aigc = true
         }
 
         if (start_at) params.start_at = start_at
         if (end_at) params.end_at = end_at
 
-        if (this.categories && this.categories.length > 0) {
-          params.entity_type = [...this.categories]
+        if (categories.value && categories.value.length > 0) {
+          params.entity_type = [...categories.value]
         }
 
         const response = await searchApi.searchEntity(params)
-        
+
         if (response.code === 0 && response.data) {
-          this.searchResults = response.data.items || []
-          this.totalResults = response.data.total || 0
-          if (this.searchResults.length === 0) {
-            this.$message({
+          searchResults.value = response.data.items || []
+          totalResults.value = response.data.total || 0
+          if (searchResults.value.length === 0) {
+            ElMessage({
               message: '没有找到相关内容',
               type: 'error',
               duration: 4000
             })
           }
-          this.$nextTick(() => {
+          nextTick(() => {
             const resultsSection = document.getElementById('search-results')
             if (resultsSection) {
               const header = document.querySelector('header')
@@ -810,90 +706,87 @@ export default {
         }
       } catch (error) {
         console.error('搜索失败:', error)
-        this.$message.error('搜索失败，请稍后重试')
-        this.searchResults = []
-        this.totalResults = 0
+        ElMessage.error('搜索失败，请稍后重试')
+        searchResults.value = []
+        totalResults.value = 0
       } finally {
-        this.loading = false
+        loading.value = false
       }
-    },
+    }
 
-    handleSearchFromResults() {
-      this.currentPage = 1
-      this.performSearch()
-    },
+    function handleSearchFromResults() {
+      currentPage.value = 1
+      performSearch()
+    }
 
-    initSearchFromQuery() {
-      if (this.$route.query.q) {
-        this.searchQuery = this.$route.query.q
-        this.currentPage = 1
-        this.performSearch()
+    function initSearchFromQuery() {
+      if (route.query.q) {
+        searchQuery.value = route.query.q
+        currentPage.value = 1
+        performSearch()
       }
-    },
+    }
 
-    resetFilters() {
-      this.timeRange = 'all'
-      this.categories = []
-      this.sources = []
-      this.priorities = []
-    },
+    function resetFilters() {
+      timeRange.value = 'all'
+      categories.value = []
+      sources.value = []
+      priorities.value = []
+    }
 
-    applyFilters() {
-      this.showAdvancedFilters = false
-      this.performSearch()
-    },
+    function applyFilters() {
+      showAdvancedFilters.value = false
+      performSearch()
+    }
 
-    applyTemplateFilters(template) {
+    function applyTemplateFilters(template) {
       if (!template || !template.rules) return
 
       const rules = template.rules
 
-      // 应用搜索关键词
       if (template.searchQuery) {
-        this.searchQuery = template.searchQuery
+        searchQuery.value = template.searchQuery
       }
 
       if (rules.timeRange) {
-        this.timeRange = rules.timeRange
+        timeRange.value = rules.timeRange
       }
 
       const entityTypes = rules.entityType || rules.categories
       if (entityTypes && Array.isArray(entityTypes)) {
-        this.categories = [...entityTypes]
+        categories.value = [...entityTypes]
       } else {
-        this.categories = []
+        categories.value = []
       }
 
-      // 应用数据源
       if (rules.sources && Array.isArray(rules.sources)) {
-        this.sources = [...rules.sources]
+        sources.value = [...rules.sources]
       } else {
-        this.sources = []
+        sources.value = []
       }
 
-      // 应用优先级
       if (rules.priorities && Array.isArray(rules.priorities)) {
-        this.priorities = [...rules.priorities]
+        priorities.value = [...rules.priorities]
       } else {
-        this.priorities = []
+        priorities.value = []
       }
 
       if (rules.nsfw !== undefined && rules.nsfw !== null) {
-        this.nsfwFilter = rules.nsfw
+        nsfwFilter.value = rules.nsfw
       }
 
       if (rules.aigc !== undefined && rules.aigc !== null) {
-        this.aigcFilter = rules.aigc
+        aigcFilter.value = rules.aigc
       }
 
-      this.$message.success('已应用模板筛选条件')
-    },
+      ElMessage.success('已应用模板筛选条件')
+    }
 
-    handleEditTemplate(template) {
-      this.$message.info('编辑模板功能开发中')
-    },
+    function handleEditTemplate(template) {
+      ElMessage.info('编辑模板功能开发中')
+    }
 
-    async toggleHighlight(result) {
+    async function toggleHighlight(result) {
       if (!result || !result.uuid) return
 
       result._highlightLoading = true
@@ -909,23 +802,21 @@ export default {
 
         if (response.code === 0) {
           result.is_highlighted = !isHighlighted
-          this.$message.success(isHighlighted ? '已取消重点目标' : '已设置为重点目标')
+          ElMessage.success(isHighlighted ? '已取消重点目标' : '已设置为重点目标')
         } else {
-          this.$message.error(response.message || (isHighlighted ? '取消重点目标失败' : '设置重点目标失败'))
+          ElMessage.error(response.message || (isHighlighted ? '取消重点目标失败' : '设置重点目标失败'))
         }
       } catch (err) {
         console.error('操作重点目标失败:', err)
-        this.$message.error('操作失败，请稍后重试')
+        ElMessage.error('操作失败，请稍后重试')
       } finally {
         result._highlightLoading = false
       }
     }
-  },
 
-  mounted() {
-    this.initSearchFromQuery()
-  }
-}
+onMounted(() => {
+  initSearchFromQuery()
+})
 </script>
 
 <style scoped>

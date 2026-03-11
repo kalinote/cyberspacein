@@ -45,15 +45,15 @@
           <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">快速部署行动</h3>
             <div class="space-y-4">
-              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2" @click="$router.push('/action/new')">
+              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2" @click="router.push('/action/new')">
                 <Icon icon="mdi:rocket-launch-outline" />
                 <span>新建标准行动蓝图</span>
               </button>
-              <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/action/resource-config')">
+              <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2" @click="router.push('/action/resource-config')">
                 <Icon icon="mdi:server-network" />
                 <span>行动资源配置</span>
               </button>
-              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/action/history')">
+              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2" @click="router.push('/action/history')">
                 <Icon icon="mdi:history" />
                 <span>查看历史行动</span>
               </button>
@@ -71,7 +71,7 @@
             <Icon icon="mdi:file-document-multiple" class="text-blue-600 text-2xl" />
             <span><span class="text-blue-500">行动</span>蓝图</span>
           </h2>
-          <el-button type="primary" link @click="$router.push('/action/blueprints')">
+          <el-button type="primary" link @click="router.push('/action/blueprints')">
             <template #icon><Icon icon="mdi:arrow-right" /></template>
             查看全部蓝图
           </el-button>
@@ -319,7 +319,7 @@
             <Icon icon="mdi:monitor-dashboard" class="text-blue-600 text-2xl" />
             <span><span class="text-blue-500">行动</span>执行监控</span>
           </h2>
-          <el-button type="primary" link @click="$router.push('/action/history')">
+          <el-button type="primary" link @click="router.push('/action/history')">
             <template #icon><Icon icon="mdi:arrow-right" /></template>
             查看历史行动
           </el-button>
@@ -518,8 +518,11 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Header from '@/components/Header.vue'
 import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import TemplateParamsDialog from '@/components/action/template/TemplateParamsDialog.vue'
@@ -527,249 +530,232 @@ import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
 import { getActionStatusIcon } from '@/utils/action'
 
-export default {
-  name: 'Action',
-  components: {
-    Header,
-    Icon,
-    BlueprintFlowDialog,
-    TemplateParamsDialog
-  },
-  data() {
-    return {
-      blueprintDialogVisible: false,
-      selectedBlueprintId: null,
-      templateParamsDialogVisible: false,
-      selectedBlueprintForRun: null,
-      loadingRunningActions: false,
-      loadingBlueprints: false,
-      runningActions: [],
-      commonBlueprints: []
-    }
-  },
-  
-  methods: {
-    getActionStatusIcon,
+defineOptions({ name: 'Action' })
 
-    async createActionFromBlueprint(blueprint) {
-      if (!blueprint || !blueprint.id) {
-        this.$message.error('蓝图ID不存在')
-        return
-      }
+const router = useRouter()
+const blueprintDialogVisible = ref(false)
+const selectedBlueprintId = ref(null)
+const templateParamsDialogVisible = ref(false)
+const selectedBlueprintForRun = ref(null)
+const loadingRunningActions = ref(false)
+const loadingBlueprints = ref(false)
+const runningActions = ref([])
+const commonBlueprints = ref([])
 
-      if (blueprint.isTemplate) {
-        this.templateParamsDialogVisible = true
-        this.selectedBlueprintForRun = blueprint
-      } else {
-        await this.runBlueprint(blueprint.id, null)
-      }
-    },
+async function createActionFromBlueprint(blueprint) {
+  if (!blueprint || !blueprint.id) {
+    ElMessage.error('蓝图ID不存在')
+    return
+  }
 
-    async runBlueprint(blueprintId, params) {
-      try {
-        const data = { blueprint_id: blueprintId }
-        if (params) {
-          data.params = params
-        }
-
-        const response = await actionApi.runAction(data)
-
-        if (response.code === 0 && response.data && response.data.action_id) {
-          this.$message.success('行动已创建并开始执行')
-          this.$router.push(`/action/${response.data.action_id}`)
-        } else {
-          this.$message.error(response.message || '创建行动失败')
-        }
-      } catch (error) {
-        console.error('创建行动失败:', error)
-        this.$message.error(error.message || '创建行动失败，请稍后重试')
-      }
-    },
-
-    async handleParamsSubmit(params) {
-      await this.runBlueprint(this.selectedBlueprintForRun.id, params)
-      this.templateParamsDialogVisible = false
-    },
-    
-    // 占位方法：创建蓝图分支版本，等待后端API完成
-    createBranchVersion(blueprint) {
-      this.$message.info(`创建分支版本功能开发中...`)
-    },
-    
-    removeFromCommonBlueprints(index) {
-      this.$confirm('确定要删除此蓝图吗？', '确认删除', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        this.commonBlueprints.splice(index, 1)
-        this.$message.success('已删除')
-      }).catch(() => {
-        this.$message.info('已取消删除')
-      })
-    },
-
-    viewSteps(blueprintId) {
-      this.$message.error(`[尚未实现] 查看步骤: ${blueprintId}`)
-    },
-
-    formatImplementationPeriod(seconds) {
-      if (!seconds || seconds <= 0) {
-        return '未设置'
-      }
-      
-      const oneDay = 24 * 3600
-      const oneHour = 3600
-      const oneMinute = 60
-      
-      if (seconds >= oneDay) {
-        const days = Math.floor(seconds / oneDay)
-        return `${days}天`
-      } else if (seconds >= oneHour) {
-        const hours = Math.floor(seconds / oneHour)
-        return `${hours}小时`
-      } else if (seconds >= oneMinute) {
-        const minutes = Math.floor(seconds / oneMinute)
-        return `${minutes}分钟`
-      } else {
-        return `${seconds}秒`
-      }
-    },
-
-    async fetchRunningActions() {
-      this.loadingRunningActions = true
-      try {
-        const result = await getPaginatedData(actionApi.getActionHistory, {
-          page: 1,
-          page_size: 3
-        })
-        this.runningActions = (result.items || []).map(item => ({
-          ...item,
-          startTime: item.start_at || null,
-          endTime: item.finished_at || null,
-          completedSteps: item.completed_steps || 0,
-          totalSteps: item.total_steps || 0,
-          duration: item.duration ? item.duration * 1000 : 0,
-          progress: item.progress ?? 0
-        }))
-      } catch (error) {
-        console.error('获取行动列表失败:', error)
-        this.runningActions = []
-      } finally {
-        this.loadingRunningActions = false
-      }
-    },
-
-    async fetchCommonBlueprints() {
-      this.loadingBlueprints = true
-      try {
-        const result = await getPaginatedData(
-          actionApi.getBlueprintsBaseInfo,
-          { page: 1, page_size: 6 }
-        )
-        
-        this.commonBlueprints = (result.items || []).map(item => {
-          return {
-            id: item.id,
-            title: item.name || '',
-            taskType: item.type || '尚未实现',
-            taskTypeTagColor: item.type_tag_color || '#dbeafe',
-            taskTypeTagTextColor: item.type_text_color || '#1e40af',
-            taskGoal: item.target || '',
-            resourceAllocation: '未配置',
-            executionDeadline: this.formatImplementationPeriod(item.implementation_period),
-            branchCount: item.branches || 0,
-            stepCount: item.steps || 0,
-            isTemplate: item.is_template || false
-          }
-        })
-      } catch (error) {
-        this.$message.error('获取行动蓝图失败')
-        this.commonBlueprints = []
-      } finally {
-        this.loadingBlueprints = false
-      }
-    },
-
-    formatTime(date) {
-      if (!date) return '未知'
-      const d = new Date(date)
-      return d.toLocaleString('zh-CN', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
-    },
-
-    formatDuration(ms) {
-      if (!ms) return '0分钟'
-      const seconds = Math.floor(ms / 1000)
-      const minutes = Math.floor(seconds / 60)
-      const hours = Math.floor(minutes / 60)
-      
-      if (hours > 0) {
-        return `${hours}小时${minutes % 60}分钟`
-      } else if (minutes > 0) {
-        return `${minutes}分钟`
-      } else {
-        return `${seconds}秒`
-      }
-    },
-
-    viewActionDetail(actionId) {
-      this.$router.push(`/action/${actionId}`)
-    },
-
-    // 占位方法：暂停行动，等待后端API完成
-    pauseAction(actionId) {
-      this.$confirm('确定要暂停此行动吗？', '确认暂停', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        this.$message.success('行动已暂停')
-      }).catch(() => {
-        this.$message.info('已取消暂停')
-      })
-    },
-
-    // 占位方法：停止行动，等待后端API完成
-    stopAction(actionId) {
-      this.$confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
-        confirmButtonText: '确定停止',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        this.$message.success('行动已停止')
-      }).catch(() => {
-        this.$message.info('已取消停止')
-      })
-    },
-
-    handleBlueprintDialogOpen() {
-      this.blueprintDialogVisible = true
-    },
-
-    handleBlueprintDialogClose() {
-      this.blueprintDialogVisible = false
-    },
-
-    async viewBlueprint(blueprint) {
-      if (!blueprint || !blueprint.id) {
-        this.$message.error('蓝图ID不存在')
-        return
-      }
-      this.selectedBlueprintId = blueprint.id
-      this.blueprintDialogVisible = true
-    },
-  },
-  
-  mounted() {
-    this.fetchRunningActions()
-    this.fetchCommonBlueprints()
+  if (blueprint.isTemplate) {
+    templateParamsDialogVisible.value = true
+    selectedBlueprintForRun.value = blueprint
+  } else {
+    await runBlueprint(blueprint.id, null)
   }
 }
+
+async function runBlueprint(blueprintId, params) {
+  try {
+    const data = { blueprint_id: blueprintId }
+    if (params) {
+      data.params = params
+    }
+
+    const response = await actionApi.runAction(data)
+
+    if (response.code === 0 && response.data && response.data.action_id) {
+      ElMessage.success('行动已创建并开始执行')
+      router.push(`/action/${response.data.action_id}`)
+    } else {
+      ElMessage.error(response.message || '创建行动失败')
+    }
+  } catch (error) {
+    console.error('创建行动失败:', error)
+    ElMessage.error(error.message || '创建行动失败，请稍后重试')
+  }
+}
+
+async function handleParamsSubmit(params) {
+  await runBlueprint(selectedBlueprintForRun.value.id, params)
+  templateParamsDialogVisible.value = false
+}
+
+function createBranchVersion(blueprint) {
+  ElMessage.info('创建分支版本功能开发中...')
+}
+
+function removeFromCommonBlueprints(index) {
+  ElMessageBox.confirm('确定要删除此蓝图吗？', '确认删除', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    commonBlueprints.value.splice(index, 1)
+    ElMessage.success('已删除')
+  }).catch(() => {
+    ElMessage.info('已取消删除')
+  })
+}
+
+function viewSteps(blueprintId) {
+  ElMessage.error(`[尚未实现] 查看步骤: ${blueprintId}`)
+}
+
+function formatImplementationPeriod(seconds) {
+  if (!seconds || seconds <= 0) {
+    return '未设置'
+  }
+
+  const oneDay = 24 * 3600
+  const oneHour = 3600
+  const oneMinute = 60
+
+  if (seconds >= oneDay) {
+    const days = Math.floor(seconds / oneDay)
+    return `${days}天`
+  } else if (seconds >= oneHour) {
+    const hours = Math.floor(seconds / oneHour)
+    return `${hours}小时`
+  } else if (seconds >= oneMinute) {
+    const minutes = Math.floor(seconds / oneMinute)
+    return `${minutes}分钟`
+  } else {
+    return `${seconds}秒`
+  }
+}
+
+async function fetchRunningActions() {
+  loadingRunningActions.value = true
+  try {
+    const result = await getPaginatedData(actionApi.getActionHistory, {
+      page: 1,
+      page_size: 3
+    })
+    runningActions.value = (result.items || []).map(item => ({
+      ...item,
+      startTime: item.start_at || null,
+      endTime: item.finished_at || null,
+      completedSteps: item.completed_steps || 0,
+      totalSteps: item.total_steps || 0,
+      duration: item.duration ? item.duration * 1000 : 0,
+      progress: item.progress ?? 0
+    }))
+  } catch (error) {
+    console.error('获取行动列表失败:', error)
+    runningActions.value = []
+  } finally {
+    loadingRunningActions.value = false
+  }
+}
+
+async function fetchCommonBlueprints() {
+  loadingBlueprints.value = true
+  try {
+    const result = await getPaginatedData(
+      actionApi.getBlueprintsBaseInfo,
+      { page: 1, page_size: 6 }
+    )
+
+    commonBlueprints.value = (result.items || []).map(item => {
+      return {
+        id: item.id,
+        title: item.name || '',
+        taskType: item.type || '尚未实现',
+        taskTypeTagColor: item.type_tag_color || '#dbeafe',
+        taskTypeTagTextColor: item.type_text_color || '#1e40af',
+        taskGoal: item.target || '',
+        resourceAllocation: '未配置',
+        executionDeadline: formatImplementationPeriod(item.implementation_period),
+        branchCount: item.branches || 0,
+        stepCount: item.steps || 0,
+        isTemplate: item.is_template || false
+      }
+    })
+  } catch (error) {
+    ElMessage.error('获取行动蓝图失败')
+    commonBlueprints.value = []
+  } finally {
+    loadingBlueprints.value = false
+  }
+}
+
+function formatTime(date) {
+  if (!date) return '未知'
+  const d = new Date(date)
+  return d.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+function formatDuration(ms) {
+  if (!ms) return '0分钟'
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+
+  if (hours > 0) {
+    return `${hours}小时${minutes % 60}分钟`
+  } else if (minutes > 0) {
+    return `${minutes}分钟`
+  } else {
+    return `${seconds}秒`
+  }
+}
+
+function viewActionDetail(actionId) {
+  router.push(`/action/${actionId}`)
+}
+
+function pauseAction(actionId) {
+  ElMessageBox.confirm('确定要暂停此行动吗？', '确认暂停', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    ElMessage.success('行动已暂停')
+  }).catch(() => {
+    ElMessage.info('已取消暂停')
+  })
+}
+
+function stopAction(actionId) {
+  ElMessageBox.confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
+    confirmButtonText: '确定停止',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    ElMessage.success('行动已停止')
+  }).catch(() => {
+    ElMessage.info('已取消停止')
+  })
+}
+
+function handleBlueprintDialogOpen() {
+  blueprintDialogVisible.value = true
+}
+
+function handleBlueprintDialogClose() {
+  blueprintDialogVisible.value = false
+}
+
+async function viewBlueprint(blueprint) {
+  if (!blueprint || !blueprint.id) {
+    ElMessage.error('蓝图ID不存在')
+    return
+  }
+  selectedBlueprintId.value = blueprint.id
+  blueprintDialogVisible.value = true
+}
+
+onMounted(() => {
+  fetchRunningActions()
+  fetchCommonBlueprints()
+})
 </script>
 
 

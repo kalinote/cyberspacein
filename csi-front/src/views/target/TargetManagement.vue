@@ -43,7 +43,7 @@
           <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">快速创建目标</h3>
             <div class="space-y-4">
-              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2" @click="$router.push('/platforms')">
+              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2" @click="router.push('/platforms')">
                 <Icon icon="mdi:database-search" />
                 <span>目标平台管理</span>
               </button>
@@ -51,7 +51,7 @@
                 <Icon icon="mdi:clipboard-text-search-outline" />
                 <span>监控任务管理</span>
               </button>
-              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2" @click="$router.push('/target/highlights')">
+              <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2" @click="router.push('/target/highlights')">
                 <Icon icon="mdi:tag-multiple" />
                 <span>重点实体库</span>
               </button>
@@ -321,20 +321,17 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
 
-export default {
-  name: 'TargetManagement',
-  components: {
-    Header,
-    Icon
-  },
-  data() {
-    return {
-      statsTimeRange: 'week',
-      targets: [
+defineOptions({ name: 'TargetManagement' })
+
+const router = useRouter()
+const statsTimeRange = ref('week')
+const targets = ref([
         {
           id: 1,
           name: '社交媒体舆情监控',
@@ -407,8 +404,8 @@ export default {
           linkedActions: 1,
           createdAt: '2024-12-28'
         }
-      ],
-      targetStats: [
+      ])
+const targetStats = ref([
         {
           type: '网络安全',
           count: '42',
@@ -449,9 +446,6 @@ export default {
           trendClass: 'text-green-600',
           trendIcon: 'mdi:trending-up'
         }
-      ]
-    }
-  }
-}
+      ])
 </script>
 

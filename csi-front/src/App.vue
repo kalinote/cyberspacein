@@ -6,19 +6,20 @@
   </router-view>
 </template>
 
-<script>
-export default {
-  name: 'App',
-  computed: {
-    cachedViewNames() {
-      return this.$router.getRoutes()
-        .filter(r => r.meta?.keepAlive)
-        .map(r => {
-          const comp = r.components?.default ?? r.component
-          return comp?.name
-        })
-        .filter(Boolean)
-    }
-  }
-}
+<script setup>
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+
+defineOptions({ name: 'App' })
+
+const router = useRouter()
+const cachedViewNames = computed(() => {
+  return router.getRoutes()
+    .filter(r => r.meta?.keepAlive)
+    .map(r => {
+      const comp = r.components?.default ?? r.component
+      return comp?.name
+    })
+    .filter(Boolean)
+})
 </script>

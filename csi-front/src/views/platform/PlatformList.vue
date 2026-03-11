@@ -342,7 +342,7 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
@@ -354,247 +354,211 @@ import { getPaginatedData } from '@/utils/request'
 import { getCosUrl } from '@/utils/cos'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
 
-export default {
-  name: 'PlatformList',
-  components: {
-    Header,
-    Icon,
-    TagInput,
-    FunctionalPageHeader
-  },
-  setup() {
-    const router = useRouter()
-    const loading = ref(false)
-    const searchKeyword = ref('')
-    const selectedStatus = ref('')
-    const selectedType = ref('')
-    const platformList = ref([])
-    const pagination = ref({
-      page: 1,
-      pageSize: 10,
-      total: 0
-    })
+defineOptions({ name: 'PlatformList' })
 
-    const fetchPlatformList = async () => {
-      loading.value = true
-      try {
-        const result = await getPaginatedData(
-          platformApi.getPlatformList,
-          {
-            page: pagination.value.page,
-            page_size: pagination.value.pageSize
-          }
-        )
-        
-        platformList.value = result.items
-        pagination.value = {
-          ...pagination.value,
-          ...result.pagination
-        }
-      } catch (error) {
-        console.error('获取平台列表失败:', error)
-        ElMessage.error('获取平台列表失败')
-        platformList.value = []
-      } finally {
-        loading.value = false
+const router = useRouter()
+const loading = ref(false)
+const searchKeyword = ref('')
+const selectedStatus = ref('')
+const selectedType = ref('')
+const platformList = ref([])
+const pagination = ref({
+  page: 1,
+  pageSize: 10,
+  total: 0
+})
+
+const fetchPlatformList = async () => {
+  loading.value = true
+  try {
+    const result = await getPaginatedData(
+      platformApi.getPlatformList,
+      {
+        page: pagination.value.page,
+        page_size: pagination.value.pageSize
       }
+    )
+
+    platformList.value = result.items
+    pagination.value = {
+      ...pagination.value,
+      ...result.pagination
     }
-
-    const handlePageChange = (page) => {
-      pagination.value.page = page
-      fetchPlatformList()
-    }
-
-    const handlePageSizeChange = (pageSize) => {
-      pagination.value.pageSize = pageSize
-      pagination.value.page = 1
-      fetchPlatformList()
-    }
-
-    const handleSearch = () => {
-      ElMessage.info('搜索功能暂未实现')
-    }
-
-    const dialogVisible = ref(false)
-    const formRef = ref(null)
-    const submitLoading = ref(false)
-    const formData = ref({
-      name: '',
-      description: '',
-      type: 'forum',
-      net_type: '明网',
-      status: '活跃',
-      url: '',
-      logo: '',
-      tags: [],
-      sections: [],
-      category: '',
-      sub_category: '',
-      confidence: 1,
-      spider_name: ''
-    })
-
-    const formRules = {
-      name: [
-        { required: true, message: '请输入平台名称', trigger: 'blur' },
-        { min: 1, max: 100, message: '平台名称长度应在1-100字符之间', trigger: 'blur' }
-      ],
-      type: [
-        { required: true, message: '请选择平台类型', trigger: 'change' }
-      ],
-      url: [
-        { required: true, message: '请输入平台URL', trigger: 'blur' }
-      ],
-      logo: [
-        { required: true, message: '请输入平台Logo', trigger: 'blur' }
-      ],
-      category: [
-        { required: true, message: '请输入平台分类', trigger: 'blur' }
-      ],
-      sub_category: [
-        { required: true, message: '请输入平台子分类', trigger: 'blur' }
-      ]
-    }
-
-    const handleAddPlatform = () => {
-      dialogVisible.value = true
-    }
-
-    const handleDialogClose = () => {
-      dialogVisible.value = false
-      if (formRef.value) {
-        formRef.value.resetFields()
-      }
-      formData.value = {
-        name: '',
-        description: '',
-        type: 'forum',
-        net_type: '明网',
-        status: '活跃',
-        url: '',
-        logo: '',
-        tags: [],
-        sections: [],
-        category: '',
-        sub_category: '',
-        confidence: 1,
-        spider_name: ''
-      }
-    }
-
-    const handleSubmit = async () => {
-      if (!formRef.value) return
-      
-      try {
-        await formRef.value.validate()
-        submitLoading.value = true
-        
-        const submitData = {
-          name: formData.value.name,
-          description: formData.value.description || '',
-          type: formData.value.type,
-          net_type: formData.value.net_type,
-          status: formData.value.status,
-          url: formData.value.url,
-          logo: formData.value.logo || '',
-          tags: formData.value.tags || [],
-          sections: formData.value.sections || [],
-          category: formData.value.category,
-          sub_category: formData.value.sub_category,
-          confidence: formData.value.confidence,
-          spider_name: formData.value.spider_name || null
-        }
-        
-        await platformApi.createPlatform(submitData)
-        ElMessage.success('平台创建成功')
-        handleDialogClose()
-        fetchPlatformList()
-      } catch (error) {
-        if (error !== false) {
-          console.error('创建平台失败:', error)
-        }
-      } finally {
-        submitLoading.value = false
-      }
-    }
-
-    const handleViewDetail = (id) => {
-      router.push(`/details/platform/${id}`)
-    }
-
-    const handleDeletePlatform = (id) => {
-      ElMessageBox.confirm(
-        '确定要删除该平台吗？此操作不可恢复。',
-        '确认删除',
-        {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: 'warning'
-        }
-      ).then(() => {
-        ElMessage.info('删除平台功能暂未实现')
-      }).catch(() => {
-        // 用户取消
-      })
-    }
-
-    const getStatusType = (status) => {
-      const statusMap = {
-        活跃: 'success',
-        非活跃: 'danger',
-        离线: 'info'
-      }
-      return statusMap[status] || 'info'
-    }
-
-    const formatDate = (dateString) => {
-      if (!dateString) return '-'
-      try {
-        const date = new Date(dateString)
-        return date.toLocaleDateString('zh-CN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        })
-      } catch (error) {
-        return dateString
-      }
-    }
-
-    const getLogoUrl = (logo) => {
-      return getCosUrl(logo)
-    }
-
-    onMounted(() => {
-      fetchPlatformList()
-    })
-
-    return {
-      loading,
-      searchKeyword,
-      selectedStatus,
-      selectedType,
-      platformList,
-      pagination,
-      dialogVisible,
-      formRef,
-      formData,
-      formRules,
-      submitLoading,
-      handlePageChange,
-      handlePageSizeChange,
-      handleSearch,
-      handleAddPlatform,
-      handleViewDetail,
-      handleDeletePlatform,
-      handleDialogClose,
-      handleSubmit,
-      getStatusType,
-      formatDate,
-      getLogoUrl
-    }
+  } catch (error) {
+    console.error('获取平台列表失败:', error)
+    ElMessage.error('获取平台列表失败')
+    platformList.value = []
+  } finally {
+    loading.value = false
   }
 }
+
+const handlePageChange = (page) => {
+  pagination.value.page = page
+  fetchPlatformList()
+}
+
+const handlePageSizeChange = (pageSize) => {
+  pagination.value.pageSize = pageSize
+  pagination.value.page = 1
+  fetchPlatformList()
+}
+
+const handleSearch = () => {
+  ElMessage.info('搜索功能暂未实现')
+}
+
+const dialogVisible = ref(false)
+const formRef = ref(null)
+const submitLoading = ref(false)
+const formData = ref({
+  name: '',
+  description: '',
+  type: 'forum',
+  net_type: '明网',
+  status: '活跃',
+  url: '',
+  logo: '',
+  tags: [],
+  sections: [],
+  category: '',
+  sub_category: '',
+  confidence: 1,
+  spider_name: ''
+})
+
+const formRules = {
+  name: [
+    { required: true, message: '请输入平台名称', trigger: 'blur' },
+    { min: 1, max: 100, message: '平台名称长度应在1-100字符之间', trigger: 'blur' }
+  ],
+  type: [
+    { required: true, message: '请选择平台类型', trigger: 'change' }
+  ],
+  url: [
+    { required: true, message: '请输入平台URL', trigger: 'blur' }
+  ],
+  logo: [
+    { required: true, message: '请输入平台Logo', trigger: 'blur' }
+  ],
+  category: [
+    { required: true, message: '请输入平台分类', trigger: 'blur' }
+  ],
+  sub_category: [
+    { required: true, message: '请输入平台子分类', trigger: 'blur' }
+  ]
+}
+
+const handleAddPlatform = () => {
+  dialogVisible.value = true
+}
+
+const handleDialogClose = () => {
+  dialogVisible.value = false
+  if (formRef.value) {
+    formRef.value.resetFields()
+  }
+  formData.value = {
+    name: '',
+    description: '',
+    type: 'forum',
+    net_type: '明网',
+    status: '活跃',
+    url: '',
+    logo: '',
+    tags: [],
+    sections: [],
+    category: '',
+    sub_category: '',
+    confidence: 1,
+    spider_name: ''
+  }
+}
+
+const handleSubmit = async () => {
+  if (!formRef.value) return
+
+  try {
+    await formRef.value.validate()
+    submitLoading.value = true
+
+    const submitData = {
+      name: formData.value.name,
+      description: formData.value.description || '',
+      type: formData.value.type,
+      net_type: formData.value.net_type,
+      status: formData.value.status,
+      url: formData.value.url,
+      logo: formData.value.logo || '',
+      tags: formData.value.tags || [],
+      sections: formData.value.sections || [],
+      category: formData.value.category,
+      sub_category: formData.value.sub_category,
+      confidence: formData.value.confidence,
+      spider_name: formData.value.spider_name || null
+    }
+
+    await platformApi.createPlatform(submitData)
+    ElMessage.success('平台创建成功')
+    handleDialogClose()
+    fetchPlatformList()
+  } catch (error) {
+    if (error !== false) {
+      console.error('创建平台失败:', error)
+    }
+  } finally {
+    submitLoading.value = false
+  }
+}
+
+const handleViewDetail = (id) => {
+  router.push(`/details/platform/${id}`)
+}
+
+const handleDeletePlatform = (id) => {
+  ElMessageBox.confirm(
+    '确定要删除该平台吗？此操作不可恢复。',
+    '确认删除',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  ).then(() => {
+    ElMessage.info('删除平台功能暂未实现')
+  }).catch(() => {})
+}
+
+const getStatusType = (status) => {
+  const statusMap = {
+    活跃: 'success',
+    非活跃: 'danger',
+    离线: 'info'
+  }
+  return statusMap[status] || 'info'
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return '-'
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+  } catch (error) {
+    return dateString
+  }
+}
+
+const getLogoUrl = (logo) => {
+  return getCosUrl(logo)
+}
+
+onMounted(() => {
+  fetchPlatformList()
+})
 </script>
 
 <style scoped>

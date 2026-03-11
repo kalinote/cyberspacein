@@ -21,7 +21,7 @@
               <router-link 
                 to="/action" 
                 class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
-                :class="$route.path.startsWith('/action') ? 'text-blue-600! bg-blue-50!' : ''"
+                :class="route.path.startsWith('/action') ? 'text-blue-600! bg-blue-50!' : ''"
               >
                 <span>行动部署</span>
                 <Icon icon="mdi:chevron-down" class="text-sm transition-transform" :class="showActionDropdown ? 'rotate-180' : ''" />
@@ -41,7 +41,7 @@
                   <router-link
                     to="/action/tasks"
                     class="block px-4 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                    :class="$route.path === '/action/tasks' ? 'text-blue-600 bg-blue-50' : ''"
+                    :class="route.path === '/action/tasks' ? 'text-blue-600 bg-blue-50' : ''"
                     @click="showActionDropdown = false"
                   >
                     基础组件任务
@@ -76,31 +76,26 @@
   </header>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 
-export default {
-  name: 'Header',
-  components: {
-    Icon
-  },
-  data() {
-    return {
-      showActionDropdown: false,
-      quickSearchQuery: ''
-    }
-  },
-  methods: {
-    handleQuickSearch() {
-      if (!this.quickSearchQuery || !this.quickSearchQuery.trim()) {
-        return
-      }
-      this.$router.push({
-        path: '/search',
-        query: { q: this.quickSearchQuery.trim() }
-      })
-      this.quickSearchQuery = ''
-    }
+defineOptions({ name: 'Header' })
+
+const router = useRouter()
+const route = useRoute()
+const showActionDropdown = ref(false)
+const quickSearchQuery = ref('')
+
+function handleQuickSearch() {
+  if (!quickSearchQuery.value || !quickSearchQuery.value.trim()) {
+    return
   }
+  router.push({
+    path: '/search',
+    query: { q: quickSearchQuery.value.trim() }
+  })
+  quickSearchQuery.value = ''
 }
 </script>
