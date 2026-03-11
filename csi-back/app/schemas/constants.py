@@ -166,3 +166,35 @@ class ContentRegionEnum(str, Enum):
     CLEAN = "clean"
     RENDERED = "rendered"
     TRANSLATE = "translate"
+
+
+class AccountStatusEnum(str, Enum):
+    """
+    账号状态枚举
+    """
+    ACTIVE = "ACTIVE"
+    RISK = "RISK"
+    CAPTCHA = "CAPTCHA"
+    INVALID_PWD = "INVALID_PWD"
+    EXPIRED = "EXPIRED"
+    BANNED = "BANNED"
+
+
+class AccountAuthTypeEnum(str, Enum):
+    """
+    账号认证类型枚举
+    """
+    COOKIE = "cookie"
+    HEADER = "header"
+    API_KEY = "api_key"
+    OAUTH = "oauth"
+
+
+class RateLimitStrategyEnum(str, Enum):
+    """
+    频率限制策略枚举
+    """
+    MINUTELY = "minutely"
+    HOURLY = "hourly"
+    DAILY = "daily"
+    NONE = "none"
