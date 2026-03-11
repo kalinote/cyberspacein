@@ -12,5 +12,8 @@ export const platformApi = {
   // 创建平台
   createPlatform(data) {
     return request.post('/platform', data)
+  },
+  getPlatformFilterPlatforms() {
+    return request.get('/platform/filter/platforms')
   }
 }

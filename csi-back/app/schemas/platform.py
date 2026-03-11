@@ -33,6 +33,14 @@ class PlatformCreateRequestSchema(BaseModel):
         return v
 
 
+class PlatformFilterItemSchema(BaseModel):
+    """
+    平台过滤器项
+    """
+    id: str = Field(description="平台ID")
+    name: str = Field(description="平台名称")
+
+
 class PlatformBaseInfoSchema(BaseModel):
     """
     平台基本信息

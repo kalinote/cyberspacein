@@ -4,7 +4,6 @@ import Search from '../views/Search.vue'
 import ActionMonitor from '../views/action/ActionMonitor.vue'
 import Alert from '../views/Alert.vue'
 import Platform from '../views/details/PlatformDetail.vue'
-import VideoEditor from '../views/VideoEditor.vue'
 import NewActionBlueprint from '../views/action/NewActionBlueprint.vue'
 import ActionResourceConfig from '../views/action/ActionResourceConfig.vue'
 import ActionHistory from '../views/action/ActionHistory.vue'
@@ -134,12 +133,6 @@ const router = createRouter({
       path: '/agent/analysis/:threadId',
       name: 'agent-analysis-detail',
       component: AnalysisDetail
-    },
-    {
-      // 视频编辑器
-      path: '/video-editor',
-      name: 'video-editor',
-      component: VideoEditor
     },
     {
       // 平台详情页

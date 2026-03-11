@@ -339,16 +339,6 @@ const statusTagMap = {
 const statusLabel = computed(() => statusLabelMap[sessionData.value.status] || sessionData.value.status)
 const statusTagType = computed(() => statusTagMap[sessionData.value.status] || 'info')
 
-function todoStatusLabel(s) {
-    const m = { pending: '待处理', in_progress: '进行中', completed: '已完成' }
-    return m[s] || s
-}
-
-function todoStatusTagType(s) {
-    const m = { pending: 'info', in_progress: 'warning', completed: 'success' }
-    return m[s] || ''
-}
-
 function stepNodeIcon(node) {
     if (node === 'model') return 'mdi:robot'
     if (node === 'tools') return 'mdi:wrench'

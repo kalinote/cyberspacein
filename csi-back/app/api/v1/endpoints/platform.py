@@ -2,9 +2,9 @@ import logging
 import re
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
-from typing import Optional
+from typing import Optional, List
 
-from app.schemas.platform import PlatformBaseInfoSchema, PlatformCreateRequestSchema
+from app.schemas.platform import PlatformBaseInfoSchema, PlatformCreateRequestSchema, PlatformFilterItemSchema, PlatformFilterItemSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.models.platform.platform import PlatformModel
@@ -201,3 +201,9 @@ async def get_platform_detail(platform_id: str):
         spider_name=platform.spider_name,
         sections=platform.sections
     ))
+    
+@router.get("/filter/platforms", response_model=ApiResponseSchema[List[PlatformFilterItemSchema]], summary="平台过滤器列表")
+async def get_platform_filter_list():
+    platforms = await PlatformModel.find_all().to_list()
+    results = [PlatformFilterItemSchema(id=p.id, name=p.name) for p in platforms]
+    return ApiResponseSchema.success(data=results)

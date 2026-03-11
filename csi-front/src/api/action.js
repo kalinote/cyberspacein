@@ -68,5 +68,20 @@ export const actionApi = {
   // 获取节点类型过滤列表（用于节点类型下拉）
   getNodeTypeFilter() {
     return request.get('/action/configs/filter/node_type')
+  },
+  getAccountList(params = { page: 1, page_size: 10 }) {
+    return request.get('/action/accounts/list', params)
+  },
+  createAccount(data) {
+    return request.post('/action/accounts', data)
+  },
+  getAccountDetail(accountId) {
+    return request.get(`/action/accounts/detail/${accountId}`)
+  },
+  updateAccount(accountId, data) {
+    return request.patch(`/action/accounts/${accountId}`, data)
+  },
+  deleteAccount(accountId) {
+    return request.delete(`/action/accounts/${accountId}`)
   }
 }

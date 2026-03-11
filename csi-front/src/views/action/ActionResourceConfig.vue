@@ -395,6 +395,94 @@
             </div>
           </div>
 
+          <!-- 采集账号列表 -->
+          <div v-else-if="activeTab === 'accounts'" class="space-y-4">
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+              <div
+                v-for="(account, index) in filteredAccountList"
+                :key="account.id"
+                class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex items-start gap-4 flex-1">
+                    <div
+                      class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                      :class="getAccountStatusBgClass(account.status)"
+                    >
+                      <Icon
+                        :icon="getAccountStatusIcon(account.status)"
+                        class="text-2xl"
+                        :class="getAccountStatusIconClass(account.status)"
+                      />
+                    </div>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-lg font-bold text-gray-900">{{ account.account_name }}</h3>
+                        <el-tag
+                          :type="getAccountStatusTagType(account.status)"
+                          size="small"
+                          class="border-0"
+                        >
+                          {{ getAccountStatusText(account.status) }}
+                        </el-tag>
+                        <span class="text-sm text-gray-500">
+                          {{ getPlatformName(account.platform_id) }}
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-6 text-sm flex-wrap">
+                        <div class="flex items-center gap-2">
+                          <Icon icon="mdi:identifier" class="text-gray-500" />
+                          <span class="text-gray-600">账号ID:</span>
+                          <span class="font-mono text-xs text-gray-900">{{ account.id }}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <Icon icon="mdi:calendar-clock" class="text-gray-500" />
+                          <span class="text-gray-600">更新时间:</span>
+                          <span class="font-medium text-gray-900">{{ formatDateTime(account.updated_at, { defaultValue: '-' }) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 ml-4">
+                    <el-button type="primary" link @click="handleViewAccount(account)">
+                      <template #icon>
+                        <Icon icon="mdi:eye" />
+                      </template>
+                      查看
+                    </el-button>
+                    <el-button type="primary" link @click="handleEditAccount(account)">
+                      <template #icon>
+                        <Icon icon="mdi:pencil" />
+                      </template>
+                      编辑
+                    </el-button>
+                    <el-button type="danger" link @click="handleDeleteAccount(account)">
+                      <template #icon>
+                        <Icon icon="mdi:delete" />
+                      </template>
+                      删除
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="!loading && filteredAccountList.length === 0" class="flex flex-col items-center justify-center py-16">
+                <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
+                <p class="text-gray-500">暂无采集账号</p>
+              </div>
+            </div>
+            <div v-if="accountList.length > 0" class="flex justify-center mt-6">
+              <el-pagination
+                v-model:current-page="accountPagination.page"
+                v-model:page-size="accountPagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="accountPagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="handleAccountPageChange"
+                @size-change="handleAccountPageSizeChange"
+              />
+            </div>
+          </div>
+
           <div v-else class="flex flex-col items-center justify-center py-16">
             <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
             <p class="text-gray-500 text-lg mb-2">功能开发中</p>
@@ -893,6 +981,117 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 新增/编辑采集账号弹窗 -->
+    <el-dialog
+      v-model="accountDialogVisible"
+      :title="accountDialogMode === 'edit' ? '编辑采集账号' : '新增采集账号'"
+      width="640px"
+      :close-on-click-modal="false"
+      @open="handleAccountDialogOpen"
+      @closed="handleAccountDialogClosed"
+    >
+      <div v-loading="accountDialogMode === 'edit' && accountFormLoading" :element-loading-text="'加载中...'" class="min-h-[120px]">
+        <el-form
+          v-show="!(accountDialogMode === 'edit' && accountFormLoading)"
+          ref="accountFormRef"
+          :model="accountFormData"
+          :rules="accountFormRules"
+          label-width="100px"
+          class="pr-2"
+        >
+          <el-form-item label="平台" prop="platform_id">
+            <el-select
+              v-model="accountFormData.platform_id"
+              placeholder="请选择平台"
+              class="w-full"
+              :loading="platformOptionsLoading"
+              filterable
+            >
+              <el-option
+                v-for="p in platformOptions"
+                :key="p.id"
+                :label="p.name"
+                :value="p.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="账号别名" prop="account_name">
+            <el-input v-model="accountFormData.account_name" placeholder="内部展示用的账号别名" />
+          </el-form-item>
+          <el-form-item label="用户名">
+            <el-input v-model="accountFormData.credentials.username" placeholder="选填" />
+          </el-form-item>
+          <el-form-item label="密码">
+            <el-input v-model="accountFormData.credentials.password" type="password" placeholder="选填，加密存储" show-password />
+          </el-form-item>
+          <el-form-item label="手机号">
+            <el-input v-model="accountFormData.credentials.phone" placeholder="选填" />
+          </el-form-item>
+          <el-form-item label="邮箱">
+            <el-input v-model="accountFormData.credentials.email" placeholder="选填" />
+          </el-form-item>
+          <el-form-item label="频率策略">
+            <el-select v-model="accountFormData.rate_limit.strategy" placeholder="选填" class="w-full">
+              <el-option label="不限制" value="none" />
+              <el-option label="每分钟" value="minutely" />
+              <el-option label="每小时" value="hourly" />
+              <el-option label="每天" value="daily" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="accountFormData.rate_limit.strategy && accountFormData.rate_limit.strategy !== 'none'" label="最大请求数">
+            <el-input-number v-model="accountFormData.rate_limit.max_requests" :min="0" class="w-full" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <el-button @click="accountDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleSubmitAccount" :loading="accountSubmitting">确定</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 采集账号详情弹窗 -->
+    <el-dialog
+      v-model="accountDetailDialogVisible"
+      title="采集账号详情"
+      width="640px"
+      @close="accountDetailData = null"
+    >
+      <div v-loading="accountDetailLoading" class="min-h-[200px]">
+        <template v-if="accountDetailData">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="账号ID">{{ accountDetailData.id }}</el-descriptions-item>
+            <el-descriptions-item label="平台">{{ getPlatformName(accountDetailData.platform_id) }}</el-descriptions-item>
+            <el-descriptions-item label="账号别名">{{ accountDetailData.account_name }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="getAccountStatusTagType(accountDetailData.status)" size="small">
+                {{ getAccountStatusText(accountDetailData.status) }}
+              </el-tag>
+              <span v-if="accountDetailData.status_reason" class="text-gray-500 text-sm ml-2">{{ accountDetailData.status_reason }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ formatDateTime(accountDetailData.created_at, { defaultValue: '-' }) }}</el-descriptions-item>
+            <el-descriptions-item label="更新时间">{{ formatDateTime(accountDetailData.updated_at, { defaultValue: '-' }) }}</el-descriptions-item>
+          </el-descriptions>
+          <template v-if="accountDetailData.credentials && Object.keys(accountDetailData.credentials).length">
+            <el-divider content-position="left">登录凭证</el-divider>
+            <el-descriptions :column="1" border>
+              <el-descriptions-item v-if="accountDetailData.credentials.username" label="用户名">{{ accountDetailData.credentials.username }}</el-descriptions-item>
+              <el-descriptions-item v-if="accountDetailData.credentials.phone" label="手机号">{{ accountDetailData.credentials.phone }}</el-descriptions-item>
+              <el-descriptions-item v-if="accountDetailData.credentials.email" label="邮箱">{{ accountDetailData.credentials.email }}</el-descriptions-item>
+            </el-descriptions>
+          </template>
+          <template v-if="accountDetailData.rate_limit && accountDetailData.rate_limit.strategy && accountDetailData.rate_limit.strategy !== 'none'">
+            <el-divider content-position="left">频率限制</el-divider>
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="策略">{{ accountDetailData.rate_limit.strategy }}</el-descriptions-item>
+              <el-descriptions-item label="最大请求数">{{ accountDetailData.rate_limit.max_requests ?? '-' }}</el-descriptions-item>
+            </el-descriptions>
+          </template>
+        </template>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -905,6 +1104,7 @@ import TagInput from '@/components/action/nodes/components/TagInput.vue'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
+import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
 import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData } from '@/utils/action'
 import GenericNode from '@/components/action/nodes/GenericNode.vue'
@@ -970,6 +1170,35 @@ const handlePagination = ref({
   total: 0,
   totalPages: 0
 })
+const accountList = ref([])
+const accountPagination = ref({
+  page: 1,
+  pageSize: 10,
+  total: 0,
+  totalPages: 0
+})
+const accountFilterPlatformId = ref('')
+const platformOptions = ref([])
+const platformOptionsLoading = ref(false)
+const accountDialogVisible = ref(false)
+const accountDialogMode = ref('create')
+const currentAccountId = ref(null)
+const accountFormRef = ref(null)
+const accountFormLoading = ref(false)
+const accountSubmitting = ref(false)
+const accountFormData = ref({
+  platform_id: '',
+  account_name: '',
+  credentials: { username: '', password: '', phone: '', email: '', two_fa_secret: '', extra_fields: {} },
+  rate_limit: { strategy: 'none', max_requests: 0 }
+})
+const accountFormRules = {
+  platform_id: [{ required: true, message: '请选择平台', trigger: 'change' }],
+  account_name: [{ required: true, message: '请输入账号别名', trigger: 'blur' }]
+}
+const accountDetailDialogVisible = ref(false)
+const accountDetailLoading = ref(false)
+const accountDetailData = ref(null)
 const handleDialogVisible = ref(false)
 const handleFormRef = ref(null)
 const handleSubmitting = ref(false)
@@ -1079,6 +1308,7 @@ const handleFormRules = {
 const filteredNodeList = computed(() => filterByKeyword(nodeList.value, ['name', 'description', 'id', 'type'], searchKeyword.value))
 const filteredComponentList = computed(() => filterByKeyword(componentList.value, ['name', 'description', 'id', 'status'], searchKeyword.value))
 const filteredHandleList = computed(() => filterByKeyword(handleList.value, ['handle_name', 'type', 'label', 'id'], searchKeyword.value))
+const filteredAccountList = computed(() => filterByKeyword(accountList.value, ['account_name', 'id'], searchKeyword.value))
 
 const nodePreviewData = computed(() => {
   if (!nodeDetailData.value) return null
@@ -1168,7 +1398,6 @@ const getNodeTagClass = (node) => getNodeStyle(node, 'tag')
 
 const handleAdd = (tabKey) => {
   if (tabKey === 'baseComponents') {
-    // TODO: 从新tab跳转到crawlab对应页面
     ElMessage.warning('基础组件不能通过此方式新增')
     return
   }
@@ -1178,6 +1407,10 @@ const handleAdd = (tabKey) => {
     dialogVisible.value = true
   } else if (tabKey === 'nodeHandles') {
     handleDialogVisible.value = true
+  } else if (tabKey === 'accounts') {
+    accountDialogMode.value = 'create'
+    currentAccountId.value = null
+    accountDialogVisible.value = true
   } else if (tabKey === 'corpus') {
     ElMessage.info('语料库管理功能开发中')
   } else {
@@ -1480,7 +1713,7 @@ const handleDelete = (item) => {
   const isNode = item.handles !== undefined
   const itemType = isNode ? '节点' : '组件'
   ElMessageBox.confirm(
-    `确定要删除${itemType}"${item.name}"吗？` + (isNode ? '删除后可在后端恢复（逻辑删除）。' : '此操作不可恢复。'),
+    `确定要删除${itemType}"${item.name}"吗？`,
     '确认删除',
     {
       confirmButtonText: '确定删除',
@@ -1561,6 +1794,31 @@ const getComponentStatusIcon = (status) => getComponentStatusConfig(status, 'ico
 const getComponentStatusIconClass = (status) => getComponentStatusConfig(status, 'iconClass')
 const getComponentStatusBgClass = (status) => getComponentStatusConfig(status, 'bgClass')
 
+
+const ACCOUNT_STATUS_CONFIG = {
+  'ACTIVE': { text: '正常', tagType: 'success', icon: 'mdi:check-circle', iconClass: 'text-green-600', bgClass: 'bg-green-100' },
+  'RISK': { text: '风险', tagType: 'warning', icon: 'mdi:alert', iconClass: 'text-orange-600', bgClass: 'bg-orange-100' },
+  'CAPTCHA': { text: '验证码', tagType: 'warning', icon: 'mdi:shield-alert', iconClass: 'text-yellow-600', bgClass: 'bg-yellow-100' },
+  'INVALID_PWD': { text: '密码异常', tagType: 'danger', icon: 'mdi:lock-alert', iconClass: 'text-red-600', bgClass: 'bg-red-100' },
+  'EXPIRED': { text: '已过期', tagType: 'info', icon: 'mdi:clock-alert', iconClass: 'text-gray-600', bgClass: 'bg-gray-100' },
+  'BANNED': { text: '已封禁', tagType: 'danger', icon: 'mdi:block-helper', iconClass: 'text-red-600', bgClass: 'bg-red-100' }
+}
+const DEFAULT_ACCOUNT_STATUS = { text: '未知', tagType: 'info', icon: 'mdi:help-circle', iconClass: 'text-gray-600', bgClass: 'bg-gray-100' }
+const getAccountStatusConfig = (status, configKey) => {
+  const config = ACCOUNT_STATUS_CONFIG[status] || DEFAULT_ACCOUNT_STATUS
+  return configKey ? config[configKey] : config
+}
+const getAccountStatusText = (status) => getAccountStatusConfig(status, 'text') || status
+const getAccountStatusTagType = (status) => getAccountStatusConfig(status, 'tagType')
+const getAccountStatusIcon = (status) => getAccountStatusConfig(status, 'icon')
+const getAccountStatusIconClass = (status) => getAccountStatusConfig(status, 'iconClass')
+const getAccountStatusBgClass = (status) => getAccountStatusConfig(status, 'bgClass')
+
+const platformNameMap = ref({})
+function getPlatformName(platformId) {
+  if (!platformId) return '-'
+  return platformNameMap.value[platformId] || platformId
+}
 
 // 占位方法：运行/停止组件，等待后端API完成
 const handleRunComponent = (component) => {
@@ -1772,11 +2030,210 @@ const fetchStatistics = async () => {
   }
 }
 
+async function fetchPlatformOptions() {
+  platformOptionsLoading.value = true
+  try {
+    const res = await platformApi.getPlatformFilterPlatforms()
+    if (res && res.code === 0 && Array.isArray(res.data)) {
+      platformOptions.value = res.data
+      const map = {}
+      res.data.forEach(p => { map[p.id] = p.name })
+      platformNameMap.value = map
+    } else {
+      platformOptions.value = []
+    }
+  } catch (e) {
+    platformOptions.value = []
+  } finally {
+    platformOptionsLoading.value = false
+  }
+}
+
+async function fetchAccountList() {
+  loading.value = true
+  try {
+    const result = await getPaginatedData(actionApi.getAccountList, {
+      page: accountPagination.value.page,
+      page_size: accountPagination.value.pageSize,
+      platform_id: accountFilterPlatformId.value || undefined
+    })
+    accountList.value = result.items || []
+    accountPagination.value = {
+      ...accountPagination.value,
+      total: result.pagination.total ?? 0,
+      page: result.pagination.page ?? 1,
+      pageSize: result.pagination.pageSize ?? accountPagination.value.pageSize,
+      totalPages: result.pagination.totalPages ?? 0
+    }
+  } catch (e) {
+    accountList.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+function handleAccountDialogOpen() {
+  if (platformOptions.value.length === 0) {
+    fetchPlatformOptions()
+  }
+  if (accountDialogMode.value === 'edit' && currentAccountId.value) {
+    accountFormLoading.value = true
+    loadAccountForEdit()
+  } else {
+    resetAccountForm()
+  }
+}
+
+function handleAccountDialogClosed() {
+  accountDialogMode.value = 'create'
+  currentAccountId.value = null
+  accountFormLoading.value = false
+  resetAccountForm()
+}
+
+function resetAccountForm() {
+  accountFormData.value = {
+    platform_id: '',
+    account_name: '',
+    credentials: { username: '', password: '', phone: '', email: '', two_fa_secret: '', extra_fields: {} },
+    rate_limit: { strategy: 'none', max_requests: 0 }
+  }
+  accountFormRef.value?.clearValidate()
+}
+
+async function loadAccountForEdit() {
+  if (!currentAccountId.value) return
+  try {
+    const res = await actionApi.getAccountDetail(currentAccountId.value)
+    if (res.code !== 0 || !res.data) {
+      accountFormLoading.value = false
+      accountDialogVisible.value = false
+      return
+    }
+    const d = res.data
+    accountFormData.value = {
+      platform_id: d.platform_id || '',
+      account_name: d.account_name || '',
+      credentials: (d.credentials && typeof d.credentials === 'object') ? { ...d.credentials } : { username: '', password: '', phone: '', email: '', two_fa_secret: '', extra_fields: {} },
+      rate_limit: (d.rate_limit && typeof d.rate_limit === 'object') ? { strategy: d.rate_limit.strategy || 'none', max_requests: d.rate_limit.max_requests ?? 0 } : { strategy: 'none', max_requests: 0 }
+    }
+    accountFormRef.value?.clearValidate()
+  } catch (e) {
+    accountDialogVisible.value = false
+  } finally {
+    accountFormLoading.value = false
+  }
+}
+
+async function handleSubmitAccount() {
+  if (!accountFormRef.value) return
+  try {
+    await accountFormRef.value.validate()
+    accountSubmitting.value = true
+    const credentials = accountFormData.value.credentials
+    const credPayload = {}
+    if (credentials.username) credPayload.username = credentials.username
+    if (credentials.password) credPayload.password = credentials.password
+    if (credentials.phone) credPayload.phone = credentials.phone
+    if (credentials.email) credPayload.email = credentials.email
+    const payload = {
+      platform_id: accountFormData.value.platform_id,
+      account_name: accountFormData.value.account_name,
+      credentials: credPayload,
+      rate_limit: accountFormData.value.rate_limit.strategy && accountFormData.value.rate_limit.strategy !== 'none'
+        ? { strategy: accountFormData.value.rate_limit.strategy, max_requests: accountFormData.value.rate_limit.max_requests ?? 0 }
+        : {}
+    }
+    if (accountDialogMode.value === 'edit') {
+      const res = await actionApi.updateAccount(currentAccountId.value, payload)
+      if (res.code === 0) {
+        ElMessage.success('更新采集账号成功')
+        accountDialogVisible.value = false
+        await fetchAccountList()
+        await fetchStatistics()
+      } else {
+        ElMessage.error(res.message || '更新失败')
+      }
+    } else {
+      const res = await actionApi.createAccount(payload)
+      if (res.code === 0) {
+        ElMessage.success('新增采集账号成功')
+        accountDialogVisible.value = false
+        await fetchAccountList()
+        await fetchStatistics()
+      } else {
+        ElMessage.error(res.message || '创建失败')
+      }
+    }
+  } catch (e) {
+  } finally {
+    accountSubmitting.value = false
+  }
+}
+
+async function handleViewAccount(account) {
+  accountDetailDialogVisible.value = true
+  accountDetailData.value = null
+  accountDetailLoading.value = true
+  try {
+    const res = await actionApi.getAccountDetail(account.id)
+    if (res.code === 0 && res.data) {
+      accountDetailData.value = res.data
+    } else {
+      ElMessage.error(res.message || '获取详情失败')
+      accountDetailDialogVisible.value = false
+    }
+  } catch (e) {
+    ElMessage.error(e?.message || '获取详情失败')
+    accountDetailDialogVisible.value = false
+  } finally {
+    accountDetailLoading.value = false
+  }
+}
+
+function handleEditAccount(account) {
+  accountDialogMode.value = 'edit'
+  currentAccountId.value = account.id
+  accountDialogVisible.value = true
+}
+
+function handleDeleteAccount(account) {
+  ElMessageBox.confirm(`确定要删除采集账号「${account.account_name}」吗？`, '确认删除', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  })
+    .then(async () => {
+      try {
+        await actionApi.deleteAccount(account.id)
+        ElMessage.success('已删除采集账号')
+        await fetchAccountList()
+        await fetchStatistics()
+      } catch (e) {
+        ElMessage.error(e?.message || '删除失败')
+      }
+    })
+    .catch(() => {})
+}
+
+function handleAccountPageChange(page) {
+  accountPagination.value.page = page
+  fetchAccountList()
+}
+
+function handleAccountPageSizeChange(pageSize) {
+  accountPagination.value.pageSize = pageSize
+  accountPagination.value.page = 1
+  fetchAccountList()
+}
+
 watch(activeTab, (newTab) => {
   if (newTab === 'nodeHandles') {
     fetchHandleList()
   } else if (newTab === 'baseComponents') {
     fetchComponentList()
+  } else if (newTab === 'accounts') {
+    fetchPlatformOptions().then(() => fetchAccountList())
   }
 })
 
@@ -1787,6 +2244,8 @@ onMounted(() => {
     fetchComponentList()
   } else if (activeTab.value === 'nodeHandles') {
     fetchHandleList()
+  } else if (activeTab.value === 'accounts') {
+    fetchPlatformOptions().then(() => fetchAccountList())
   }
 })
 </script>
