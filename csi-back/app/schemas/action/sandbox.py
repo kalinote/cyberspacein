@@ -3,12 +3,13 @@ from pydantic import BaseModel, Field
 
 
 class SandboxCreateRequest(BaseModel):
-    name: str | None = Field(default=None, description="自定义沙盒名称（可选），不传则使用默认 csi-sandbox-{端口}")
+    name: str | None = Field(default=None, description="显示名称，仅作展示用；容器名由系统自动生成")
 
 
 class SandboxCreateResponse(BaseModel):
     sandbox_id: str = Field(description="沙盒ID（容器短ID）")
     name: str = Field(description="容器名称")
+    display_name: str | None = Field(default=None, description="显示名称")
     host_port: int = Field(description="宿主机映射端口")
     status: str = Field(description="容器状态")
     created_at: datetime | None = Field(default=None, description="创建时间")
@@ -18,6 +19,7 @@ class SandboxCreateResponse(BaseModel):
 class SandboxBaseInfo(BaseModel):
     sandbox_id: str = Field(description="沙盒ID")
     name: str = Field(description="容器名称")
+    display_name: str | None = Field(default=None, description="显示名称")
     status: str = Field(description="容器状态")
     image: str = Field(description="镜像名")
     host_port: int | None = Field(default=None, description="宿主机映射端口")
@@ -27,6 +29,7 @@ class SandboxBaseInfo(BaseModel):
 class SandboxDetailResponse(BaseModel):
     sandbox_id: str = Field(description="沙盒ID")
     name: str = Field(description="容器名称")
+    display_name: str | None = Field(default=None, description="显示名称")
     status: str = Field(description="容器状态")
     image: str = Field(description="镜像名")
     host_port: int | None = Field(default=None, description="宿主机映射端口")

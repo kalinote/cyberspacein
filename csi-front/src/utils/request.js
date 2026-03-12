@@ -24,13 +24,19 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   response => {
     const res = response.data
-    
+
     if (res.code === 0) {
       return res
-    } else {
+    }
+    if (res.code !== undefined && res.code !== 0) {
       ElMessage.error(res.message || '请求失败')
       return Promise.reject(new Error(res.message || '请求失败'))
     }
+    if (Array.isArray(res.items) && typeof res.total === 'number') {
+      return res
+    }
+    ElMessage.error(res.message || '请求失败')
+    return Promise.reject(new Error(res.message || '请求失败'))
   },
   error => {
     console.error('响应错误:', error)
@@ -102,10 +108,9 @@ export const request = {
 export const getPaginatedData = async (apiFunc, params = {}) => {
   try {
     const response = await apiFunc(params)
-    
+
     if (response.code === 0 && response.data) {
       const { items = [], total = 0, page = 1, page_size = 10, total_pages = 1 } = response.data
-      
       return {
         items,
         pagination: {
@@ -116,7 +121,18 @@ export const getPaginatedData = async (apiFunc, params = {}) => {
         }
       }
     }
-    
+    if (Array.isArray(response.items) && typeof response.total === 'number') {
+      return {
+        items: response.items,
+        pagination: {
+          total: response.total,
+          page: response.page ?? 1,
+          pageSize: response.page_size ?? 10,
+          totalPages: response.total_pages ?? 0
+        }
+      }
+    }
+
     return {
       items: [],
       pagination: {

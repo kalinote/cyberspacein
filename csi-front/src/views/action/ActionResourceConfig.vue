@@ -501,7 +501,7 @@
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
                         <h3 class="text-lg font-bold text-gray-900">
-                          {{ sandbox.name || sandbox.sandbox_id }}
+                          {{ sandbox.display_name || sandbox.name || sandbox.sandbox_id }}
                         </h3>
                         <el-tag
                           size="small"
@@ -1217,10 +1217,10 @@
       @closed="createSandboxName = ''"
     >
       <el-form label-width="80px">
-        <el-form-item label="沙盒名称">
+        <el-form-item label="显示名称">
           <el-input
             v-model="createSandboxName"
-            placeholder="选填，不填则使用默认名称"
+            placeholder="选填，仅作展示用；容器名由系统自动生成"
             clearable
             maxlength="64"
             show-word-limit
@@ -1246,9 +1246,10 @@
         <template v-if="sandboxDetailData">
           <el-descriptions :column="1" border>
             <el-descriptions-item label="沙盒ID">{{ sandboxDetailData.sandbox_id }}</el-descriptions-item>
-            <el-descriptions-item label="名称">{{ sandboxDetailData.name }}</el-descriptions-item>
+            <el-descriptions-item label="显示名称">{{ sandboxDetailData.display_name ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="容器名称">{{ sandboxDetailData.name }}</el-descriptions-item>
             <el-descriptions-item label="状态">{{ sandboxDetailData.status }}</el-descriptions-item>
-            <el-descriptions-item label="镜像">{{ sandboxDetailData.image }}</el-descriptions-item>
+            <el-descriptions-item label="镜像">{{ sandboxDetailData.image ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="宿主机端口">
               {{ sandboxDetailData.host_port ?? '-' }}
             </el-descriptions-item>
@@ -1535,7 +1536,7 @@ const filteredComponentList = computed(() => filterByKeyword(componentList.value
 const filteredHandleList = computed(() => filterByKeyword(handleList.value, ['handle_name', 'type', 'label', 'id'], searchKeyword.value))
 const filteredAccountList = computed(() => filterByKeyword(accountList.value, ['account_name', 'id'], searchKeyword.value))
 const filteredSandboxList = computed(() =>
-  filterByKeyword(sandboxList.value, ['sandbox_id', 'name', 'status', 'image'], searchKeyword.value)
+  filterByKeyword(sandboxList.value, ['sandbox_id', 'name', 'display_name', 'status', 'image'], searchKeyword.value)
 )
 
 const nodePreviewData = computed(() => {
@@ -1631,7 +1632,7 @@ const getSandboxUrl = (port) => {
 
 const getSandboxVncUrl = (port) => {
   if (!port) return ''
-  return `http://${SANDBOX_HOST}:${port}/vnc/index.html#autoconnect=true&reconnect=true&shared=true&resize=scale`
+  return `http://${SANDBOX_HOST}:${port}/vnc/index.html#autoconnect=true&reconnect=true&shared=true&resize=remote`
 }
 
 const handleAdd = (tabKey) => {
@@ -2357,13 +2358,13 @@ const handleConnectSandbox = (sandbox) => {
     return
   }
   sandboxVncUrl.value = url
-  sandboxVncTitle.value = sandbox.name || sandbox.sandbox_id || '沙盒远程连接'
+  sandboxVncTitle.value = sandbox.display_name || sandbox.name || sandbox.sandbox_id || '沙盒远程连接'
   sandboxVncDialogVisible.value = true
 }
 
 const handleDestroySandbox = (sandbox) => {
   if (!sandbox?.sandbox_id) return
-  const name = sandbox.name || sandbox.sandbox_id
+  const name = sandbox.display_name || sandbox.name || sandbox.sandbox_id
   ElMessageBox.confirm(
     `确定要销毁沙盒「${name}」吗？`,
     '确认销毁',

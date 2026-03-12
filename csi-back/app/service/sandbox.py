@@ -1,16 +1,17 @@
+import asyncio
 import logging
-import re
 from datetime import datetime
 
 import docker
 from docker.errors import DockerException, NotFound
 
 from app.core.config import settings
+from app.models.action.sandbox import SandboxModel
+from app.utils.id_lib import generate_id
 
 logger = logging.getLogger(__name__)
 
 SANDBOX_LABEL = {"csi.sandbox": "true"}
-CONTAINER_PORT = 8080
 
 
 def _parse_port_range(port_range: str) -> list[int]:
@@ -81,19 +82,7 @@ def _pick_host_port(client: docker.DockerClient) -> int | None:
     return None
 
 
-def _sanitize_container_name(raw: str) -> str:
-    s = raw.strip()
-    if not s:
-        return ""
-    s = s[:63]
-    allowed = re.compile(r"[a-zA-Z0-9_.-]")
-    out = "".join(c if allowed.match(c) else "-" for c in s).strip(".-")
-    while out and not out[0].isalnum():
-        out = out[1:]
-    return out[:63] if out else ""
-
-
-def create_sandbox(name: str | None = None) -> tuple[bool, str, dict | None]:
+def create_sandbox(display_name: str | None = None) -> tuple[bool, str, dict | None]:
     if not settings.SANDBOX_IMAGE or not settings.SANDBOX_IMAGE.strip():
         return False, "未配置 SANDBOX_IMAGE", None
     try:
@@ -101,14 +90,13 @@ def create_sandbox(name: str | None = None) -> tuple[bool, str, dict | None]:
         host_port = _pick_host_port(client)
         if host_port is None:
             return False, "端口池耗尽，无可用端口", None
-        custom = _sanitize_container_name(name) if name else ""
-        name = custom if custom else f"csi-sandbox-{host_port}"
+        container_name = f"csi-sandbox-{host_port}"
         container = client.containers.run(
             settings.SANDBOX_IMAGE.strip(),
             detach=True,
             labels=SANDBOX_LABEL,
             ports={"8080/tcp": host_port},
-            name=name,
+            name=container_name,
             security_opt=["seccomp=unconfined"],
             shm_size="2g",
             environment={
@@ -124,6 +112,7 @@ def create_sandbox(name: str | None = None) -> tuple[bool, str, dict | None]:
         return True, container.short_id, {
             "sandbox_id": container.short_id,
             "name": container.name,
+            "display_name": display_name.strip() if display_name and display_name.strip() else None,
             "host_port": host_port,
             "status": container.status,
             "created_at": created_at,
@@ -153,55 +142,13 @@ def delete_sandbox(sandbox_id: str) -> tuple[bool, str]:
         return False, str(e) or "销毁沙盒失败"
 
 
-def list_sandboxes(skip: int, limit: int) -> tuple[list[dict], int]:
+def _get_container_info(container_id: str, detail: bool = False) -> dict | None:
     try:
         client = get_docker_client()
-        containers = client.containers.list(all=True, filters={"label": "csi.sandbox=true"})
-        total = len(containers)
-        result = []
-        for c in containers[skip : skip + limit]:
-            host_port = None
-            bindings = (c.attrs.get("HostConfig") or {}).get("PortBindings") or {}
-            for port_list in bindings.values():
-                for b in port_list:
-                    hp = b.get("HostPort")
-                    if hp:
-                        try:
-                            host_port = int(hp)
-                            break
-                        except ValueError:
-                            pass
-                if host_port is not None:
-                    break
-            created = (c.attrs.get("Created") or "").replace("Z", "+00:00")
-            try:
-                created_at = datetime.fromisoformat(created)
-            except Exception:
-                created_at = None
-            image = (c.attrs.get("Config") or {}).get("Image") or ""
-            result.append({
-                "sandbox_id": c.short_id,
-                "name": c.name,
-                "status": c.status,
-                "image": image,
-                "host_port": host_port,
-                "created_at": created_at,
-            })
-        return result, total
-    except DockerException as e:
-        logger.exception("列出沙盒失败")
-        return [], 0
-
-
-def get_sandbox_detail(sandbox_id: str) -> tuple[bool, str, dict | None]:
-    if not sandbox_id or not sandbox_id.strip():
-        return False, "沙盒ID不能为空", None
-    try:
-        client = get_docker_client()
-        container = client.containers.get(sandbox_id.strip())
+        container = client.containers.get(container_id.strip())
         labels = (container.attrs.get("Config") or {}).get("Labels") or {}
         if labels.get("csi.sandbox") != "true":
-            return False, "仅允许查询本系统创建的沙盒容器", None
+            return None
         host_port = None
         ports = {}
         bindings = (container.attrs.get("HostConfig") or {}).get("PortBindings") or {}
@@ -210,11 +157,13 @@ def get_sandbox_detail(sandbox_id: str) -> tuple[bool, str, dict | None]:
                 hp = b.get("HostPort")
                 if hp:
                     try:
-                        ports[container_port] = int(hp)
+                        if detail:
+                            ports[container_port] = int(hp)
                         if host_port is None and "8080" in container_port:
                             host_port = int(hp)
                     except ValueError:
-                        ports[container_port] = hp
+                        if detail:
+                            ports[container_port] = hp
                         if host_port is None and "8080" in container_port:
                             host_port = hp
         created = (container.attrs.get("Created") or "").replace("Z", "+00:00")
@@ -223,18 +172,120 @@ def get_sandbox_detail(sandbox_id: str) -> tuple[bool, str, dict | None]:
         except Exception:
             created_at = None
         image = (container.attrs.get("Config") or {}).get("Image") or ""
-        return True, "success", {
-            "sandbox_id": container.short_id,
-            "name": container.name,
+        out = {
             "status": container.status,
+            "name": container.name,
             "image": image,
             "host_port": host_port,
             "created_at": created_at,
-            "ports": ports,
-            "labels": dict(labels),
         }
-    except NotFound:
+        if detail:
+            out["ports"] = ports
+            out["labels"] = dict(labels)
+        return out
+    except (NotFound, DockerException):
+        return None
+
+
+def _get_container_infos_batch(container_ids: list[str], detail: bool = False) -> dict[str, dict | None]:
+    return {cid: _get_container_info(cid, detail) for cid in container_ids}
+
+
+async def insert_sandbox_doc(
+    container_id: str,
+    container_name: str,
+    display_name: str | None,
+    host_port: int,
+    image: str,
+    created_at: datetime | None,
+) -> None:
+    now = datetime.now()
+    doc = SandboxModel(
+        id=generate_id(container_id + container_name + str(now.timestamp())),
+        container_id=container_id,
+        container_name=container_name,
+        display_name=display_name,
+        host_port=host_port,
+        image=image,
+        created_at=created_at or now,
+        updated_at=now,
+    )
+    await doc.insert()
+
+
+async def delete_sandbox_doc_by_container_id(container_id: str) -> None:
+    doc = await SandboxModel.find_one(SandboxModel.container_id == container_id)
+    if doc:
+        await doc.delete()
+
+
+async def get_sandbox_doc_by_container_id(container_id: str) -> SandboxModel | None:
+    return await SandboxModel.find_one(SandboxModel.container_id == container_id)
+
+
+async def list_sandboxes_from_db(skip: int, limit: int) -> tuple[list[dict], int]:
+    query = SandboxModel.find().sort([("created_at", -1)])
+    total = await query.count()
+    docs = await query.skip(skip).limit(limit).to_list()
+    if not docs:
+        return [], total
+    container_ids = [d.container_id for d in docs]
+    infos = await asyncio.to_thread(_get_container_infos_batch, container_ids, False)
+    result = []
+    for d in docs:
+        info = infos.get(d.container_id)
+        if info:
+            result.append({
+                "sandbox_id": d.container_id,
+                "name": info["name"],
+                "display_name": d.display_name,
+                "status": info["status"],
+                "image": info["image"],
+                "host_port": info["host_port"],
+                "created_at": d.created_at,
+            })
+        else:
+            result.append({
+                "sandbox_id": d.container_id,
+                "name": d.container_name,
+                "display_name": d.display_name,
+                "status": "removed",
+                "image": d.image,
+                "host_port": d.host_port,
+                "created_at": d.created_at,
+            })
+    return result, total
+
+
+async def get_sandbox_detail_from_db(sandbox_id: str) -> tuple[bool, str, dict | None]:
+    if not sandbox_id or not sandbox_id.strip():
+        return False, "沙盒ID不能为空", None
+    doc = await SandboxModel.find_one(SandboxModel.container_id == sandbox_id.strip())
+    if not doc:
         return False, "沙盒不存在", None
-    except DockerException as e:
-        logger.exception("查询沙盒详情失败")
-        return False, str(e) or "查询沙盒详情失败", None
+    info = await asyncio.to_thread(_get_container_info, sandbox_id.strip(), True)
+    if info:
+        data = {
+            "sandbox_id": doc.container_id,
+            "name": info["name"],
+            "display_name": doc.display_name,
+            "status": info["status"],
+            "image": info["image"],
+            "host_port": info["host_port"],
+            "created_at": doc.created_at,
+            "ports": info.get("ports", {}),
+            "labels": info.get("labels", {}),
+        }
+    else:
+        data = {
+            "sandbox_id": doc.container_id,
+            "name": doc.container_name,
+            "display_name": doc.display_name,
+            "status": "removed",
+            "image": doc.image,
+            "host_port": doc.host_port,
+            "created_at": doc.created_at,
+            "ports": {},
+            "labels": {},
+        }
+    return True, "success", data
