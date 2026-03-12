@@ -65,6 +65,22 @@ export const actionApi = {
   getStatistics() {
     return request.get('/action/configs/statistics')
   },
+  // 创建沙盒容器
+  createSandbox() {
+    return request.post('/action/sandbox/create')
+  },
+  // 获取沙盒容器详情
+  getSandboxDetail(sandboxId) {
+    return request.get(`/action/sandbox/detail/${sandboxId}`)
+  },
+  // 销毁沙盒容器
+  destroySandbox(sandboxId) {
+    return request.delete(`/action/sandbox/${sandboxId}`)
+  },
+  // 获取沙盒容器列表（分页）
+  getSandboxList(params = { page: 1, page_size: 10 }) {
+    return request.get('/action/sandbox/list', params)
+  },
   // 获取节点类型过滤列表（用于节点类型下拉）
   getNodeTypeFilter() {
     return request.get('/action/configs/filter/node_type')

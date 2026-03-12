@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_URL: str = "https://api.siliconflow.cn/v1/embeddings"
     EMBEDDING_MODEL_API_KEY: str = ""
 
+    DOCKER_HOST: Optional[str] = None
+    SANDBOX_IMAGE: str = ""
+    SANDBOX_PORT_RANGE: str = "13000-13099"
+
     HYBRID_TOTAL_CAP: int = 10000
     RRF_K: int = 60
     VECTOR_NUM_CANDIDATES_MULTIPLIER: int = 100
