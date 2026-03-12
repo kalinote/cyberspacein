@@ -198,3 +198,20 @@ class RateLimitStrategyEnum(str, Enum):
     HOURLY = "hourly"
     DAILY = "daily"
     NONE = "none"
+
+class SandboxTypeEnum(str, Enum):
+    """
+    沙盒类型枚举
+    """
+    ALL_IN_ONE = "all-in-one"
+    WINDOWS = "windows"
+
+
+class SandboxStatusEnum(str, Enum):
+    """
+    沙盒业务状态枚举
+    """
+    CREATED = "created"
+    DEPLOYED = "deployed"
+    STOPPED = "stopped"
+    DESTROYED = "destroyed"

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, BackgroundTasks, Body, Depends
 
 from app.schemas.action.sandbox import (
     SandboxBaseInfo,
@@ -22,18 +22,25 @@ router = APIRouter(
 
 
 @router.post("/create", response_model=ApiResponseSchema[SandboxCreateResponse], summary="创建沙盒")
-async def create_sandbox(body: SandboxCreateRequest = Body(default=SandboxCreateRequest())):
-    ok, message, data = await asyncio.to_thread(sandbox_service.create_sandbox, body.name)
+async def create_sandbox(body: SandboxCreateRequest, background_tasks: BackgroundTasks):
+    ok, message, data = await asyncio.to_thread(sandbox_service.create_sandbox, body.name, body.image_type)
     if not ok:
         code = 400 if "端口池" in message or "未配置" in message else 500
         return ApiResponseSchema.error(code=code, message=message)
     await sandbox_service.insert_sandbox_doc(
         container_id=data["sandbox_id"],
         container_name=data["name"],
+        image_type=body.image_type,
         display_name=data.get("display_name"),
         host_port=data["host_port"],
         image=data["image"],
         created_at=data.get("created_at"),
+        sandbox_status=data["sandbox_status"],
+    )
+    background_tasks.add_task(
+        sandbox_service.start_sandbox_and_update_status,
+        data["sandbox_id"],
+        body.image_type,
     )
     return ApiResponseSchema.success(data=SandboxCreateResponse(**data))
 
@@ -43,7 +50,7 @@ async def delete_sandbox(sandbox_id: str):
     doc = await sandbox_service.get_sandbox_doc_by_container_id(sandbox_id)
     if not doc:
         return ApiResponseSchema.error(code=404, message="沙盒不存在")
-    ok, message = await asyncio.to_thread(sandbox_service.delete_sandbox, sandbox_id)
+    ok, message = await asyncio.to_thread(sandbox_service.delete_sandbox, sandbox_id, doc.image_type)
     if not ok and "不存在" not in message:
         code = 400 if "仅允许" in message else 500
         return ApiResponseSchema.error(code=code, message=message)

@@ -510,6 +510,14 @@
                         >
                           {{ sandbox.status || '未知' }}
                         </el-tag>
+                        <el-tag
+                          size="small"
+                          :type="getSandboxStatusTagType(sandbox.sandbox_status)"
+                          effect="plain"
+                          class="border-0"
+                        >
+                          {{ sandboxStatusLabel(sandbox.sandbox_status) }}
+                        </el-tag>
                       </div>
                       <div class="flex items-center gap-6 text-sm flex-wrap">
                         <div class="flex items-center gap-2">
@@ -1213,8 +1221,8 @@
       v-model="createSandboxDialogVisible"
       title="创建沙盒"
       width="420px"
-      @open="createSandboxName = ''"
-      @closed="createSandboxName = ''"
+      @open="onCreateSandboxDialogOpen"
+      @closed="onCreateSandboxDialogClosed"
     >
       <el-form label-width="80px">
         <el-form-item label="显示名称">
@@ -1225,6 +1233,12 @@
             maxlength="64"
             show-word-limit
           />
+        </el-form-item>
+        <el-form-item label="沙盒类型">
+          <el-select v-model="createSandboxImageType" placeholder="选择类型" class="w-full">
+            <el-option label="All-in-One" value="all-in-one" />
+            <el-option label="Windows" value="windows" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1248,7 +1262,8 @@
             <el-descriptions-item label="沙盒ID">{{ sandboxDetailData.sandbox_id }}</el-descriptions-item>
             <el-descriptions-item label="显示名称">{{ sandboxDetailData.display_name ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="容器名称">{{ sandboxDetailData.name }}</el-descriptions-item>
-            <el-descriptions-item label="状态">{{ sandboxDetailData.status }}</el-descriptions-item>
+            <el-descriptions-item label="容器状态">{{ sandboxDetailData.status ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="沙盒业务状态">{{ sandboxStatusLabel(sandboxDetailData.sandbox_status) }}</el-descriptions-item>
             <el-descriptions-item label="镜像">{{ sandboxDetailData.image ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="宿主机端口">
               {{ sandboxDetailData.host_port ?? '-' }}
@@ -1536,7 +1551,7 @@ const filteredComponentList = computed(() => filterByKeyword(componentList.value
 const filteredHandleList = computed(() => filterByKeyword(handleList.value, ['handle_name', 'type', 'label', 'id'], searchKeyword.value))
 const filteredAccountList = computed(() => filterByKeyword(accountList.value, ['account_name', 'id'], searchKeyword.value))
 const filteredSandboxList = computed(() =>
-  filterByKeyword(sandboxList.value, ['sandbox_id', 'name', 'display_name', 'status', 'image'], searchKeyword.value)
+  filterByKeyword(sandboxList.value, ['sandbox_id', 'name', 'display_name', 'status', 'sandbox_status', 'image'], searchKeyword.value)
 )
 
 const nodePreviewData = computed(() => {
@@ -1630,9 +1645,27 @@ const getSandboxUrl = (port) => {
   return `http://${SANDBOX_HOST}:${port}`
 }
 
-const getSandboxVncUrl = (port) => {
+const getSandboxVncUrl = (port, imageType) => {
   if (!port) return ''
-  return `http://${SANDBOX_HOST}:${port}/vnc/index.html#autoconnect=true&reconnect=true&shared=true&resize=remote`
+  const base = `http://${SANDBOX_HOST}:${port}`
+  const hash = 'autoconnect=true&reconnect=true&shared=true&resize=remote'
+  if (imageType === 'windows') {
+    return `${base}/#${hash}`
+  }
+  return `${base}/vnc/index.html#${hash}`
+}
+
+const SANDBOX_STATUS_LABELS = {
+  created: '已创建',
+  deployed: '已部署',
+  stopped: '已停止',
+  destroyed: '已销毁'
+}
+const sandboxStatusLabel = (status) => SANDBOX_STATUS_LABELS[status] || status || '-'
+
+const getSandboxStatusTagType = (sandboxStatus) => {
+  const map = { created: 'info', deployed: 'success', stopped: 'warning', destroyed: 'danger' }
+  return map[sandboxStatus] || 'info'
 }
 
 const handleAdd = (tabKey) => {
@@ -1662,6 +1695,17 @@ const handleAdd = (tabKey) => {
 const creatingSandbox = ref(false)
 const createSandboxDialogVisible = ref(false)
 const createSandboxName = ref('')
+const createSandboxImageType = ref('all-in-one')
+
+const onCreateSandboxDialogOpen = () => {
+  createSandboxName.value = ''
+  createSandboxImageType.value = 'all-in-one'
+}
+
+const onCreateSandboxDialogClosed = () => {
+  createSandboxName.value = ''
+  createSandboxImageType.value = 'all-in-one'
+}
 
 const handleCreateSandbox = () => {
   createSandboxDialogVisible.value = true
@@ -1670,7 +1714,12 @@ const handleCreateSandbox = () => {
 const handleCreateSandboxSubmit = async () => {
   creatingSandbox.value = true
   try {
-    const payload = createSandboxName.value.trim() ? { name: createSandboxName.value.trim() } : {}
+    const payload = {
+      image_type: createSandboxImageType.value || 'all-in-one'
+    }
+    if (createSandboxName.value.trim()) {
+      payload.name = createSandboxName.value.trim()
+    }
     const res = await actionApi.createSandbox(payload)
     if (res.code === 0) {
       ElMessage.success('创建沙盒容器成功')
@@ -2352,7 +2401,7 @@ const handleConnectSandbox = (sandbox) => {
     ElMessage.error('该沙盒未配置宿主机端口，无法连接')
     return
   }
-  const url = getSandboxVncUrl(sandbox.host_port)
+  const url = getSandboxVncUrl(sandbox.host_port, sandbox.image_type)
   if (!url) {
     ElMessage.error('无法生成沙盒连接地址')
     return

@@ -49,8 +49,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_API_KEY: str = ""
 
     DOCKER_HOST: Optional[str] = None
-    SANDBOX_IMAGE: str = ""
-    SANDBOX_PORT_RANGE: str = "13000-13099"
+    AIO_SANDBOX_IMAGE: str = ""
+    WINDOWS_SANDBOX_IMAGE: str = ""
+    WINDOWS_TEMPLATE_VOLUME: str = "win_template_vol"
+    SANDBOX_PORT_RANGE: str = "16700-16799"
 
     HYBRID_TOTAL_CAP: int = 10000
     RRF_K: int = 60
