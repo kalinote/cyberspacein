@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 
 import docker
@@ -80,7 +81,19 @@ def _pick_host_port(client: docker.DockerClient) -> int | None:
     return None
 
 
-def create_sandbox() -> tuple[bool, str, dict | None]:
+def _sanitize_container_name(raw: str) -> str:
+    s = raw.strip()
+    if not s:
+        return ""
+    s = s[:63]
+    allowed = re.compile(r"[a-zA-Z0-9_.-]")
+    out = "".join(c if allowed.match(c) else "-" for c in s).strip(".-")
+    while out and not out[0].isalnum():
+        out = out[1:]
+    return out[:63] if out else ""
+
+
+def create_sandbox(name: str | None = None) -> tuple[bool, str, dict | None]:
     if not settings.SANDBOX_IMAGE or not settings.SANDBOX_IMAGE.strip():
         return False, "未配置 SANDBOX_IMAGE", None
     try:
@@ -88,7 +101,8 @@ def create_sandbox() -> tuple[bool, str, dict | None]:
         host_port = _pick_host_port(client)
         if host_port is None:
             return False, "端口池耗尽，无可用端口", None
-        name = f"csi-sandbox-{host_port}"
+        custom = _sanitize_container_name(name) if name else ""
+        name = custom if custom else f"csi-sandbox-{host_port}"
         container = client.containers.run(
             settings.SANDBOX_IMAGE.strip(),
             detach=True,

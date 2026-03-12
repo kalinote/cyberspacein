@@ -1208,6 +1208,33 @@
       </div>
     </el-dialog>
 
+    <!-- 创建沙盒弹窗 -->
+    <el-dialog
+      v-model="createSandboxDialogVisible"
+      title="创建沙盒"
+      width="420px"
+      @open="createSandboxName = ''"
+      @closed="createSandboxName = ''"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="沙盒名称">
+          <el-input
+            v-model="createSandboxName"
+            placeholder="选填，不填则使用默认名称"
+            clearable
+            maxlength="64"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createSandboxDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creatingSandbox" @click="handleCreateSandboxSubmit">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 沙盒容器详情弹窗 -->
     <el-dialog
       v-model="sandboxDetailDialogVisible"
@@ -1632,27 +1659,21 @@ const handleAdd = (tabKey) => {
 }
 
 const creatingSandbox = ref(false)
+const createSandboxDialogVisible = ref(false)
+const createSandboxName = ref('')
 
-const handleCreateSandbox = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '确定要创建新的沙盒容器吗？',
-      '创建沙盒',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-  } catch {
-    return
-  }
+const handleCreateSandbox = () => {
+  createSandboxDialogVisible.value = true
+}
 
+const handleCreateSandboxSubmit = async () => {
   creatingSandbox.value = true
   try {
-    const res = await actionApi.createSandbox()
+    const payload = createSandboxName.value.trim() ? { name: createSandboxName.value.trim() } : {}
+    const res = await actionApi.createSandbox(payload)
     if (res.code === 0) {
       ElMessage.success('创建沙盒容器成功')
+      createSandboxDialogVisible.value = false
       await fetchSandboxList()
       await fetchStatistics()
     } else {

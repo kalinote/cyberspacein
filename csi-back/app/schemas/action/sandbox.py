@@ -2,6 +2,10 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class SandboxCreateRequest(BaseModel):
+    name: str | None = Field(default=None, description="自定义沙盒名称（可选），不传则使用默认 csi-sandbox-{端口}")
+
+
 class SandboxCreateResponse(BaseModel):
     sandbox_id: str = Field(description="沙盒ID（容器短ID）")
     name: str = Field(description="容器名称")

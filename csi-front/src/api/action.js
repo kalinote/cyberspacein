@@ -66,8 +66,8 @@ export const actionApi = {
     return request.get('/action/configs/statistics')
   },
   // 创建沙盒容器
-  createSandbox() {
-    return request.post('/action/sandbox/create')
+  createSandbox(data = {}) {
+    return request.post('/action/sandbox/create', data)
   },
   // 获取沙盒容器详情
   getSandboxDetail(sandboxId) {

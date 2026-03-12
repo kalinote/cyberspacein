@@ -1,10 +1,11 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 
 from app.schemas.action.sandbox import (
     SandboxBaseInfo,
+    SandboxCreateRequest,
     SandboxCreateResponse,
     SandboxDetailResponse,
 )
@@ -21,8 +22,8 @@ router = APIRouter(
 
 
 @router.post("/create", response_model=ApiResponseSchema[SandboxCreateResponse], summary="创建沙盒")
-async def create_sandbox():
-    ok, message, data = await asyncio.to_thread(sandbox_service.create_sandbox)
+async def create_sandbox(body: SandboxCreateRequest = Body(default=SandboxCreateRequest())):
+    ok, message, data = await asyncio.to_thread(sandbox_service.create_sandbox, body.name)
     if not ok:
         code = 400 if "端口池" in message or "未配置" in message else 500
         return ApiResponseSchema.error(code=code, message=message)
