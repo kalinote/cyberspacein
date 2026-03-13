@@ -1,7 +1,9 @@
 from typing import List
 from fastapi import APIRouter, Depends
+from app.models.action.accounts import AccountModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
+from app.models.action.sandbox import SandboxModel
 from app.schemas.constants import ActionNodeTypeEnum
 from app.schemas.action.configs import (
     ActionConfigsStatisticsResponse,
@@ -22,10 +24,14 @@ router = APIRouter(prefix="/configs", tags=["节点配置"])
 async def get_node_configs_statistics():
     node_count = await ActionNodeModel.find(ActionNodeModel.is_deleted == False).count()
     handle_count = await ActionNodesHandleConfigModel.find_all().count()
+    account_count = await AccountModel.find(AccountModel.is_deleted == False).count()
+    container_count = await SandboxModel.find_all().count()
 
     statistics = ActionConfigsStatisticsResponse(
         node_count=node_count,
-        handle_count=handle_count
+        handle_count=handle_count,
+        account_count=account_count,
+        container_count=container_count,
     )
 
     return ApiResponseSchema.success(data=statistics)
