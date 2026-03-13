@@ -14,6 +14,7 @@ from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateM
 from app.models.agent.checkpoint import CheckpointModel, CheckpointWriteModel
 from app.models.agent.agent import AgentAnalysisSessionModel
 from app.models.annotation import AnnotationModel
+from app.models.search_template import SearchTemplateModel
 
 def get_all_models() -> List[Type[Document]]:
     """获取所有需要注册的 Beanie Document 模型"""
@@ -34,4 +35,5 @@ def get_all_models() -> List[Type[Document]]:
         CheckpointWriteModel,
         AgentAnalysisSessionModel,
         AnnotationModel,
+        SearchTemplateModel,
     ]

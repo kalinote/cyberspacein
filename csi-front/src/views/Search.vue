@@ -77,9 +77,9 @@
                 <p class="text-gray-600">通过多维度条件精确缩小检索范围</p>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
                   <div class="flex items-center mb-4">
-                    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                    <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3">
                       <Icon icon="mdi:calendar-range" class="text-blue-600" />
                     </div>
                     <h3 class="font-bold text-gray-900">时间范围</h3>
@@ -93,10 +93,10 @@
                   </div>
                 </div>
 
-                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
                   <div class="flex items-center mb-4">
-                    <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-                      <Icon icon="mdi:tag" class="text-green-600" />
+                    <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3">
+                      <Icon icon="mdi:tag" class="text-blue-600" />
                     </div>
                     <h3 class="font-bold text-gray-900">实体类型</h3>
                   </div>
@@ -109,10 +109,10 @@
                   </div>
                 </div>
 
-                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
                   <div class="flex items-center mb-4">
-                    <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-                      <Icon icon="mdi:source-repository" class="text-purple-600" />
+                    <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3">
+                      <Icon icon="mdi:source-repository" class="text-blue-600" />
                     </div>
                     <h3 class="font-bold text-gray-900">网络类型</h3>
                   </div>
@@ -125,10 +125,10 @@
                   </div>
                 </div>
 
-                <div class="bg-linear-to-br from-white to-blue-50 rounded-xl p-5 shadow-sm border border-gray-100">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
                   <div class="flex items-center mb-4">
-                    <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-3">
-                      <Icon icon="mdi:priority-high" class="text-amber-600" />
+                    <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3">
+                      <Icon icon="mdi:priority-high" class="text-blue-600" />
                     </div>
                     <h3 class="font-bold text-gray-900">置信度</h3>
                   </div>
@@ -146,7 +146,8 @@
               </div>
               <div class="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3 pt-4 pb-4 border-t border-gray-100">
                 <div class="flex flex-wrap gap-3">
-                  <el-button plain>快速保存到模板</el-button>
+                  <el-button plain @click="openSaveTemplateDialog">保存到模板</el-button>
+                  <el-button plain @click="openOverwriteTemplateDialog">覆盖模板</el-button>
                   <el-button @click="resetFilters">重置筛选</el-button>
                   <el-button type="primary" @click="applyFilters">应用筛选</el-button>
                 </div>
@@ -166,45 +167,38 @@
       </div>
     </section>
 
-    <section class="py-10 bg-gray-50">
+    <section class="py-10 bg-white">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="mb-10">
           <h2 class="text-3xl font-bold text-gray-900 mb-2">检索<span class="text-blue-500">模板</span></h2>
           <p class="text-gray-600">快速访问您常用的检索条件和查询</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div v-for="template in searchTemplates" :key="template.id"
-            class="border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
-            @click="applyTemplateFilters(template)">
-            <div class="flex justify-between items-start mb-4">
-              <div :class="getTemplateIconClass(template.id).bgClass"
-                class="w-12 h-12 rounded-xl flex items-center justify-center">
-                <Icon :icon="getTemplateIconClass(template.id).icon"
-                  :class="getTemplateIconClass(template.id).iconClass" class="text-2xl" />
+        <div v-loading="templateLoading" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <template v-if="searchTemplates.length > 0">
+            <div v-for="template in searchTemplates" :key="template.id"
+              class="border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+              @click="applyTemplateFilters(template)">
+              <div class="flex justify-between items-start mb-4">
+                <div :class="getTemplateIconClass(template.id).bgClass"
+                  class="w-12 h-12 rounded-xl flex items-center justify-center">
+                  <Icon :icon="getTemplateIconClass(template.id).icon"
+                    :class="getTemplateIconClass(template.id).iconClass" class="text-2xl" />
+                </div>
+                <div class="flex gap-1">
+                  <el-button text :icon="'Edit'" @click.stop="handleEditTemplate(template)" />
+                  <el-button text type="danger" :icon="'Delete'" @click.stop="handleDeleteTemplate(template)" />
+                </div>
               </div>
-              <el-button text :icon="'Edit'" @click.stop="handleEditTemplate(template)" />
-            </div>
-            <h3 class="font-bold text-gray-900 text-lg mb-2">{{ template.title }}</h3>
-            <p class="text-gray-600 text-sm mb-4">{{ template.description }}</p>
-            <div class="text-sm text-gray-500">
-              {{ Rules2Text(template.rules) || '未设置筛选条件' }}
-            </div>
-          </div>
-
-          <div
-            class="border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer">
-            <div class="flex justify-between items-start mb-4">
-              <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                <Icon icon="mdi:file-document" class="text-purple-600 text-2xl" />
+              <h3 class="font-bold text-gray-900 text-lg mb-2">{{ template.title }}</h3>
+              <p class="text-gray-600 text-sm mb-4">{{ template.description }}</p>
+              <div class="text-sm text-gray-500">
+                {{ Rules2Text(template.rules) || '未设置筛选条件' }}
               </div>
-              <el-button type="primary" text :icon="'Plus'" />
             </div>
-            <h3 class="font-bold text-gray-900 text-lg mb-2">新建检索模板</h3>
-            <p class="text-gray-600 text-sm mb-4">保存当前检索条件以便快速复用</p>
-            <div class="text-sm text-gray-500">
-              点击"+"按钮保存当前检索
-            </div>
+          </template>
+          <div v-else class="col-span-full py-12 text-center text-gray-500">
+            暂无检索模板，可在高级筛选中设置条件后点击「保存到模板」快速保存。
           </div>
         </div>
       </div>
@@ -384,13 +378,70 @@
         </div>
       </div>
     </section>
+
+    <el-dialog v-model="saveDialogVisible" title="保存到模板" width="480px" :close-on-click-modal="false" @closed="resetSaveForm">
+      <el-form :model="saveForm" label-width="80px" label-position="top">
+        <el-form-item label="模板标题" required>
+          <el-input v-model="saveForm.title" placeholder="输入模板标题" maxlength="100" show-word-limit />
+        </el-form-item>
+        <el-form-item label="模板描述" required>
+          <el-input v-model="saveForm.description" type="textarea" :rows="3" placeholder="输入模板描述" maxlength="500" show-word-limit />
+        </el-form-item>
+        <el-form-item label="检索关键词" required>
+          <el-input v-model="saveForm.search_query" placeholder="检索关键词" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="saveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saveSubmitLoading" @click="submitSaveTemplate">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="overwriteDialogVisible" title="覆盖模板" width="440px" :close-on-click-modal="false" @closed="overwriteSelectedId = null">
+      <p class="text-gray-600 text-sm mb-4">将当前检索条件和筛选规则覆盖到所选模板，模板名称与描述保持不变。</p>
+      <el-select v-model="overwriteSelectedId" placeholder="请选择要覆盖的模板" filterable class="w-full">
+        <el-option
+          v-for="t in searchTemplates"
+          :key="t.id"
+          :label="t.title"
+          :value="t.id"
+        />
+      </el-select>
+      <template #footer>
+        <el-button @click="overwriteDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="overwriteSubmitLoading" :disabled="!overwriteSelectedId" @click="submitOverwriteTemplate">确认覆盖</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="editDialogVisible" title="编辑模板" width="480px" :close-on-click-modal="false" @closed="editingTemplate = null">
+      <template v-if="editingTemplate">
+        <el-form :model="editForm" label-width="80px" label-position="top">
+          <el-form-item label="模板标题" required>
+            <el-input v-model="editForm.title" placeholder="输入模板标题" maxlength="100" show-word-limit />
+          </el-form-item>
+          <el-form-item label="模板描述" required>
+            <el-input v-model="editForm.description" type="textarea" :rows="3" placeholder="输入模板描述" maxlength="500" show-word-limit />
+          </el-form-item>
+          <el-form-item label="检索关键词" required>
+            <el-input v-model="editForm.search_query" placeholder="检索关键词" />
+          </el-form-item>
+          <el-form-item label="筛选条件摘要">
+            <div class="text-sm text-gray-500">{{ Rules2Text(editingTemplate.rules) || '未设置筛选条件' }}</div>
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editSubmitLoading" @click="submitEditTemplate">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import { searchApi } from '@/api/search'
@@ -422,8 +473,8 @@ const filterOptions = {
     { value: 'custom', label: '自定义' }
   ],
   categories: [
-    { value: 'Forum', label: 'Forum' },
-    { value: 'Article', label: 'Article' }
+    { value: 'forum', label: 'Forum' },
+    { value: 'article', label: 'Article' }
   ],
   sources: [
     { value: '明网', label: '明网' },
@@ -437,14 +488,200 @@ const filterOptions = {
   ]
 }
 
-const searchTemplates = [
-  { id: 1, searchQuery: '近期新发现的高危漏洞', title: '网络安全威胁', description: '监控最新的网络攻击、漏洞和威胁情报', create_time: '2025-12-11 12:16:38', rules: { timeRange: '7d', entityType: ['Forum'], sources: ['明网'], priorities: ['高'], nsfw: 1, aigc: 1 } },
-  { id: 2, searchQuery: '市场投资动态', title: '市场投资动态', description: '追踪科技行业融资、并购和市场趋势', create_time: '2025-12-10 09:30:15', rules: { timeRange: '30d', entityType: ['Article'], sources: ['明网', 'Tor'], priorities: ['中', '高'], nsfw: 1, aigc: 2 } },
-  { id: 3, searchQuery: '最新政策法规更新', title: '政策法规更新', description: '关注最新的政策法规变化和合规要求', create_time: '2025-12-09 14:22:45', rules: { timeRange: '24h', entityType: ['Article'], sources: ['明网'], priorities: ['高', '中'], nsfw: 1, aigc: 0 } },
-  { id: 4, searchQuery: '人工智能 量子计算', title: '技术发展前沿', description: '追踪人工智能、量子计算等前沿技术突破', create_time: '2025-12-08 16:45:20', rules: { timeRange: '7d', entityType: ['Article'], sources: ['明网', 'Tor'], priorities: ['高', '中'], nsfw: 2, aigc: 1 } },
-  { id: 5, searchQuery: '近期发生的安全事件', title: '紧急安全事件', description: '实时监控紧急和高级别的安全威胁事件', create_time: '2025-12-07 11:15:30', rules: { timeRange: '24h', entityType: ['Forum'], sources: ['明网', 'Tor'], priorities: ['高'], nsfw: 0, aigc: 1 } },
-  { id: 6, searchQuery: '综合情报汇总', title: '综合情报汇总', description: '涵盖所有分类的综合性情报检索', create_time: '2025-12-06 10:00:00', rules: { timeRange: '7d', entityType: ['Forum', 'Article'], sources: ['明网', 'Tor'], priorities: ['高', '中', '低'], nsfw: 1, aigc: 1 } }
+const searchTemplates = ref([])
+const templateLoading = ref(false)
+
+const saveDialogVisible = ref(false)
+const saveSubmitLoading = ref(false)
+const saveForm = ref({
+  title: '',
+  description: '',
+  search_query: ''
+})
+
+const sortOptions = [
+  { value: 'relevance', label: '相关性' },
+  { value: 'time', label: '更新时间' },
+  { value: 'publish_at', label: '发布时间' },
+  { value: 'crawled_at', label: '采集时间' }
 ]
+
+function getCurrentRules() {
+  return {
+    timeRange: timeRange.value,
+    entityType: [...categories.value],
+    sources: [...sources.value],
+    priorities: [...priorities.value],
+    nsfw: nsfwFilter.value,
+    aigc: aigcFilter.value,
+    sortBy: sortBy.value
+  }
+}
+
+function openSaveTemplateDialog() {
+  const rule = getCurrentRules()
+  const descText = Rules2Text({
+    timeRange: rule.timeRange,
+    categories: rule.entityType,
+    sources: rule.sources,
+    priorities: rule.priorities,
+    nsfw: rule.nsfw,
+    aigc: rule.aigc,
+    sortBy: rule.sortBy
+  })
+  saveForm.value = {
+    title: (searchQuery.value || '未命名模板').slice(0, 20) || '未命名模板',
+    description: descText || '当前筛选条件',
+    search_query: searchQuery.value || ''
+  }
+  saveDialogVisible.value = true
+}
+
+function resetSaveForm() {
+  saveForm.value = { title: '', description: '', search_query: '' }
+}
+
+async function submitSaveTemplate() {
+  const { title, description, search_query } = saveForm.value
+  if (!title?.trim()) {
+    ElMessage.warning('请输入模板标题')
+    return
+  }
+  if (!description?.trim()) {
+    ElMessage.warning('请输入模板描述')
+    return
+  }
+  if (!search_query?.trim()) {
+    ElMessage.warning('请输入检索关键词')
+    return
+  }
+  saveSubmitLoading.value = true
+  try {
+    await searchApi.createTemplate({
+      title: title.trim(),
+      description: description.trim(),
+      search_query: search_query.trim(),
+      rules: getCurrentRules()
+    })
+    saveDialogVisible.value = false
+    loadSearchTemplates()
+    ElMessage.success('模板已保存')
+  } catch {
+    // 错误已由 request 拦截器提示
+  } finally {
+    saveSubmitLoading.value = false
+  }
+}
+
+async function loadSearchTemplates() {
+  templateLoading.value = true
+  try {
+    const res = await searchApi.getTemplateList({ page: 1, page_size: 20 })
+    const data = Array.isArray(res?.items) && typeof res?.total === 'number' ? res : (res?.data ?? {})
+    searchTemplates.value = data.items ?? []
+  } catch {
+    searchTemplates.value = []
+  } finally {
+    templateLoading.value = false
+  }
+}
+
+const editDialogVisible = ref(false)
+const editingTemplate = ref(null)
+const editSubmitLoading = ref(false)
+const editForm = ref({ title: '', description: '', search_query: '' })
+
+function handleEditTemplate(template) {
+  editingTemplate.value = template
+  editForm.value = {
+    title: template.title ?? '',
+    description: template.description ?? '',
+    search_query: template.search_query ?? template.searchQuery ?? ''
+  }
+  editDialogVisible.value = true
+}
+
+async function submitEditTemplate() {
+  if (!editingTemplate.value) return
+  const { title, description, search_query } = editForm.value
+  if (!title?.trim()) {
+    ElMessage.warning('请输入模板标题')
+    return
+  }
+  if (!description?.trim()) {
+    ElMessage.warning('请输入模板描述')
+    return
+  }
+  if (!search_query?.trim()) {
+    ElMessage.warning('请输入检索关键词')
+    return
+  }
+  editSubmitLoading.value = true
+  try {
+    await searchApi.updateTemplate(editingTemplate.value.id, {
+      title: title.trim(),
+      description: description.trim(),
+      search_query: search_query.trim()
+    })
+    editDialogVisible.value = false
+    loadSearchTemplates()
+    ElMessage.success('模板已更新')
+  } catch {
+    // 错误已由 request 拦截器提示
+  } finally {
+    editSubmitLoading.value = false
+  }
+}
+
+async function handleDeleteTemplate(template) {
+  try {
+    await ElMessageBox.confirm('确定要删除该检索模板吗？', '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await searchApi.deleteTemplate(template.id)
+    loadSearchTemplates()
+    ElMessage.success('模板已删除')
+  } catch {
+    // 错误已由 request 拦截器提示
+  }
+}
+
+const overwriteDialogVisible = ref(false)
+const overwriteSelectedId = ref(null)
+const overwriteSubmitLoading = ref(false)
+
+function openOverwriteTemplateDialog() {
+  if (searchTemplates.value.length === 0) {
+    ElMessage.warning('暂无模板可覆盖，请先保存一个模板')
+    return
+  }
+  overwriteSelectedId.value = null
+  overwriteDialogVisible.value = true
+}
+
+async function submitOverwriteTemplate() {
+  if (!overwriteSelectedId.value) return
+  overwriteSubmitLoading.value = true
+  try {
+    await searchApi.updateTemplate(overwriteSelectedId.value, {
+      search_query: searchQuery.value?.trim() || '',
+      rules: getCurrentRules()
+    })
+    overwriteDialogVisible.value = false
+    loadSearchTemplates()
+    ElMessage.success('模板已覆盖')
+  } catch {
+    // 错误已由 request 拦截器提示
+  } finally {
+    overwriteSubmitLoading.value = false
+  }
+}
 
 const searchResults = ref([])
 
@@ -455,7 +692,8 @@ const filterRulesText = computed(() => {
     sources: sources.value,
     priorities: priorities.value,
     nsfw: nsfwFilter.value,
-    aigc: aigcFilter.value
+    aigc: aigcFilter.value,
+    sortBy: sortBy.value
   }
   return Rules2Text(rule)
 })
@@ -568,14 +806,15 @@ function truncateContent(content, maxLength) {
       if (!rule) return ''
       const conditions = []
 
-      if (rule.timeRange && rule.timeRange !== 'all') {
-        const timeRangeOption = filterOptions.timeRange.find(opt => opt.value === rule.timeRange)
+      const timeVal = rule.timeRange ?? rule.time_range
+      if (timeVal && timeVal !== 'all') {
+        const timeRangeOption = filterOptions.timeRange.find(opt => opt.value === timeVal)
         if (timeRangeOption) {
           conditions.push(timeRangeOption.label)
         }
       }
 
-      const cats = rule.entityType || rule.categories
+      const cats = rule.entityType ?? rule.entity_type ?? rule.categories
       if (cats && cats.length > 0) {
         const categoryLabels = cats.map(cat => {
           const option = filterOptions.categories.find(opt => opt.value === cat)
@@ -608,6 +847,12 @@ function truncateContent(content, maxLength) {
         conditions.push(formatAigcTooltip(rule.aigc))
       }
 
+      const sortVal = rule.sortBy ?? rule.sort_by
+      if (sortVal) {
+        const sortOption = sortOptions.find(opt => opt.value === sortVal)
+        if (sortOption) conditions.push('排序: ' + sortOption.label)
+      }
+
       return conditions.length > 0 ? conditions.join(' • ') : ''
     }
 
@@ -619,7 +864,9 @@ function truncateContent(content, maxLength) {
         { icon: 'mdi:chart-line', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
         { icon: 'mdi:database', bgClass: 'bg-cyan-100', iconClass: 'text-cyan-600' }
       ]
-      const index = (templateId - 1) % iconConfigs.length
+      const idStr = String(templateId)
+      const hash = idStr.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+      const index = Math.abs(hash) % iconConfigs.length
       return iconConfigs[index]
     }
 
@@ -740,50 +987,52 @@ function truncateContent(content, maxLength) {
     }
 
     function applyTemplateFilters(template) {
-      if (!template || !template.rules) return
+      const rules = template?.rules
+      if (!template) return
 
-      const rules = template.rules
-
-      if (template.searchQuery) {
-        searchQuery.value = template.searchQuery
+      const q = template.search_query ?? template.searchQuery
+      if (q) {
+        searchQuery.value = q
       }
 
-      if (rules.timeRange) {
-        timeRange.value = rules.timeRange
+      if (rules) {
+        const timeVal = rules.timeRange ?? rules.time_range
+        if (timeVal) timeRange.value = timeVal
+
+        const entityTypes = rules.entityType ?? rules.entity_type ?? rules.categories
+        if (entityTypes && Array.isArray(entityTypes)) {
+          categories.value = [...entityTypes]
+        } else {
+          categories.value = []
+        }
+
+        if (rules.sources && Array.isArray(rules.sources)) {
+          sources.value = [...rules.sources]
+        } else {
+          sources.value = []
+        }
+
+        if (rules.priorities && Array.isArray(rules.priorities)) {
+          priorities.value = [...rules.priorities]
+        } else {
+          priorities.value = []
+        }
+
+        if (rules.nsfw !== undefined && rules.nsfw !== null) {
+          nsfwFilter.value = rules.nsfw
+        }
+
+        if (rules.aigc !== undefined && rules.aigc !== null) {
+          aigcFilter.value = rules.aigc
+        }
+
+        const sortVal = rules.sortBy ?? rules.sort_by
+        if (sortVal) sortBy.value = sortVal
       }
 
-      const entityTypes = rules.entityType || rules.categories
-      if (entityTypes && Array.isArray(entityTypes)) {
-        categories.value = [...entityTypes]
-      } else {
-        categories.value = []
-      }
-
-      if (rules.sources && Array.isArray(rules.sources)) {
-        sources.value = [...rules.sources]
-      } else {
-        sources.value = []
-      }
-
-      if (rules.priorities && Array.isArray(rules.priorities)) {
-        priorities.value = [...rules.priorities]
-      } else {
-        priorities.value = []
-      }
-
-      if (rules.nsfw !== undefined && rules.nsfw !== null) {
-        nsfwFilter.value = rules.nsfw
-      }
-
-      if (rules.aigc !== undefined && rules.aigc !== null) {
-        aigcFilter.value = rules.aigc
-      }
-
-      ElMessage.success('已应用模板筛选条件')
-    }
-
-    function handleEditTemplate(template) {
-      ElMessage.info('编辑模板功能开发中')
+      currentPage.value = 1
+      performSearch()
+      ElMessage.success('已应用模板并开始检索')
     }
 
     async function toggleHighlight(result) {
@@ -816,6 +1065,7 @@ function truncateContent(content, maxLength) {
 
 onMounted(() => {
   initSearchFromQuery()
+  loadSearchTemplates()
 })
 </script>
 

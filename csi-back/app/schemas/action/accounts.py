@@ -1,9 +1,12 @@
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from app.schemas.constants import AccountStatusEnum, RateLimitStrategyEnum
+
+if TYPE_CHECKING:
+    from app.models.action.accounts import AccountModel
 
 
 class CredentialsSchema(BaseModel):
@@ -68,3 +71,20 @@ class AccountResponse(BaseModel):
     status_reason: str | None = Field(default=None, description="状态描述")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
+
+    @classmethod
+    def from_doc(cls, doc: "AccountModel") -> "AccountResponse":
+        return cls(
+            id=doc.id,
+            platform_id=doc.platform_id,
+            account_name=doc.account_name,
+            is_deleted=doc.is_deleted,
+            credentials=CredentialsSchema.model_validate(doc.credentials.model_dump()),
+            scheduler=SchedulerSchema.model_validate(doc.scheduler.model_dump()),
+            rate_limit=RateLimitSchema.model_validate(doc.rate_limit.model_dump()),
+            environment=EnvironmentSchema.model_validate(doc.environment.model_dump()),
+            status=doc.status,
+            status_reason=doc.status_reason,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )

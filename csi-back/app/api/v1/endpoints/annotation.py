@@ -4,7 +4,11 @@ from datetime import datetime
 from fastapi import APIRouter, Path, Query
 
 from app.models.annotation import AnnotationModel, AnnotationTargetModel, TextOffsetModel
-from app.schemas.annotation import AnnotationCreateSchema, AnnotationUpdateSchema, AnnotationSchema
+from app.schemas.annotation import (
+    AnnotationCreateSchema,
+    AnnotationSchema,
+    AnnotationUpdateSchema,
+)
 from app.schemas.response import ApiResponseSchema
 
 logger = logging.getLogger(__name__)
@@ -25,22 +29,7 @@ async def list_annotations(
         AnnotationModel.entity_type == entity_type,
     ).sort(AnnotationModel.created_at).to_list()
 
-    result = [
-        AnnotationSchema(
-            id=a.id,
-            entity_uuid=a.entity_uuid,
-            entity_type=a.entity_type,
-            annotation_type=a.annotation_type,
-            style=a.style,
-            content=a.content,
-            target=a.target,
-            meta=a.meta,
-            operator=a.operator,
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-        )
-        for a in annotations
-    ]
+    result = [AnnotationSchema.from_doc(a) for a in annotations]
     return ApiResponseSchema.success(data=result)
 
 
@@ -65,20 +54,7 @@ async def create_annotation(data: AnnotationCreateSchema):
     )
     await annotation.insert()
 
-    result = AnnotationSchema(
-        id=annotation.id,
-        entity_uuid=annotation.entity_uuid,
-        entity_type=annotation.entity_type,
-        annotation_type=annotation.annotation_type,
-        style=annotation.style,
-        content=annotation.content,
-        target=annotation.target,
-        meta=annotation.meta,
-        operator=annotation.operator,
-        created_at=annotation.created_at,
-        updated_at=annotation.updated_at,
-    )
-    return ApiResponseSchema.success(data=result)
+    return ApiResponseSchema.success(data=AnnotationSchema.from_doc(annotation))
 
 
 @router.put("/{annotation_id}", response_model=ApiResponseSchema[AnnotationSchema], summary="更新批注")
@@ -97,21 +73,7 @@ async def update_annotation(
     annotation.updated_at = datetime.now()
 
     await annotation.save()
-
-    result = AnnotationSchema(
-        id=annotation.id,
-        entity_uuid=annotation.entity_uuid,
-        entity_type=annotation.entity_type,
-        annotation_type=annotation.annotation_type,
-        style=annotation.style,
-        content=annotation.content,
-        target=annotation.target,
-        meta=annotation.meta,
-        operator=annotation.operator,
-        created_at=annotation.created_at,
-        updated_at=annotation.updated_at,
-    )
-    return ApiResponseSchema.success(data=result)
+    return ApiResponseSchema.success(data=AnnotationSchema.from_doc(annotation))
 
 
 @router.delete("/{annotation_id}", response_model=ApiResponseSchema[None], summary="删除批注")

@@ -1,8 +1,12 @@
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.constants import AnnotationTypeEnum, AnnotationStyleEnum, ContentRegionEnum
+
+if TYPE_CHECKING:
+    from app.models.annotation import AnnotationModel
 
 
 class TextOffsetSchema(BaseModel):
@@ -64,3 +68,19 @@ class AnnotationSchema(BaseModel):
     operator: str | None = Field(description="操作者")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
+
+    @classmethod
+    def from_doc(cls, doc: "AnnotationModel") -> "AnnotationSchema":
+        return cls(
+            id=doc.id,
+            entity_uuid=doc.entity_uuid,
+            entity_type=doc.entity_type,
+            annotation_type=doc.annotation_type,
+            style=doc.style,
+            content=doc.content,
+            target=AnnotationTargetSchema.model_validate(doc.target),
+            meta=doc.meta,
+            operator=doc.operator,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )

@@ -1,6 +1,11 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, Field, field_validator
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from app.models.platform.platform import PlatformModel
 
 
 class PlatformCreateRequestSchema(BaseModel):
@@ -40,6 +45,10 @@ class PlatformFilterItemSchema(BaseModel):
     id: str = Field(description="平台ID")
     name: str = Field(description="平台名称")
 
+    @classmethod
+    def from_doc(cls, doc: "PlatformModel") -> "PlatformFilterItemSchema":
+        return cls(id=doc.id, name=doc.name)
+
 
 class PlatformBaseInfoSchema(BaseModel):
     """
@@ -60,4 +69,25 @@ class PlatformBaseInfoSchema(BaseModel):
     sub_category: str = Field(description="平台子分类")
     confidence: float = Field(description="平台信任度")
     spider_name: str | None = Field(default=None, description="爬虫名称")
-    sections: list[str] = Field(description="平台板块")    
+    sections: list[str] = Field(description="平台板块")
+
+    @classmethod
+    def from_doc(cls, doc: "PlatformModel") -> "PlatformBaseInfoSchema":
+        return cls(
+            id=doc.id,
+            name=doc.name,
+            description=doc.description,
+            type=doc.type,
+            net_type=doc.net_type,
+            status=doc.status,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+            url=doc.url,
+            logo=doc.logo,
+            tags=doc.tags,
+            category=doc.category,
+            sub_category=doc.sub_category,
+            confidence=doc.confidence,
+            spider_name=doc.spider_name,
+            sections=doc.sections,
+        )

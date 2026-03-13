@@ -100,26 +100,7 @@ async def create_platform(data: PlatformCreateRequestSchema):
     await platform_model.insert()
     logger.info(f"成功创建平台: {platform_id} - {data.name}")
     
-    response_data = PlatformBaseInfoSchema(
-        id=platform_model.id,
-        name=platform_model.name,
-        description=platform_model.description,
-        type=platform_model.type,
-        net_type=platform_model.net_type,
-        status=platform_model.status,
-        created_at=platform_model.created_at,
-        updated_at=platform_model.updated_at,
-        url=platform_model.url,
-        logo=platform_model.logo,
-        tags=platform_model.tags,
-        category=platform_model.category,
-        sub_category=platform_model.sub_category,
-        confidence=platform_model.confidence,
-        spider_name=platform_model.spider_name,
-        sections=platform_model.sections
-    )
-    
-    return ApiResponseSchema.success(data=response_data)
+    return ApiResponseSchema.success(data=PlatformBaseInfoSchema.from_doc(platform_model))
 
 @router.get("/list", response_model=PageResponseSchema[PlatformBaseInfoSchema], summary="获取平台列表")
 async def get_platform_list(
@@ -154,27 +135,7 @@ async def get_platform_list(
     total = await query.count()
     platforms = await query.skip(skip).limit(params.page_size).to_list()
     
-    results = []
-    for platform in platforms:
-        results.append(PlatformBaseInfoSchema(
-            id=platform.id,
-            name=platform.name,
-            description=platform.description,
-            type=platform.type,
-            net_type=platform.net_type,
-            status=platform.status,
-            created_at=platform.created_at,
-            updated_at=platform.updated_at,
-            url=platform.url,
-            logo=platform.logo,
-            tags=platform.tags,
-            category=platform.category,
-            sub_category=platform.sub_category,
-            confidence=platform.confidence,
-            spider_name=platform.spider_name,
-            sections=platform.sections
-        ))
-    
+    results = [PlatformBaseInfoSchema.from_doc(p) for p in platforms]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 @router.get("/detail/{platform_id}", response_model=ApiResponseSchema[PlatformBaseInfoSchema], summary="获取平台详情")
@@ -183,27 +144,11 @@ async def get_platform_detail(platform_id: str):
     if not platform:
         return ApiResponseSchema.error(code=404, message=f"平台不存在，ID: {platform_id}")
     
-    return ApiResponseSchema.success(data=PlatformBaseInfoSchema(
-        id=platform.id,
-        name=platform.name,
-        description=platform.description,
-        type=platform.type,
-        net_type=platform.net_type,
-        status=platform.status,
-        created_at=platform.created_at,
-        updated_at=platform.updated_at,
-        url=platform.url,
-        logo=platform.logo,
-        tags=platform.tags,
-        category=platform.category,
-        sub_category=platform.sub_category,
-        confidence=platform.confidence,
-        spider_name=platform.spider_name,
-        sections=platform.sections
-    ))
-    
+    return ApiResponseSchema.success(data=PlatformBaseInfoSchema.from_doc(platform))
+
+
 @router.get("/filter/platforms", response_model=ApiResponseSchema[List[PlatformFilterItemSchema]], summary="平台过滤器列表")
 async def get_platform_filter_list():
     platforms = await PlatformModel.find_all().to_list()
-    results = [PlatformFilterItemSchema(id=p.id, name=p.name) for p in platforms]
+    results = [PlatformFilterItemSchema.from_doc(p) for p in platforms]
     return ApiResponseSchema.success(data=results)

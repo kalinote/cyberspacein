@@ -1,6 +1,12 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, Field
+
 from app.schemas.general import PageParamsSchema
+
+if TYPE_CHECKING:
+    from app.models.search_template import SearchTemplateModel
 from app.schemas.constants import SearchModeEnum
 
 
@@ -43,3 +49,39 @@ class SearchResultSchema(BaseModel):
     confidence: float = Field(default=1, description="置信度")
     is_highlighted: bool | None = Field(default=None, description="是否为重点目标")
     keywords_hits: int = Field(default=0, description="关键词命中次数")
+
+
+class SearchTemplateSchema(BaseModel):
+    id: str = Field(description="模板ID")
+    title: str = Field(description="模板标题")
+    description: str = Field(description="模板描述")
+    search_query: str = Field(description="检索关键词/查询")
+    rules: dict[str, Any] = Field(default_factory=dict, description="检索规则")
+    created_at: datetime = Field(description="创建时间")
+    updated_at: datetime = Field(description="更新时间")
+
+    @classmethod
+    def from_doc(cls, doc: "SearchTemplateModel") -> "SearchTemplateSchema":
+        return cls(
+            id=doc.id,
+            title=doc.title,
+            description=doc.description,
+            search_query=doc.search_query,
+            rules=doc.rules,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )
+
+
+class SearchTemplateCreateRequestSchema(BaseModel):
+    title: str = Field(description="模板标题", min_length=1)
+    description: str = Field(description="模板描述")
+    search_query: str = Field(description="检索关键词/查询", min_length=1)
+    rules: dict[str, Any] = Field(default_factory=dict, description="检索规则")
+
+
+class SearchTemplateUpdateRequestSchema(BaseModel):
+    title: str | None = Field(default=None, description="模板标题", min_length=1)
+    description: str | None = Field(default=None, description="模板描述")
+    search_query: str | None = Field(default=None, description="检索关键词/查询", min_length=1)
+    rules: dict[str, Any] | None = Field(default=None, description="检索规则")

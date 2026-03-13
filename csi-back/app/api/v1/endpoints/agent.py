@@ -64,16 +64,7 @@ async def create_agent_model_config(data: AgentModelConfigCreateRequestSchema):
     )
     await doc.insert()
     logger.info(f"成功创建模型配置: {config_id} - {data.name}")
-    return ApiResponseSchema.success(data=AgentModelConfigSchema(
-        id=doc.id,
-        name=doc.name,
-        description=doc.description,
-        base_url=doc.base_url,
-        api_key=doc.api_key,
-        model=doc.model,
-        created_at=doc.created_at,
-        updated_at=doc.updated_at,
-    ))
+    return ApiResponseSchema.success(data=AgentModelConfigSchema.from_doc(doc))
 
 
 @router.get("/configs/models", response_model=PageResponseSchema[AgentModelConfigSchema], summary="查询模型配置列表")
@@ -92,19 +83,7 @@ async def get_agent_model_config_list(
     query = AgentModelConfigModel.find(query_filters)
     total = await query.count()
     items = await query.skip(skip).limit(params.page_size).to_list()
-    results = [
-        AgentModelConfigSchema(
-            id=m.id,
-            name=m.name,
-            description=m.description,
-            base_url=m.base_url,
-            api_key=m.api_key,
-            model=m.model,
-            created_at=m.created_at,
-            updated_at=m.updated_at,
-        )
-        for m in items
-    ]
+    results = [AgentModelConfigSchema.from_doc(m) for m in items]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 @router.get("/configs/models-list", response_model=ApiResponseSchema[list[ModelConfigListItemSchema]], summary="查询模型配置名称列表")
@@ -131,15 +110,7 @@ async def create_agent_prompt_template(data: AgentPromptTemplateCreateRequestSch
     )
     await doc.insert()
     logger.info(f"成功创建提示词模板: {template_id} - {data.name}")
-    return ApiResponseSchema.success(data=AgentPromptTemplateSchema(
-        id=doc.id,
-        name=doc.name,
-        description=doc.description,
-        system_prompt=doc.system_prompt,
-        user_prompt=doc.user_prompt,
-        created_at=doc.created_at,
-        updated_at=doc.updated_at,
-    ))
+    return ApiResponseSchema.success(data=AgentPromptTemplateSchema.from_doc(doc))
 
 
 @router.get("/configs/prompt-templates", response_model=PageResponseSchema[AgentPromptTemplateSchema], summary="查询提示词模板列表")
@@ -158,18 +129,7 @@ async def get_agent_prompt_template_list(
     query = AgentPromptTemplateModel.find(query_filters)
     total = await query.count()
     items = await query.skip(skip).limit(params.page_size).to_list()
-    results = [
-        AgentPromptTemplateSchema(
-            id=t.id,
-            name=t.name,
-            description=t.description,
-            system_prompt=t.system_prompt,
-            user_prompt=t.user_prompt,
-            created_at=t.created_at,
-            updated_at=t.updated_at,
-        )
-        for t in items
-    ]
+    results = [AgentPromptTemplateSchema.from_doc(t) for t in items]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 @router.get("/configs/prompt-template/{prompt_template_id}", response_model=ApiResponseSchema[AgentPromptTemplateSchema], summary="查询提示词模板详情")
@@ -177,15 +137,7 @@ async def get_agent_prompt_template_detail(prompt_template_id: str):
     doc = await AgentPromptTemplateModel.find_one({"_id": prompt_template_id})
     if not doc:
         return ApiResponseSchema.error(code=404, message="提示词模板不存在")
-    return ApiResponseSchema.success(data=AgentPromptTemplateSchema(
-        id=doc.id,
-        name=doc.name,
-        description=doc.description,
-        system_prompt=doc.system_prompt,
-        user_prompt=doc.user_prompt,
-        created_at=doc.created_at,
-        updated_at=doc.updated_at,
-    ))
+    return ApiResponseSchema.success(data=AgentPromptTemplateSchema.from_doc(doc))
 
 
 @router.put("/configs/prompt-template/{prompt_template_id}", response_model=ApiResponseSchema[AgentPromptTemplateSchema], summary="编辑提示词模板")
@@ -203,15 +155,7 @@ async def update_agent_prompt_template(prompt_template_id: str, data: AgentPromp
     doc.user_prompt = data.user_prompt
     doc.updated_at = datetime.now()
     await doc.save()
-    return ApiResponseSchema.success(data=AgentPromptTemplateSchema(
-        id=doc.id,
-        name=doc.name,
-        description=doc.description,
-        system_prompt=doc.system_prompt,
-        user_prompt=doc.user_prompt,
-        created_at=doc.created_at,
-        updated_at=doc.updated_at,
-    ))
+    return ApiResponseSchema.success(data=AgentPromptTemplateSchema.from_doc(doc))
 
 
 @router.post("/agents", response_model=ApiResponseSchema[AgentSchema], summary="创建分析引擎")

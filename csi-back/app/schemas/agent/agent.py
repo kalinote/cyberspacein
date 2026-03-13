@@ -1,8 +1,12 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
 from pydantic import BaseModel, Field
 
 from app.schemas.constants import EntityType
+
+if TYPE_CHECKING:
+    from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 
 
 class AgentModelConfigCreateRequestSchema(BaseModel):
@@ -23,6 +27,19 @@ class AgentModelConfigSchema(BaseModel):
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
 
+    @classmethod
+    def from_doc(cls, doc: "AgentModelConfigModel") -> "AgentModelConfigSchema":
+        return cls(
+            id=doc.id,
+            name=doc.name,
+            description=doc.description,
+            base_url=doc.base_url,
+            api_key=doc.api_key,
+            model=doc.model,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )
+
 
 class AgentPromptTemplateCreateRequestSchema(BaseModel):
     name: str = Field(description="提示词模板名称", min_length=1)
@@ -39,6 +56,18 @@ class AgentPromptTemplateSchema(BaseModel):
     user_prompt: str = Field(description="第一段用户提示词模板")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
+
+    @classmethod
+    def from_doc(cls, doc: "AgentPromptTemplateModel") -> "AgentPromptTemplateSchema":
+        return cls(
+            id=doc.id,
+            name=doc.name,
+            description=doc.description,
+            system_prompt=doc.system_prompt,
+            user_prompt=doc.user_prompt,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )
 
 
 class AgentCreateRequestSchema(BaseModel):
