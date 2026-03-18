@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from typing import Callable
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -33,6 +34,11 @@ class MediaLocalizer:
         if not html_content:
             return html_content
 
+        try:
+            html_content, links = self._fix_lazy_img_sources(html_content, links)
+        except Exception as e:
+            logger.warning(f"懒加载图片预处理失败: {e}")
+
         if not links:
             return html_content
 
@@ -46,6 +52,66 @@ class MediaLocalizer:
         except Exception as e:
             logger.error(f"媒体本地化失败: {e}", exc_info=True)
             return html_content
+
+    # 懒加载属性按优先级排列：
+    # 论坛专有属性（Discuz 等）优先，因为通常是高清原图；
+    # 其次是业界主流懒加载库的标准属性；
+    # real_src 为老旧论坛兜底
+    _LAZY_SRC_ATTRS = (
+        "zoomfile",       # Discuz 论坛
+        "file",           # Discuz 论坛
+        "data-src",       # lazysizes / vanilla-lazyload 等主流库
+        "data-original",  # jQuery LazyLoad
+        "data-lazy-src",  # WordPress 等
+        "data-lazy",      # 各类自定义实现
+        "data-url",       # 各类 CMS
+        "data-image",     # 各类 CMS
+        "data-img",       # 各类自定义实现
+        "real_src",       # 部分国内旧论坛
+    )
+
+    def _fix_lazy_img_sources(self, html: str, links: list[str]) -> tuple[str, list[str]]:
+        """处理懒加载图片：从非标准属性中提取真实图片 URL 并替换 src"""
+        extra_links: list[str] = []
+        existing_links_set = set(links)
+
+        def replace_src(m: re.Match) -> str:
+            img_tag = m.group(0)
+            real_url = None
+            for attr in self._LAZY_SRC_ATTRS:
+                attr_m = re.search(rf"""{re.escape(attr)}=['"]([^'"]+)['"]""", img_tag, re.IGNORECASE)
+                if attr_m:
+                    url = attr_m.group(1).strip()
+                    if MediaDownloader.is_valid_url(url):
+                        real_url = url
+                        break
+
+            if not real_url:
+                return img_tag
+
+            if real_url not in existing_links_set and real_url not in extra_links:
+                extra_links.append(real_url)
+
+            new_tag = re.sub(
+                r"""src=['"][^'"]*['"]""",
+                f'src="{real_url}"',
+                img_tag,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+            for attr in self._LAZY_SRC_ATTRS:
+                new_tag = re.sub(
+                    rf"""\s+{re.escape(attr)}=['"][^'"]*['"]""",
+                    "",
+                    new_tag,
+                    flags=re.IGNORECASE,
+                )
+            return new_tag
+
+        new_html = re.sub(r"<img\b[^>]*>", replace_src, html, flags=re.IGNORECASE)
+        if extra_links:
+            logger.debug(f"从懒加载图片属性中提取到 {len(extra_links)} 个真实图片 URL")
+        return new_html, links + extra_links
 
     def _normalize_url(self, link: str) -> str | None:
         link = link.strip()
