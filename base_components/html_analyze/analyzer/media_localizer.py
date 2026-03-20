@@ -1,5 +1,6 @@
 import os
 import re
+import base64
 import logging
 from typing import Callable
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -38,6 +39,11 @@ class MediaLocalizer:
             html_content, links = self._fix_lazy_img_sources(html_content, links)
         except Exception as e:
             logger.warning(f"懒加载图片预处理失败: {e}")
+
+        try:
+            html_content = self._process_base64_images(html_content)
+        except Exception as e:
+            logger.warning(f"base64图片处理失败: {e}")
 
         if not links:
             return html_content
@@ -182,6 +188,64 @@ class MediaLocalizer:
                         logger.warning(f"处理下载结果失败: {link} - {e}")
 
         return url_mapping
+
+    def _process_base64_images(self, html: str) -> str:
+        """处理HTML中所有属性里的base64内联图片，上传至COS并替换为COS链接"""
+        # 兼容常见 data URI 变体：
+        # - 额外参数：data:image/png;charset=utf-8;base64,...
+        # - base64 中夹杂空白/换行（HTML 压缩/换行导致）
+        # - URL-safe base64 字符：- _
+        pattern = re.compile(
+            r"data:image/([^;,]+)(?:;[^,;]+(?:=[^,;]+)?)?;base64,([A-Za-z0-9+/=_\-\s]+)",
+            re.IGNORECASE,
+        )
+        b64_cache: dict[str, str | None] = {}
+
+        for m in pattern.finditer(html):
+            data_uri = m.group(0)
+            if data_uri in b64_cache:
+                continue
+
+            mime_subtype = m.group(1).lower()
+            b64_data = re.sub(r"\s+", "", m.group(2))
+            content_type = f"image/{mime_subtype}"
+
+            estimated_size = len(b64_data) * 3 // 4
+            if self.download_size_limit and estimated_size > self.download_size_limit:
+                logger.warning(f"base64图片估算大小 {estimated_size / (1024 * 1024):.2f}MB 超过限制，跳过")
+                b64_cache[data_uri] = None
+                continue
+
+            try:
+                # validate=False 以兼容 URL-safe 的 '-' '_'（很多站点会混用）
+                content = base64.b64decode(b64_data, validate=False)
+            except Exception as e:
+                logger.warning(f"base64解码失败: {e}")
+                b64_cache[data_uri] = None
+                continue
+
+            if self.download_size_limit and len(content) > self.download_size_limit:
+                logger.warning(f"base64图片大小 {len(content) / (1024 * 1024):.2f}MB 超过限制，跳过")
+                b64_cache[data_uri] = None
+                continue
+
+            file_hash = MediaDownloader.calculate_sha256(content)
+            cos_url = self.uploader.upload_file(content, file_hash, content_type)
+            b64_cache[data_uri] = cos_url
+            if cos_url:
+                logger.debug(f"base64图片上传成功: {content_type}, {len(content) / 1024:.1f}KB -> {cos_url}")
+
+        success_count = sum(1 for v in b64_cache.values() if v is not None)
+        if not success_count:
+            return html
+
+        logger.info(f"base64图片处理完成: 成功处理 {success_count} 张图片")
+
+        def replace_match(m: re.Match) -> str:
+            cos_url = b64_cache.get(m.group(0))
+            return cos_url if cos_url is not None else m.group(0)
+
+        return pattern.sub(replace_match, html)
 
     def _replace_links_in_html(self, html: str, url_mapping: dict[str, str]) -> str:
         if not url_mapping:
