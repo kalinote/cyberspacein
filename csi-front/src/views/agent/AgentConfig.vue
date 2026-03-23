@@ -1,99 +1,69 @@
 <template>
-  <div class="h-screen flex flex-col bg-gray-50">
-    <Header />
-
-    <FunctionalPageHeader
-      title-prefix="分析引擎"
-      title-suffix="配置"
-      subtitle="管理分析选项、模型资源、提示词模板与工具等配置"
-    >
-      <template #actions>
-        <div class="flex items-center gap-3">
-          <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-blue-100 flex items-center gap-3">
-            <Icon icon="mdi:format-list-checks" class="text-blue-600 text-xl" />
-            <div>
-              <p class="text-xs text-gray-500">分析引擎</p>
-              <p class="text-lg font-bold text-gray-900">{{ statistics.analysisOptions }}</p>
-            </div>
-          </div>
-          <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-green-100 flex items-center gap-3">
-            <Icon icon="mdi:server" class="text-green-600 text-xl" />
-            <div>
-              <p class="text-xs text-gray-500">模型资源</p>
-              <p class="text-lg font-bold text-gray-900">{{ statistics.modelResources }}</p>
-            </div>
+  <ConfigCenterLayout
+    title-prefix="分析引擎"
+    title-suffix="配置"
+    subtitle="管理分析选项、模型资源、提示词模板与工具等配置"
+    sidebar-title="配置类型"
+    :nav-items="engineTabs"
+    v-model="activeTab"
+    :get-badge="getResourceCount"
+  >
+    <template #actions>
+      <div class="flex items-center gap-3">
+        <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-blue-100 flex items-center gap-3">
+          <Icon icon="mdi:format-list-checks" class="text-blue-600 text-xl" />
+          <div>
+            <p class="text-xs text-gray-500">分析引擎</p>
+            <p class="text-lg font-bold text-gray-900">{{ statistics.analysisOptions }}</p>
           </div>
         </div>
-      </template>
-    </FunctionalPageHeader>
-
-    <div class="flex-1 flex overflow-hidden">
-      <div class="bg-white w-72 border-r border-gray-200 shrink-0 overflow-y-auto">
-        <div class="p-4">
-          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-3">配置类型</h3>
-          <div class="space-y-1">
-            <div
-              v-for="tab in engineTabs"
-              :key="tab.key"
-              class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
-              :class="activeTab === tab.key
-                ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200'
-                : 'text-gray-600 hover:bg-gray-50'"
-              @click="activeTab = tab.key"
-            >
-              <span class="w-5"></span>
-              <Icon :icon="tab.icon" class="text-xl shrink-0" />
-              <span>{{ tab.label }}</span>
-              <span
-                class="ml-auto text-xs px-2 py-0.5 rounded-full"
-                :class="activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
-              >
-                {{ getResourceCount(tab.key) }}
-              </span>
-            </div>
+        <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-green-100 flex items-center gap-3">
+          <Icon icon="mdi:server" class="text-green-600 text-xl" />
+          <div>
+            <p class="text-xs text-gray-500">模型资源</p>
+            <p class="text-lg font-bold text-gray-900">{{ statistics.modelResources }}</p>
           </div>
         </div>
       </div>
-
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <div class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <Icon :icon="getCurrentTabIcon()" class="text-2xl text-blue-600" />
-            <h2 class="text-xl font-bold text-gray-900">{{ getCurrentTabLabel() }}</h2>
-          </div>
-          <div class="flex items-center gap-3">
-            <el-input
-              v-if="activeTab !== 'tools'"
-              v-model="searchKeyword"
-              :placeholder="'搜索' + getCurrentTabLabel() + '...'"
-              clearable
-              class="w-64"
-              @keyup.enter="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : activeTab === 'promptTemplates' ? handlePromptTemplateSearch() : null"
-            >
-              <template #prefix>
-                <Icon icon="mdi:magnify" class="text-gray-400" />
-              </template>
-            </el-input>
-            <el-button
-              v-if="activeTab === 'analysisEngines' || activeTab === 'modelResources' || activeTab === 'promptTemplates'"
-              type="default"
-              @click="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : handlePromptTemplateSearch()"
-            >
-              <template #icon><Icon icon="mdi:magnify" /></template>
-              搜索
-            </el-button>
-            <el-button v-if="activeTab !== 'tools'" type="primary" @click="handleAdd">
-              <template #icon>
-                <Icon icon="mdi:plus" />
-              </template>
-              新增{{ getCurrentTabLabel() }}
-            </el-button>
-          </div>
+    </template>
+    <template #toolbar>
+      <div class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <Icon :icon="currentTabIcon" class="text-2xl text-blue-600" />
+          <h2 class="text-xl font-bold text-gray-900">{{ currentTabLabel }}</h2>
         </div>
-
-        <div class="flex-1 overflow-auto p-6">
+        <div class="flex items-center gap-3">
+          <el-input
+            v-if="activeTab !== 'tools'"
+            v-model="searchKeyword"
+            :placeholder="'搜索' + currentTabLabel + '...'"
+            clearable
+            class="w-64"
+            @keyup.enter="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : activeTab === 'promptTemplates' ? handlePromptTemplateSearch() : null"
+          >
+            <template #prefix>
+              <Icon icon="mdi:magnify" class="text-gray-400" />
+            </template>
+          </el-input>
+          <el-button
+            v-if="activeTab === 'analysisEngines' || activeTab === 'modelResources' || activeTab === 'promptTemplates'"
+            type="default"
+            @click="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : handlePromptTemplateSearch()"
+          >
+            <template #icon><Icon icon="mdi:magnify" /></template>
+            搜索
+          </el-button>
+          <el-button v-if="activeTab !== 'tools'" type="primary" @click="handleAdd">
+            <template #icon>
+              <Icon icon="mdi:plus" />
+            </template>
+            新增{{ currentTabLabel }}
+          </el-button>
+        </div>
+      </div>
+    </template>
           <div v-if="activeTab === 'analysisEngines'" class="space-y-4">
-            <div v-loading="agentListLoading" element-loading-text="加载中..." class="min-h-[200px]">
+            <div v-loading="agentListLoading" element-loading-text="加载中..." class="min-h-50">
               <div
                 v-for="(item, index) in agentList"
                 :key="item.id"
@@ -163,7 +133,7 @@
           </div>
 
           <div v-else-if="activeTab === 'modelResources'" class="space-y-4">
-            <div v-loading="modelListLoading" element-loading-text="加载中..." class="min-h-[200px]">
+            <div v-loading="modelListLoading" element-loading-text="加载中..." class="min-h-50">
               <div
                 v-for="(item, index) in modelList"
                 :key="item.id"
@@ -239,7 +209,7 @@
           </div>
 
           <div v-else-if="activeTab === 'promptTemplates'" class="space-y-4">
-            <div v-loading="promptTemplateListLoading" element-loading-text="加载中..." class="min-h-[200px]">
+            <div v-loading="promptTemplateListLoading" element-loading-text="加载中..." class="min-h-50">
               <div
                 v-for="(item, index) in promptTemplateList"
                 :key="item.id"
@@ -296,7 +266,7 @@
           </div>
 
           <div v-else-if="activeTab === 'tools'" class="space-y-4">
-            <div v-loading="toolsListLoading" element-loading-text="加载中..." class="min-h-[200px]">
+            <div v-loading="toolsListLoading" element-loading-text="加载中..." class="min-h-50">
               <div
                 v-for="(item, index) in toolsList"
                 :key="item.name + '-' + index"
@@ -341,9 +311,7 @@
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+  </ConfigCenterLayout>
 
     <el-dialog
       v-model="modelDialogVisible"
@@ -446,7 +414,7 @@
       width="960px"
       :close-on-click-modal="true"
     >
-      <div v-loading="promptTemplateDetailLoading" element-loading-text="加载中..." class="min-h-[200px]">
+      <div v-loading="promptTemplateDetailLoading" element-loading-text="加载中..." class="min-h-50">
         <template v-if="promptTemplateDetail">
           <div class="space-y-4">
             <div>
@@ -573,14 +541,13 @@
         <el-button type="primary" :loading="agentSubmitLoading" @click="handleAgentSubmit">确定</el-button>
       </template>
     </el-dialog>
-  </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
-import Header from '@/components/Header.vue'
-import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
+import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
+import { findNavItemByKey } from '@/utils/configCenterNav'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
 import { ElMessage } from 'element-plus'
@@ -596,6 +563,10 @@ const engineTabs = [
   { key: 'promptTemplates', label: '提示词模板', icon: 'mdi:file-document-edit' },
   { key: 'tools', label: '工具', icon: 'mdi:tools' }
 ]
+
+const currentTabMeta = computed(() => findNavItemByKey(engineTabs, activeTab.value))
+const currentTabIcon = computed(() => currentTabMeta.value?.icon ?? 'mdi:help')
+const currentTabLabel = computed(() => currentTabMeta.value?.label ?? '')
 
 const statisticsData = ref({
   agent_count: 0,
@@ -755,16 +726,6 @@ const getPromptTemplatePreview = (item) => {
   if (item.description) return item.description
   const text = (item.system_prompt || item.user_prompt || '').trim()
   return text.length > 80 ? text.slice(0, 80) + '...' : text || '-'
-}
-
-const getCurrentTabIcon = () => {
-  const tab = engineTabs.find(t => t.key === activeTab.value)
-  return tab?.icon ?? 'mdi:help'
-}
-
-const getCurrentTabLabel = () => {
-  const tab = engineTabs.find(t => t.key === activeTab.value)
-  return tab?.label ?? ''
 }
 
 const handleModelPageChange = (page) => {

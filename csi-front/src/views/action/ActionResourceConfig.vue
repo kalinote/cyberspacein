@@ -1,117 +1,61 @@
 <template>
-  <div class="h-screen flex flex-col bg-gray-50">
-    <Header />
-    
-    <FunctionalPageHeader
-      title-prefix="行动资源"
-      title-suffix="配置中心"
-      subtitle="统一管理行动资源，包括代理网络、账号、容器和行动节点"
-    >
-      <template #actions>
-        <div class="flex items-center gap-3">
-          <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-blue-100 flex items-center gap-3">
-            <Icon icon="mdi:chart-tree" class="text-blue-600 text-xl" />
-            <div>
-              <p class="text-xs text-gray-500">行动节点</p>
-              <p class="text-lg font-bold text-gray-900">{{ statistics.node_count }}</p>
-            </div>
-          </div>
-          <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-green-100 flex items-center gap-3">
-            <Icon icon="mdi:cog" class="text-green-600 text-xl" />
-            <div>
-              <p class="text-xs text-gray-500">基础组件</p>
-              <p class="text-lg font-bold text-gray-900">{{ statistics.base_component_count }}</p>
-            </div>
+  <ConfigCenterLayout
+    title-prefix="行动资源"
+    title-suffix="配置中心"
+    subtitle="统一管理行动资源，包括代理网络、账号、容器和行动节点"
+    sidebar-title="资源类型"
+    :nav-items="resourceTabs"
+    v-model="activeTab"
+    v-model:expanded-keys="expandedTabKeys"
+    :get-badge="getResourceCount"
+  >
+    <template #actions>
+      <div class="flex items-center gap-3">
+        <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-blue-100 flex items-center gap-3">
+          <Icon icon="mdi:chart-tree" class="text-blue-600 text-xl" />
+          <div>
+            <p class="text-xs text-gray-500">行动节点</p>
+            <p class="text-lg font-bold text-gray-900">{{ statistics.node_count }}</p>
           </div>
         </div>
-      </template>
-    </FunctionalPageHeader>
-
-    <div class="flex-1 flex overflow-hidden">
-      <div class="bg-white w-72 border-r border-gray-200 shrink-0 overflow-y-auto">
-        <div class="p-4">
-          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-3">资源类型</h3>
-          <div class="space-y-1">
-            <template v-for="tab in resourceTabs" :key="tab.key">
-              <div
-                class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
-                :class="activeTab === tab.key 
-                  ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200' 
-                  : 'text-gray-600 hover:bg-gray-50'"
-                @click="activeTab = tab.key"
-              >
-                <Icon 
-                  v-if="tab.children && tab.children.length > 0"
-                  :icon="expandedTabs.has(tab.key) ? 'mdi:chevron-down' : 'mdi:chevron-right'"
-                  class="text-sm cursor-pointer shrink-0"
-                  @click.stop="toggleExpand(tab.key)"
-                />
-                <span v-else class="w-5"></span>
-                <Icon :icon="tab.icon" class="text-xl shrink-0" />
-                <span>{{ tab.label }}</span>
-                <span 
-                  class="ml-auto text-xs px-2 py-0.5 rounded-full"
-                  :class="activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
-                >
-                  {{ getResourceCount(tab.key) }}
-                </span>
-              </div>
-              <div v-if="tab.children && tab.children.length > 0 && expandedTabs.has(tab.key)" class="ml-4 space-y-1">
-                <div
-                  v-for="child in tab.children"
-                  :key="child.key"
-                  class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
-                  :class="activeTab === child.key 
-                    ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200' 
-                    : 'text-gray-600 hover:bg-gray-50'"
-                  @click="activeTab = child.key"
-                >
-                  <span class="w-5"></span>
-                  <Icon :icon="child.icon" class="text-xl shrink-0" />
-                  <span>{{ child.label }}</span>
-                  <span 
-                    class="ml-auto text-xs px-2 py-0.5 rounded-full"
-                    :class="activeTab === child.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
-                  >
-                    {{ getResourceCount(child.key) }}
-                  </span>
-                </div>
-              </div>
-            </template>
+        <div class="bg-white rounded-lg px-4 py-2 shadow-sm border border-green-100 flex items-center gap-3">
+          <Icon icon="mdi:cog" class="text-green-600 text-xl" />
+          <div>
+            <p class="text-xs text-gray-500">基础组件</p>
+            <p class="text-lg font-bold text-gray-900">{{ statistics.base_component_count }}</p>
           </div>
         </div>
       </div>
-
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <div class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <Icon :icon="getCurrentTabIcon()" class="text-2xl text-blue-600" />
-            <h2 class="text-xl font-bold text-gray-900">{{ getCurrentTabLabel() }}</h2>
-          </div>
-          <div class="flex items-center gap-3">
-            <el-input
-              v-model="searchKeyword"
-              placeholder="搜索资源..."
-              clearable
-              class="w-64"
-            >
-              <template #prefix>
-                <Icon icon="mdi:magnify" class="text-gray-400" />
-              </template>
-            </el-input>
-            <el-button type="primary" @click="handleAdd(activeTab)">
-              <template #icon>
-                <Icon icon="mdi:plus" />
-              </template>
-              创建{{ getCurrentTabLabel() }}
-            </el-button>
-          </div>
+    </template>
+    <template #toolbar>
+      <div class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <Icon :icon="currentTabIcon" class="text-2xl text-blue-600" />
+          <h2 class="text-xl font-bold text-gray-900">{{ currentTabLabel }}</h2>
         </div>
-
-        <div class="flex-1 overflow-auto p-6">
+        <div class="flex items-center gap-3">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="搜索资源..."
+            clearable
+            class="w-64"
+          >
+            <template #prefix>
+              <Icon icon="mdi:magnify" class="text-gray-400" />
+            </template>
+          </el-input>
+          <el-button type="primary" @click="handleAdd(activeTab)">
+            <template #icon>
+              <Icon icon="mdi:plus" />
+            </template>
+            创建{{ currentTabLabel }}
+          </el-button>
+        </div>
+      </div>
+    </template>
           <!-- 节点列表 -->
           <div v-if="activeTab === 'nodes'" class="space-y-4">
-            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-50">
               <div
                 v-for="(node, index) in filteredNodeList"
                 :key="index"
@@ -199,7 +143,7 @@
 
           <!-- 基础组件列表 -->
           <div v-else-if="activeTab === 'baseComponents'" class="space-y-4">
-            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-50">
               <div
                 v-for="(component, index) in filteredComponentList"
                 :key="index"
@@ -307,7 +251,7 @@
 
           <!-- 节点接口配置列表 -->
           <div v-else-if="activeTab === 'nodeHandles'" class="space-y-4">
-            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-50">
               <div
                 v-for="(handle, index) in filteredHandleList"
                 :key="index"
@@ -397,7 +341,7 @@
 
           <!-- 采集账号列表 -->
           <div v-else-if="activeTab === 'accounts'" class="space-y-4">
-            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-50">
               <div
                 v-for="(account, index) in filteredAccountList"
                 :key="account.id"
@@ -485,7 +429,7 @@
 
           <!-- 沙盒容器列表 -->
           <div v-else-if="activeTab === 'containers'" class="space-y-4">
-            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[200px]">
+            <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-50">
               <div
                 v-for="sandbox in filteredSandboxList"
                 :key="sandbox.sandbox_id"
@@ -609,11 +553,9 @@
           <div v-else class="flex flex-col items-center justify-center py-16">
             <Icon icon="mdi:wrench" class="text-6xl text-gray-300 mb-4" />
             <p class="text-gray-500 text-lg mb-2">功能开发中</p>
-            <p class="text-gray-400 text-sm">{{ getCurrentTabLabel() }}管理功能即将上线</p>
+            <p class="text-gray-400 text-sm">{{ currentTabLabel }}管理功能即将上线</p>
           </div>
-        </div>
-      </div>
-    </div>
+  </ConfigCenterLayout>
 
     <!-- 新增行动节点弹窗 -->
     <el-dialog
@@ -624,7 +566,7 @@
       @open="handleDialogOpen"
       @closed="handleDialogClosed"
     >
-      <div v-loading="nodeDialogMode === 'edit' && nodeFormLoading" :element-loading-text="'加载节点数据...'" class="min-h-[200px]">
+      <div v-loading="nodeDialogMode === 'edit' && nodeFormLoading" :element-loading-text="'加载节点数据...'" class="min-h-50">
       <el-form
         v-show="!(nodeDialogMode === 'edit' && nodeFormLoading)"
         ref="formRef"
@@ -855,7 +797,7 @@
       class="node-detail-dialog"
       @close="nodeDetailData = null"
     >
-      <div v-loading="nodeDetailLoading" class="min-h-[200px]">
+      <div v-loading="nodeDetailLoading" class="min-h-50">
         <template v-if="nodeDetailData">
           <el-descriptions :column="2" border class="mb-4">
             <el-descriptions-item label="节点ID">{{ nodeDetailData.id }}</el-descriptions-item>
@@ -894,7 +836,7 @@
                 <template #default="{ row }">
                   <span v-if="row.color" class="inline-flex items-center gap-1">
                     <span class="w-4 h-4 rounded border border-gray-300 shrink-0" :style="{ backgroundColor: row.color }" />
-                    <span class="text-xs truncate max-w-[52px]" :title="row.color">{{ row.color }}</span>
+                    <span class="text-xs truncate max-w-13" :title="row.color">{{ row.color }}</span>
                   </span>
                   <span v-else>-</span>
                 </template>
@@ -1114,7 +1056,7 @@
       @open="handleAccountDialogOpen"
       @closed="handleAccountDialogClosed"
     >
-      <div v-loading="accountDialogMode === 'edit' && accountFormLoading" :element-loading-text="'加载中...'" class="min-h-[120px]">
+      <div v-loading="accountDialogMode === 'edit' && accountFormLoading" :element-loading-text="'加载中...'" class="min-h-30">
         <el-form
           v-show="!(accountDialogMode === 'edit' && accountFormLoading)"
           ref="accountFormRef"
@@ -1182,7 +1124,7 @@
       width="640px"
       @close="accountDetailData = null"
     >
-      <div v-loading="accountDetailLoading" class="min-h-[200px]">
+      <div v-loading="accountDetailLoading" class="min-h-50">
         <template v-if="accountDetailData">
           <el-descriptions :column="1" border>
             <el-descriptions-item label="账号ID">{{ accountDetailData.id }}</el-descriptions-item>
@@ -1256,7 +1198,7 @@
       width="640px"
       @close="sandboxDetailData = null"
     >
-      <div v-loading="sandboxDetailLoading" class="min-h-[200px]">
+      <div v-loading="sandboxDetailLoading" class="min-h-50">
         <template v-if="sandboxDetailData">
           <el-descriptions :column="1" border>
             <el-descriptions-item label="沙盒ID">{{ sandboxDetailData.sandbox_id }}</el-descriptions-item>
@@ -1319,19 +1261,18 @@
             title="noVNC 远程桌面"
           ></iframe>
         </div>
-        <div v-else class="w-full h-full flex items-center justify-center text-gray-500 min-h-[400px]">
+        <div v-else class="w-full h-full flex items-center justify-center text-gray-500 min-h-100">
           当前没有可用的连接地址。
         </div>
       </div>
     </el-dialog>
-  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { Icon } from '@iconify/vue'
-import Header from '@/components/Header.vue'
-import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
+import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
+import { findNavItemByKey } from '@/utils/configCenterNav'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1346,7 +1287,7 @@ const SANDBOX_HOST = import.meta.env.VITE_SANDBOX_HOST || '127.0.0.1'
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
 const loading = ref(false)
-const expandedTabs = ref(new Set(['nodes']))
+const expandedTabKeys = ref(['nodes'])
 
 const statistics = ref({
   node_count: 0,
@@ -1392,6 +1333,10 @@ const resourceTabs = [
   ]},
   { key: 'containers', label: '沙盒容器', icon: 'mdi:cube-outline' }
 ]
+
+const currentTabMeta = computed(() => findNavItemByKey(resourceTabs, activeTab.value))
+const currentTabIcon = computed(() => currentTabMeta.value?.icon || 'mdi:help')
+const currentTabLabel = computed(() => currentTabMeta.value?.label || '')
 
 const nodeList = ref([])
 
@@ -1570,28 +1515,6 @@ const getResourceCount = (tabKey) => {
     'corpus': statistics.value.corpus_count
   }
   return countMap[tabKey] || 0
-}
-
-const getCurrentTab = () => {
-  for (const tab of resourceTabs) {
-    if (tab.key === activeTab.value) return tab
-    if (tab.children) {
-      const child = tab.children.find(c => c.key === activeTab.value)
-      if (child) return child
-    }
-  }
-  return null
-}
-
-const getCurrentTabIcon = () => getCurrentTab()?.icon || 'mdi:help'
-const getCurrentTabLabel = () => getCurrentTab()?.label || ''
-
-const toggleExpand = (tabKey) => {
-  if (expandedTabs.value.has(tabKey)) {
-    expandedTabs.value.delete(tabKey)
-  } else {
-    expandedTabs.value.add(tabKey)
-  }
 }
 
 const hasAnyHandleCustomStyle = (handles) => {

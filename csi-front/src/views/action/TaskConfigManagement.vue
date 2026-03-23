@@ -20,7 +20,7 @@
       </template>
     </FunctionalPageHeader>
 
-    <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="max-w-480 mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 筛选栏 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -66,7 +66,7 @@
       </div>
 
       <!-- 配置卡片网格 -->
-      <div v-loading="loading" class="min-h-[200px]">
+      <div v-loading="loading" class="min-h-50">
         <div v-if="configList.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
           <div
             v-for="config in configList"

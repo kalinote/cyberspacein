@@ -87,7 +87,7 @@
                             执行步骤
                         </h2>
                         <div ref="stepsScrollEl" class="overflow-y-auto px-4 pb-4 border-t border-gray-100" style="height: 70vh" @scroll="onStepsScroll">
-                            <div v-if="!sessionData.steps?.length" class="flex flex-col items-center justify-center h-full min-h-[280px] text-gray-400">
+                            <div v-if="!sessionData.steps?.length" class="flex flex-col items-center justify-center h-full min-h-70 text-gray-400">
                                 <Icon icon="mdi:loading" class="text-2xl text-blue-500 animate-spin mb-2" />
                                 <p class="text-sm font-medium text-gray-500">分析中</p>
                             </div>
@@ -187,7 +187,7 @@
                         </h2>
                         <div class="flex flex-col border-t border-gray-100 min-h-0" style="height: 70vh">
                             <div class="flex-4 flex flex-col min-h-0 overflow-y-auto px-4 pt-3">
-                                <div v-if="!sessionData.todos?.length" class="flex flex-col items-center justify-center flex-1 min-h-[200px] text-gray-400">
+                                <div v-if="!sessionData.todos?.length" class="flex flex-col items-center justify-center flex-1 min-h-50 text-gray-400">
                                     <Icon icon="mdi:loading" class="text-2xl text-blue-500 animate-spin mb-2" />
                                     <p class="text-sm font-medium text-gray-500">分析中</p>
                                 </div>
