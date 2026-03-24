@@ -20,6 +20,8 @@ import HighlightTargetList from '../views/target/HighlightTargetList.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
 import ForumDetail from '../views/details/ForumDetail.vue'
 import PlatformList from '../views/platform/PlatformList.vue'
+import SystemConfigHome from '../views/system/SystemConfigHome.vue'
+import UserPermissionManagement from '../views/system/UserPermissionManagement.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -93,6 +95,18 @@ const router = createRouter({
       path: '/action/:id',
       name: 'action-detail',
       component: ActionDetail
+    },
+    {
+      path: '/system',
+      name: 'system-config-home',
+      component: SystemConfigHome,
+      meta: { keepAlive: true }
+    },
+    {
+      path: '/system/permissions',
+      name: 'system-permissions',
+      component: UserPermissionManagement,
+      meta: { keepAlive: true }
     },
     {
       // 告警信息

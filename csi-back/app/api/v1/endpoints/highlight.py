@@ -27,7 +27,7 @@ async def set_highlight(
     """
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
     
     entity_name = ENTITY_TYPE_NAMES.get(entity_type, entity_type.value)
     
@@ -58,7 +58,7 @@ async def set_highlight(
         return ApiResponseSchema.success(data={"message": "标记状态更新成功"})
     
     except NotFoundError:
-        return ApiResponseSchema.error(code=404, message=f"{entity_name}不存在，UUID: {uuid}")
+        return ApiResponseSchema.error(code=240403, message=f"{entity_name}不存在，UUID: {uuid}")
     except Exception as e:
         logger.error(f"更新{entity_name}标记状态失败: {e}", exc_info=True)
-        return ApiResponseSchema.error(code=500, message=f"更新标记状态失败: {str(e)}")
+        return ApiResponseSchema.error(code=250004, message=f"更新标记状态失败: {str(e)}")

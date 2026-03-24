@@ -35,6 +35,7 @@ from app.schemas.agent.agent import (
 from app.service.agent.agent import AgentService
 from app.service.agent.tools import all_tools
 from app.utils.agent import inject_template_fields
+import app.utils.status_codes as status_codes
 from app.utils.id_lib import generate_id
 
 logger = logging.getLogger(__name__)
@@ -50,10 +51,10 @@ async def create_agent_model_config(data: AgentModelConfigCreateRequestSchema):
     config_id = generate_id(data.name + data.base_url + data.model)
     existing = await AgentModelConfigModel.find_one({"_id": config_id})
     if existing:
-        return ApiResponseSchema.error(code=400, message="同名且同基础URL、同模型ID的配置已存在")
+        return ApiResponseSchema.error(code=status_codes.CONFLICT_EXISTS, message="同名且同基础URL、同模型ID的配置已存在")
     existing_by_name = await AgentModelConfigModel.find_one({"name": data.name})
     if existing_by_name:
-        return ApiResponseSchema.error(code=400, message=f"模型名称已存在: {data.name}")
+        return ApiResponseSchema.error(code=status_codes.CONFLICT_NAME, message=f"模型名称已存在: {data.name}")
     doc = AgentModelConfigModel(
         id=config_id,
         name=data.name,
@@ -97,10 +98,10 @@ async def create_agent_prompt_template(data: AgentPromptTemplateCreateRequestSch
     template_id = generate_id(data.name + data.system_prompt + data.user_prompt)
     existing = await AgentPromptTemplateModel.find_one({"_id": template_id})
     if existing:
-        return ApiResponseSchema.error(code=400, message="同名且同内容的模板已存在")
+        return ApiResponseSchema.error(code=status_codes.CONFLICT_EXISTS, message="同名且同内容的模板已存在")
     existing_by_name = await AgentPromptTemplateModel.find_one({"name": data.name})
     if existing_by_name:
-        return ApiResponseSchema.error(code=400, message=f"提示词模板名称已存在: {data.name}")
+        return ApiResponseSchema.error(code=status_codes.CONFLICT_NAME, message=f"提示词模板名称已存在: {data.name}")
     doc = AgentPromptTemplateModel(
         id=template_id,
         name=data.name,
@@ -136,7 +137,7 @@ async def get_agent_prompt_template_list(
 async def get_agent_prompt_template_detail(prompt_template_id: str):
     doc = await AgentPromptTemplateModel.find_one({"_id": prompt_template_id})
     if not doc:
-        return ApiResponseSchema.error(code=404, message="提示词模板不存在")
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_TEMPLATE, message="提示词模板不存在")
     return ApiResponseSchema.success(data=AgentPromptTemplateSchema.from_doc(doc))
 
 
@@ -144,11 +145,11 @@ async def get_agent_prompt_template_detail(prompt_template_id: str):
 async def update_agent_prompt_template(prompt_template_id: str, data: AgentPromptTemplateCreateRequestSchema):
     doc = await AgentPromptTemplateModel.find_one({"_id": prompt_template_id})
     if not doc:
-        return ApiResponseSchema.error(code=404, message="提示词模板不存在")
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_TEMPLATE, message="提示词模板不存在")
     if data.name != doc.name:
         existing_by_name = await AgentPromptTemplateModel.find_one({"name": data.name})
         if existing_by_name and existing_by_name.id != prompt_template_id:
-            return ApiResponseSchema.error(code=400, message=f"提示词模板名称已存在: {data.name}")
+            return ApiResponseSchema.error(code=status_codes.CONFLICT_NAME, message=f"提示词模板名称已存在: {data.name}")
     doc.name = data.name
     doc.description = data.description
     doc.system_prompt = data.system_prompt
@@ -164,10 +165,10 @@ async def create_agent(data: AgentCreateRequestSchema):
     agent_id = generate_id(raw)
     existing = await AgentModel.find_one({"_id": agent_id})
     if existing:
-        return ApiResponseSchema.error(code=400, message="该分析引擎已存在")
+        return ApiResponseSchema.error(code=status_codes.CONFLICT_EXISTS, message="该分析引擎已存在")
     existing_by_name = await AgentModel.find_one({"name": data.name})
     if existing_by_name:
-        return ApiResponseSchema.error(code=400, message=f"分析引擎名称已存在: {data.name}")
+        return ApiResponseSchema.error(code=status_codes.CONFLICT_NAME, message=f"分析引擎名称已存在: {data.name}")
     doc = AgentModel(
         id=agent_id,
         name=data.name,
@@ -285,7 +286,7 @@ async def get_configs_statistics():
 async def start_agent(data: StartAgentRequestSchema):
     agent_template = await AgentModel.find_one({"_id": data.agent_id})
     if not agent_template:
-        return ApiResponseSchema.error(code=404, message=f"分析引擎不存在，ID: {data.agent_id}")
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_AGENT, message=f"分析引擎不存在，ID: {data.agent_id}")
 
     prompt_template = await AgentPromptTemplateModel.find_one({"_id": agent_template.prompt_template_id})
     if not prompt_template:
@@ -294,12 +295,12 @@ async def start_agent(data: StartAgentRequestSchema):
     es = get_es()
     index_name = ENTITY_TYPE_INDEX_MAP.get(data.entity_type)
     if not index_name:
-        return ApiResponseSchema.error(code=400, message=f"不支持的实体类型: {data.entity_type}")
+        return ApiResponseSchema.error(code=status_codes.UNSUPPORTED_ARGUMENT, message=f"不支持的实体类型: {data.entity_type}")
 
     try:
         result = await es.get(index=index_name, id=data.entity_uuid)
     except NotFoundError:
-        return ApiResponseSchema.error(code=404, message=f"实体不存在，UUID: {data.entity_uuid}")
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_ENTITY, message=f"实体不存在，UUID: {data.entity_uuid}")
 
     doc_source = result.get("_source") or {}
     fields = {k: (v if v is not None else "!字段值缺失!") for k, v in doc_source.items()}
@@ -309,12 +310,12 @@ async def start_agent(data: StartAgentRequestSchema):
     
     model = await AgentModelConfigModel.find_one({"_id": agent_template.model_id})
     if not model:
-        return ApiResponseSchema.error(code=404, message=f"模型配置不存在，ID: {agent_template.model_id}")
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_MODEL_CONFIG, message=f"模型配置不存在，ID: {agent_template.model_id}")
     
     try:
         thread_id = await AgentService.start_agent(system_prompt, user_prompt, agent_template, model, data)
     except Exception as e:
-        return ApiResponseSchema.error(code=400, message=f"启动分析引擎失败: {str(e)}")
+        return ApiResponseSchema.error(code=status_codes.OPERATION_FAILED, message=f"启动分析引擎失败: {str(e)}")
     return ApiResponseSchema.success(data=StartAgentResponseSchema(thread_id=thread_id))
 
 
@@ -322,7 +323,7 @@ async def start_agent(data: StartAgentRequestSchema):
 async def get_agent_status(request: Request, thread_id: str = Query(..., description="会话ID")):
     doc = await AgentAnalysisSessionModel.find_one({"thread_id": thread_id})
     if not doc:
-        return ApiResponseSchema.error(code=404, message="无该会话")
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_SESSION, message="无该会话")
     queue = asyncio.Queue(maxsize=128)
     async with AgentService.sse_lock:
         AgentService.sse_subscribers.setdefault(thread_id, []).append(queue)
@@ -397,9 +398,9 @@ async def get_agent_status(request: Request, thread_id: str = Query(..., descrip
 async def approve_agent(data: ApproveRequestSchema):
     q = AgentService.pending_resumes.get(data.thread_id)
     if q is None:
-        return ApiResponseSchema.error(code=404, message="该会话当前无待确认的操作，或任务已结束")
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_SESSION, message="该会话当前无待确认的操作，或任务已结束")
     try:
         q.put_nowait(data.decisions)
     except asyncio.QueueFull:
-        return ApiResponseSchema.error(code=409, message="已有决策待处理")
+        return ApiResponseSchema.error(code=status_codes.CONFLICT_STATE, message="已有决策待处理")
     return ApiResponseSchema.success(data=ApproveResponseSchema(thread_id=data.thread_id, status="approved"))

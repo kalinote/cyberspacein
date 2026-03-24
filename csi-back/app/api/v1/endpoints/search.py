@@ -34,7 +34,7 @@ async def search_entity(params: EntitySearchRequestSchema):
     """
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
 
     try:
         return await search_entity_service(es, params, instruct="Given a web search query, retrieve relevant passages that answer the query")
@@ -42,7 +42,7 @@ async def search_entity(params: EntitySearchRequestSchema):
         raise
     except Exception as e:
         logger.error(f"搜索实体失败: {e}", exc_info=True)
-        return ApiResponseSchema.error(code=500, message=f"搜索实体失败: {str(e)}")
+        return ApiResponseSchema.error(code=250002, message=f"搜索实体失败: {str(e)}")
 
 
 @router.post("/template", response_model=ApiResponseSchema[SearchTemplateSchema], summary="创建检索模板")
@@ -52,7 +52,7 @@ async def create_search_template(data: SearchTemplateCreateRequestSchema):
     )
     existing = await SearchTemplateModel.find_one({"_id": template_id})
     if existing:
-        return ApiResponseSchema.error(code=400, message="标题与检索词组合已存在，请稍作修改后重试")
+        return ApiResponseSchema.error(code=240901, message="标题与检索词组合已存在，请稍作修改后重试")
     doc = SearchTemplateModel(
         id=template_id,
         title=data.title,
@@ -89,7 +89,7 @@ async def get_search_template_list(
 async def get_search_template_detail(template_id: str):
     doc = await SearchTemplateModel.find_one({"_id": template_id})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"检索模板不存在，ID: {template_id}")
+        return ApiResponseSchema.error(code=240401, message=f"检索模板不存在，ID: {template_id}")
     return ApiResponseSchema.success(data=SearchTemplateSchema.from_doc(doc))
 
 
@@ -97,7 +97,7 @@ async def get_search_template_detail(template_id: str):
 async def update_search_template(template_id: str, data: SearchTemplateUpdateRequestSchema):
     doc = await SearchTemplateModel.find_one({"_id": template_id})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"检索模板不存在，ID: {template_id}")
+        return ApiResponseSchema.error(code=240401, message=f"检索模板不存在，ID: {template_id}")
     update_data = data.model_dump(exclude_unset=True)
     if "title" in update_data:
         doc.title = update_data["title"]
@@ -116,7 +116,7 @@ async def update_search_template(template_id: str, data: SearchTemplateUpdateReq
 async def delete_search_template(template_id: str):
     doc = await SearchTemplateModel.find_one({"_id": template_id})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"检索模板不存在，ID: {template_id}")
+        return ApiResponseSchema.error(code=240401, message=f"检索模板不存在，ID: {template_id}")
     await doc.delete()
     logger.info(f"已删除检索模板: {template_id}")
     return ApiResponseSchema.success()

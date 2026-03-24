@@ -27,14 +27,14 @@ async def start_action(
 ):
     blueprint = await ActionBlueprintModel.find_one({"_id": data.blueprint_id})
     if not blueprint:
-        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {data.blueprint_id}")
+        return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {data.blueprint_id}")
 
     if not data.params:
         result, message = await ActionInstanceService.init(data.blueprint_id)
     else:
         result, message = await ActionInstanceService.init(data.blueprint_id, data.params)
     if not result:
-        return ApiResponseSchema.error(code=500, message=message)
+        return ApiResponseSchema.error(code=250004, message=message)
     background_tasks.add_task(ActionInstanceService.start, message)
 
     return ApiResponseSchema.success(data=StartActionResponse(action_id=message))
@@ -77,11 +77,11 @@ async def get_action_instances(
 async def get_action_detail(action_id: str):
     action_instance = await ActionInstanceModel.find_one({"_id": action_id})
     if not action_instance:
-        return ApiResponseSchema.error(code=404, message=f"行动不存在，ID: {action_id}")
+        return ApiResponseSchema.error(code=240412, message=f"行动不存在，ID: {action_id}")
 
     blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
     if not blueprint:
-        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
+        return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
 
     completed_steps = len(action_instance.finished_nodes_instance) if action_instance.finished_nodes_instance else 0
     total_steps = len(action_instance.nodes_id) if action_instance.nodes_id else 0

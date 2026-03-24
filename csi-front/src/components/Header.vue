@@ -12,7 +12,7 @@
 
           <nav class="hidden md:flex ml-10 space-x-6">
             <router-link to="/" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">概览</router-link>
-            <router-link to="/search" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">信息检索</router-link>
+            <router-link to="/search" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">检索</router-link>
             <div 
               class="relative"
               @mouseenter="showActionDropdown = true"
@@ -52,7 +52,50 @@
             <router-link to="/target" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">目标管理</router-link>
             <router-link to="/agent" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">分析引擎</router-link>
             <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
-            <router-link to="/alert" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">告警信息</router-link>
+            <div
+              class="relative"
+              @mouseenter="showSystemDropdown = true"
+              @mouseleave="showSystemDropdown = false"
+            >
+              <router-link
+                to="/system"
+                class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
+                :class="isSystemNavActive ? 'text-blue-600! bg-blue-50!' : ''"
+              >
+                <span>系统配置</span>
+                <Icon icon="mdi:chevron-down" class="text-sm transition-transform" :class="showSystemDropdown ? 'rotate-180' : ''" />
+              </router-link>
+              <transition
+                enter-active-class="transition-all duration-200 ease-out"
+                enter-from-class="opacity-0 -translate-y-2"
+                enter-to-class="opacity-100 translate-y-0"
+                leave-active-class="transition-all duration-150 ease-in"
+                leave-from-class="opacity-100 translate-y-0"
+                leave-to-class="opacity-0 -translate-y-2"
+              >
+                <div
+                  v-show="showSystemDropdown"
+                  class="absolute top-full left-0 mt-1 min-w-48 bg-white rounded-lg shadow-lg border border-blue-100 py-2 z-50"
+                >
+                  <router-link
+                    to="/alert"
+                    class="block px-4 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors whitespace-nowrap"
+                    :class="route.path === '/alert' ? 'text-blue-600 bg-blue-50' : ''"
+                    @click="showSystemDropdown = false"
+                  >
+                    告警信息
+                  </router-link>
+                  <router-link
+                    to="/system/permissions"
+                    class="block px-4 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors whitespace-nowrap"
+                    :class="route.path === '/system/permissions' ? 'text-blue-600 bg-blue-50' : ''"
+                    @click="showSystemDropdown = false"
+                  >
+                    用户权限管理
+                  </router-link>
+                </div>
+              </transition>
+            </div>
           </nav>
         </div>
 
@@ -77,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 
@@ -86,6 +129,10 @@ defineOptions({ name: 'Header' })
 const router = useRouter()
 const route = useRoute()
 const showActionDropdown = ref(false)
+const showSystemDropdown = ref(false)
+const isSystemNavActive = computed(
+  () => route.path.startsWith('/system') || route.path === '/alert'
+)
 const quickSearchQuery = ref('')
 
 function handleQuickSearch() {

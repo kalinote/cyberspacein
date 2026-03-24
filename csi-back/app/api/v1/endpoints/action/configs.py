@@ -74,7 +74,7 @@ async def create_node_configs_handle(data: ActionNodesHandleConfigRequest):
     handle_id = generate_id(data.handle_name + data.type.value)
 
     if await ActionNodesHandleConfigModel.find_one({"_id": handle_id}):
-        return ApiResponseSchema.error(code=400, message=f"节点配置handle已存在，ID: {handle_id}")
+        return ApiResponseSchema.error(code=240901, message=f"节点配置handle已存在，ID: {handle_id}")
 
     handle_model = ActionNodesHandleConfigModel(
         id=handle_id,

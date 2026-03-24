@@ -28,13 +28,13 @@ router = APIRouter(prefix="/accounts", tags=["账号管理"])
 async def create_account(data: AccountCreateRequest):
     platform = await PlatformModel.find_one({"_id": data.platform_id})
     if not platform:
-        return ApiResponseSchema.error(code=404, message=f"平台不存在，ID: {data.platform_id}")
+        return ApiResponseSchema.error(code=240407, message=f"平台不存在，ID: {data.platform_id}")
 
     raw = data.platform_id + data.account_name + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999))
     account_id = generate_id(raw)
     existing = await AccountModel.find_one({"_id": account_id})
     if existing:
-        return ApiResponseSchema.error(code=400, message=f"账号已存在，ID: {account_id}")
+        return ApiResponseSchema.error(code=240901, message=f"账号已存在，ID: {account_id}")
 
     credentials = CredentialsModel(**(data.credentials.model_dump() if data.credentials else {}))
     scheduler = SchedulerModel(**(data.scheduler.model_dump() if data.scheduler else {}))
@@ -73,7 +73,7 @@ async def get_account_list(
 async def get_account_detail(account_id: str):
     doc = await AccountModel.find_one({"_id": account_id, "is_deleted": False})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"账号不存在或已删除，ID: {account_id}")
+        return ApiResponseSchema.error(code=240408, message=f"账号不存在或已删除，ID: {account_id}")
     return ApiResponseSchema.success(data=AccountResponse.from_doc(doc))
 
 
@@ -81,7 +81,7 @@ async def get_account_detail(account_id: str):
 async def update_account(account_id: str, data: AccountUpdateRequest):
     doc = await AccountModel.find_one({"_id": account_id, "is_deleted": False})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"账号不存在或已删除，ID: {account_id}")
+        return ApiResponseSchema.error(code=240408, message=f"账号不存在或已删除，ID: {account_id}")
     update_data = data.model_dump(exclude_unset=True)
     if "credentials" in update_data and update_data["credentials"] is not None:
         update_data["credentials"] = CredentialsModel(**update_data["credentials"])
@@ -109,7 +109,7 @@ async def update_account(account_id: str, data: AccountUpdateRequest):
 async def delete_account(account_id: str):
     doc = await AccountModel.find_one({"_id": account_id, "is_deleted": False})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"账号不存在或已删除，ID: {account_id}")
+        return ApiResponseSchema.error(code=240408, message=f"账号不存在或已删除，ID: {account_id}")
     await doc.update(Set({
         AccountModel.is_deleted: True,
         AccountModel.updated_at: datetime.now(),

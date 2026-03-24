@@ -20,7 +20,7 @@ router = APIRouter(
 async def get_article_detail(uuid: str):
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
     
     try:
         result = await es.get(index="article", id=uuid)
@@ -76,6 +76,6 @@ async def get_article_detail(uuid: str):
         return ApiResponseSchema.success(data=article_data)
     
     except NotFoundError:
-        return ApiResponseSchema.error(code=404, message=f"文章不存在，UUID: {uuid}")
+        return ApiResponseSchema.error(code=240415, message=f"文章不存在，UUID: {uuid}")
     except Exception as e:
-        return ApiResponseSchema.error(code=500, message=f"查询文章详情失败: {str(e)}")
+        return ApiResponseSchema.error(code=250002, message=f"查询文章详情失败: {str(e)}")

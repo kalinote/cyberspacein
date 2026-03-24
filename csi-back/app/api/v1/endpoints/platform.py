@@ -26,15 +26,15 @@ async def create_platform(data: PlatformCreateRequestSchema):
     
     existing_platform = await PlatformModel.find_one({"_id": platform_id})
     if existing_platform:
-        return ApiResponseSchema.error(code=400, message=f"平台已存在，名称: {data.name} 或 URL: {data.url}")
+        return ApiResponseSchema.error(code=240901, message=f"平台已存在，名称: {data.name} 或 URL: {data.url}")
     
     existing_by_name = await PlatformModel.find_one({"name": data.name})
     if existing_by_name:
-        return ApiResponseSchema.error(code=400, message=f"平台名称已存在: {data.name}")
+        return ApiResponseSchema.error(code=240902, message=f"平台名称已存在: {data.name}")
     
     existing_by_url = await PlatformModel.find_one({"url": data.url})
     if existing_by_url:
-        return ApiResponseSchema.error(code=400, message=f"平台URL已存在: {data.url}")
+        return ApiResponseSchema.error(code=240903, message=f"平台URL已存在: {data.url}")
     
     processed_logo = ""
     if data.logo and data.logo.strip():
@@ -142,7 +142,7 @@ async def get_platform_list(
 async def get_platform_detail(platform_id: str):
     platform = await PlatformModel.find_one({"_id": platform_id})
     if not platform:
-        return ApiResponseSchema.error(code=404, message=f"平台不存在，ID: {platform_id}")
+        return ApiResponseSchema.error(code=240407, message=f"平台不存在，ID: {platform_id}")
     
     return ApiResponseSchema.success(data=PlatformBaseInfoSchema.from_doc(platform))
 

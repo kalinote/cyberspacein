@@ -1,6 +1,7 @@
 import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from app.core.config import settings
 from app.core.exceptions import ApiException
 from app.schemas.response import ApiResponseSchema
 from app.middleware.response import ResponseMiddleware
+import app.utils.status_codes as status_codes
 from app.db import (
     init_mariadb, close_mariadb,
     init_mongodb, close_mongodb,
@@ -96,9 +98,28 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=200,
         content=ApiResponseSchema.error(
-            code=422,
+            code=status_codes.VALIDATION_ERROR,
             message="请求参数验证失败",
             data={"errors": errors}
+        ).model_dump()
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    try:
+        normalized_code = status_codes.build_status_code(
+            status_codes.StatusCodeSource.HTTP_STANDARD,
+            exc.status_code,
+        )
+    except ValueError:
+        normalized_code = status_codes.INTERNAL_ERROR
+    return JSONResponse(
+        status_code=200,
+        content=ApiResponseSchema.error(
+            code=normalized_code,
+            message=str(exc.detail) if exc.detail else "请求处理失败",
+            data=None
         ).model_dump()
     )
 
@@ -109,7 +130,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=200,
         content=ApiResponseSchema.error(
-            code=500,
+            code=status_codes.INTERNAL_ERROR,
             message="服务器内部错误" if not settings.DEBUG else str(exc),
             data=None
         ).model_dump()
