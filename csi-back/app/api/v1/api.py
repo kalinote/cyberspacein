@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     action,
+    auth,
     agent,
     annotation,
     article,
@@ -11,6 +12,7 @@ from app.api.v1.endpoints import (
     html_analyze,
     platform,
     search,
+    system,
     timeline
 )
 
@@ -27,3 +29,5 @@ api_router.include_router(html_analyze.router)
 api_router.include_router(agent.router)
 api_router.include_router(embedding.router)
 api_router.include_router(timeline.router)
+api_router.include_router(auth.router)
+api_router.include_router(system.router)

@@ -1,6 +1,6 @@
 <template>
   <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-blue-100 transition-all duration-300">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-16">
         <div class="flex items-center">
           <div class="flex items-center space-x-2">
@@ -10,9 +10,9 @@
             <span class="text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
           </div>
 
-          <nav class="hidden md:flex ml-10 space-x-6">
-            <router-link to="/" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">概览</router-link>
-            <router-link to="/search" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">检索</router-link>
+          <nav class="hidden md:flex ml-10 space-x-8">
+            <router-link to="/" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">概览</router-link>
+            <router-link to="/search" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">检索</router-link>
             <div 
               class="relative"
               @mouseenter="showActionDropdown = true"
@@ -20,7 +20,7 @@
             >
               <router-link 
                 to="/action" 
-                class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
+                class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
                 :class="route.path.startsWith('/action') ? 'text-blue-600! bg-blue-50!' : ''"
               >
                 <span>行动部署</span>
@@ -49,9 +49,9 @@
                 </div>
               </transition>
             </div>
-            <router-link to="/target" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">目标管理</router-link>
-            <router-link to="/agent" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">分析引擎</router-link>
-            <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
+            <router-link to="/target" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">目标管理</router-link>
+            <router-link to="/agent" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">分析引擎</router-link>
+            <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
             <div
               class="relative"
               @mouseenter="showSystemDropdown = true"
@@ -59,7 +59,7 @@
             >
               <router-link
                 to="/system"
-                class="text-gray-600 hover:text-blue-600 font-medium px-3 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
+                class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
                 :class="isSystemNavActive ? 'text-blue-600! bg-blue-50!' : ''"
               >
                 <span>系统配置</span>
@@ -110,9 +110,29 @@
               @keyup.enter="handleQuickSearch"
             />
           </div>
-          <div class="w-8 h-8 bg-linear-to-br from-blue-100 to-cyan-100 rounded-full flex items-center justify-center cursor-pointer">
-            <Icon icon="mdi:account" class="text-blue-600" />
-          </div>
+
+          <el-dropdown trigger="click" @command="handleUserCommand" @visible-change="handleUserDropdownVisibleChange">
+            <div class="flex items-center gap-3 cursor-pointer select-none">
+              <div class="w-8 h-8 bg-linear-to-br from-blue-100 to-cyan-100 rounded-full flex items-center justify-center">
+                <Icon icon="mdi:account" class="text-blue-600" />
+              </div>
+              <span class="hidden sm:inline text-sm font-medium text-gray-700 max-w-40 truncate">
+                {{ displayUsername }}
+              </span>
+              <Icon
+                icon="mdi:chevron-down"
+                class="hidden sm:inline text-gray-500 transition-transform duration-200"
+                :class="userDropdownVisible ? 'rotate-180' : ''"
+              />
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">
+                  退出登录
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
     </div>
@@ -123,6 +143,8 @@
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
+import { authApi } from '@/api/auth'
+import { clearAuth, getAuthState } from '@/stores/auth'
 
 defineOptions({ name: 'Header' })
 
@@ -134,6 +156,12 @@ const isSystemNavActive = computed(
   () => route.path.startsWith('/system') || route.path === '/alert'
 )
 const quickSearchQuery = ref('')
+const userDropdownVisible = ref(false)
+
+const displayUsername = computed(() => {
+  const user = getAuthState().user
+  return user?.display_name || user?.username || '未登录'
+})
 
 function handleQuickSearch() {
   if (!quickSearchQuery.value || !quickSearchQuery.value.trim()) {
@@ -144,5 +172,20 @@ function handleQuickSearch() {
     query: { q: quickSearchQuery.value.trim() }
   })
   quickSearchQuery.value = ''
+}
+
+function handleUserDropdownVisibleChange(visible) {
+  userDropdownVisible.value = visible
+}
+
+async function handleUserCommand(command) {
+  if (command !== 'logout') return
+  try {
+    await authApi.logout()
+  } catch {
+  } finally {
+    clearAuth()
+    router.push('/login').catch(() => {})
+  }
 }
 </script>

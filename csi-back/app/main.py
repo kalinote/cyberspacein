@@ -19,6 +19,7 @@ from app.db import (
 )
 from app.utils.cos import init_cos, close_cos
 from app.utils.embedding import init_embedding_client, close_embedding_client
+from app.service.auth import ensure_default_admin
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
     await init_rabbitmq()
     await init_cos()
     await init_embedding_client()
+    await ensure_default_admin()
     
     yield
     
@@ -62,6 +64,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     openapi_url="/openapi.json",
+    swagger_ui_parameters={"persistAuthorization": True},
     lifespan=lifespan
 )
 
