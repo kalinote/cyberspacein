@@ -22,6 +22,22 @@ export const systemApi = {
   },
   updateGroup(groupId, data) {
     return request.put(`/system/groups/${groupId}`, data)
+  },
+
+  getPermCodes(params) {
+    return request.get('/system/perm-codes', params)
+  },
+  createPermCode(data) {
+    return request.post('/system/perm-codes', data)
+  },
+  createPermCodesBatch(data) {
+    return request.post('/system/perm-codes/batch', data)
+  },
+  updatePermCode(permCodeId, data) {
+    return request.put(`/system/perm-codes/${permCodeId}`, data)
+  },
+  deletePermCode(permCodeId) {
+    return request.delete(`/system/perm-codes/${permCodeId}`)
   }
 }
 

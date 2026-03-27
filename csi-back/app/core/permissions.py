@@ -8,3 +8,8 @@ class SystemPerms:
     GROUP_CREATE = "system:group:create"
     GROUP_EDIT = "system:group:edit"
 
+    PERMCODE_VIEW = "system:permcode:view"
+    PERMCODE_CREATE = "system:permcode:create"
+    PERMCODE_EDIT = "system:permcode:edit"
+    PERMCODE_DELETE = "system:permcode:delete"
+

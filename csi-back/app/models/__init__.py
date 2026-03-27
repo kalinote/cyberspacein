@@ -17,6 +17,7 @@ from app.models.annotation import AnnotationModel
 from app.models.search_template import SearchTemplateModel
 from app.models.auth.group import GroupModel
 from app.models.auth.user import UserModel
+from app.models.auth.permission_code import PermissionCodeModel
 
 def get_all_models() -> List[Type[Document]]:
     """获取所有需要注册的 Beanie Document 模型"""
@@ -40,4 +41,5 @@ def get_all_models() -> List[Type[Document]]:
         SearchTemplateModel,
         GroupModel,
         UserModel,
+        PermissionCodeModel,
     ]

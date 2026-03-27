@@ -16,21 +16,26 @@
         </div>
         <div class="flex items-center gap-3">
           <el-input
-            v-if="activeTab === 'users' || activeTab === 'groups'"
             v-model="searchKeyword"
-            placeholder="搜索"
+            :placeholder="searchPlaceholder"
             clearable
-            class="w-64"
+            class="w-60!"
           >
             <template #prefix>
               <Icon icon="mdi:magnify" class="text-gray-400" />
             </template>
           </el-input>
-          <el-button
-            v-if="activeTab !== 'abilities'"
-            type="primary"
-            @click="handleAdd"
+          <el-select
+            v-if="activeTab === 'dictionary'"
+            v-model="dictFilterCategory"
+            clearable
+            placeholder="按分类筛选"
+            class="w-60!"
           >
+            <el-option label="全部分类" value="" />
+            <el-option v-for="c in dictCategoryOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+          <el-button type="primary" @click="handleAdd">
             <template #icon>
               <Icon icon="mdi:plus" />
             </template>
@@ -187,7 +192,7 @@
               </template>
               查看
             </el-button>
-            <el-button type="primary" link>
+            <el-button type="primary" link @click="handleEditGroup(group)">
               <template #icon>
                 <Icon icon="mdi:pencil" />
               </template>
@@ -204,176 +209,177 @@
         <p class="text-gray-500">暂无匹配的权限组</p>
       </div>
     </div>
-    <div v-else-if="activeTab === 'abilities'" class="text-left">
-      <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
-          <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
-            <div class="min-w-0">
-              <div class="text-base font-bold text-gray-900">功能权限管理</div>
-              <div class="text-xs text-gray-500 mt-1">从权限目录选择权限码，并为权限组分配权限。</div>
+    <div v-else-if="activeTab === 'dictionary'" class="space-y-4">
+      <div
+        v-for="perm in filteredDictRows"
+        :key="perm.permKey"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow px-5 py-4"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h3 class="text-base font-bold text-gray-900">{{ perm.name }}</h3>
+              <span class="text-[11px] text-gray-400 font-mono break-all">{{ perm.permKey }}</span>
             </div>
-            <div class="flex items-center gap-3 shrink-0">
-              <el-input
-                v-model="abilitySearchKeyword"
-                placeholder="搜索权限（名称/权限码）"
-                clearable
-                class="w-72"
+            <div class="flex flex-wrap items-center gap-2 mt-2">
+              <el-tag
+                size="small"
+                :type="perm.enabled ? 'success' : 'info'"
+                effect="light"
+                class="border-0"
               >
-                <template #prefix>
-                  <Icon icon="mdi:magnify" class="text-gray-400" />
-                </template>
-              </el-input>
+                {{ perm.enabled ? '已启用' : '已禁用' }}
+              </el-tag>
+              <el-tag v-if="perm.category" size="small" type="primary" effect="plain">
+                {{ perm.category }}
+              </el-tag>
+              <el-tag v-for="t in perm.tags || []" :key="t" size="small" type="info" effect="light" class="border-0">
+                {{ t }}
+              </el-tag>
             </div>
+            <p v-if="perm.desc" class="text-xs text-gray-600 mt-2">{{ perm.desc }}</p>
           </div>
-
-          <div class="grid grid-cols-12 gap-0">
-            <div class="col-span-5 border-r border-gray-100 p-4">
-              <div class="flex items-center justify-between mb-3">
-                <div class="text-sm font-medium text-gray-700">权限目录</div>
-                <div class="text-xs text-gray-400">共 {{ abilityCatalogStats.totalPerms }} 个权限码</div>
-              </div>
-
-              <div class="rounded-lg border border-gray-100 bg-white">
-                <el-tree
-                  ref="abilityTreeRef"
-                  :data="abilityCatalogTree"
-                  node-key="key"
-                  :props="abilityTreeProps"
-                  :default-expand-all="false"
-                  :highlight-current="true"
-                  :expand-on-click-node="true"
-                  :filter-node-method="abilityFilterTreeNode"
-                  @current-change="handleAbilityCurrentNodeChange"
-                  class="ability-tree"
-                >
-                  <template #default="{ data }">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2 min-w-0">
-                        <Icon :icon="data.icon || 'mdi:key-outline'" class="text-gray-400 shrink-0" />
-                        <span class="text-sm text-gray-800 truncate">{{ data.label }}</span>
-                      </div>
-                      <div v-if="data.permKey" class="text-[11px] text-gray-400 font-mono truncate mt-0.5">
-                        {{ data.permKey }}
-                      </div>
-                    </div>
-                  </template>
-                </el-tree>
-              </div>
-              <div v-if="abilitySearchEmptyHint" class="mt-3 text-xs text-gray-500">
-                {{ abilitySearchEmptyHint }}
-              </div>
-
-              <div v-if="abilityCatalogStats.missingPerms.length > 0" class="mt-3 text-xs text-amber-600">
-                检测到 {{ abilityCatalogStats.missingPerms.length }} 个权限码未在目录中定义：{{ abilityCatalogStats.missingPerms.slice(0, 3).join('、') }}<span v-if="abilityCatalogStats.missingPerms.length > 3"> 等</span>
-              </div>
-            </div>
-
-            <div class="col-span-7 p-4">
-              <div class="flex items-start justify-between gap-4 mb-3">
-                <div class="min-w-0">
-                  <div class="text-sm font-medium text-gray-700">权限分配</div>
-                  <div class="text-xs text-gray-500 mt-1">
-                    当前权限组：<span class="font-medium text-gray-800">{{ currentAbilityGroupLabel }}</span>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <el-button :disabled="!abilityCanEdit" @click="handleAbilityReset">重置</el-button>
-                  <el-button type="primary" :disabled="!abilityCanEdit" :loading="abilitySaving" @click="handleAbilitySave">保存</el-button>
-                </div>
-              </div>
-
-              <div class="bg-gray-50/70 rounded-lg border border-gray-100 p-4 mb-4">
-                <div class="flex flex-wrap items-center gap-3">
-                  <el-select
-                    v-model="abilitySelectedGroupUuid"
-                    filterable
-                    placeholder="请选择权限组"
-                    class="w-72"
-                  >
-                    <el-option
-                      v-for="g in abilityGroupsForSelect"
-                      :key="g.uuid"
-                      :label="g.display_name || g.group_name || g.uuid"
-                      :value="g.uuid"
-                    />
-                  </el-select>
-                  <div class="text-xs text-gray-500">
-                    已选权限：<span class="font-medium text-gray-800">{{ abilitySelectedPermSetSize }}</span>
-                    <span v-if="abilityLastSavedAt" class="ml-3 text-gray-400">上次保存：{{ formatDateTime(abilityLastSavedAt) }}</span>
-                  </div>
-                </div>
-                <div v-if="abilityGroupsForSelect.length === 0" class="mt-3 text-xs text-gray-500">
-                  暂无可用权限组，请先在“权限组管理”中创建权限组。
-                </div>
-                <div v-if="abilityGroupHasWildcard" class="mt-3 text-xs text-blue-600">
-                  当前权限组包含 <span class="font-mono">*</span>，视为拥有全部权限；此页暂不支持编辑该组的权限明细。
-                </div>
-              </div>
-
-              <div v-if="!abilitySelectedGroupUuid" class="rounded-lg border border-dashed border-gray-200 bg-white p-10 text-center">
-                <Icon icon="mdi:account-cog-outline" class="text-5xl text-gray-300 mx-auto mb-4" />
-                <div class="text-sm font-medium text-gray-700">请先选择一个权限组</div>
-                <div class="text-xs text-gray-500 mt-2">选择后即可在右侧为该组勾选权限码。</div>
-              </div>
-              <div v-else-if="abilityPermsInCurrentNode.length === 0" class="rounded-lg border border-dashed border-gray-200 bg-white p-10 text-center">
-                <Icon icon="mdi:key-remove-outline" class="text-5xl text-gray-300 mx-auto mb-4" />
-                <div class="text-sm font-medium text-gray-700">未选择权限节点</div>
-                <div class="text-xs text-gray-500 mt-2">请在左侧权限目录中选择一个模块或具体权限码。</div>
-              </div>
-              <div v-else class="bg-white rounded-xl border border-gray-200 shadow-sm">
-                <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
-                  <div class="min-w-0">
-                    <div class="text-sm font-bold text-gray-900 truncate">{{ abilityCurrentNodeTitle }}</div>
-                    <div class="text-xs text-gray-500 mt-1 truncate">{{ abilityCurrentNodeSubTitle }}</div>
-                  </div>
-                  <div class="text-xs text-gray-400 shrink-0">
-                    共 {{ abilityPermsInCurrentNode.length }} 项
-                  </div>
-                </div>
-                <div class="p-4">
-                  <div class="space-y-2">
-                    <div
-                      v-for="perm in abilityPermsInCurrentNode"
-                      :key="perm.permKey"
-                      class="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:border-blue-100 hover:bg-blue-50/30 transition-colors"
-                    >
-                      <el-checkbox
-                        :model-value="abilityIsPermChecked(perm.permKey)"
-                        :disabled="!abilityCanEdit || abilityGroupHasWildcard"
-                        @change="(val) => abilityTogglePerm(perm.permKey, val)"
-                      />
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <div class="text-sm font-medium text-gray-900">{{ perm.name }}</div>
-                          <el-tag v-for="t in perm.tags || []" :key="t" size="small" type="info" effect="light" class="border-0">
-                            {{ t }}
-                          </el-tag>
-                        </div>
-                        <div class="text-xs text-gray-500 mt-1">
-                          <span class="font-mono text-gray-400">{{ perm.permKey }}</span>
-                          <span v-if="perm.desc" class="ml-2">{{ perm.desc }}</span>
-                        </div>
-                      </div>
-                      <el-button
-                        v-if="perm.docs"
-                        type="primary"
-                        link
-                        :disabled="!perm.docs"
-                        @click="handleAbilityOpenDocs(perm.docs)"
-                      >
-                        <template #icon>
-                          <Icon icon="mdi:open-in-new" />
-                        </template>
-                        说明
-                      </el-button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <el-button type="primary" link @click="openEditDict(perm)">
+              <template #icon>
+                <Icon icon="mdi:pencil" />
+              </template>
+              编辑
+            </el-button>
+            <el-button type="danger" link @click="handleDeleteDict(perm)">
+              <template #icon>
+                <Icon icon="mdi:delete-outline" />
+              </template>
+              删除
+            </el-button>
           </div>
+        </div>
+      </div>
+
+      <div
+        v-if="filteredDictRows.length === 0"
+        class="flex flex-col items-center justify-center py-16 rounded-xl border border-dashed border-gray-200 bg-gray-50/80"
+      >
+        <Icon icon="mdi:key-variant" class="text-6xl text-gray-300 mb-4" />
+        <p class="text-gray-500">{{ dictEmptyText }}</p>
       </div>
     </div>
   </ConfigCenterLayout>
+
+  <el-dialog
+    v-model="dictDialogVisible"
+    :title="dictDialogTitle"
+    :width="dictDialogWidth"
+    :top="dictDialogTop"
+    :fullscreen="dictDialogFullscreen"
+  >
+    <el-tabs v-if="dictMode === 'create'" v-model="dictCreateTab" class="-mt-2 mb-4">
+      <el-tab-pane label="单条新增" name="single" />
+      <el-tab-pane label="批量新增" name="batch" />
+    </el-tabs>
+
+    <el-form v-if="dictMode === 'edit' || dictCreateTab === 'single'" ref="dictFormRef" :model="dictForm" :rules="dictRules" label-width="90px">
+      <el-form-item label="权限码" prop="permKey">
+        <el-input v-model="dictForm.permKey" :disabled="dictMode === 'edit'" placeholder="例如：system:user:create" />
+      </el-form-item>
+      <el-form-item label="名称" prop="name">
+        <el-input v-model="dictForm.name" placeholder="例如：新增用户" />
+      </el-form-item>
+      <el-form-item label="分类" prop="category">
+        <el-select
+          v-model="dictForm.category"
+          filterable
+          allow-create
+          default-first-option
+          placeholder="例如：系统配置/用户管理"
+          class="w-full!"
+        >
+          <el-option v-for="c in dictCategoryOptions" :key="c" :label="c" :value="c" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="描述" prop="desc">
+        <el-input v-model="dictForm.desc" type="textarea" :rows="2" placeholder="请输入描述（可选）" />
+      </el-form-item>
+      <el-form-item label="标签">
+        <el-select v-model="dictForm.tags" multiple filterable allow-create default-first-option placeholder="例如：可见、可用" class="w-full!">
+          <el-option v-for="t in dictTagOptions" :key="t" :label="t" :value="t" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="启用">
+        <el-switch v-model="dictForm.enabled" />
+      </el-form-item>
+    </el-form>
+
+    <div v-else class="space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="text-xs text-gray-500">每行一条权限码，带 * 的列为必填</div>
+        <div class="flex items-center gap-2">
+          <el-button @click="handleResetBatchRows">清空全部</el-button>
+          <el-button type="primary" plain @click="handleAddBatchRow">新增一行</el-button>
+        </div>
+      </div>
+      <div class="max-h-105 overflow-auto border border-gray-200 rounded-lg">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-3 py-2 text-left w-16">行号</th>
+              <th class="px-3 py-2 text-left min-w-52">权限码 *</th>
+              <th class="px-3 py-2 text-left min-w-36">名称 *</th>
+              <th class="px-3 py-2 text-left min-w-36">分类 *</th>
+              <th class="px-3 py-2 text-left min-w-40">描述</th>
+              <th class="px-3 py-2 text-left min-w-44">标签</th>
+              <th class="px-3 py-2 text-center w-20">启用</th>
+              <th class="px-3 py-2 text-center w-20">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, index) in dictBatchRows" :key="row.rowId" class="border-t border-gray-100 align-top">
+              <td class="px-3 py-2 text-gray-500">{{ index + 1 }}</td>
+              <td class="px-3 py-2">
+                <el-input v-model="row.permKey" :class="{ 'is-error': row.errorFields.permKey }" placeholder="system:user:view" />
+              </td>
+              <td class="px-3 py-2">
+                <el-input v-model="row.name" :class="{ 'is-error': row.errorFields.name }" placeholder="查看用户" />
+              </td>
+              <td class="px-3 py-2">
+                <el-select
+                  v-model="row.category"
+                  :class="{ 'is-error': row.errorFields.category }"
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="系统配置/用户管理"
+                  class="w-full!"
+                >
+                  <el-option v-for="c in dictCategoryOptions" :key="c" :label="c" :value="c" />
+                </el-select>
+              </td>
+              <td class="px-3 py-2">
+                <el-input v-model="row.desc" placeholder="可选" />
+              </td>
+              <td class="px-3 py-2">
+                <el-select v-model="row.tags" multiple filterable allow-create default-first-option placeholder="可选" class="w-full!">
+                  <el-option v-for="t in dictTagOptions" :key="t" :label="t" :value="t" />
+                </el-select>
+              </td>
+              <td class="px-3 py-2 text-center">
+                <el-switch v-model="row.enabled" />
+              </td>
+              <td class="px-3 py-2 text-center">
+                <el-button type="danger" link @click="handleRemoveBatchRow(index)">删除</el-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-if="dictBatchErrorSummary" class="text-xs text-red-600">{{ dictBatchErrorSummary }}</div>
+    </div>
+
+    <template #footer>
+      <el-button @click="dictDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="dictSaving" @click="handleSaveDict">保存</el-button>
+    </template>
+  </el-dialog>
 
   <el-dialog v-model="editUserDialogVisible" title="编辑用户" width="520px">
     <div v-if="editingUser" class="space-y-4">
@@ -387,7 +393,7 @@
             v-model="editUserGroupUuids"
             multiple
             placeholder="请选择用户组"
-            class="w-full"
+            class="w-full!"
           >
             <el-option
               v-for="group in groupList"
@@ -436,12 +442,12 @@
           v-model="createUserForm.expired_at"
           type="datetime"
           placeholder="请选择到期时间（可选）"
-          class="w-full"
+          class="w-full!"
           value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
         />
       </el-form-item>
       <el-form-item label="用户组" prop="groups">
-        <el-select v-model="createUserForm.groups" multiple placeholder="请选择用户组（可选）" class="w-full">
+        <el-select v-model="createUserForm.groups" multiple placeholder="请选择用户组（可选）" class="w-full!">
           <el-option
             v-for="group in groupList"
             :key="group.uuid"
@@ -458,7 +464,7 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="createGroupDialogVisible" title="新增权限组" width="560px">
+  <el-dialog v-model="createGroupDialogVisible" title="新增权限组" width="1200px" top="2vh" class="group-permission-dialog">
     <el-form ref="createGroupFormRef" :model="createGroupForm" :rules="createGroupRules" label-width="100px">
       <el-form-item label="组标识" prop="group_name">
         <el-input v-model="createGroupForm.group_name" placeholder="例如：admin、analyst（唯一）" />
@@ -473,15 +479,7 @@
         <el-switch v-model="createGroupForm.enabled" />
       </el-form-item>
       <el-form-item label="权限码" prop="permissions">
-        <el-select
-          v-model="createGroupForm.permissions"
-          multiple
-          filterable
-          allow-create
-          default-first-option
-          placeholder="输入权限码后回车添加（可选）"
-          class="w-full"
-        />
+        <GroupPermissionPicker v-model="createGroupForm.permissions" :perm-codes="enabledPermCodes" class="w-full" />
       </el-form-item>
     </el-form>
 
@@ -490,30 +488,76 @@
       <el-button type="primary" :loading="creatingGroup" @click="handleSubmitCreateGroup">创建</el-button>
     </template>
   </el-dialog>
+
+  <el-dialog v-model="editGroupDialogVisible" title="编辑权限组" width="1200px" top="2vh" class="group-permission-dialog">
+    <div v-if="editingGroup" class="mb-3 text-sm text-gray-600">
+      权限组：{{ editingGroup.display_name }}（@{{ editingGroup.group_name }}）
+    </div>
+    <el-form ref="editGroupFormRef" :model="editGroupForm" :rules="editGroupRules" label-width="100px">
+      <el-form-item label="组标识">
+        <el-input v-model="editGroupForm.group_name" disabled />
+      </el-form-item>
+      <el-form-item label="展示名称" prop="display_name">
+        <el-input v-model="editGroupForm.display_name" placeholder="请输入展示名称" />
+      </el-form-item>
+      <el-form-item label="备注" prop="remark">
+        <el-input v-model="editGroupForm.remark" type="textarea" :rows="2" placeholder="请输入备注（可选）" />
+      </el-form-item>
+      <el-form-item label="启用">
+        <el-switch v-model="editGroupForm.enabled" />
+      </el-form-item>
+      <el-form-item label="权限码" prop="permissions">
+        <GroupPermissionPicker v-model="editGroupForm.permissions" :perm-codes="enabledPermCodes" class="w-full" />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <el-button @click="editGroupDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="savingEditGroup" @click="handleSaveEditGroup">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive, watch } from 'vue'
+import { ref, computed, onMounted, reactive, watch, onBeforeUnmount } from 'vue'
 import { Icon } from '@iconify/vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
 import { findNavItemByKey } from '@/utils/configCenterNav'
 import { formatDateTime } from '@/utils/action'
 import { systemApi } from '@/api/system'
+import GroupPermissionPicker from '@/components/system/GroupPermissionPicker.vue'
 
 defineOptions({ name: 'UserPermissionManagement' })
 
 const activeTab = ref('users')
 const expandedTabKeys = ref([])
 const searchKeyword = ref('')
+const dictFilterCategory = ref('')
 
 const userList = ref([])
 const groupList = ref([])
+const permCodeList = ref([])
 
 const editUserDialogVisible = ref(false)
 const editingUser = ref(null)
 const editUserGroupUuids = ref([])
 const savingEditUser = ref(false)
+
+const editGroupDialogVisible = ref(false)
+const editingGroup = ref(null)
+const editGroupFormRef = ref(null)
+const savingEditGroup = ref(false)
+const editGroupForm = reactive({
+  group_name: '',
+  display_name: '',
+  remark: '',
+  enabled: true,
+  permissions: []
+})
+const editGroupRules = {
+  display_name: [{ required: true, message: '请输入展示名称', trigger: 'blur' }]
+}
 
 const createUserDialogVisible = ref(false)
 const creatingUser = ref(false)
@@ -558,370 +602,6 @@ const groupNameByUuid = computed(() => {
   return map
 })
 
-const ABILITY_STORAGE_KEY = 'csi_ability_group_permissions_v1'
-
-const abilitySaving = ref(false)
-const abilitySearchKeyword = ref('')
-const abilityTreeRef = ref(null)
-const abilitySelectedGroupUuid = ref('')
-const abilityLastSavedAt = ref('')
-
-const abilityGroupPermissionDraftMap = ref({})
-
-const abilityCatalogTree = [
-  {
-    key: 'module:system',
-    label: '系统配置',
-    icon: 'mdi:cog-outline',
-    children: [
-      {
-        key: 'page:system:permissions',
-        label: '用户与权限管理页',
-        icon: 'mdi:account-key-outline',
-        permKey: 'page:system:permissions',
-        perm: {
-          permKey: 'page:system:permissions',
-          name: '进入“用户权限管理”页面',
-          desc: '控制是否可进入系统配置中的用户权限管理页面',
-          tags: ['可见']
-        }
-      },
-      {
-        key: 'module:system:user',
-        label: '用户管理',
-        icon: 'mdi:account-multiple-outline',
-        children: [
-          {
-            key: 'system:user:view',
-            label: '查看用户',
-            permKey: 'system:user:view',
-            perm: { permKey: 'system:user:view', name: '查看用户', desc: '访问用户列表与查看用户信息', tags: ['可见'] }
-          },
-          {
-            key: 'system:user:create',
-            label: '新增用户',
-            permKey: 'system:user:create',
-            perm: { permKey: 'system:user:create', name: '新增用户', desc: '创建系统用户', tags: ['可用'] }
-          },
-          {
-            key: 'system:user:edit',
-            label: '编辑用户',
-            permKey: 'system:user:edit',
-            perm: { permKey: 'system:user:edit', name: '编辑用户', desc: '修改用户信息与用户组', tags: ['可用'] }
-          },
-          {
-            key: 'system:user:disable',
-            label: '禁用用户',
-            permKey: 'system:user:disable',
-            perm: { permKey: 'system:user:disable', name: '禁用用户', desc: '启用/禁用系统用户', tags: ['可用'] }
-          }
-        ]
-      },
-      {
-        key: 'module:system:group',
-        label: '权限组管理',
-        icon: 'mdi:shield-account-outline',
-        children: [
-          {
-            key: 'system:group:view',
-            label: '查看权限组',
-            permKey: 'system:group:view',
-            perm: { permKey: 'system:group:view', name: '查看权限组', desc: '访问权限组列表与详情', tags: ['可见'] }
-          },
-          {
-            key: 'system:group:create',
-            label: '新增权限组',
-            permKey: 'system:group:create',
-            perm: { permKey: 'system:group:create', name: '新增权限组', desc: '创建权限组', tags: ['可用'] }
-          },
-          {
-            key: 'system:group:edit',
-            label: '编辑权限组',
-            permKey: 'system:group:edit',
-            perm: { permKey: 'system:group:edit', name: '编辑权限组', desc: '修改权限组信息与权限码', tags: ['可用'] }
-          }
-        ]
-      }
-    ]
-  },
-  {
-    key: 'module:agent',
-    label: '分析引擎',
-    icon: 'mdi:robot-outline',
-    children: [
-      {
-        key: 'module:agent:config',
-        label: '引擎配置',
-        icon: 'mdi:tune-vertical-variant',
-        children: [
-          {
-            key: 'agent:config:view',
-            label: '查看引擎配置',
-            permKey: 'agent:config:view',
-            perm: { permKey: 'agent:config:view', name: '查看引擎配置', desc: '访问引擎配置页面及读取配置', tags: ['可见'] }
-          },
-          {
-            key: 'agent:config:create',
-            label: '新增引擎配置',
-            permKey: 'agent:config:create',
-            perm: { permKey: 'agent:config:create', name: '新增引擎配置', desc: '创建新的引擎配置项', tags: ['可用'] }
-          },
-          {
-            key: 'agent:config:edit',
-            label: '编辑引擎配置',
-            permKey: 'agent:config:edit',
-            perm: { permKey: 'agent:config:edit', name: '编辑引擎配置', desc: '修改引擎配置项', tags: ['可用'] }
-          },
-          {
-            key: 'agent:config:delete',
-            label: '删除引擎配置',
-            permKey: 'agent:config:delete',
-            perm: { permKey: 'agent:config:delete', name: '删除引擎配置', desc: '删除引擎配置项', tags: ['可用'] }
-          }
-        ]
-      }
-    ]
-  }
-]
-
-const abilityTreeProps = {
-  label: 'label',
-  children: 'children'
-}
-
-function abilityFlattenPermsFromTree(nodes) {
-  const list = []
-  const stack = Array.isArray(nodes) ? [...nodes] : []
-  while (stack.length > 0) {
-    const node = stack.shift()
-    if (!node) continue
-    if (node.perm && node.perm.permKey) {
-      list.push(node.perm)
-    }
-    if (Array.isArray(node.children) && node.children.length > 0) {
-      stack.push(...node.children)
-    }
-  }
-  return list
-}
-
-const abilityAllPerms = computed(() => abilityFlattenPermsFromTree(abilityCatalogTree))
-const abilityPermMetaByKey = computed(() => {
-  const map = {}
-  for (const p of abilityAllPerms.value) {
-    map[p.permKey] = p
-  }
-  return map
-})
-
-const abilityCatalogStats = computed(() => {
-  const totalPerms = abilityAllPerms.value.length
-  const set = new Set(abilityAllPerms.value.map(p => p.permKey))
-  const missing = []
-  for (const g of groupList.value || []) {
-    for (const code of g.permissions || []) {
-      if (code === '*') continue
-      if (!set.has(code)) missing.push(code)
-    }
-  }
-  return {
-    totalPerms,
-    missingPerms: Array.from(new Set(missing)).sort()
-  }
-})
-
-function abilityFilterTreeNode(keyword, data) {
-  if (!keyword) return true
-  const k = String(keyword).trim().toLowerCase()
-  if (!k) return true
-  const label = String(data?.label || '').toLowerCase()
-  const permKey = String(data?.permKey || data?.perm?.permKey || '').toLowerCase()
-  return label.includes(k) || permKey.includes(k)
-}
-
-watch(abilitySearchKeyword, (val) => {
-  abilityTreeRef.value?.filter?.(val)
-})
-
-const abilitySearchEmptyHint = computed(() => {
-  const k = String(abilitySearchKeyword.value || '').trim()
-  if (!k) return ''
-  return `未找到与“${k}”匹配的权限节点`
-})
-
-const abilityCurrentNode = ref(null)
-
-function handleAbilityCurrentNodeChange(node) {
-  abilityCurrentNode.value = node || null
-}
-
-const abilityGroupsForSelect = computed(() => {
-  if (Array.isArray(groupList.value) && groupList.value.length > 0) return groupList.value
-  return [
-    { uuid: 'mock-system', group_name: 'system', display_name: '系统组（本地）', permissions: ['*'] },
-    { uuid: 'mock-analyst', group_name: 'analyst', display_name: '分析员（本地）', permissions: [] }
-  ]
-})
-
-const currentAbilityGroup = computed(() => {
-  const id = abilitySelectedGroupUuid.value
-  if (!id) return null
-  return abilityGroupsForSelect.value.find(g => g.uuid === id) || null
-})
-
-const currentAbilityGroupLabel = computed(() => {
-  const g = currentAbilityGroup.value
-  if (!g) return '未选择'
-  return g.display_name || g.group_name || g.uuid
-})
-
-const abilityCanEdit = computed(() => Boolean(abilitySelectedGroupUuid.value))
-
-const abilityGroupHasWildcard = computed(() => {
-  const id = abilitySelectedGroupUuid.value
-  if (!id) return false
-  const stored = abilityGroupPermissionDraftMap.value?.[id]
-  if (Array.isArray(stored) && stored.includes('*')) return true
-  const g = currentAbilityGroup.value
-  return Array.isArray(g?.permissions) && g.permissions.includes('*')
-})
-
-function abilityLoadFromStorage() {
-  try {
-    const raw = localStorage.getItem(ABILITY_STORAGE_KEY)
-    if (!raw) {
-      abilityGroupPermissionDraftMap.value = {}
-      return
-    }
-    const parsed = JSON.parse(raw)
-    abilityGroupPermissionDraftMap.value = parsed?.map && typeof parsed.map === 'object' ? parsed.map : {}
-    abilityLastSavedAt.value = parsed?.updated_at || ''
-  } catch {
-    abilityGroupPermissionDraftMap.value = {}
-    abilityLastSavedAt.value = ''
-  }
-}
-
-function abilitySaveToStorage() {
-  const payload = {
-    updated_at: new Date().toISOString(),
-    map: abilityGroupPermissionDraftMap.value || {}
-  }
-  localStorage.setItem(ABILITY_STORAGE_KEY, JSON.stringify(payload))
-  abilityLastSavedAt.value = payload.updated_at
-}
-
-abilityLoadFromStorage()
-
-const abilitySelectedPermSet = computed(() => {
-  const id = abilitySelectedGroupUuid.value
-  if (!id) return new Set()
-  const stored = abilityGroupPermissionDraftMap.value?.[id]
-  const base = Array.isArray(stored)
-    ? stored
-    : (Array.isArray(currentAbilityGroup.value?.permissions) ? currentAbilityGroup.value.permissions : [])
-  return new Set(base.filter(Boolean))
-})
-
-const abilitySelectedPermSetSize = computed(() => abilitySelectedPermSet.value.size)
-
-function abilityIsPermChecked(permKey) {
-  return abilitySelectedPermSet.value.has(permKey) || abilitySelectedPermSet.value.has('*')
-}
-
-function abilityTogglePerm(permKey, checked) {
-  const id = abilitySelectedGroupUuid.value
-  if (!id) return
-  if (!abilityPermMetaByKey.value[permKey]) {
-    ElMessage.warning(`权限码未在目录中定义：${permKey}`)
-    return
-  }
-  const current = new Set(Array.from(abilitySelectedPermSet.value))
-  current.delete('*')
-  if (checked) current.add(permKey)
-  else current.delete(permKey)
-  abilityGroupPermissionDraftMap.value = {
-    ...(abilityGroupPermissionDraftMap.value || {}),
-    [id]: Array.from(current).sort()
-  }
-}
-
-function abilityFindNodeByKey(nodes, key) {
-  const stack = Array.isArray(nodes) ? [...nodes] : []
-  while (stack.length > 0) {
-    const node = stack.shift()
-    if (!node) continue
-    if (node.key === key) return node
-    if (Array.isArray(node.children) && node.children.length > 0) {
-      stack.push(...node.children)
-    }
-  }
-  return null
-}
-
-const abilityPermsInCurrentNode = computed(() => {
-  const node = abilityCurrentNode.value
-  if (!node) return []
-  if (node.perm && node.perm.permKey) return [node.perm]
-  const perms = abilityFlattenPermsFromTree(node.children || [])
-  const uniq = new Map()
-  for (const p of perms) {
-    if (!p?.permKey) continue
-    uniq.set(p.permKey, p)
-  }
-  return Array.from(uniq.values()).sort((a, b) => String(a.permKey).localeCompare(String(b.permKey)))
-})
-
-const abilityCurrentNodeTitle = computed(() => {
-  const node = abilityCurrentNode.value
-  if (!node) return '未选择'
-  return node.label || '未命名节点'
-})
-
-const abilityCurrentNodeSubTitle = computed(() => {
-  const node = abilityCurrentNode.value
-  if (!node) return '请在左侧选择一个模块或权限码'
-  if (node.permKey) return node.permKey
-  return '该模块下的权限码列表'
-})
-
-function handleAbilityOpenDocs(docs) {
-  if (!docs) return
-  ElMessage.info('说明功能暂未接入外部链接')
-}
-
-async function handleAbilitySave() {
-  if (!abilitySelectedGroupUuid.value) return
-  if (abilityGroupHasWildcard.value) return
-  if (abilitySaving.value) return
-  abilitySaving.value = true
-  try {
-    abilitySaveToStorage()
-    ElMessage.success('保存成功（本地模拟）')
-  } finally {
-    abilitySaving.value = false
-  }
-}
-
-function handleAbilityReset() {
-  if (!abilitySelectedGroupUuid.value) return
-  const id = abilitySelectedGroupUuid.value
-  const g = currentAbilityGroup.value
-  const base = Array.isArray(g?.permissions) ? g.permissions : []
-  const next = base.includes('*') ? ['*'] : base.filter(Boolean)
-  const map = { ...(abilityGroupPermissionDraftMap.value || {}) }
-  if (next.length > 0) map[id] = Array.from(new Set(next)).sort()
-  else delete map[id]
-  abilityGroupPermissionDraftMap.value = map
-  ElMessage.success('已重置为当前组的默认权限（本地模拟）')
-}
-
-watch(groupList, () => {
-  if (abilitySelectedGroupUuid.value) return
-  const first = abilityGroupsForSelect.value?.[0]?.uuid
-  if (first) abilitySelectedGroupUuid.value = first
-})
-
 async function fetchUsers() {
   const res = await systemApi.getUsers({ page: 1, page_size: 10 })
   userList.value =
@@ -936,9 +616,27 @@ async function fetchGroups() {
   groupList.value = res?.data?.items || []
 }
 
+function normalizePermCode(row) {
+  return {
+    uuid: row?.uuid || '',
+    permKey: row?.perm_key || '',
+    name: row?.name || '',
+    category: row?.category || '',
+    desc: row?.desc || '',
+    tags: Array.isArray(row?.tags) ? row.tags : [],
+    enabled: Boolean(row?.enabled)
+  }
+}
+
+async function fetchPermCodes(params = {}) {
+  const res = await systemApi.getPermCodes(params)
+  const rows = Array.isArray(res?.data) ? res.data : []
+  permCodeList.value = rows.map(normalizePermCode)
+}
+
 onMounted(async () => {
   try {
-    await Promise.all([fetchGroups(), fetchUsers()])
+    await Promise.all([fetchGroups(), fetchUsers(), fetchPermCodes()])
   } catch {
   }
 })
@@ -951,7 +649,7 @@ function formatExpired(dateStr) {
 const permissionNavItems = [
   { key: 'users', label: '用户管理', icon: 'mdi:account-multiple' },
   { key: 'groups', label: '权限组管理', icon: 'mdi:shield-account' },
-  { key: 'abilities', label: '功能权限管理', icon: 'mdi:key-outline' }
+  { key: 'dictionary', label: '权限码字典', icon: 'mdi:book-open-variant' }
 ]
 
 const currentTabMeta = computed(() => findNavItemByKey(permissionNavItems, activeTab.value))
@@ -961,9 +659,19 @@ const currentTabLabel = computed(() => currentTabMeta.value?.label || '')
 const addButtonLabel = computed(() => {
   const map = {
     users: '新增用户',
-    groups: '新增权限组'
+    groups: '新增权限组',
+    dictionary: '新增权限码'
   }
   return map[activeTab.value] || '新增'
+})
+
+const searchPlaceholder = computed(() => {
+  const map = {
+    users: '搜索用户',
+    groups: '搜索权限组',
+    dictionary: '搜索权限码'
+  }
+  return map[activeTab.value] || '搜索'
 })
 
 function handleAdd() {
@@ -975,12 +683,371 @@ function handleAdd() {
     openCreateGroupDialog()
     return
   }
+  if (activeTab.value === 'dictionary') {
+    openCreateDict()
+    return
+  }
 }
+
+const dictRows = computed(() => permCodeList.value)
+const enabledPermCodes = computed(() => permCodeList.value.filter(item => item.enabled))
+
+const filteredDictRows = computed(() => {
+  const selectedCategory = String(dictFilterCategory.value || '').trim()
+  if (!selectedCategory) return dictRows.value
+  return dictRows.value.filter(item => String(item?.category || '').trim() === selectedCategory)
+})
+
+const dictEmptyText = computed(() => {
+  if (searchKeyword.value || dictFilterCategory.value) return '没有匹配的权限码'
+  return '暂无权限码'
+})
+const dictCategoryOptions = computed(() => {
+  const set = new Set()
+  for (const item of permCodeList.value) {
+    const category = String(item?.category || '').trim()
+    if (category) set.add(category)
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b))
+})
+const dictTagOptions = computed(() => {
+  const set = new Set()
+  for (const item of permCodeList.value) {
+    for (const tag of item?.tags || []) {
+      const value = String(tag || '').trim()
+      if (value) set.add(value)
+    }
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b))
+})
+
+const dictDialogVisible = ref(false)
+const dictMode = ref('create') // create | edit
+const dictCreateTab = ref('single')
+const dictSaving = ref(false)
+const dictFormRef = ref(null)
+const dictBatchErrorSummary = ref('')
+const dictForm = reactive({
+  uuid: '',
+  permKey: '',
+  name: '',
+  category: '',
+  desc: '',
+  tags: [],
+  enabled: true
+})
+
+const dictRules = {
+  permKey: [{ required: true, message: '请输入权限码', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  category: [{ required: true, message: '请选择或输入分类', trigger: 'change' }]
+}
+
+const dictDialogTitle = computed(() => (dictMode.value === 'edit' ? '编辑权限码' : '新增权限码'))
+const dictDialogWidth = computed(() => {
+  if (dictMode.value === 'create' && dictCreateTab.value === 'batch') return '92vw'
+  return '560px'
+})
+const dictDialogTop = computed(() => {
+  if (dictMode.value === 'create' && dictCreateTab.value === 'batch') return '4vh'
+  return '15vh'
+})
+const dictDialogFullscreen = computed(() => false)
+
+function createBatchRow() {
+  return {
+    rowId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    permKey: '',
+    name: '',
+    category: '',
+    desc: '',
+    tags: [],
+    enabled: true,
+    errorFields: {
+      permKey: false,
+      name: false,
+      category: false
+    }
+  }
+}
+
+const dictBatchRows = ref([createBatchRow()])
+
+function resetBatchRowErrors() {
+  dictBatchErrorSummary.value = ''
+  for (const row of dictBatchRows.value) {
+    row.errorFields.permKey = false
+    row.errorFields.name = false
+    row.errorFields.category = false
+  }
+}
+
+function handleAddBatchRow() {
+  dictBatchRows.value.push(createBatchRow())
+}
+
+function handleRemoveBatchRow(index) {
+  dictBatchRows.value.splice(index, 1)
+  if (dictBatchRows.value.length === 0) {
+    dictBatchRows.value.push(createBatchRow())
+  }
+}
+
+function handleResetBatchRows() {
+  dictBatchRows.value = [createBatchRow()]
+  resetBatchRowErrors()
+}
+
+function openCreateDict() {
+  dictMode.value = 'create'
+  dictCreateTab.value = 'single'
+  handleResetBatchRows()
+  dictForm.uuid = ''
+  dictForm.permKey = ''
+  dictForm.name = ''
+  dictForm.category = ''
+  dictForm.desc = ''
+  dictForm.tags = []
+  dictForm.enabled = true
+  dictDialogVisible.value = true
+}
+
+function openEditDict(row) {
+  dictMode.value = 'edit'
+  dictForm.uuid = row.uuid || ''
+  dictForm.permKey = row.permKey
+  dictForm.name = row.name || ''
+  dictForm.category = row.category || ''
+  dictForm.desc = row.desc || ''
+  dictForm.tags = Array.isArray(row.tags) ? [...row.tags] : []
+  dictForm.enabled = Boolean(row.enabled)
+  dictDialogVisible.value = true
+}
+
+async function handleDeleteDict(row) {
+  try {
+    await ElMessageBox.confirm(`确认删除权限码：${row.permKey}？`, '删除确认', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  try {
+    await systemApi.deletePermCode(row.uuid)
+    ElMessage.success('删除成功')
+    await fetchPermCodes({ keyword: String(searchKeyword.value || '').trim() || undefined })
+  } catch {
+  }
+}
+
+async function handleSaveDict() {
+  if (dictMode.value === 'create' && dictCreateTab.value === 'batch') {
+    await handleSaveDictBatch()
+    return
+  }
+  if (dictSaving.value) return
+  const ok = await dictFormRef.value?.validate?.().catch(() => false)
+  if (!ok) return
+
+  const permKey = String(dictForm.permKey || '').trim()
+  const name = String(dictForm.name || '').trim()
+  const category = String(dictForm.category || '').trim()
+  const desc = String(dictForm.desc || '').trim()
+  const tags = Array.isArray(dictForm.tags) ? dictForm.tags.map(t => String(t).trim()).filter(Boolean) : []
+
+  dictSaving.value = true
+  try {
+    if (dictMode.value === 'create') {
+      await systemApi.createPermCode({
+        perm_key: permKey,
+        name,
+        category,
+        desc: desc || undefined,
+        tags,
+        enabled: Boolean(dictForm.enabled)
+      })
+      ElMessage.success('新增成功')
+      dictDialogVisible.value = false
+      await fetchPermCodes({ keyword: String(searchKeyword.value || '').trim() || undefined })
+      return
+    }
+
+    await systemApi.updatePermCode(dictForm.uuid, {
+      name,
+      category,
+      desc: desc || undefined,
+      tags,
+      enabled: Boolean(dictForm.enabled)
+    })
+    ElMessage.success('保存成功')
+    dictDialogVisible.value = false
+    await fetchPermCodes({ keyword: String(searchKeyword.value || '').trim() || undefined })
+  } finally {
+    dictSaving.value = false
+  }
+}
+
+function getRequestErrorMessage(error) {
+  return String(error?.message || '').trim() || '批量新增失败'
+}
+
+function parseRowByPermKeyFromMessage(message) {
+  for (let i = 0; i < dictBatchRows.value.length; i += 1) {
+    const permKey = String(dictBatchRows.value[i].permKey || '').trim()
+    if (!permKey) continue
+    if (message.includes(permKey)) return i
+  }
+  return -1
+}
+
+function validateBatchRows() {
+  resetBatchRowErrors()
+  const normalizedRows = []
+  const permKeyMap = new Map()
+  const duplicateIndexes = []
+
+  for (let i = 0; i < dictBatchRows.value.length; i += 1) {
+    const row = dictBatchRows.value[i]
+    const permKey = String(row.permKey || '').trim()
+    const name = String(row.name || '').trim()
+    const category = String(row.category || '').trim()
+    const desc = String(row.desc || '').trim()
+    const tags = Array.isArray(row.tags) ? row.tags.map(t => String(t).trim()).filter(Boolean) : []
+    const isEmpty = !permKey && !name && !category && !desc && tags.length === 0
+    if (isEmpty) continue
+
+    if (!permKey) row.errorFields.permKey = true
+    if (!name) row.errorFields.name = true
+    if (!category) row.errorFields.category = true
+
+    if (permKey) {
+      if (!permKeyMap.has(permKey)) permKeyMap.set(permKey, [])
+      permKeyMap.get(permKey).push(i)
+    }
+
+    normalizedRows.push({
+      index: i,
+      item: {
+        perm_key: permKey,
+        name,
+        category,
+        desc: desc || undefined,
+        tags,
+        enabled: Boolean(row.enabled)
+      }
+    })
+  }
+
+  for (const indexes of permKeyMap.values()) {
+    if (indexes.length <= 1) continue
+    duplicateIndexes.push(...indexes)
+    for (const idx of indexes) {
+      dictBatchRows.value[idx].errorFields.permKey = true
+    }
+  }
+
+  if (normalizedRows.length === 0) {
+    dictBatchErrorSummary.value = '请至少填写一条有效记录'
+    return []
+  }
+
+  const hasRequiredError = dictBatchRows.value.some(row => row.errorFields.permKey || row.errorFields.name || row.errorFields.category)
+  if (hasRequiredError) {
+    dictBatchErrorSummary.value = '请补全必填字段（权限码、名称、分类）'
+    return []
+  }
+
+  if (duplicateIndexes.length > 0) {
+    const lineNoText = Array.from(new Set(duplicateIndexes)).map(i => i + 1).join('、')
+    dictBatchErrorSummary.value = `权限码存在重复，请检查第 ${lineNoText} 行`
+    return []
+  }
+
+  return normalizedRows
+}
+
+function markRowError(index, field, message) {
+  if (index < 0 || index >= dictBatchRows.value.length) return
+  if (field && dictBatchRows.value[index].errorFields[field] !== undefined) {
+    dictBatchRows.value[index].errorFields[field] = true
+  }
+  dictBatchErrorSummary.value = message
+}
+
+function applyBatchErrorFeedback(message) {
+  const matchedIndex = parseRowByPermKeyFromMessage(message)
+  if (matchedIndex >= 0) {
+    markRowError(matchedIndex, 'permKey', `第 ${matchedIndex + 1} 行失败：${message}`)
+    return
+  }
+  if (message.includes('perm_key') && message.includes('不能为空')) {
+    const firstEmptyIndex = dictBatchRows.value.findIndex(row => !String(row.permKey || '').trim())
+    if (firstEmptyIndex >= 0) {
+      markRowError(firstEmptyIndex, 'permKey', `第 ${firstEmptyIndex + 1} 行失败：权限码不能为空`)
+      return
+    }
+  }
+  if (message.includes('重复权限码') || message.includes('权限码已存在')) {
+    dictBatchErrorSummary.value = `批量新增失败：${message}`
+    return
+  }
+  dictBatchErrorSummary.value = `批量新增失败：${message}`
+}
+
+async function handleSaveDictBatch() {
+  if (dictSaving.value) return
+  const normalizedRows = validateBatchRows()
+  if (normalizedRows.length === 0) return
+
+  dictSaving.value = true
+  try {
+    await systemApi.createPermCodesBatch({
+      items: normalizedRows.map(row => row.item)
+    })
+    ElMessage.success('批量新增成功')
+    dictDialogVisible.value = false
+    handleResetBatchRows()
+    await fetchPermCodes({ keyword: String(searchKeyword.value || '').trim() || undefined })
+  } catch (error) {
+    const message = getRequestErrorMessage(error)
+    applyBatchErrorFeedback(message)
+  } finally {
+    dictSaving.value = false
+  }
+}
+
+let dictSearchTimer = null
+watch(
+  () => [activeTab.value, searchKeyword.value],
+  ([tab, keyword]) => {
+    if (tab !== 'dictionary') return
+    if (dictSearchTimer) clearTimeout(dictSearchTimer)
+    dictSearchTimer = setTimeout(() => {
+      fetchPermCodes({ keyword: String(keyword || '').trim() || undefined }).catch(() => {})
+    }, 300)
+  }
+)
+
+onBeforeUnmount(() => {
+  if (dictSearchTimer) clearTimeout(dictSearchTimer)
+})
 
 function handleEditUser(user) {
   editingUser.value = user
   editUserGroupUuids.value = Array.isArray(user.groups) ? [...user.groups] : []
   editUserDialogVisible.value = true
+}
+
+function handleEditGroup(group) {
+  editingGroup.value = group
+  editGroupForm.group_name = group?.group_name || ''
+  editGroupForm.display_name = group?.display_name || ''
+  editGroupForm.remark = group?.remark || ''
+  editGroupForm.enabled = Boolean(group?.enabled)
+  editGroupForm.permissions = Array.isArray(group?.permissions) ? [...group.permissions] : []
+  editGroupDialogVisible.value = true
 }
 
 function openCreateUserDialog() {
@@ -1072,35 +1139,35 @@ async function handleSubmitCreateGroup() {
     creatingGroup.value = false
   }
 }
+
+async function handleSaveEditGroup() {
+  if (!editingGroup.value) return
+  if (savingEditGroup.value) return
+  const ok = await editGroupFormRef.value?.validate?.().catch(() => false)
+  if (!ok) return
+
+  savingEditGroup.value = true
+  try {
+    const payload = {
+      display_name: editGroupForm.display_name.trim(),
+      remark: editGroupForm.remark?.trim() || undefined,
+      enabled: Boolean(editGroupForm.enabled),
+      permissions: Array.isArray(editGroupForm.permissions) ? editGroupForm.permissions : []
+    }
+    await systemApi.updateGroup(editingGroup.value.uuid, payload)
+    ElMessage.success('保存成功')
+    editGroupDialogVisible.value = false
+    await fetchGroups()
+  } catch {
+  } finally {
+    savingEditGroup.value = false
+  }
+}
 </script>
 
 <style scoped>
-.ability-tree {
-  padding: 6px 0;
-}
-
-.ability-tree :deep(.el-tree-node__content) {
-  height: auto;
-  align-items: flex-start;
-  padding-top: 8px;
-  padding-bottom: 8px;
-}
-
-.ability-tree :deep(.el-tree-node__content:hover) {
-  background-color: rgba(59, 130, 246, 0.06);
-}
-
-.ability-tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
-  background-color: rgba(59, 130, 246, 0.10);
-}
-
-.ability-tree :deep(.el-tree-node__expand-icon) {
-  margin-top: 2px;
-}
-
-.ability-tree :deep(.el-tree-node__label) {
-  width: 100%;
-  white-space: normal;
-  line-height: 1.25;
+:deep(.group-permission-dialog .el-dialog__body) {
+  max-height: calc(100vh - 180px);
+  overflow: auto;
 }
 </style>
