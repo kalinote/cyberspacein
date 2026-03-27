@@ -26,6 +26,7 @@ import Login from '../views/Login.vue'
 import Forbidden from '../views/403.vue'
 import { authApi } from '@/api/auth'
 import { clearAuth, ensureMeInitialized, getAuthState, hasAllPermissions, setAuth } from '@/stores/auth'
+import { PERM } from '@/utils/permissions'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -50,124 +51,124 @@ const router = createRouter({
       path: '/search',
       name: 'search',
       component: Search,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.search.use] }
     },
     {
       // 行动部署中心
       path: '/action',
       name: 'action-monitor',
       component: ActionMonitor,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.action.use] }
     },
     {
       // 新建行动蓝图
       path: '/action/new',
       name: 'new-action-blueprint',
       component: NewActionBlueprint,
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, permissions: [PERM.pages.action.use] }
     },
     {
       // 行动资源配置
       path: '/action/resource-config',
       name: 'action-resource-config',
       component: ActionResourceConfig,
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, permissions: [PERM.pages.action.use] }
     },
     {
       // 历史行动
       path: '/action/history',
       name: 'action-history',
       component: ActionHistory,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.action.use] }
     },
     {
       // 行动蓝图列表
       path: '/action/blueprints',
       name: 'action-blueprint-list',
       component: ActionBlueprintList,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.action.use] }
     },
     {
       // 任务管理
       path: '/action/tasks',
       name: 'task-management',
       component: TaskManagement,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.action.task.use] }
     },
     {
       // 基础组件任务配置管理
       path: '/action/task-configs',
       name: 'task-config-management',
       component: TaskConfigManagement,
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, permissions: [PERM.pages.action.task.use] }
     },
     {
       // 组件任务管理
       path: '/action/component-tasks',
       name: 'component-task-management',
       component: ComponentTaskManagement,
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, permissions: [PERM.pages.action.task.use] }
     },
     {
       // 行动详情
       path: '/action/:id',
       name: 'action-detail',
       component: ActionDetail,
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, permissions: [PERM.pages.action.use] }
     },
     {
       path: '/system',
       name: 'system-config-home',
       component: SystemConfigHome,
-      meta: { keepAlive: true, requiresAuth: true, permissions: ['page:system:view'] }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.system.view] }
     },
     {
       path: '/system/permissions',
       name: 'system-permissions',
       component: UserPermissionManagement,
-      meta: { keepAlive: true, requiresAuth: true, permissions: ['page:system:permissions:view', 'page:system:permissions:use'] }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.system.permissions.view, PERM.pages.system.permissions.use] }
     },
     {
       // 告警信息
       path: '/alert',
       name: 'alert',
       component: Alert,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.system.alert.use] }
     },
     {
       // 目标管理
       path: '/target',
       name: 'target-management',
       component: TargetManagement,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.target.use] }
     },
     {
       // 重点实体库
       path: '/target/highlights',
       name: 'highlight-target-list',
       component: HighlightTargetList,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.target.use] }
     },
     {
       // 分析引擎
       path: '/agent',
       name: 'agent-monitor',
       component: AgentMonitor,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.agent.use] }
     },
     {
       // 配置分析引擎
       path: '/agent/engine-config',
       name: 'agent-engine-config',
       component: AgentConfig,
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, permissions: [PERM.pages.agent.use] }
     },
     {
       // 分析详情
       path: '/agent/analysis/:threadId',
       name: 'agent-analysis-detail',
       component: AnalysisDetail,
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, permissions: [PERM.pages.agent.use] }
     },
     {
       // 平台详情页

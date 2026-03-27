@@ -76,7 +76,7 @@
         </div>
 
         <div v-if="hasWildcard" class="rounded-lg border border-blue-100 bg-blue-50/40 p-4 text-xs text-blue-700 mb-3">
-          当前权限组包含 <span class="font-mono">*</span>，视为拥有全部权限；此处暂不支持编辑明细（请先移除 *）。
+          当前权限组为最高等级权限组，暂不支持编辑。
         </div>
 
         <div v-if="catalogStats.missingPerms.length > 0" class="rounded-lg border border-amber-100 bg-amber-50/60 p-3 text-xs text-amber-700 mb-3">
