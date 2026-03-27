@@ -53,6 +53,7 @@
             <router-link to="/agent" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">分析引擎</router-link>
             <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
             <div
+              v-if="canViewSystemMenu"
               class="relative"
               @mouseenter="showSystemDropdown = true"
               @mouseleave="showSystemDropdown = false"
@@ -86,10 +87,16 @@
                     告警信息
                   </router-link>
                   <router-link
+                    v-if="canViewSystemPermissions"
                     to="/system/permissions"
-                    class="block px-4 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors whitespace-nowrap"
-                    :class="route.path === '/system/permissions' ? 'text-blue-600 bg-blue-50' : ''"
-                    @click="showSystemDropdown = false"
+                    class="block px-4 py-2 transition-colors whitespace-nowrap"
+                    :class="[
+                      route.path === '/system/permissions' ? 'text-blue-600 bg-blue-50' : '',
+                      canUseSystemPermissions
+                        ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer'
+                        : 'text-gray-400 bg-gray-50 cursor-not-allowed'
+                    ]"
+                    @click.prevent="canUseSystemPermissions ? (showSystemDropdown = false) : null"
                   >
                     用户权限管理
                   </router-link>
@@ -144,7 +151,7 @@ import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { authApi } from '@/api/auth'
-import { clearAuth, getAuthState } from '@/stores/auth'
+import { clearAuth, getAuthState, hasAllPermissions } from '@/stores/auth'
 
 defineOptions({ name: 'Header' })
 
@@ -157,6 +164,9 @@ const isSystemNavActive = computed(
 )
 const quickSearchQuery = ref('')
 const userDropdownVisible = ref(false)
+const canViewSystemMenu = computed(() => hasAllPermissions(['page:system:view']))
+const canViewSystemPermissions = computed(() => hasAllPermissions(['page:system:permissions:view']))
+const canUseSystemPermissions = computed(() => hasAllPermissions(['page:system:permissions:use']))
 
 const displayUsername = computed(() => {
   const user = getAuthState().user

@@ -6,10 +6,10 @@
         <div class="text-xs text-gray-500 mt-1">左侧树形目录直接勾选权限码，右侧展示已选明细。</div>
       </div>
       <div class="flex items-center gap-3 shrink-0">
-        <el-select v-model="category" clearable placeholder="分类" class="w-40!">
+        <el-select v-model="category" clearable placeholder="分类" class="w-40!" :disabled="disabled">
           <el-option v-for="c in categoryOptions" :key="c" :label="c" :value="c" />
         </el-select>
-        <el-input v-model="searchKeyword" placeholder="搜索权限（名称/权限码）" clearable class="w-72!">
+        <el-input v-model="searchKeyword" placeholder="搜索权限（名称/权限码）" clearable class="w-72!" :disabled="disabled">
           <template #prefix>
             <Icon icon="mdi:magnify" class="text-gray-400" />
           </template>
@@ -39,6 +39,7 @@
             show-checkbox
             check-on-click-node
             :check-strictly="false"
+            :disabled="disabled"
             class="perm-tree"
           >
             <template #default="{ data }">
@@ -91,7 +92,7 @@
               请选择树形目录中的模块或权限码查看详情
             </template>
           </div>
-          <el-button size="small" text :disabled="hasWildcard || selectedRows.length === 0" @click="clearAllSelected">清空已选</el-button>
+          <el-button size="small" text :disabled="disabled || hasWildcard || selectedRows.length === 0" @click="clearAllSelected">清空已选</el-button>
         </div>
 
         <div class="rounded-lg border border-gray-100 overflow-hidden">
@@ -109,7 +110,7 @@
             <el-table-column prop="category" label="分类" min-width="130" show-overflow-tooltip />
             <el-table-column label="操作" width="76" fixed="right">
               <template #default="{ row }">
-                <el-button type="danger" link :disabled="hasWildcard" @click="removeSinglePerm(row.permKey)">移除</el-button>
+                <el-button type="danger" link :disabled="disabled || hasWildcard" @click="removeSinglePerm(row.permKey)">移除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -133,6 +134,10 @@ const props = defineProps({
   permCodes: {
     type: Array,
     default: () => []
+  },
+  disabled: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -372,6 +377,7 @@ watch([sourcePerms, selectedKnownPermKeys], () => {
 }, { immediate: true })
 
 function handleTreeCheck(_node, checkedInfo) {
+  if (props.disabled) return
   if (hasWildcard.value) return
   const checkedKeys = Array.isArray(checkedInfo?.checkedKeys) ? checkedInfo.checkedKeys : []
   const nextPermKeys = checkedKeys.filter(key => typeof key === 'string' && Boolean(permMetaByKey.value[key]))
@@ -379,12 +385,14 @@ function handleTreeCheck(_node, checkedInfo) {
 }
 
 function removeSinglePerm(permKey) {
+  if (props.disabled) return
   if (hasWildcard.value) return
   const next = selectedKnownPermKeys.value.filter(key => key !== permKey)
   emitPermissions(next)
 }
 
 function clearAllSelected() {
+  if (props.disabled) return
   if (hasWildcard.value) return
   emitPermissions([])
 }

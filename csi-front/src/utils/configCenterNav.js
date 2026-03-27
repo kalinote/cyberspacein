@@ -3,6 +3,7 @@
  * @property {string} key
  * @property {string} label
  * @property {string} icon
+ * @property {boolean} [disabled]
  * @property {ConfigNavItem[]} [children]
  */
 

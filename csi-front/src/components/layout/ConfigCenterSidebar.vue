@@ -6,11 +6,13 @@
         <div
           class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
           :class="
-            modelValue === tab.key
+            tab.disabled
+              ? 'text-gray-400 bg-gray-50 cursor-not-allowed'
+              : modelValue === tab.key
               ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200'
               : 'text-gray-600 hover:bg-gray-50'
           "
-          @click="emit('update:modelValue', tab.key)"
+          @click="tab.disabled ? null : emit('update:modelValue', tab.key)"
         >
           <Icon
             v-if="tab.children && tab.children.length > 0"
@@ -38,11 +40,13 @@
             :key="child.key"
             class="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all"
             :class="
-              modelValue === child.key
+              child.disabled
+                ? 'text-gray-400 bg-gray-50 cursor-not-allowed'
+                : modelValue === child.key
                 ? 'bg-blue-50 text-blue-600 font-medium shadow-sm border border-blue-200'
                 : 'text-gray-600 hover:bg-gray-50'
             "
-            @click="emit('update:modelValue', child.key)"
+            @click="child.disabled ? null : emit('update:modelValue', child.key)"
           >
             <span class="w-5"></span>
             <Icon :icon="child.icon" class="text-xl shrink-0" />

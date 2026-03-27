@@ -119,13 +119,13 @@ const router = createRouter({
       path: '/system',
       name: 'system-config-home',
       component: SystemConfigHome,
-      meta: { keepAlive: true, requiresAuth: true }
+      meta: { keepAlive: true, requiresAuth: true, permissions: ['page:system:view'] }
     },
     {
       path: '/system/permissions',
       name: 'system-permissions',
       component: UserPermissionManagement,
-      meta: { keepAlive: true, requiresAuth: true, permissions: ['page:system:permissions'] }
+      meta: { keepAlive: true, requiresAuth: true, permissions: ['page:system:permissions:view', 'page:system:permissions:use'] }
     },
     {
       // 告警信息
