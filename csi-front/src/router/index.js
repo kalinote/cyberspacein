@@ -25,8 +25,9 @@ import UserPermissionManagement from '../views/system/UserPermissionManagement.v
 import Login from '../views/Login.vue'
 import Forbidden from '../views/403.vue'
 import { authApi } from '@/api/auth'
-import { clearAuth, ensureMeInitialized, getAuthState, hasAllPermissions, setAuth } from '@/stores/auth'
+import { clearAuth, ensureMeInitialized, getAuthState, setAuth } from '@/stores/auth'
 import { PERM } from '@/utils/permissions'
+import { hasAll } from '@/utils/permissionKit'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -237,7 +238,7 @@ router.beforeEach(async (to) => {
   }
 
   const requiredPermissions = to.meta?.permissions
-  const allow = !(requiredPermissions && requiredPermissions.length > 0) || hasAllPermissions(requiredPermissions)
+  const allow = !(requiredPermissions && requiredPermissions.length > 0) || hasAll(requiredPermissions)
   if (!allow) {
     return { path: '/403' }
   }

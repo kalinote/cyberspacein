@@ -29,6 +29,15 @@ export const PERM = {
       permissions: {
         view: 'page:system:permissions:view',
         use: 'page:system:permissions:use',
+        userManagement: {
+          users: {
+            view: 'page:system:permissions:userManagement:users:view',
+            addUse: 'page:system:permissions:userManagement:users:add:use',
+            deleteUse: 'page:system:permissions:userManagement:users:delete:use',
+            detailUse: 'page:system:permissions:userManagement:users:detail:use',
+            editUse: 'page:system:permissions:userManagement:users:edit:use'
+          }
+        },
         tabs: {
           users: {
             view: 'page:system:permissions:userManagement:view',
@@ -47,6 +56,29 @@ export const PERM = {
     }
   },
   operations: {
+    search: {
+      templateManagement: {
+        templates: {
+          listView: 'operation:search:templateManagement:templates:view',
+          applyView: 'operation:search:templateManagement:templates:apply:view',
+          applyUse: 'operation:search:templateManagement:templates:apply:use',
+          addView: 'operation:search:templateManagement:templates:add:view',
+          addUse: 'operation:search:templateManagement:templates:add:use',
+          overwriteView: 'operation:search:templateManagement:templates:overwrite:view',
+          overwriteUse: 'operation:search:templateManagement:templates:overwrite:use',
+          editView: 'operation:search:templateManagement:templates:edit:view',
+          editUse: 'operation:search:templateManagement:templates:edit:use',
+          deleteView: 'operation:search:templateManagement:templates:delete:view',
+          deleteUse: 'operation:search:templateManagement:templates:delete:use'
+        }
+      },
+      results: {
+        detailView: 'operation:search:results:detail:view',
+        highlightUse: 'operation:search:results:highlight:use',
+        unhighlightUse: 'operation:search:results:unhighlight:use',
+        analysisView: 'operation:search:results:analysis:view'
+      }
+    },
     system: {
       permissions: {
         users: {

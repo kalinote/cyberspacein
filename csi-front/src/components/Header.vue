@@ -13,33 +13,35 @@
           <nav class="hidden md:flex ml-10 space-x-8">
             <router-link to="/" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">概览</router-link>
             <router-link
-              v-if="canViewSearch"
-              :to="canUseSearch ? '/search' : route.fullPath"
+              v-if="navSearch.canView"
+              :to="navSearch.canUse ? '/search' : route.fullPath"
               class="font-medium px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/search' ? 'text-blue-600! bg-blue-50!' : '',
-                canUseSearch
+                navSearch.canUse
                   ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                   : 'text-gray-400 bg-gray-50 cursor-not-allowed'
               ]"
+              @click="navSearch.guardNav"
             >
               检索
             </router-link>
             <div
-              v-if="canViewAction"
+              v-if="navAction.canView"
               class="relative"
               @mouseenter="showActionDropdown = true"
               @mouseleave="showActionDropdown = false"
             >
               <router-link
-                :to="canUseAction ? '/action' : route.fullPath"
+                :to="navAction.canUse ? '/action' : route.fullPath"
                 class="font-medium px-4 py-2 rounded-md transition-colors flex items-center space-x-1"
                 :class="[
                   route.path.startsWith('/action') ? 'text-blue-600! bg-blue-50!' : '',
-                  canUseAction
+                  navAction.canUse
                     ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                     : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                 ]"
+                @click="navAction.guardNav"
               >
                 <span>行动部署</span>
                 <Icon icon="mdi:chevron-down" class="text-sm transition-transform" :class="showActionDropdown ? 'rotate-180' : ''" />
@@ -57,16 +59,17 @@
                   class="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-blue-100 py-2 z-50"
                 >
                   <router-link
-                    v-if="canViewActionTask"
-                    :to="canUseActionTask ? '/action/tasks' : route.fullPath"
+                    v-if="navActionTask.canView"
+                    :to="navActionTask.canUse ? '/action/tasks' : route.fullPath"
                     class="block px-4 py-2 transition-colors"
                     :class="[
                       route.path === '/action/tasks' ? 'text-blue-600 bg-blue-50' : '',
-                      canUseActionTask
+                      navActionTask.canUse
                         ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer'
                         : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                     ]"
-                    @click="canUseActionTask ? (showActionDropdown = false) : null"
+                    @click="navActionTask.canUse ? (showActionDropdown = false) : null"
+                    @click.capture="navActionTask.guardNav"
                   >
                     基础组件任务
                   </router-link>
@@ -74,34 +77,36 @@
               </transition>
             </div>
             <router-link
-              v-if="canViewTarget"
-              :to="canUseTarget ? '/target' : route.fullPath"
+              v-if="navTarget.canView"
+              :to="navTarget.canUse ? '/target' : route.fullPath"
               class="font-medium px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/target' ? 'text-blue-600! bg-blue-50!' : '',
-                canUseTarget
+                navTarget.canUse
                   ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                   : 'text-gray-400 bg-gray-50 cursor-not-allowed'
               ]"
+              @click="navTarget.guardNav"
             >
               目标管理
             </router-link>
             <router-link
-              v-if="canViewAgent"
-              :to="canUseAgent ? '/agent' : route.fullPath"
+              v-if="navAgent.canView"
+              :to="navAgent.canUse ? '/agent' : route.fullPath"
               class="font-medium px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/agent' ? 'text-blue-600! bg-blue-50!' : '',
-                canUseAgent
+                navAgent.canUse
                   ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                   : 'text-gray-400 bg-gray-50 cursor-not-allowed'
               ]"
+              @click="navAgent.guardNav"
             >
               分析引擎
             </router-link>
             <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
             <div
-              v-if="canViewSystemMenu"
+              v-if="navSystemMenu.canView"
               class="relative"
               @mouseenter="showSystemDropdown = true"
               @mouseleave="showSystemDropdown = false"
@@ -127,30 +132,32 @@
                   class="absolute top-full left-0 mt-1 min-w-48 bg-white rounded-lg shadow-lg border border-blue-100 py-2 z-50"
                 >
                   <router-link
-                    v-if="canViewAlert"
-                    :to="canUseAlert ? '/alert' : route.fullPath"
+                    v-if="navAlert.canView"
+                    :to="navAlert.canUse ? '/alert' : route.fullPath"
                     class="block px-4 py-2 transition-colors whitespace-nowrap"
                     :class="[
                       route.path === '/alert' ? 'text-blue-600 bg-blue-50' : '',
-                      canUseAlert
+                      navAlert.canUse
                         ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer'
                         : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                     ]"
-                    @click="canUseAlert ? (showSystemDropdown = false) : null"
+                    @click="navAlert.canUse ? (showSystemDropdown = false) : null"
+                    @click.capture="navAlert.guardNav"
                   >
                     告警信息
                   </router-link>
                   <router-link
-                    v-if="canViewSystemPermissions"
+                    v-if="navSystemPermissions.canView"
                     to="/system/permissions"
                     class="block px-4 py-2 transition-colors whitespace-nowrap"
                     :class="[
                       route.path === '/system/permissions' ? 'text-blue-600 bg-blue-50' : '',
-                      canUseSystemPermissions
+                      navSystemPermissions.canUse
                         ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer'
                         : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                     ]"
-                    @click.prevent="canUseSystemPermissions ? (showSystemDropdown = false) : null"
+                    @click.prevent="navSystemPermissions.canUse ? (showSystemDropdown = false) : null"
+                    @click.capture="navSystemPermissions.guardNav"
                   >
                     用户权限管理
                   </router-link>
@@ -205,8 +212,9 @@ import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { authApi } from '@/api/auth'
-import { clearAuth, getAuthState, hasAllPermissions } from '@/stores/auth'
+import { clearAuth, getAuthState } from '@/stores/auth'
 import { PERM } from '@/utils/permissions'
+import { makeViewUse } from '@/utils/permissionKit'
 
 defineOptions({ name: 'Header' })
 
@@ -219,21 +227,15 @@ const isSystemNavActive = computed(
 )
 const quickSearchQuery = ref('')
 const userDropdownVisible = ref(false)
-const canViewSearch = computed(() => hasAllPermissions([PERM.pages.search.view]))
-const canUseSearch = computed(() => hasAllPermissions([PERM.pages.search.use]))
-const canViewAction = computed(() => hasAllPermissions([PERM.pages.action.view]))
-const canUseAction = computed(() => hasAllPermissions([PERM.pages.action.use]))
-const canViewActionTask = computed(() => hasAllPermissions([PERM.pages.action.task.view]))
-const canUseActionTask = computed(() => hasAllPermissions([PERM.pages.action.task.use]))
-const canViewTarget = computed(() => hasAllPermissions([PERM.pages.target.view]))
-const canUseTarget = computed(() => hasAllPermissions([PERM.pages.target.use]))
-const canViewAgent = computed(() => hasAllPermissions([PERM.pages.agent.view]))
-const canUseAgent = computed(() => hasAllPermissions([PERM.pages.agent.use]))
-const canViewSystemMenu = computed(() => hasAllPermissions([PERM.pages.system.view]))
-const canViewAlert = computed(() => hasAllPermissions([PERM.pages.system.alert.view]))
-const canUseAlert = computed(() => hasAllPermissions([PERM.pages.system.alert.use]))
-const canViewSystemPermissions = computed(() => hasAllPermissions([PERM.pages.system.permissions.view]))
-const canUseSystemPermissions = computed(() => hasAllPermissions([PERM.pages.system.permissions.use]))
+
+const navSearch = makeViewUse(PERM.pages.search.view, PERM.pages.search.use)
+const navAction = makeViewUse(PERM.pages.action.view, PERM.pages.action.use)
+const navActionTask = makeViewUse(PERM.pages.action.task.view, PERM.pages.action.task.use)
+const navTarget = makeViewUse(PERM.pages.target.view, PERM.pages.target.use)
+const navAgent = makeViewUse(PERM.pages.agent.view, PERM.pages.agent.use)
+const navSystemMenu = makeViewUse(PERM.pages.system.view, PERM.pages.system.view)
+const navAlert = makeViewUse(PERM.pages.system.alert.view, PERM.pages.system.alert.use)
+const navSystemPermissions = makeViewUse(PERM.pages.system.permissions.view, PERM.pages.system.permissions.use)
 
 const displayUsername = computed(() => {
   const user = getAuthState().user
