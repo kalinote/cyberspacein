@@ -8,7 +8,7 @@
       subtitle="查看所有已创建和已执行的行动历史记录"
     />
 
-    <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="max-w-480 mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 筛选栏 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -129,7 +129,7 @@
           </div>
         </div>
 
-        <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[400px]">
+        <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-100">
           <!-- 卡片视图 -->
           <div v-if="viewMode === 'card'" class="p-6">
             <div v-if="filteredActions.length === 0" class="flex flex-col items-center justify-center py-16">

@@ -1,5 +1,5 @@
 ---
-description: CSI 前端开发规则（依赖、样式、Vue 风格、项目结构与代码质量）
+description: CSI 前端开发规则（依赖、样式、Vue 组合式与 script setup、项目结构与代码质量）
 alwaysApply: true
 ---
 
@@ -17,8 +17,8 @@ alwaysApply: true
 
 ## Vue 风格
 
-- 默认使用 **Vue 选项式 API**（Options API）。
-- 仅当某些依赖或场景有明确要求时，再使用组合式 API（Composition API）。
+- 默认使用 **组合式 API**（Composition API）与 **`<script setup>`** 语法。
+- 尽可能不使用选项式 API（Options API），若必须使用，应提前告知，并在对应的文件开头以注释的方式写入必须使用选项式API的原因。
 
 ## 项目结构与工具
 
