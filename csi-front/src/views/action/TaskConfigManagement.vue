@@ -485,6 +485,7 @@ import MonacoEditor from '@/components/MonacoEditor.vue'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
 import { taskConfigApi } from '@/api/taskConfig'
 import { actionApi } from '@/api/action'
+import { formatDate } from '@/utils/action'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -864,12 +865,6 @@ function getInputCount(config) {
 
 function getOutputCount(config) {
   return Object.keys(config.config_data?.outputs || {}).length
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 async function fetchNodeTypeFilter() {

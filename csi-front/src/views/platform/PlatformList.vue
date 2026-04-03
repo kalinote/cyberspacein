@@ -8,7 +8,7 @@
       subtitle="统一管理所有平台信息，查看平台详情、状态和统计数据"
     />
 
-    <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="max-w-480 mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 筛选栏 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -69,7 +69,7 @@
           </el-button>
         </div>
 
-        <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[400px]">
+        <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-100">
           <div class="p-6">
             <div v-if="platformList.length === 0" class="flex flex-col items-center justify-center py-16">
               <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
@@ -352,6 +352,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
 import { getCosUrl } from '@/utils/cos'
+import { formatDate } from '@/utils/action'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
 
 defineOptions({ name: 'PlatformList' })
@@ -536,20 +537,6 @@ const getStatusType = (status) => {
     离线: 'info'
   }
   return statusMap[status] || 'info'
-}
-
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  try {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    })
-  } catch (error) {
-    return dateString
-  }
 }
 
 const getLogoUrl = (logo) => {
