@@ -1,29 +1,49 @@
+export const ACTION_STATUS = Object.freeze({
+  UNKNOWN: 'unknown',
+  UNREADY: 'unready',
+  PENDING: 'pending',
+  READY: 'ready',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  CANCELLED: 'cancelled',
+  TIMEOUT: 'timeout',
+  PAUSED: 'paused',
+  STOPPED: 'stopped',
+})
+
+export const TODO_ITEM_STATUS = Object.freeze({
+  PENDING: 'pending',
+  IN_PROGRESS: 'in_progress',
+  COMPLETED: 'completed',
+})
+
 // 状态文本映射
 const STATUS_TEXT_MAP = {
-  'unknown': '未知',
-  'unready': '未就绪',
-  'pending': '待执行',
-  'ready': '已就绪',
-  'running': '执行中',
-  'completed': '已完成',
-  'failed': '失败',
-  'cancelled': '已取消',
-  'timeout': '超时',
-  'paused': '已暂停',
+  [ACTION_STATUS.UNKNOWN]: '未知',
+  [ACTION_STATUS.UNREADY]: '未就绪',
+  [ACTION_STATUS.PENDING]: '待执行',
+  [ACTION_STATUS.READY]: '已就绪',
+  [ACTION_STATUS.RUNNING]: '执行中',
+  [ACTION_STATUS.COMPLETED]: '已完成',
+  [ACTION_STATUS.FAILED]: '失败',
+  [ACTION_STATUS.CANCELLED]: '已取消',
+  [ACTION_STATUS.TIMEOUT]: '超时',
+  [ACTION_STATUS.PAUSED]: '已暂停',
 }
 
 // 状态标签类型映射
 // TODO: 这里后续改成通过接口获取tag和文字颜色
 const STATUS_TAG_TYPE_MAP = {
-  'unready': 'info',
-  'pending': 'info',
-  'ready': 'success',
-  'running': 'primary',
-  'completed': 'success',
-  'paused': 'warning',
-  'cancelled': 'danger',
-  'timeout': 'danger',
-  'failed': 'danger',
+  [ACTION_STATUS.UNREADY]: 'info',
+  [ACTION_STATUS.PENDING]: 'info',
+  [ACTION_STATUS.READY]: 'success',
+  [ACTION_STATUS.RUNNING]: 'primary',
+  [ACTION_STATUS.COMPLETED]: 'success',
+  [ACTION_STATUS.PAUSED]: 'warning',
+  [ACTION_STATUS.CANCELLED]: 'danger',
+  [ACTION_STATUS.TIMEOUT]: 'danger',
+  [ACTION_STATUS.FAILED]: 'danger',
 }
 
 // 获取状态文本
@@ -39,25 +59,25 @@ export const getStatusTagType = (status) => {
 // 获取状态点样式类
 export const getStatusDotClass = (status) => {
   const classMap = {
-    'running': 'bg-blue-500 animate-pulse',
-    'completed': 'bg-green-500',
-    'paused': 'bg-amber-500',
-    'stopped': 'bg-gray-500',
-    'failed': 'bg-red-500',
-    'pending': 'bg-gray-400'
+    [ACTION_STATUS.RUNNING]: 'bg-blue-500 animate-pulse',
+    [ACTION_STATUS.COMPLETED]: 'bg-green-500',
+    [ACTION_STATUS.PAUSED]: 'bg-amber-500',
+    [ACTION_STATUS.STOPPED]: 'bg-gray-500',
+    [ACTION_STATUS.FAILED]: 'bg-red-500',
+    [ACTION_STATUS.PENDING]: 'bg-gray-400'
   }
   return classMap[status] || 'bg-gray-400'
 }
 
 export const getActionStatusIcon = (status) => {
   const map = {
-    running: { icon: 'mdi:loading', bgClass: 'bg-blue-100', iconClass: 'text-blue-600 animate-spin' },
-    completed: { icon: 'mdi:check-circle', bgClass: 'bg-green-100', iconClass: 'text-green-600' },
-    paused: { icon: 'mdi:pause', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
-    stopped: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
-    cancelled: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
-    failed: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' },
-    timeout: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' }
+    [ACTION_STATUS.RUNNING]: { icon: 'mdi:loading', bgClass: 'bg-blue-100', iconClass: 'text-blue-600 animate-spin' },
+    [ACTION_STATUS.COMPLETED]: { icon: 'mdi:check-circle', bgClass: 'bg-green-100', iconClass: 'text-green-600' },
+    [ACTION_STATUS.PAUSED]: { icon: 'mdi:pause', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
+    [ACTION_STATUS.STOPPED]: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
+    [ACTION_STATUS.CANCELLED]: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
+    [ACTION_STATUS.FAILED]: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' },
+    [ACTION_STATUS.TIMEOUT]: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' }
   }
   return map[status] || { icon: 'mdi:clock-outline', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' }
 }

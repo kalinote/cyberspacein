@@ -314,7 +314,8 @@ import {
   getStatusText,
   getStatusTagType,
   getLogLevelClass,
-  getLogLevelTextClass
+  getLogLevelTextClass,
+  ACTION_STATUS
 } from '@/utils/action'
 import { useSidebarResize } from '@/utils/action/useSidebarResize'
 
@@ -367,7 +368,7 @@ const StatusAwareNode = {
     props: ['id', 'data', 'selected'],
     setup(props) {
         const executionStatus = computed(() => props.data?.executionStatus || null)
-        const nodeStatus = computed(() => executionStatus.value?.status || 'pending')
+        const nodeStatus = computed(() => executionStatus.value?.status || ACTION_STATUS.PENDING)
         const progress = computed(() => executionStatus.value?.progress || 0)
         const isSelected = computed(() => props.selected)
 
@@ -384,7 +385,7 @@ const StatusAwareNode = {
                     disabled: true,
                     showHandle: true
                 }),
-                nodeStatus.value === 'running' ? h('div', {
+                nodeStatus.value === ACTION_STATUS.RUNNING ? h('div', {
                     class: 'absolute bg-gradient-to-r from-green-500 via-emerald-400 to-green-500 transition-all duration-300 z-[1]',
                     style: { 
                         top: '12px',
@@ -421,7 +422,7 @@ const actionData = ref({
     id: '',
     name: '',
     description: '',
-    status: 'pending',
+    status: ACTION_STATUS.PENDING,
     progress: 0,
     startTime: null,
     endTime: null,
@@ -477,7 +478,7 @@ const isLoadingNodeLogs = computed(() => {
 const executingNodes = computed(() => {
     if (!actionData.value.node_details) return []
     return Object.keys(actionData.value.node_details)
-        .filter(nodeId => actionData.value.node_details[nodeId]?.status === 'running')
+        .filter(nodeId => actionData.value.node_details[nodeId]?.status === ACTION_STATUS.RUNNING)
 })
 
 // 右侧边栏调整
@@ -598,7 +599,7 @@ const loadActionData = async () => {
             id: apiData.id,
             name: apiData.name || '',
             description: apiData.description || '',
-            status: apiData.status || 'pending',
+            status: apiData.status || ACTION_STATUS.PENDING,
             duration: apiData.duration || 0,
             progress: apiData.progress || 0,
             startTime: apiData.start_at || null,
@@ -618,7 +619,7 @@ const loadActionData = async () => {
                         startTime: detail.start_at || null,
                         endTime: detail.finished_at || null,
                         errorMessage: detail.error_message || null,
-                        finished: detail.status === 'completed' || detail.status === 'failed'
+                        finished: detail.status === ACTION_STATUS.COMPLETED || detail.status === ACTION_STATUS.FAILED
                     }
                 ])
             )
@@ -869,12 +870,12 @@ const updateActionData = async () => {
                     startTime: detail.start_at || null,
                     endTime: detail.finished_at || null,
                     errorMessage: detail.error_message || null,
-                    finished: detail.status === 'completed' || detail.status === 'failed'
+                    finished: detail.status === ACTION_STATUS.COMPLETED || detail.status === ACTION_STATUS.FAILED
                 }
             ])
         )
         
-        actionData.value.status = apiData.status || 'pending'
+        actionData.value.status = apiData.status || ACTION_STATUS.PENDING
         actionData.value.progress = apiData.progress || 0
         actionData.value.duration = apiData.duration || 0
         actionData.value.startTime = apiData.start_at || null

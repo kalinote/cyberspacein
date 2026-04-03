@@ -264,7 +264,7 @@ import { useRoute } from 'vue-router'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import { Icon } from '@iconify/vue'
-import { formatDateTime } from '@/utils/action'
+import { formatDateTime, ACTION_STATUS, TODO_ITEM_STATUS } from '@/utils/action'
 import { agentApi } from '@/api/agent'
 import { ElMessage } from 'element-plus'
 
@@ -275,7 +275,7 @@ const userMessage = ref('')
 const sessionData = ref({
     name: '加载中...',
     thread_id: '',
-    status: 'running',
+    status: ACTION_STATUS.RUNNING,
     meta: {},
     steps: [],
     todos: [],
@@ -321,19 +321,19 @@ function sendMessage() {
 }
 
 const statusLabelMap = {
-    running: '运行中',
+    [ACTION_STATUS.RUNNING]: '运行中',
     awaiting_approval: '等待审批',
-    completed: '已完成',
-    cancelled: '已取消',
-    paused: '已暂停'
+    [ACTION_STATUS.COMPLETED]: '已完成',
+    [ACTION_STATUS.CANCELLED]: '已取消',
+    [ACTION_STATUS.PAUSED]: '已暂停'
 }
 
 const statusTagMap = {
-    running: 'primary',
+    [ACTION_STATUS.RUNNING]: 'primary',
     awaiting_approval: 'warning',
-    completed: 'success',
-    cancelled: 'info',
-    paused: 'info'
+    [ACTION_STATUS.COMPLETED]: 'success',
+    [ACTION_STATUS.CANCELLED]: 'info',
+    [ACTION_STATUS.PAUSED]: 'info'
 }
 
 const statusLabel = computed(() => statusLabelMap[sessionData.value.status] || sessionData.value.status)
@@ -364,16 +364,16 @@ function stepNodeIconColor(node) {
 }
 
 function todoStatusIcon(s) {
-    if (s === 'pending') return 'mdi:circle-outline'
-    if (s === 'in_progress') return 'mdi:progress-clock'
-    if (s === 'completed') return 'mdi:check-circle'
+    if (s === TODO_ITEM_STATUS.PENDING) return 'mdi:circle-outline'
+    if (s === TODO_ITEM_STATUS.IN_PROGRESS) return 'mdi:progress-clock'
+    if (s === TODO_ITEM_STATUS.COMPLETED) return 'mdi:check-circle'
     return 'mdi:circle-outline'
 }
 
 function todoStatusIconColor(s) {
-    if (s === 'pending') return 'text-gray-400'
-    if (s === 'in_progress') return 'text-amber-600'
-    if (s === 'completed') return 'text-green-600'
+    if (s === TODO_ITEM_STATUS.PENDING) return 'text-gray-400'
+    if (s === TODO_ITEM_STATUS.IN_PROGRESS) return 'text-amber-600'
+    if (s === TODO_ITEM_STATUS.COMPLETED) return 'text-green-600'
     return 'text-gray-400'
 }
 
@@ -499,7 +499,7 @@ function connectSSE() {
                 eventSource = null
             }
 
-            if (sessionData.value.status === 'completed' || sessionData.value.status === 'cancelled') {
+            if (sessionData.value.status === ACTION_STATUS.COMPLETED || sessionData.value.status === ACTION_STATUS.CANCELLED) {
                 console.log('任务已结束，不再重连')
                 loading.value = false
                 return
