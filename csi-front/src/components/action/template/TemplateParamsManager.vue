@@ -1,6 +1,11 @@
 <template>
-    <div class="template-params-manager border-t border-gray-200 mt-4 relative group flex flex-col" :style="{ height: height + 'px' }">
-        <div 
+    <div
+        class="template-params-manager relative group flex flex-col"
+        :class="embedded ? '' : 'border-t border-gray-200 mt-4'"
+        :style="resizable ? { height: height + 'px' } : undefined"
+    >
+        <div
+            v-if="resizable"
             class="absolute left-0 right-0 -top-1 h-2 cursor-row-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
             @mousedown.prevent="startResize"
         >
@@ -31,7 +36,11 @@
             </el-button>
         </div>
 
-        <div v-show="!collapsed" class="params-content px-2 pb-4 overflow-y-auto flex-1 min-h-0">
+        <div
+            v-show="!collapsed"
+            class="params-content px-2 pb-4 overflow-y-auto"
+            :class="resizable ? 'flex-1 min-h-0' : 'max-h-80'"
+        >
             <div v-if="params.length === 0" class="text-center py-8 text-gray-400">
                 <Icon icon="mdi:package-variant" class="text-4xl mb-2 block mx-auto" />
                 <p class="text-sm">暂无参数</p>
@@ -191,6 +200,16 @@ const props = defineProps({
     bindings: {
         type: Object,
         default: () => ({})
+    },
+    /** 为 true 时不绘制顶部分割线与 mt-4，用于与其它折叠块同组叠放 */
+    embedded: {
+        type: Boolean,
+        default: false
+    },
+    /** 为 true 时固定高度并提供拖拽调整；为 false 时高度随内容变化 */
+    resizable: {
+        type: Boolean,
+        default: true
     }
 })
 

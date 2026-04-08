@@ -131,15 +131,42 @@
                             inactive-text="禁用"
                         />
                     </el-form-item>
+
+                    <!-- 资源配置开关 -->
+                    <el-form-item class="shrink-0 mb-0 -mt-2">
+                        <template #label>
+                            <div class="flex items-center justify-between w-full">
+                                <span class="text-sm font-medium text-gray-700">资源配置</span>
+                                <el-tooltip content="启用后可在此配置行动所需资源" placement="top">
+                                    <Icon icon="mdi:information-outline" class="text-gray-400 text-sm cursor-help" />
+                                </el-tooltip>
+                            </div>
+                        </template>
+                        <el-switch
+                            v-model="resourceConfigEnabled"
+                            active-text="启用"
+                            inactive-text="禁用"
+                        />
+                    </el-form-item>
                 </el-form>
 
-                <!-- 参数管理区（仅在 isTemplate 为 true 时显示） -->
-                <TemplateParamsManager
-                    v-if="isTemplate"
-                    v-model:params="templateParams"
-                    v-model:bindings="templateBindings"
-                    class="shrink-0"
-                />
+                <!-- 右侧底部折叠菜单 -->
+                <div
+                    v-if="isTemplate || resourceConfigEnabled"
+                    class="shrink-0 flex flex-col border-t border-gray-200 mt-4 max-h-[45vh] overflow-y-auto"
+                >
+                    <TemplateParamsManager
+                        v-if="isTemplate"
+                        embedded
+                        :resizable="false"
+                        v-model:params="templateParams"
+                        v-model:bindings="templateBindings"
+                    />
+                    <ResourceConfigPanel
+                        v-if="resourceConfigEnabled"
+                        :show-top-divider="isTemplate"
+                    />
+                </div>
 
                 <!-- 底部保存按钮 -->
                 <div class="p-4 border-t border-gray-200 shrink-0">
@@ -170,6 +197,7 @@ import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
 import TemplateParamsManager from "@/components/action/template/TemplateParamsManager.vue"
+import ResourceConfigPanel from "@/components/action/ResourceConfigPanel.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
 import {
@@ -375,6 +403,7 @@ const actionFormRules = {
 }
 
 const isTemplate = ref(false)
+const resourceConfigEnabled = ref(false)
 const templateParams = ref([])
 const templateBindings = ref({})
 
