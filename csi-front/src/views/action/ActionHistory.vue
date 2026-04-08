@@ -8,7 +8,7 @@
       subtitle="查看所有已创建和已执行的行动历史记录"
     />
 
-    <div class="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="max-w-480 mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- 筛选栏 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -35,11 +35,11 @@
               @change="handleFilterChange"
             >
               <el-option label="全部状态" value="" />
-              <el-option label="执行中" value="running" />
-              <el-option label="已完成" value="completed" />
-              <el-option label="已暂停" value="paused" />
-              <el-option label="已停止" value="stopped" />
-              <el-option label="失败" value="failed" />
+              <el-option label="执行中" :value="ACTION_STATUS.RUNNING" />
+              <el-option label="已完成" :value="ACTION_STATUS.COMPLETED" />
+              <el-option label="已暂停" :value="ACTION_STATUS.PAUSED" />
+              <el-option label="已停止" :value="ACTION_STATUS.STOPPED" />
+              <el-option label="失败" :value="ACTION_STATUS.FAILED" />
             </el-select>
           </div>
           <div>
@@ -129,7 +129,7 @@
           </div>
         </div>
 
-        <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-[400px]">
+        <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-100">
           <!-- 卡片视图 -->
           <div v-if="viewMode === 'card'" class="p-6">
             <div v-if="filteredActions.length === 0" class="flex flex-col items-center justify-center py-16">
@@ -184,7 +184,7 @@
                   </div>
                 </div>
 
-                <div v-if="action.status === 'running' || action.status === 'completed'" class="mb-4">
+                <div v-if="action.status === ACTION_STATUS.RUNNING || action.status === ACTION_STATUS.COMPLETED" class="mb-4">
                   <div class="flex justify-between text-xs text-gray-600 mb-1">
                     <span>执行进度</span>
                     <span v-if="action.completedSteps && action.totalSteps">
@@ -205,7 +205,7 @@
                     查看详情
                   </el-button>
                   <el-button
-                    v-if="action.status === 'completed'"
+                    v-if="action.status === ACTION_STATUS.COMPLETED"
                     type="success"
                     link
                     size="small"
@@ -274,7 +274,7 @@
                       查看
                     </el-button>
                     <el-button
-                      v-if="row.status === 'completed'"
+                      v-if="row.status === ACTION_STATUS.COMPLETED"
                       type="success"
                       link
                       size="small"
@@ -324,7 +324,8 @@ import {
   formatDuration,
   getStatusText,
   getStatusTagType,
-  getStatusDotClass
+  getStatusDotClass,
+  ACTION_STATUS
 } from '@/utils/action'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
@@ -412,9 +413,9 @@ const handleFilterChange = () => {
 
 const updateStatistics = () => {
   statistics.value.total = actions.value.length
-  statistics.value.completed = actions.value.filter(a => a.status === 'completed').length
-  statistics.value.running = actions.value.filter(a => a.status === 'running').length
-  statistics.value.failed = actions.value.filter(a => a.status === 'failed').length
+  statistics.value.completed = actions.value.filter(a => a.status === ACTION_STATUS.COMPLETED).length
+  statistics.value.running = actions.value.filter(a => a.status === ACTION_STATUS.RUNNING).length
+  statistics.value.failed = actions.value.filter(a => a.status === ACTION_STATUS.FAILED).length
 }
 
 const handlePageChange = (page) => {

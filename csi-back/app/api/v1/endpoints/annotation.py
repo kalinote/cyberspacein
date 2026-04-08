@@ -64,7 +64,7 @@ async def update_annotation(
 ):
     annotation = await AnnotationModel.find_one({"_id": annotation_id})
     if not annotation:
-        return ApiResponseSchema.error(code=404, message=f"批注不存在，ID: {annotation_id}")
+        return ApiResponseSchema.error(code=240413, message=f"批注不存在，ID: {annotation_id}")
 
     if data.content is not None:
         annotation.content = data.content
@@ -82,7 +82,7 @@ async def delete_annotation(
 ):
     annotation = await AnnotationModel.find_one({"_id": annotation_id})
     if not annotation:
-        return ApiResponseSchema.error(code=404, message=f"批注不存在，ID: {annotation_id}")
+        return ApiResponseSchema.error(code=240413, message=f"批注不存在，ID: {annotation_id}")
 
     await annotation.delete()
     return ApiResponseSchema.success()

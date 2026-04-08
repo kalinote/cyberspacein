@@ -64,6 +64,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { ACTION_STATUS } from '@/utils/action'
 import { useVueFlow } from '@vue-flow/core'
 import HandleRenderer from './components/HandleRenderer.vue'
 import InputRenderer from './components/InputRenderer.vue'
@@ -96,16 +97,16 @@ const executionStatusBorderColor = computed(() => {
     const status = executionStatus.value.status
     const colorMap = {
         // TODO: 这里的颜色可能需要进一步优化
-        'unknown': '#9ca3af',
-        'unready': '#f97316',
-        'pending': '#6b7280',
-        'ready': '#3b82f6',
-        'running': '#eab308',
-        'completed': '#10b981',
-        'failed': '#ef4444',
-        'cancelled': '#fecaca',
-        'timeout': '#f59e0b',
-        'paused': '#06b6d4'
+        [ACTION_STATUS.UNKNOWN]: '#9ca3af',
+        [ACTION_STATUS.UNREADY]: '#f97316',
+        [ACTION_STATUS.PENDING]: '#6b7280',
+        [ACTION_STATUS.READY]: '#3b82f6',
+        [ACTION_STATUS.RUNNING]: '#eab308',
+        [ACTION_STATUS.COMPLETED]: '#10b981',
+        [ACTION_STATUS.FAILED]: '#ef4444',
+        [ACTION_STATUS.CANCELLED]: '#fecaca',
+        [ACTION_STATUS.TIMEOUT]: '#f59e0b',
+        [ACTION_STATUS.PAUSED]: '#06b6d4'
     }
     return colorMap[status] || null
 })

@@ -211,14 +211,14 @@
                       编辑
                     </el-button>
                     <el-button 
-                      :type="component.status === 'running' ? 'warning' : 'success'" 
+                      :type="component.status === ACTION_STATUS.RUNNING ? 'warning' : 'success'" 
                       link 
                       @click="handleRunComponent(component)"
                     >
                       <template #icon>
-                        <Icon :icon="component.status === 'running' ? 'mdi:stop' : 'mdi:play'" />
+                        <Icon :icon="component.status === ACTION_STATUS.RUNNING ? 'mdi:stop' : 'mdi:play'" />
                       </template>
-                      {{ component.status === 'running' ? '停止' : '运行' }}
+                      {{ component.status === ACTION_STATUS.RUNNING ? '停止' : '运行' }}
                     </el-button>
                     <el-button type="danger" link @click="handleDelete(component)">
                       <template #icon>
@@ -449,7 +449,7 @@
                         </h3>
                         <el-tag
                           size="small"
-                          :type="sandbox.status === 'running' ? 'success' : sandbox.status === 'stopped' ? 'info' : 'warning'"
+                          :type="sandbox.status === ACTION_STATUS.RUNNING ? 'success' : sandbox.status === ACTION_STATUS.STOPPED ? 'info' : 'warning'"
                           class="border-0"
                         >
                           {{ sandbox.status || '未知' }}
@@ -1279,7 +1279,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
-import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData } from '@/utils/action'
+import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData, ACTION_STATUS } from '@/utils/action'
 import GenericNode from '@/components/action/nodes/GenericNode.vue'
 
 const SANDBOX_HOST = import.meta.env.VITE_SANDBOX_HOST || '127.0.0.1'
@@ -1990,7 +1990,7 @@ const COMPONENT_STATUS_CONFIG = {
     iconClass: 'text-green-600',
     bgClass: 'bg-green-100'
   },
-  'running': {
+  [ACTION_STATUS.RUNNING]: {
     text: '运行中',
     tagType: 'primary',
     icon: 'mdi:loading',
@@ -2004,7 +2004,7 @@ const COMPONENT_STATUS_CONFIG = {
     iconClass: 'text-red-600',
     bgClass: 'bg-red-100'
   },
-  'unknown': {
+  [ACTION_STATUS.UNKNOWN]: {
     text: '未知',
     tagType: 'info',
     icon: 'mdi:clock-outline',
@@ -2063,7 +2063,7 @@ function getPlatformName(platformId) {
 
 // 占位方法：运行/停止组件，等待后端API完成
 const handleRunComponent = (component) => {
-  if (component.status === 'running') {
+  if (component.status === ACTION_STATUS.RUNNING) {
     ElMessage.info(`停止组件: ${component.name}`)
   } else {
     ElMessage.info(`运行组件: ${component.name}`)

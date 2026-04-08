@@ -1,3 +1,16 @@
+export const formatDate = (dateStr, options = {}) => {
+  if (!dateStr) return options.defaultValue ?? '-'
+
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return options.defaultValue ?? '-'
+
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+}
+
 // 格式化日期时间
 export const formatDateTime = (dateStr, options = {}) => {
   if (!dateStr) return options.defaultValue || '-'

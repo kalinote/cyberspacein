@@ -1,7 +1,16 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { clearAuth, getAuthState } from '@/stores/auth'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.31.51:8080/api/v1'
+
+const appBase = import.meta.env.BASE_URL || '/'
+
+function appPath(path) {
+  const base = appBase.endsWith('/') ? appBase.slice(0, -1) : appBase
+  const p = path.startsWith('/') ? path : `/${path}`
+  return `${base}${p}`
+}
 
 const service = axios.create({
   baseURL,
@@ -13,6 +22,11 @@ const service = axios.create({
 
 service.interceptors.request.use(
   config => {
+    const token = getAuthState().accessToken
+    if (token) {
+      config.headers = config.headers || {}
+      config.headers.Authorization = `Bearer ${token}`
+    }
     return config
   },
   error => {
@@ -24,19 +38,46 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   response => {
     const res = response.data
+    const code = res?.code
 
-    if (res.code === 0) {
-      return res
+    if (code === 0) return res
+
+    if (typeof code === 'number' && code !== 0) {
+      const codeStr = String(code)
+      const message = res?.message || '请求失败'
+
+      const requestUrl = response?.config?.url || ''
+      const currentPath = window.location.pathname || ''
+      const isLoginRequest = requestUrl.includes('/auth/login')
+      const isLogoutRequest = requestUrl.includes('/auth/logout')
+      const isMeRequest = requestUrl.includes('/auth/me')
+
+      if (codeStr.startsWith('2401')) {
+        clearAuth()
+
+        if (!currentPath.endsWith('/login') && !isLoginRequest && !isLogoutRequest && !isMeRequest) {
+          window.location.href = appPath('/login')
+        }
+        ElMessage.warning(message)
+        return Promise.reject(new Error(message))
+      }
+
+      if (codeStr.startsWith('2403')) {
+        if (!currentPath.endsWith('/403')) {
+          window.location.href = appPath('/403')
+        }
+        ElMessage.warning(message)
+        return Promise.reject(new Error(message))
+      }
+
+      ElMessage.error(message)
+      return Promise.reject(new Error(message))
     }
-    if (res.code !== undefined && res.code !== 0) {
-      ElMessage.error(res.message || '请求失败')
-      return Promise.reject(new Error(res.message || '请求失败'))
-    }
-    if (Array.isArray(res.items) && typeof res.total === 'number') {
-      return res
-    }
-    ElMessage.error(res.message || '请求失败')
-    return Promise.reject(new Error(res.message || '请求失败'))
+
+    if (Array.isArray(res?.items) && typeof res?.total === 'number') return res
+
+    ElMessage.error(res?.message || '请求失败')
+    return Promise.reject(new Error(res?.message || '请求失败'))
   },
   error => {
     console.error('响应错误:', error)

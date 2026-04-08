@@ -25,7 +25,7 @@ router = APIRouter(
 async def create_sandbox(body: SandboxCreateRequest, background_tasks: BackgroundTasks):
     ok, message, data = await asyncio.to_thread(sandbox_service.create_sandbox, body.name, body.image_type)
     if not ok:
-        code = 400 if "端口池" in message or "未配置" in message else 500
+        code = 240004 if "端口池" in message or "未配置" in message else 250005
         return ApiResponseSchema.error(code=code, message=message)
     await sandbox_service.insert_sandbox_doc(
         container_id=data["sandbox_id"],
@@ -49,10 +49,10 @@ async def create_sandbox(body: SandboxCreateRequest, background_tasks: Backgroun
 async def delete_sandbox(sandbox_id: str):
     doc = await sandbox_service.get_sandbox_doc_by_container_id(sandbox_id)
     if not doc:
-        return ApiResponseSchema.error(code=404, message="沙盒不存在")
+        return ApiResponseSchema.error(code=240416, message="沙盒不存在")
     ok, message = await asyncio.to_thread(sandbox_service.delete_sandbox, sandbox_id, doc.image_type)
     if not ok and "不存在" not in message:
-        code = 400 if "仅允许" in message else 500
+        code = 240002 if "仅允许" in message else 250005
         return ApiResponseSchema.error(code=code, message=message)
     await sandbox_service.delete_sandbox_doc_by_container_id(sandbox_id)
     return ApiResponseSchema.success(message="success")
@@ -70,6 +70,6 @@ async def list_sandboxes(params: PageParamsSchema = Depends()):
 async def get_sandbox_detail(sandbox_id: str):
     ok, message, data = await sandbox_service.get_sandbox_detail_from_db(sandbox_id)
     if not ok:
-        code = 404 if "不存在" in message else 400 if "不能为空" in message else 500
+        code = 240416 if "不存在" in message else 240004 if "不能为空" in message else 250005
         return ApiResponseSchema.error(code=code, message=message)
     return ApiResponseSchema.success(data=SandboxDetailResponse(**data))

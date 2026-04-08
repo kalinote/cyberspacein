@@ -32,13 +32,13 @@ async def create_blueprint(data: ActionBlueprintSchema):
     if data.is_template:
         param_names = [p.name for p in data.template.params]
         if len(param_names) != len(set(param_names)):
-            return ApiResponseSchema.error(code=400, message="参数名称必须唯一")
+            return ApiResponseSchema.error(code=240001, message="参数名称必须唯一")
 
         for node_bindings in data.template.bindings.values():
             for binding_name, binding_param in node_bindings.items():
                 if binding_param not in param_names:
                     return ApiResponseSchema.error(
-                        code=400,
+                        code=240001,
                         message=f"绑定引用的参数 '{binding_param}' 不存在"
                     )
 
@@ -46,7 +46,7 @@ async def create_blueprint(data: ActionBlueprintSchema):
 
     existing_blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
     if existing_blueprint:
-        return ApiResponseSchema.error(code=400, message=f"蓝图已存在，ID: {blueprint_id}")
+        return ApiResponseSchema.error(code=240901, message=f"蓝图已存在，ID: {blueprint_id}")
 
     nodes_models = []
     for node in data.graph.nodes:
@@ -163,7 +163,7 @@ async def get_blueprints(
 async def get_blueprint(blueprint_id: str):
     blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
     if not blueprint:
-        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {blueprint_id}")
+        return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {blueprint_id}")
 
     graph = graph_model2schemas(blueprint.graph)
 

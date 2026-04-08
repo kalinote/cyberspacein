@@ -15,4 +15,6 @@ class ApiResponseSchema(BaseModel, Generic[T]):
 
     @classmethod
     def error(cls, code: int, message: str, data: Any = None) -> "ApiResponseSchema":
+        if code != 0 and not (100000 <= code <= 299999):
+            raise ValueError(f"错误码必须是6位规范码，当前值: {code}")
         return cls(code=code, message=message, data=data)

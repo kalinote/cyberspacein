@@ -23,7 +23,7 @@ async def get_timeline(
 ):
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
 
     index_name = entity_type.value
     from_ = (params.page - 1) * params.page_size
@@ -77,7 +77,7 @@ async def get_timeline_diff_compare(
 ):
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
 
     index_name = entity_type.value
     result = await es.get(index=index_name, id=uuid, _source_includes=["raw_content", "last_edit_at", "title"])

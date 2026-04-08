@@ -20,7 +20,7 @@ router = APIRouter(
 async def get_forum_detail(uuid: str):
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
     
     try:
         result = await es.get(index="forum", id=uuid)
@@ -121,9 +121,9 @@ async def get_forum_detail(uuid: str):
         return ApiResponseSchema.success(data=forum_data)
     
     except NotFoundError:
-        return ApiResponseSchema.error(code=404, message=f"论坛不存在，UUID: {uuid}")
+        return ApiResponseSchema.error(code=240414, message=f"论坛不存在，UUID: {uuid}")
     except Exception as e:
-        return ApiResponseSchema.error(code=500, message=f"查询论坛详情失败: {str(e)}")
+        return ApiResponseSchema.error(code=250002, message=f"查询论坛详情失败: {str(e)}")
 
 
 @router.get("/comments", response_model=PageResponseSchema[CommentResultSchema], summary="查询评论或点评")
@@ -135,10 +135,10 @@ async def get_comments(
 ):
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=500, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
     
     if thread_type not in ["comment", "featured"]:
-        return ApiResponseSchema.error(code=400, message="thread_type参数只能是comment或featured")
+        return ApiResponseSchema.error(code=240002, message="thread_type参数只能是comment或featured")
     
     platform_id = None
     try:
@@ -238,5 +238,5 @@ async def get_comments(
     
     except Exception as e:
         logger.error(f"查询论坛{thread_type}失败: {e}", exc_info=True)
-        return ApiResponseSchema.error(code=500, message=f"查询失败: {str(e)}")
+        return ApiResponseSchema.error(code=250002, message=f"查询失败: {str(e)}")
 

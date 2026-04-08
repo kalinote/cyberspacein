@@ -27,7 +27,7 @@ async def create_node(data: ActionNode):
 
     existing_node = await ActionNodeModel.find_one({"_id": node_id})
     if existing_node:
-        return ApiResponseSchema.error(code=400, message=f"节点已存在，ID: {node_id}")
+        return ApiResponseSchema.error(code=240901, message=f"节点已存在，ID: {node_id}")
 
     handle_models: list[ActionNodeHandleModel] = []
     for handle in data.handles:
@@ -84,7 +84,7 @@ async def create_node(data: ActionNode):
 async def get_node_detail(node_id: str):
     node = await ActionNodeModel.find_one({"_id": node_id, "is_deleted": False})
     if not node:
-        return ApiResponseSchema.error(code=404, message=f"节点不存在，ID: {node_id}")
+        return ApiResponseSchema.error(code=240409, message=f"节点不存在，ID: {node_id}")
     return ApiResponseSchema.success(data=await node_model_to_response(node))
 
 
@@ -92,7 +92,7 @@ async def get_node_detail(node_id: str):
 async def update_node(node_id: str, data: ActionNode):
     node = await ActionNodeModel.find_one({"_id": node_id, "is_deleted": False})
     if not node:
-        return ApiResponseSchema.error(code=404, message=f"节点不存在，ID: {node_id}")
+        return ApiResponseSchema.error(code=240409, message=f"节点不存在，ID: {node_id}")
 
     handle_models = []
     for handle in data.handles:
@@ -142,7 +142,7 @@ async def update_node(node_id: str, data: ActionNode):
 async def delete_node(node_id: str):
     node = await ActionNodeModel.find_one({"_id": node_id, "is_deleted": False})
     if not node:
-        return ApiResponseSchema.error(code=404, message=f"节点不存在，ID: {node_id}")
+        return ApiResponseSchema.error(code=240409, message=f"节点不存在，ID: {node_id}")
     await node.update(Set({
         ActionNodeModel.is_deleted: True,
         ActionNodeModel.updated_at: datetime.now(),

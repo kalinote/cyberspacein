@@ -68,7 +68,7 @@
                       <Icon
                         :icon="getTaskStatusIcon(task.status)"
                         class="text-2xl"
-                        :class="[getTaskStatusIconClass(task.status), task.status === 'running' ? 'animate-spin' : '']"
+                        :class="[getTaskStatusIconClass(task.status), task.status === ACTION_STATUS.RUNNING ? 'animate-spin' : '']"
                       />
                     </div>
                     <div class="flex-1">
@@ -237,7 +237,7 @@ import { ElMessage } from 'element-plus'
 import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
 import { taskConfigApi } from '@/api/taskConfig'
 import { findNavItemByKey } from '@/utils/configCenterNav'
-import { formatDateTime, formatDuration, cronToDescription, getNextCronRun } from '@/utils/action'
+import { formatDateTime, formatDuration, cronToDescription, getNextCronRun, ACTION_STATUS } from '@/utils/action'
 import { getPaginatedData } from '@/utils/request'
 
 const TASK_STATUS_CONFIG = {

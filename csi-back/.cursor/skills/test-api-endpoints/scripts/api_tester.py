@@ -56,7 +56,7 @@ def make_request(
     url = base_url.rstrip("/") + path
     body = interpolate(step.get("body"), variables) if step.get("body") is not None else None
     query = interpolate(step.get("query", {}), variables) or None
-    extra_headers = step.get("headers", {})
+    extra_headers = interpolate(step.get("headers", {}), variables)
 
     try:
         response = session.request(

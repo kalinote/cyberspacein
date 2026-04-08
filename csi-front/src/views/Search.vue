@@ -146,8 +146,8 @@
               </div>
               <div class="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3 pt-4 pb-4 border-t border-gray-100">
                 <div class="flex flex-wrap gap-3">
-                  <el-button plain @click="openSaveTemplateDialog">保存到模板</el-button>
-                  <el-button plain @click="openOverwriteTemplateDialog">覆盖模板</el-button>
+                  <el-button v-if="canViewAddTemplate" plain :disabled="!canUseAddTemplate" @click="openSaveTemplateDialog">保存到模板</el-button>
+                  <el-button v-if="canViewOverwriteTemplate" plain :disabled="!canUseOverwriteTemplate" @click="openOverwriteTemplateDialog">覆盖模板</el-button>
                   <el-button @click="resetFilters">重置筛选</el-button>
                   <el-button type="primary" @click="applyFilters">应用筛选</el-button>
                 </div>
@@ -167,7 +167,7 @@
       </div>
     </section>
 
-    <section class="py-10 bg-white">
+    <section v-if="canViewTemplateList" class="py-10 bg-white">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="mb-10">
           <h2 class="text-3xl font-bold text-gray-900 mb-2">检索<span class="text-blue-500">模板</span></h2>
@@ -178,6 +178,7 @@
           <template v-if="searchTemplates.length > 0">
             <div v-for="template in searchTemplates" :key="template.id"
               class="border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+              :class="{ 'opacity-60 cursor-not-allowed': !canUseApplyTemplate }"
               @click="applyTemplateFilters(template)">
               <div class="flex justify-between items-start mb-4">
                 <div :class="getTemplateIconClass(template.id).bgClass"
@@ -186,8 +187,8 @@
                     :class="getTemplateIconClass(template.id).iconClass" class="text-2xl" />
                 </div>
                 <div class="flex gap-1">
-                  <el-button text :icon="'Edit'" @click.stop="handleEditTemplate(template)" />
-                  <el-button text type="danger" :icon="'Delete'" @click.stop="handleDeleteTemplate(template)" />
+                  <el-button v-if="canViewEditTemplate" text :icon="'Edit'" :disabled="!canUseEditTemplate" @click.stop="handleEditTemplate(template)" />
+                  <el-button v-if="canViewDeleteTemplate" text type="danger" :icon="'Delete'" :disabled="!canUseDeleteTemplate" @click.stop="handleDeleteTemplate(template)" />
                 </div>
               </div>
               <h3 class="font-bold text-gray-900 text-lg mb-2">{{ template.title }}</h3>
@@ -212,7 +213,7 @@
             <p class="text-gray-600">共 <span class="font-bold text-blue-600">{{ totalResults }}</span> 条相关情报</p>
           </div>
           <div class="flex items-center space-x-4 mt-4 sm:mt-0">
-            <el-button type="primary">
+            <el-button v-if="canViewResultAnalysis" type="primary">
               <template #icon>
                 <Icon icon="mdi:chart-bar" />
               </template>
@@ -314,13 +315,14 @@
                     link
                     @click="toggleHighlight(result)"
                     :loading="result._highlightLoading"
+                    :disabled="(result.is_highlighted && !hasPerm(PERM_SEARCH_RESULTS?.unhighlightUse)) || (!result.is_highlighted && !hasPerm(PERM_SEARCH_RESULTS?.highlightUse))"
                   >
                     <template #icon>
                       <Icon :icon="result.is_highlighted ? 'mdi:star' : 'mdi:star-outline'" />
                     </template>
                     {{ result.is_highlighted ? '取消重点目标' : '设置重点目标' }}
                   </el-button>
-                  <router-link :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
+                  <router-link v-if="canViewResultDetail" :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
                     查看详情
                     <Icon icon="mdi:arrow-right" class="ml-1" />
                   </router-link>
@@ -446,6 +448,9 @@ import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import { searchApi } from '@/api/search'
 import { highlightApi } from '@/api/highlight'
+import { PERM } from '@/utils/permissions'
+import { hasPerm, noPerm, guardUse } from '@/utils/permissionKit'
+import { formatDateTime } from '@/utils/action'
 
 defineOptions({ name: 'Search' })
 
@@ -491,6 +496,29 @@ const filterOptions = {
 const searchTemplates = ref([])
 const templateLoading = ref(false)
 
+const PERM_SEARCH = PERM.operations?.search
+const PERM_SEARCH_TEMPLATES = PERM_SEARCH?.templateManagement?.templates
+const PERM_SEARCH_RESULTS = PERM_SEARCH?.results
+
+const canViewTemplateList = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.listView))
+const canViewApplyTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.applyView))
+const canUseApplyTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.applyUse))
+
+const canViewAddTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.addView))
+const canUseAddTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.addUse))
+
+const canViewOverwriteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.overwriteView))
+const canUseOverwriteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.overwriteUse))
+
+const canViewEditTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.editView))
+const canUseEditTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.editUse))
+
+const canViewDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.deleteView))
+const canUseDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.deleteUse))
+
+const canViewResultDetail = computed(() => hasPerm(PERM_SEARCH_RESULTS?.detailView))
+const canViewResultAnalysis = computed(() => hasPerm(PERM_SEARCH_RESULTS?.analysisView))
+
 const saveDialogVisible = ref(false)
 const saveSubmitLoading = ref(false)
 const saveForm = ref({
@@ -519,6 +547,8 @@ function getCurrentRules() {
 }
 
 function openSaveTemplateDialog() {
+  if (!canViewAddTemplate.value) return
+  if (!canUseAddTemplate.value) return void noPerm()
   const rule = getCurrentRules()
   const descText = Rules2Text({
     timeRange: rule.timeRange,
@@ -542,6 +572,7 @@ function resetSaveForm() {
 }
 
 async function submitSaveTemplate() {
+  if (!guardUse(PERM_SEARCH_TEMPLATES?.addUse)) return
   const { title, description, search_query } = saveForm.value
   if (!title?.trim()) {
     ElMessage.warning('请输入模板标题')
@@ -592,6 +623,7 @@ const editSubmitLoading = ref(false)
 const editForm = ref({ title: '', description: '', search_query: '' })
 
 function handleEditTemplate(template) {
+  if (!guardUse(PERM_SEARCH_TEMPLATES?.editUse)) return
   editingTemplate.value = template
   editForm.value = {
     title: template.title ?? '',
@@ -602,6 +634,7 @@ function handleEditTemplate(template) {
 }
 
 async function submitEditTemplate() {
+  if (!guardUse(PERM_SEARCH_TEMPLATES?.editUse)) return
   if (!editingTemplate.value) return
   const { title, description, search_query } = editForm.value
   if (!title?.trim()) {
@@ -634,6 +667,7 @@ async function submitEditTemplate() {
 }
 
 async function handleDeleteTemplate(template) {
+  if (!guardUse(PERM_SEARCH_TEMPLATES?.deleteUse)) return
   try {
     await ElMessageBox.confirm('确定要删除该检索模板吗？', '删除确认', {
       confirmButtonText: '删除',
@@ -657,6 +691,8 @@ const overwriteSelectedId = ref(null)
 const overwriteSubmitLoading = ref(false)
 
 function openOverwriteTemplateDialog() {
+  if (!canViewOverwriteTemplate.value) return
+  if (!canUseOverwriteTemplate.value) return void noPerm()
   if (searchTemplates.value.length === 0) {
     ElMessage.warning('暂无模板可覆盖，请先保存一个模板')
     return
@@ -666,6 +702,7 @@ function openOverwriteTemplateDialog() {
 }
 
 async function submitOverwriteTemplate() {
+  if (!guardUse(PERM_SEARCH_TEMPLATES?.overwriteUse)) return
   if (!overwriteSelectedId.value) return
   overwriteSubmitLoading.value = true
   try {
@@ -778,18 +815,6 @@ function truncateContent(content, maxLength) {
 
     function getDetailRoute(entityType, uuid) {
       return `/details/${entityType}/${uuid}`
-    }
-
-    function formatDateTime(dateTime) {
-      if (!dateTime) return ''
-      const date = new Date(dateTime)
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      const hours = String(date.getHours()).padStart(2, '0')
-      const minutes = String(date.getMinutes()).padStart(2, '0')
-      const seconds = String(date.getSeconds()).padStart(2, '0')
-      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
     }
 
     function getPriorityColorClass(value) {
@@ -952,7 +977,6 @@ function truncateContent(content, maxLength) {
           })
         }
       } catch (error) {
-        console.error('搜索失败:', error)
         ElMessage.error('搜索失败，请稍后重试')
         searchResults.value = []
         totalResults.value = 0
@@ -987,6 +1011,8 @@ function truncateContent(content, maxLength) {
     }
 
     function applyTemplateFilters(template) {
+  if (!canViewApplyTemplate.value) return
+  if (!canUseApplyTemplate.value) return void noPerm()
       const rules = template?.rules
       if (!template) return
 
@@ -1042,6 +1068,11 @@ function truncateContent(content, maxLength) {
 
       try {
         const isHighlighted = result.is_highlighted
+    if (isHighlighted) {
+      if (!guardUse(PERM_SEARCH_RESULTS?.unhighlightUse)) return
+    } else {
+      if (!guardUse(PERM_SEARCH_RESULTS?.highlightUse)) return
+    }
         const entityType = result.entity_type?.toLowerCase() || 'article'
         const requestData = isHighlighted
           ? { is_highlighted: false }
@@ -1056,7 +1087,6 @@ function truncateContent(content, maxLength) {
           ElMessage.error(response.message || (isHighlighted ? '取消重点目标失败' : '设置重点目标失败'))
         }
       } catch (err) {
-        console.error('操作重点目标失败:', err)
         ElMessage.error('操作失败，请稍后重试')
       } finally {
         result._highlightLoading = false

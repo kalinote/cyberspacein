@@ -247,7 +247,7 @@
                     <div class="absolute top-14 left-0 w-full h-0.5 bg-blue-100"></div>
                     <!-- 滚动容器 -->
                     <div class="flex overflow-x-auto space-x-8 pb-8 px-4 scrollbar-thin scrollbar-thumb-blue-100 scrollbar-track-transparent">
-                        <div v-for="(snap, index) in snapshots" :key="index" class="flex-none flex flex-col items-center group relative min-w-[160px] w-[160px]">
+                        <div v-for="(snap, index) in snapshots" :key="index" class="flex-none flex flex-col items-center group relative min-w-40 w-40">
                             <!-- 时间点 -->
                             <div class="mb-2 bg-white px-3 py-1 rounded-full border border-blue-200 text-blue-600 font-medium text-xs shadow-sm z-10 group-hover:border-blue-400 group-hover:bg-blue-50 transition-colors">
                                 {{ snap.date }}
@@ -523,6 +523,7 @@ import { getCosUrl } from "@/utils/cos";
 import { platformApi } from "@/api/platform";
 import { searchApi } from "@/api/search";
 import { highlightApi } from "@/api/highlight";
+import { formatDate, formatDateTime } from "@/utils/action";
 
 defineOptions({ name: "PlatformDetail" });
 
@@ -588,15 +589,6 @@ async function loadPlatformDetail() {
         } catch (error) {
             console.error("加载平台详情失败:", error);
             ElNotification({ title: "加载失败", message: "获取平台详情失败，请稍后重试", type: "error", position: "top-right", duration: 3000 });
-        }
-    }
-    function formatDate(dateString) {
-        if (!dateString) return "-";
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
-        } catch (error) {
-            return dateString;
         }
     }
     function getStatusType(status) {
@@ -694,11 +686,6 @@ async function loadPlatformDetail() {
     }
     function getDetailRoute(entityType, uuid) {
         return `/details/${entityType}/${uuid}`;
-    }
-    function formatDateTime(dateTime) {
-        if (!dateTime) return "";
-        const date = new Date(dateTime);
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
     }
     async function toggleHighlight(result) {
         if (!result || !result.uuid) return;

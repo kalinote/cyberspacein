@@ -30,7 +30,7 @@ async def create_base_component_task_config(data: BaseComponentsTaskConfigCreate
     existing = await BaseComponentsTaskConfigModel.find_one({"node_instance_id": node_instance_id})
     if existing:
         if not existing.is_deleted:
-            return ApiResponseSchema.error(code=400, message=f"基础组件任务配置已存在，ID: {existing.id}")
+            return ApiResponseSchema.error(code=240901, message=f"基础组件任务配置已存在，ID: {existing.id}")
         await existing.update({"$set": {
             "name": data.name,
             "description": data.description,
@@ -105,7 +105,7 @@ async def get_base_component_task_configs(
 async def get_base_component_task_config_detail(config_id: str):
     doc = await BaseComponentsTaskConfigModel.find_one({"_id": config_id, "is_deleted": False})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"基础组件任务配置不存在或已删除，ID: {config_id}")
+        return ApiResponseSchema.error(code=240410, message=f"基础组件任务配置不存在或已删除，ID: {config_id}")
     return ApiResponseSchema.success(data=BaseComponentsTaskConfigResponse(
         id=doc.id,
         node_instance_id=doc.node_instance_id,
@@ -123,7 +123,7 @@ async def get_base_component_task_config_detail(config_id: str):
 async def update_base_component_task_config(config_id: str, data: BaseComponentsTaskConfigUpdateRequest):
     doc = await BaseComponentsTaskConfigModel.find_one({"_id": config_id, "is_deleted": False})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"基础组件任务配置不存在或已删除，ID: {config_id}")
+        return ApiResponseSchema.error(code=240410, message=f"基础组件任务配置不存在或已删除，ID: {config_id}")
     update_data = data.model_dump(exclude_unset=True)
     if "config_data" in update_data and update_data["config_data"] is not None:
         config_data_model = BaseComponentsConfigModel(**update_data["config_data"])
@@ -153,7 +153,7 @@ async def update_base_component_task_config(config_id: str, data: BaseComponents
 async def delete_base_component_task_config(config_id: str):
     doc = await BaseComponentsTaskConfigModel.find_one({"_id": config_id, "is_deleted": False})
     if not doc:
-        return ApiResponseSchema.error(code=404, message=f"基础组件任务配置不存在或已删除，ID: {config_id}")
+        return ApiResponseSchema.error(code=240410, message=f"基础组件任务配置不存在或已删除，ID: {config_id}")
     await doc.update(Set({
         BaseComponentsTaskConfigModel.is_deleted: True,
         BaseComponentsTaskConfigModel.updated_at: datetime.now(),

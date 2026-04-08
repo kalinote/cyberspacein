@@ -553,6 +553,7 @@ import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
+import { formatDateTime } from '@/utils/action'
 
 const activeTab = ref('analysisEngines')
 const searchKeyword = ref('')
@@ -695,22 +696,7 @@ const maskApiKey = (key) => {
   return '***' + key.slice(-4)
 }
 
-const formatModelDate = (dateStr) => {
-  if (!dateStr) return '-'
-  try {
-    const d = new Date(dateStr)
-    return d.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    })
-  } catch {
-    return dateStr
-  }
-}
+const formatModelDate = (dateStr) => formatDateTime(dateStr, { includeSecond: true })
 
 const statistics = computed(() => ({
   analysisEngines: statisticsData.value.agent_count,

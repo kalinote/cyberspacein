@@ -35,11 +35,11 @@ async def get_node_config_init(node_instance_id: str):
 
     node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
     if not node_instance:
-        return ApiResponseSchema.error(code=404, message=f"节点实例不存在，ID: {node_instance_id}")
+        return ApiResponseSchema.error(code=240417, message=f"节点实例不存在，ID: {node_instance_id}")
 
     node_definition = await ActionNodeModel.find_one({"_id": node_instance.definition_id, "is_deleted": False})
     if not node_definition:
-        return ApiResponseSchema.error(code=404, message=f"节点定义不存在，ID: {node_instance.definition_id}")
+        return ApiResponseSchema.error(code=240418, message=f"节点定义不存在，ID: {node_instance.definition_id}")
 
     inputs = {}
     for value in node_instance.inputs.values():
@@ -50,11 +50,11 @@ async def get_node_config_init(node_instance_id: str):
 
     action_instance = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
     if not action_instance:
-        return ApiResponseSchema.error(code=404, message=f"行动实例不存在，ID: {node_instance.action_id}")
+        return ApiResponseSchema.error(code=240412, message=f"行动实例不存在，ID: {node_instance.action_id}")
 
     blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
     if not blueprint:
-        return ApiResponseSchema.error(code=404, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
+        return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
 
     outputs = {}
     handle_queues = {}

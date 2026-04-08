@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     VECTOR_NUM_CANDIDATES_MIN: int = 2000
     VECTOR_NUM_CANDIDATES_MAX: int = 10000
 
+    AUTH_SECRET_KEY: str = "please-change-auth-secret-key"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    INIT_SYSTEM_USERNAME: str = "system"
+    INIT_SYSTEM_PASSWORD: str = "system123456"
+    INIT_SYSTEM_DISPLAY_NAME: str = "系统"
+    INIT_SYSTEM_EMAIL: str = "system@example.com"
+    INIT_SYSTEM_GROUP_NAME: str = "system"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

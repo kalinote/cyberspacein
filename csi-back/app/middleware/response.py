@@ -7,6 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.schemas.response import ApiResponseSchema
+import app.utils.status_codes as status_codes
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,9 @@ class ResponseMiddleware(BaseHTTPMiddleware):
             if response is not None:
                 return response
             return JSONResponse(
-                content=ApiResponseSchema.error(code=500, message=f"服务器内部错误: {str(e)}").model_dump(),
-                status_code=500
+                content=ApiResponseSchema.error(
+                    code=status_codes.INTERNAL_ERROR,
+                    message=f"服务器内部错误: {str(e)}",
+                ).model_dump(),
+                status_code=200
             )
