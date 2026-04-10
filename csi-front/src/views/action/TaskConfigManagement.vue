@@ -157,9 +157,11 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEditing ? `编辑配置 - ${formState.name || ''}` : '新建配置'"
-      width="900px"
+      :width="configDialogWidth"
+      align-center
       :close-on-click-modal="false"
       destroy-on-close
+      @closed="onConfigDialogClosed"
     >
       <!-- 模式切换 -->
       <div class="flex items-center gap-1 mb-5 bg-gray-100 rounded-lg p-1 w-fit">
@@ -181,8 +183,12 @@
         </button>
       </div>
 
-      <!-- 表格编辑模式 -->
-      <div v-show="editMode === 'table'" class="space-y-5 max-h-[62vh] overflow-y-auto pr-1">
+      <!-- 表格编辑模式：外框同时包住左侧表单与右侧值编辑 -->
+      <div
+        v-show="editMode === 'table'"
+        class="flex max-h-[calc(100vh-14rem)] min-h-0 gap-4 rounded-lg border border-gray-200 bg-white p-3"
+      >
+        <div class="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto pr-1">
         <!-- 基本信息 -->
         <div class="border border-gray-200 rounded-xl overflow-hidden">
           <div class="bg-blue-50 px-4 py-2.5 flex items-center gap-2">
@@ -273,6 +279,7 @@
                     <el-option label="字符串" value="string" />
                     <el-option label="数值" value="number" />
                     <el-option label="布尔" value="boolean" />
+                    <el-option label="空值" value="null" />
                     <el-option label="数组" value="array" />
                     <el-option label="对象" value="object" />
                   </el-select>
@@ -297,12 +304,26 @@
                     class="w-full"
                     controls-position="right"
                   />
-                  <MonacoEditor
-                    v-else-if="row.valueType === 'array' || row.valueType === 'object'"
-                    v-model="row.value"
-                    language="json"
-                    :min-height="140"
-                  />
+                  <div
+                    v-else-if="row.valueType === 'null'"
+                    class="text-xs text-gray-500 px-2 py-2 bg-gray-50 border border-gray-200 rounded-md"
+                  >
+                    当前值为 null
+                  </div>
+                  <div v-else-if="row.valueType === 'array' || row.valueType === 'object'" class="flex items-center gap-2">
+                    <div class="flex-1 min-w-0">
+                      <div class="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-md px-2 py-2 wrap-break-word">
+                        {{ summarizeValue(row.value) }}
+                      </div>
+                    </div>
+                    <el-button
+                      size="small"
+                      :type="isValueSlotActive('config', index) ? 'primary' : 'default'"
+                      @click="toggleValueSlot('config', index)"
+                    >
+                      编辑
+                    </el-button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -352,6 +373,7 @@
                     <el-option label="字符串" value="string" />
                     <el-option label="数值" value="number" />
                     <el-option label="布尔" value="boolean" />
+                    <el-option label="空值" value="null" />
                     <el-option label="数组" value="array" />
                     <el-option label="对象" value="object" />
                   </el-select>
@@ -377,12 +399,26 @@
                       controls-position="right"
                     />
                     <el-switch v-else-if="row.valueType === 'boolean'" v-model="row.value" />
-                    <MonacoEditor
-                      v-else-if="row.valueType === 'array' || row.valueType === 'object'"
-                      v-model="row.value"
-                      language="json"
-                      :min-height="140"
-                    />
+                    <div
+                      v-else-if="row.valueType === 'null'"
+                      class="text-xs text-gray-500 px-2 py-2 bg-gray-50 border border-gray-200 rounded-md"
+                    >
+                      当前值为 null
+                    </div>
+                    <div v-else-if="row.valueType === 'array' || row.valueType === 'object'" class="flex items-center gap-2">
+                      <div class="flex-1 min-w-0">
+                        <div class="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-md px-2 py-2 wrap-break-word">
+                          {{ summarizeValue(row.value) }}
+                        </div>
+                      </div>
+                      <el-button
+                        size="small"
+                        :type="isValueSlotActive('input', index) ? 'primary' : 'default'"
+                        @click="toggleValueSlot('input', index)"
+                      >
+                        编辑
+                      </el-button>
+                    </div>
                   </template>
                   <TagInput
                     v-else-if="row.ioType === 'reference'"
@@ -447,6 +483,38 @@
             </div>
           </div>
         </div>
+        </div>
+
+        <div
+          v-show="isValuePanelOpen"
+          class="flex w-full min-w-0 max-w-[min(480px,42vw)] shrink-0 flex-col border-l border-gray-200 pl-4 md:w-[min(480px,40%)]"
+        >
+          <div class="mb-2 text-sm font-medium text-gray-800">
+            {{ valuePanelTitle }}
+          </div>
+          <div
+            v-if="valuePanelJsonError"
+            class="mb-2 flex shrink-0 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+          >
+            <Icon icon="mdi:alert-circle" />
+            {{ valuePanelJsonError }}
+          </div>
+          <div
+            class="flex min-h-0 flex-[1_1_42%] flex-col [&_.monaco-editor-container]:min-h-50 [&_.monaco-editor-container]:h-full [&_.monaco-editor-container]:flex-1"
+          >
+            <MonacoEditor
+              v-model="valuePanelJsonString"
+              language="json"
+              :min-height="200"
+            />
+          </div>
+          <div class="mb-2 shrink-0 text-xs text-gray-500">
+            支持任意类型与多重嵌套。上方为 JSON 预览，可与下方可视化编辑双向同步。
+          </div>
+          <div class="min-h-0 flex-[1_1_50%] overflow-y-auto">
+            <AnyValueTreeEditor ref="valueEditorRef" v-model="valuePanelTempValue" />
+          </div>
+        </div>
       </div>
 
       <!-- JSON 编辑模式 -->
@@ -476,13 +544,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, nextTick } from 'vue'
+import { ref, reactive, watch, nextTick, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
+import AnyValueTreeEditor from '@/components/common/AnyValueTreeEditor/AnyValueTreeEditor.vue'
 import { taskConfigApi } from '@/api/taskConfig'
 import { actionApi } from '@/api/action'
 import { formatDate } from '@/utils/action'
@@ -519,7 +588,124 @@ let isUpdatingFromJson = false
 let isUpdatingFromForm = false
 let jsonDebounceTimer = null
 
+const VALUE_JSON_DEBOUNCE_MS = 300
+let isValueUpdatingFromMonaco = false
+let isValueUpdatingFromTree = false
+let valueJsonDebounceTimer = null
+
+const activeValueSlot = ref(null)
+const valuePanelTempValue = ref(null)
+const valueEditorRef = ref(null)
+const valuePanelJsonString = ref('')
+const valuePanelJsonError = ref('')
+
+const isValuePanelOpen = computed(
+  () => activeValueSlot.value !== null && editMode.value === 'table'
+)
+
+const configDialogWidth = computed(() =>
+  isValuePanelOpen.value ? 'min(1400px, 96vw)' : '900px'
+)
+
+const valuePanelTitle = computed(() => {
+  const s = activeValueSlot.value
+  if (!s) return ''
+  const row = s.scope === 'config' ? formState.configRows[s.index] : formState.inputRows[s.index]
+  if (!row) return '编辑值'
+  return s.scope === 'config'
+    ? `编辑值 - config：${row.key || '(未命名参数)'}`
+    : `编辑值 - input：${row.portName || '(未命名端口)'}`
+})
+
+function getValuePanelRow(scope, index) {
+  return scope === 'config' ? formState.configRows[index] : formState.inputRows[index]
+}
+
+function loadValuePanelFromRow(scope, index) {
+  const row = getValuePanelRow(scope, index)
+  if (!row) return
+  activeValueSlot.value = { scope, index }
+  valuePanelTempValue.value = deepCloneJsonLike(
+    row.value,
+    row.valueType === 'array' ? [] : row.valueType === 'object' ? {} : null
+  )
+  isValueUpdatingFromTree = true
+  valuePanelJsonError.value = ''
+  try {
+    valuePanelJsonString.value = JSON.stringify(valuePanelTempValue.value, null, 2)
+  } catch {
+    valuePanelJsonString.value = ''
+    valuePanelJsonError.value = '当前值无法序列化为 JSON'
+  }
+  nextTick(() => {
+    isValueUpdatingFromTree = false
+  })
+}
+
+function resetValuePanelState() {
+  clearTimeout(valueJsonDebounceTimer)
+  valueJsonDebounceTimer = null
+  isValueUpdatingFromTree = true
+  valuePanelJsonString.value = ''
+  valuePanelJsonError.value = ''
+  activeValueSlot.value = null
+  valuePanelTempValue.value = null
+  nextTick(() => {
+    isValueUpdatingFromTree = false
+  })
+}
+
+function commitValuePanelToRow() {
+  const s = activeValueSlot.value
+  if (!s) return
+  const row = getValuePanelRow(s.scope, s.index)
+  if (!row) return
+  row.value = deepCloneJsonLike(valuePanelTempValue.value, row.valueType === 'array' ? [] : {})
+}
+
+function isValueSlotActive(scope, index) {
+  const s = activeValueSlot.value
+  return s !== null && s.scope === scope && s.index === index
+}
+
+function toggleValueSlot(scope, index) {
+  const cur = activeValueSlot.value
+  if (cur && cur.scope === scope && cur.index === index) {
+    resetValuePanelState()
+    return
+  }
+  loadValuePanelFromRow(scope, index)
+}
+
+function onConfigDialogClosed() {
+  resetValuePanelState()
+}
+
+function summarizeValue(val) {
+  if (val === null) return 'null'
+  const t = typeof val
+  if (t === 'string') return val.length > 80 ? JSON.stringify(val.slice(0, 80) + '...') : JSON.stringify(val)
+  if (t === 'number' || t === 'boolean') return String(val)
+  if (Array.isArray(val)) return `数组(${val.length})：` + (val.length ? summarizeValue(val[0]) : '空')
+  if (t === 'object') {
+    const keys = Object.keys(val || {})
+    return `对象(${keys.length})：` + (keys.length ? `${keys[0]}=${summarizeValue(val[keys[0]])}` : '空')
+  }
+  return String(val)
+}
+
+function deepCloneJsonLike(val, fallback = null) {
+  if (val === null || val === undefined) return val ?? fallback
+  if (typeof val !== 'object') return val
+  try {
+    return JSON.parse(JSON.stringify(val))
+  } catch {
+    return fallback
+  }
+}
+
 function detectValueType(val) {
+  if (val === null) return 'null'
   if (Array.isArray(val)) return 'array'
   if (val !== null && typeof val === 'object') return 'object'
   if (typeof val === 'boolean') return 'boolean'
@@ -527,8 +713,17 @@ function detectValueType(val) {
   return 'string'
 }
 
-function parseJsonField(str, fallback) {
-  try { return JSON.parse(str) } catch { return fallback }
+function tryParseJsonStringToValue(str) {
+  if (typeof str !== 'string') return null
+  const trimmed = str.trim()
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (parsed !== null && typeof parsed === 'object') return parsed
+    return null
+  } catch {
+    return null
+  }
 }
 
 function buildConfigData() {
@@ -538,8 +733,9 @@ function buildConfigData() {
     let val = row.value
     if (row.valueType === 'number') val = typeof val === 'number' ? val : Number(val) || 0
     else if (row.valueType === 'boolean') val = !!val
-    else if (row.valueType === 'array') val = parseJsonField(val, [])
-    else if (row.valueType === 'object') val = parseJsonField(val, {})
+    else if (row.valueType === 'null') val = null
+    else if (row.valueType === 'array') val = Array.isArray(val) ? val : []
+    else if (row.valueType === 'object') val = (val !== null && typeof val === 'object' && !Array.isArray(val)) ? val : {}
     config[row.key] = val
   })
 
@@ -550,8 +746,9 @@ function buildConfigData() {
     if (row.ioType === 'value') {
       if (row.valueType === 'number') value = typeof value === 'number' ? value : Number(value) || 0
       else if (row.valueType === 'boolean') value = !!value
-      else if (row.valueType === 'array') value = parseJsonField(value, [])
-      else if (row.valueType === 'object') value = parseJsonField(value, {})
+      else if (row.valueType === 'null') value = null
+      else if (row.valueType === 'array') value = Array.isArray(value) ? value : []
+      else if (row.valueType === 'object') value = (value !== null && typeof value === 'object' && !Array.isArray(value)) ? value : {}
     }
     inputs[row.portName] = { type: row.ioType, value }
   })
@@ -581,11 +778,13 @@ function applyConfigDataToForm(data) {
   }
 
   formState.configRows = Object.entries(data.config || {}).map(([key, val]) => {
-    const vt = detectValueType(val)
+    const parsedMaybe = tryParseJsonStringToValue(val)
+    const normalizedVal = parsedMaybe ?? val
+    const vt = detectValueType(normalizedVal)
     return {
       key,
       valueType: vt,
-      value: (vt === 'array' || vt === 'object') ? JSON.stringify(val, null, 2) : val
+      value: (vt === 'array' || vt === 'object') ? deepCloneJsonLike(normalizedVal, vt === 'array' ? [] : {}) : normalizedVal
     }
   })
 
@@ -594,12 +793,14 @@ function applyConfigDataToForm(data) {
       const refs = Array.isArray(port.value) ? [...port.value] : port.value ? [port.value] : []
       return { portName, ioType: 'reference', valueType: 'array', value: refs }
     }
-    const vt = detectValueType(port.value)
+    const parsedMaybe = tryParseJsonStringToValue(port.value)
+    const normalizedVal = parsedMaybe ?? port.value
+    const vt = detectValueType(normalizedVal)
     return {
       portName,
       ioType: 'value',
       valueType: vt,
-      value: (vt === 'array' || vt === 'object') ? JSON.stringify(port.value, null, 2) : port.value
+      value: (vt === 'array' || vt === 'object') ? deepCloneJsonLike(normalizedVal, vt === 'array' ? [] : {}) : normalizedVal
     }
   })
 
@@ -657,6 +858,44 @@ watch(jsonString, (val) => {
   }, 300)
 })
 
+watch(
+  () => valuePanelTempValue.value,
+  () => {
+    if (!isValuePanelOpen.value) return
+    if (isValueUpdatingFromMonaco) return
+    isValueUpdatingFromTree = true
+    try {
+      valuePanelJsonString.value = JSON.stringify(valuePanelTempValue.value, null, 2)
+      valuePanelJsonError.value = ''
+      commitValuePanelToRow()
+    } catch (e) {
+      valuePanelJsonError.value = 'JSON 格式错误：' + e.message
+    }
+    nextTick(() => {
+      isValueUpdatingFromTree = false
+    })
+  },
+  { deep: true }
+)
+
+watch(valuePanelJsonString, (val) => {
+  if (isValueUpdatingFromTree) return
+  clearTimeout(valueJsonDebounceTimer)
+  valueJsonDebounceTimer = setTimeout(() => {
+    try {
+      const parsed = JSON.parse(val)
+      isValueUpdatingFromMonaco = true
+      valuePanelTempValue.value = parsed
+      valuePanelJsonError.value = ''
+      nextTick(() => {
+        isValueUpdatingFromMonaco = false
+      })
+    } catch (e) {
+      valuePanelJsonError.value = 'JSON 格式错误：' + e.message
+    }
+  }, VALUE_JSON_DEBOUNCE_MS)
+})
+
 function switchToTable() {
   if (editMode.value === 'json' && jsonError.value) {
     ElMessage.warning('请先修正 JSON 格式错误，再切换到表格编辑')
@@ -679,6 +918,7 @@ function switchToTable() {
 }
 
 function switchToJson() {
+  if (isValuePanelOpen.value) resetValuePanelState()
   jsonString.value = JSON.stringify(buildConfigData(), null, 2)
   jsonError.value = ''
   editMode.value = 'json'
@@ -717,6 +957,7 @@ function handleCreate() {
   isEditing.value = false
   editingConfigId.value = null
   editMode.value = 'table'
+  resetValuePanelState()
   isUpdatingFromJson = true
   resetForm()
   jsonString.value = JSON.stringify(buildConfigData(), null, 2)
@@ -729,6 +970,7 @@ function handleEdit(config) {
   isEditing.value = true
   editingConfigId.value = config.id
   editMode.value = 'table'
+  resetValuePanelState()
   isUpdatingFromJson = true
   initFormFromConfig(config)
   jsonString.value = JSON.stringify(buildConfigData(), null, 2)
@@ -738,6 +980,17 @@ function handleEdit(config) {
 }
 
 async function handleSave() {
+  if (isValuePanelOpen.value) {
+    if (valuePanelJsonError.value) {
+      ElMessage.warning(valuePanelJsonError.value)
+      return
+    }
+    const errors = valueEditorRef.value?.validate?.() || []
+    if (errors.length) {
+      ElMessage.warning(errors[0])
+      return
+    }
+  }
   if (!formState.name.trim()) {
     ElMessage.warning('请填写配置名称')
     return
@@ -806,8 +1059,9 @@ function removeConfigRow(index) {
 function onConfigValueTypeChange(row) {
   if (row.valueType === 'number') row.value = 0
   else if (row.valueType === 'boolean') row.value = false
-  else if (row.valueType === 'array') row.value = '[]'
-  else if (row.valueType === 'object') row.value = '{}'
+  else if (row.valueType === 'null') row.value = null
+  else if (row.valueType === 'array') row.value = []
+  else if (row.valueType === 'object') row.value = {}
   else row.value = ''
 }
 
@@ -831,8 +1085,9 @@ function onInputTypeChange(row) {
 function onInputValueTypeChange(row) {
   if (row.valueType === 'number') row.value = 0
   else if (row.valueType === 'boolean') row.value = false
-  else if (row.valueType === 'array') row.value = '[]'
-  else if (row.valueType === 'object') row.value = '{}'
+  else if (row.valueType === 'null') row.value = null
+  else if (row.valueType === 'array') row.value = []
+  else if (row.valueType === 'object') row.value = {}
   else row.value = ''
 }
 
