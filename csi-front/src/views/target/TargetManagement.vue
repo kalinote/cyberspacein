@@ -49,7 +49,7 @@
               </button>
               <button class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2">
                 <Icon icon="mdi:clipboard-text-search-outline" />
-                <span>监控任务管理</span>
+                <span>专题事件管理</span>
               </button>
               <button class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2" @click="router.push('/target/highlights')">
                 <Icon icon="mdi:tag-multiple" />
@@ -61,72 +61,82 @@
       </div>
     </section>
 
-    <!-- 目标列表区域 -->
+    <!-- 目标列表区域：与重点实体库同源，展示前 6 条 -->
     <section class="py-12 bg-linear-to-b from-white to-gray-50">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center mb-8">
+        <div class="mb-8">
           <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
             <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
             <span><span class="text-blue-500">重点</span>实体</span>
           </h2>
-          <el-button type="primary" link>
-            <template #icon><Icon icon="mdi:arrow-right" /></template>
-            查看全部实体
-          </el-button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div
+          v-loading="highlightLoading"
+          element-loading-text="加载中..."
+          class="min-h-50"
+        >
           <div
-            v-for="target in targets"
-            :key="target.id"
-            class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow"
+            v-if="!highlightLoading && highlightItems.length === 0"
+            class="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-gray-200 bg-white/80"
           >
-            <div class="flex items-start justify-between mb-4">
-              <div class="flex-1">
-                <h3 class="text-lg font-bold text-gray-900 mb-2">{{ target.name }}</h3>
-                <el-tag :type="target.statusType" size="small">{{ target.status }}</el-tag>
+            <Icon icon="mdi:star-off-outline" class="text-6xl text-gray-300 mb-4" />
+            <p class="text-gray-500 text-lg mb-2">暂无重点实体</p>
+            <p class="text-gray-400 text-sm text-center max-w-md">
+              在检索结果或详情页中将实体标记为重点后，会在此展示。也可通过上方「重点实体库」进入完整列表。
+            </p>
+          </div>
+
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div
+              v-for="result in highlightItems"
+              :key="result.uuid"
+              class="bg-white rounded-xl p-4 border border-gray-200 hover:shadow-lg transition-all flex flex-col"
+            >
+              <div class="flex flex-wrap items-center gap-1.5 mb-2">
+                <el-tag size="small">{{ result.section }}</el-tag>
+                <el-tag :type="getConfidenceInfo(result.confidence).type" size="small">
+                  {{ getConfidenceInfo(result.confidence).text }}
+                </el-tag>
+                <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
+                <el-tag v-if="result.aigc" type="warning" size="small">AIGC</el-tag>
               </div>
-              <div class="ml-3 shrink-0">
-                <div :class="['w-12 h-12 rounded-xl flex items-center justify-center', target.priorityBgColor]">
-                  <Icon :icon="target.priorityIcon" :class="['text-2xl', target.priorityIconColor]" />
+              <h3 class="text-base font-bold text-gray-900 mb-1.5 line-clamp-2">
+                <router-link
+                  :to="getDetailRoute(result.entity_type, result.uuid)"
+                  class="hover:text-blue-600 transition-colors"
+                >
+                  {{ result.title || '无标题' }}
+                </router-link>
+              </h3>
+              <p class="text-gray-600 text-sm mb-3 flex-1">
+                {{ truncateContent(result.clean_content, 200) || '暂无分析内容' }}
+              </p>
+              <div class="space-y-1.5 text-sm text-gray-500 mt-auto mb-3">
+                <div class="flex items-center gap-2">
+                  <Icon icon="mdi:source-repository" class="text-blue-500 shrink-0" />
+                  <router-link
+                    v-if="result.platform_id"
+                    :to="`/details/platform/${result.platform_id}`"
+                    class="text-blue-600 hover:underline truncate"
+                  >
+                    {{ result.platform || '—' }}
+                  </router-link>
+                  <span v-else>{{ result.platform || '—' }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Icon icon="mdi:calendar" class="text-purple-500 shrink-0" />
+                  <span>{{ formatHighlightDate(result.update_at) }}</span>
                 </div>
               </div>
-            </div>
-
-            <div class="space-y-3 mb-4">
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-500 flex items-center gap-2">
-                  <Icon icon="mdi:tag" class="text-blue-500" />
-                  优先级
-                </span>
-                <span class="font-medium text-gray-900">{{ target.priority }}</span>
-              </div>
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-500 flex items-center gap-2">
-                  <Icon icon="mdi:link-variant" class="text-green-500" />
-                  关联行动
-                </span>
-                <span class="font-medium text-gray-900">{{ target.linkedActions }} 个</span>
-              </div>
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-500 flex items-center gap-2">
-                  <Icon icon="mdi:calendar" class="text-purple-500" />
-                  创建时间
-                </span>
-                <span class="font-medium text-gray-900">{{ target.createdAt }}</span>
-              </div>
-            </div>
-
-            <div class="pt-4 border-t border-gray-200">
-              <div class="flex items-center gap-2">
-                <el-button type="primary" link size="small" class="flex-1">
-                  <template #icon><Icon icon="mdi:eye" /></template>
+              <div class="pt-3 border-t border-gray-200 flex justify-center">
+                <router-link
+                  :to="getDetailRoute(result.entity_type, result.uuid)"
+                  class="text-blue-600 hover:text-blue-800 flex items-center text-sm font-medium"
+                >
+                  <Icon icon="mdi:eye" class="mr-1" />
                   查看详情
-                </el-button>
-                <el-button type="primary" link size="small">
-                  <template #icon><Icon icon="mdi:pencil" /></template>
-                  编辑
-                </el-button>
+                </router-link>
               </div>
             </div>
           </div>
@@ -322,89 +332,80 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
+import { searchApi } from '@/api/search'
+import { formatDateTime as formatDateTimeUtil } from '@/utils/action/formatters'
 
 defineOptions({ name: 'TargetManagement' })
 
 const router = useRouter()
 const statsTimeRange = ref('week')
-const targets = ref([
-        {
-          id: 1,
-          name: '社交媒体舆情监控',
-          status: '进行中',
-          statusType: 'success',
-          priority: '高',
-          priorityIcon: 'mdi:alert-octagon',
-          priorityBgColor: 'bg-red-100',
-          priorityIconColor: 'text-red-600',
-          linkedActions: 3,
-          createdAt: '2025-01-05'
-        },
-        {
-          id: 2,
-          name: '网络安全威胁情报',
-          status: '进行中',
-          statusType: 'success',
-          priority: '高',
-          priorityIcon: 'mdi:alert-octagon',
-          priorityBgColor: 'bg-red-100',
-          priorityIconColor: 'text-red-600',
-          linkedActions: 2,
-          createdAt: '2025-01-03'
-        },
-        {
-          id: 3,
-          name: '技术论坛信息收集',
-          status: '待启动',
-          statusType: 'warning',
-          priority: '中',
-          priorityIcon: 'mdi:alert',
-          priorityBgColor: 'bg-amber-100',
-          priorityIconColor: 'text-amber-600',
-          linkedActions: 1,
-          createdAt: '2025-01-07'
-        },
-        {
-          id: 4,
-          name: '市场动态追踪',
-          status: '进行中',
-          statusType: 'success',
-          priority: '中',
-          priorityIcon: 'mdi:alert',
-          priorityBgColor: 'bg-amber-100',
-          priorityIconColor: 'text-amber-600',
-          linkedActions: 2,
-          createdAt: '2025-01-04'
-        },
-        {
-          id: 5,
-          name: '政策法规更新监控',
-          status: '暂停',
-          statusType: 'info',
-          priority: '低',
-          priorityIcon: 'mdi:information',
-          priorityBgColor: 'bg-blue-100',
-          priorityIconColor: 'text-blue-600',
-          linkedActions: 0,
-          createdAt: '2025-01-02'
-        },
-        {
-          id: 6,
-          name: '竞品动态分析',
-          status: '已完成',
-          statusType: '',
-          priority: '中',
-          priorityIcon: 'mdi:alert',
-          priorityBgColor: 'bg-amber-100',
-          priorityIconColor: 'text-amber-600',
-          linkedActions: 1,
-          createdAt: '2024-12-28'
-        }
-      ])
+const highlightLoading = ref(false)
+const highlightItems = ref([])
+
+function formatHighlightDate(val) {
+  return formatDateTimeUtil(val) || '—'
+}
+
+function truncateContent(content, maxLength) {
+  if (!content) return ''
+  const tempDiv = document.createElement('div')
+  tempDiv.innerHTML = content
+  const text = (tempDiv.textContent || tempDiv.innerText || '').trim()
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength) + '...'
+}
+
+function getConfidenceInfo(confidence) {
+  if (confidence === 0) {
+    return { text: '零信任', type: 'danger' }
+  }
+  if (confidence > 0 && confidence <= 0.4) {
+    return { text: '低', type: 'info' }
+  }
+  if (confidence > 0.4 && confidence <= 0.7) {
+    return { text: '中', type: '' }
+  }
+  return { text: '高', type: 'warning' }
+}
+
+function getDetailRoute(entityType, uuid) {
+  return `/details/${entityType}/${uuid}`
+}
+
+async function loadHighlightPreview() {
+  try {
+    highlightLoading.value = true
+    const params = {
+      page: 1,
+      page_size: 6,
+      is_highlighted: true,
+      search_mode: 'keyword',
+      sort_by: 'time',
+      sort_order: 'desc'
+    }
+    const response = await searchApi.searchEntity(params)
+    if (response.code === 0 && response.data) {
+      highlightItems.value = response.data.items || []
+    } else {
+      highlightItems.value = []
+    }
+  } catch (err) {
+    console.error('加载重点实体预览失败:', err)
+    ElMessage.error('重点实体加载失败，请稍后重试')
+    highlightItems.value = []
+  } finally {
+    highlightLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadHighlightPreview()
+})
 const targetStats = ref([
         {
           type: '网络安全',

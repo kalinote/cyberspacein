@@ -35,9 +35,12 @@ defineOptions({ name: 'Login' })
 const router = useRouter()
 const route = useRoute()
 
+const devUser = import.meta.env.VITE_DEV_LOGIN_USERNAME
+const devPass = import.meta.env.VITE_DEV_LOGIN_PASSWORD
+
 const form = reactive({
-  username: '',
-  password: ''
+  username: import.meta.env.DEV && devUser ? String(devUser) : '',
+  password: import.meta.env.DEV && devPass ? String(devPass) : ''
 })
 
 const loading = ref(false)

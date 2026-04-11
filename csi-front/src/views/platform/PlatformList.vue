@@ -131,7 +131,13 @@
             <!-- 平台标签 -->
             <div v-if="platform.tags && platform.tags.length > 0" class="mb-4">
               <div class="flex flex-wrap gap-2">
-                <el-tag v-for="tag in platform.tags.slice(0, 3)" :key="tag" size="small" type="info" effect="plain">
+                <el-tag
+                  v-for="tag in platform.tags.slice(0, 3)"
+                  :key="tag"
+                  size="small"
+                  :type="isSensitiveLabel(tag) ? 'danger' : 'info'"
+                  effect="plain"
+                >
                   {{ tag }}
                 </el-tag>
                 <el-tag v-if="platform.tags.length > 3" size="small" type="info" effect="plain">
@@ -143,7 +149,13 @@
             <!-- 平台板块 -->
             <div v-if="platform.sections && platform.sections.length > 0" class="mb-4">
               <div class="flex flex-wrap gap-2">
-                <el-tag v-for="section in platform.sections.slice(0, 3)" :key="section" size="small" type="primary" effect="plain">
+                <el-tag
+                  v-for="section in platform.sections.slice(0, 3)"
+                  :key="section"
+                  size="small"
+                  :type="isSensitiveLabel(section) ? 'danger' : 'primary'"
+                  effect="plain"
+                >
                   {{ section }}
                 </el-tag>
                 <el-tag v-if="platform.sections.length > 3" size="small" type="primary" effect="plain">
@@ -537,6 +549,12 @@ const getStatusType = (status) => {
     离线: 'info'
   }
   return statusMap[status] || 'info'
+}
+
+const isSensitiveLabel = (text) => {
+  if (text == null || text === '') return false
+  const s = String(text).toUpperCase()
+  return s.includes('NSFW') || s.includes('AIGC')
 }
 
 const getLogoUrl = (logo) => {

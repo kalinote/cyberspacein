@@ -16,7 +16,10 @@
           </p>
 
           <!-- 顶部总结数据 -->
-          <div class="flex flex-wrap justify-center gap-4 mb-12">
+          <div
+            v-loading="overviewSummaryLoading"
+            class="flex flex-wrap justify-center gap-4 mb-12"
+          >
             <div
               class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center space-x-3"
             >
@@ -27,7 +30,7 @@
               </div>
               <div>
                 <p class="text-sm text-gray-500">数据总量</p>
-                <p class="text-xl font-bold text-gray-900">{{ dataSummary.total }}</p>
+                <p class="text-xl font-bold text-gray-900">{{ formatSummaryNumber(dataSummary.total) }}</p>
               </div>
             </div>
 
@@ -41,7 +44,21 @@
               </div>
               <div>
                 <p class="text-sm text-gray-500">今日新增</p>
-                <p class="text-xl font-bold text-gray-900">{{ dataSummary.today }}</p>
+                <p class="text-xl font-bold text-gray-900">{{ formatSummaryNumber(dataSummary.todayNew) }}</p>
+              </div>
+            </div>
+
+            <div
+              class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center space-x-3"
+            >
+              <div
+                class="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center"
+              >
+                <Icon icon="mdi:cloud-download-outline" class="text-cyan-600 text-xl" />
+              </div>
+              <div>
+                <p class="text-sm text-gray-500">今日采集</p>
+                <p class="text-xl font-bold text-gray-900">{{ formatSummaryNumber(dataSummary.todayCrawl) }}</p>
               </div>
             </div>
 
@@ -95,11 +112,12 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
           <!-- 趋势图表 -->
           <div
+            v-loading="overviewTrendLoading"
             class="bg-linear-to-br from-white to-blue-50 rounded-2xl p-6 shadow-sm border border-gray-100"
           >
             <div class="flex justify-between items-center mb-6">
               <h3 class="text-xl font-bold text-gray-900">情报数量趋势</h3>
-              <el-radio-group v-model="currentRange" @change="switchRange" size="small">
+              <el-radio-group v-model="currentRange" @change="onTrendRangeChange" size="small">
                 <el-radio-button label="trend30d">30天</el-radio-button>
                 <el-radio-button label="trend90d">90天</el-radio-button>
                 <el-radio-button label="trend1y">1年</el-radio-button>
@@ -114,15 +132,18 @@
               class="grid grid-cols-2 gap-6 mt-6 pt-6 border-t border-gray-100"
             >
               <div class="text-center">
-                <p class="text-sm text-gray-500">周增长</p>
-                <p class="text-2xl font-bold text-green-600">
-                  {{ currentTrendData.weekGrowth }}
+                <p class="text-sm text-gray-500">首尾变化率</p>
+                <p
+                  class="text-2xl font-bold"
+                  :class="trendChangeRateClass"
+                >
+                  {{ trendChangeDisplay }}
                 </p>
               </div>
               <div class="text-center">
                 <p class="text-sm text-gray-500">日均数量</p>
                 <p class="text-2xl font-bold text-gray-900">
-                  {{ currentTrendData.dailyAvg }}
+                  {{ trendDailyDisplay }}
                 </p>
               </div>
             </div>
@@ -130,13 +151,14 @@
 
           <!-- 来源分布图表 -->
           <div
+            v-loading="overviewPlatformLoading"
             class="bg-linear-to-br from-white to-blue-50 rounded-2xl p-6 shadow-sm border border-gray-100"
           >
             <div class="flex justify-between items-center mb-6">
               <h3 class="text-xl font-bold text-gray-900">情报来源分布</h3>
               <span class="text-sm text-gray-500"
                 >数据源:
-                <span class="font-bold text-gray-900">147个</span></span
+                <span class="font-bold text-gray-900">{{ platformSourceCount }}个</span></span
               >
             </div>
 
@@ -366,8 +388,30 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
+import { overviewApi } from "@/api/overview";
 
 defineOptions({ name: "Home" });
+
+const RANGE_CONFIG = {
+  trend30d: { n: 30, unit: "day" },
+  trend90d: { n: 90, unit: "day" },
+  trend1y: { n: 12, unit: "month" }
+};
+
+const PIE_COLORS = [
+  "#3b82f6",
+  "#06b6d4",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#14b8a6",
+  "#f97316",
+  "#6366f1",
+  "#84cc16",
+  "#64748b",
+  "#0ea5e9"
+];
 
 const currentRange = ref("trend30d");
 const statsTimeRange = ref("week");
@@ -379,25 +423,83 @@ const intelligenceStats = ref([
   { category: "技术发展", count: "2,431", percentage: "15%", trend: "+12.4%", status: "待审核", colorClass: "bg-amber-500", trendClass: "text-green-600", trendIcon: "mdi:trending-up", statusType: "warning" }
 ]);
 
-const trendData = ref({
-  trend30d: { dates: ["1日","3日","5日","7日","9日","11日","13日","15日","17日","19日","21日","23日","25日","27日","29日"], values: [7200,7850,8320,7980,8450,9010,9320,9100,8650,8920,9240,9560,9880,10120,10450], weekGrowth: "+12.5%", dailyAvg: "8,742条" },
-  trend90d: { dates: ["1月","2月","3月","4月","5月","6月","7日","14日","21日","28日","35日","42日","49日","56日","63日","70日","77日","84日"], values: [6200,6580,6920,7350,7810,8020,8320,8450,8620,8910,9020,9250,9420,9680,9810,10020,10250,10450], weekGrowth: "+8.3%", dailyAvg: "8,210条" },
-  trend1y: { dates: ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"], values: [5200,5800,6320,6850,7350,7920,8320,8620,9020,9420,9810,10450], weekGrowth: "+15.8%", dailyAvg: "7,850条" }
+const overviewSummaryLoading = ref(false);
+const overviewTrendLoading = ref(false);
+const overviewPlatformLoading = ref(false);
+let trendFetchGeneration = 0;
+const trendChangeDisplay = ref("—");
+const trendDailyDisplay = ref("—");
+const trendChangeRateRaw = ref(null);
+const platformSourceCount = ref(0);
+const platformDistribution = ref([]);
+
+const ALARM_PLACEHOLDER = 47;
+
+const dataSummary = ref({
+  total: 0,
+  todayNew: 0,
+  todayCrawl: 0,
+  alarm: ALARM_PLACEHOLDER,
+  lastUpdate: "—"
 });
 
-const dataSummary = ref({ total: 4202512, today: 12000, alarm: 47, lastUpdate: "2025-12-11 10:00:00" });
+function formatSummaryNumber(v) {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  return Number(v).toLocaleString();
+}
+
+function formatLatestEditAt(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const s = String(d.getSeconds()).padStart(2, "0");
+  return `${y}-${m}-${day} ${h}:${min}:${s}`;
+}
+
+async function fetchSummaryStatus() {
+  overviewSummaryLoading.value = true;
+  try {
+    const res = await overviewApi.getSummaryStatus();
+    const d = res?.data;
+    if (!d) {
+      dataSummary.value = {
+        total: 0,
+        todayNew: 0,
+        todayCrawl: 0,
+        alarm: ALARM_PLACEHOLDER,
+        lastUpdate: "—"
+      };
+      return;
+    }
+    dataSummary.value = {
+      total: d.total_doc_count ?? 0,
+      todayNew: d.today_new_count ?? 0,
+      todayCrawl: d.today_crawl_count ?? 0,
+      alarm: ALARM_PLACEHOLDER,
+      lastUpdate: formatLatestEditAt(d.latest_last_edit_at)
+    };
+  } catch {
+    dataSummary.value = {
+      total: 0,
+      todayNew: 0,
+      todayCrawl: 0,
+      alarm: ALARM_PLACEHOLDER,
+      lastUpdate: "—"
+    };
+  } finally {
+    overviewSummaryLoading.value = false;
+  }
+}
 
 const latestIntelligence = ref([
   { id: 1, category: "网络安全", tagType: "primary", tagClass: "", time: "2小时前", title: "新型钓鱼攻击模式在亚太地区活跃", description: "监测发现针对金融行业的针对性攻击，涉及新型社会工程学手段...", sourceIcon: "mdi:source-repository", sourceName: "威胁情报库", sourceBgColor: "bg-blue-100", sourceIconColor: "text-blue-600", priority: "高优先级", priorityColor: "text-amber-500" },
   { id: 2, category: "市场动态", tagType: "success", tagClass: "", time: "5小时前", title: "科技行业并购活动Q3增长显著", description: "人工智能与数据安全领域成为投资热点，多家初创公司获得大额融资...", sourceIcon: "mdi:finance", sourceName: "商业数据源", sourceBgColor: "bg-green-100", sourceIconColor: "text-green-600", priority: "中优先级", priorityColor: "text-blue-500" },
   { id: 3, category: "政策法规", tagType: "", tagClass: "bg-purple-50! text-purple-700!", time: "1天前", title: "多国更新数据隐私保护法规", description: "欧盟、美国及亚太地区相继出台或修订数据跨境传输相关规定...", sourceIcon: "mdi:scale-balance", sourceName: "政策数据库", sourceBgColor: "bg-purple-100", sourceIconColor: "text-purple-600", priority: "中优先级", priorityColor: "text-blue-500" }
-]);
-
-const sourceDistribution = ref([
-  { name: "公开数据源", value: 42, color: "#3b82f6" },
-  { name: "合作伙伴", value: 28, color: "#06b6d4" },
-  { name: "内部采集", value: 18, color: "#10b981" },
-  { name: "其他来源", value: 12, color: "#f59e0b" }
 ]);
 
 const metrics = ref({
@@ -412,7 +514,243 @@ const reportChart = ref(null);
 const securityChart = ref(null);
 const speedChart = ref(null);
 
-const currentTrendData = computed(() => trendData.value[currentRange.value]);
+const trendChangeRateClass = computed(() => {
+  const v = trendChangeRateRaw.value;
+  if (v == null) return "text-gray-500";
+  if (v > 0) return "text-green-600";
+  if (v < 0) return "text-red-600";
+  return "text-gray-900";
+});
+
+function formatBucketLabel(periodStart, unit) {
+  const d = new Date(periodStart);
+  if (Number.isNaN(d.getTime())) return String(periodStart);
+  if (unit === "month") {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (unit === "week") {
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function formatChangeRatePercent(value) {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  const n = Number(value);
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(2)}%`;
+}
+
+async function fetchNewDataStatus() {
+  const rangeKey = currentRange.value;
+  const cfg = RANGE_CONFIG[rangeKey];
+  if (!cfg) return;
+  const myGen = ++trendFetchGeneration;
+  overviewTrendLoading.value = true;
+  try {
+    const res = await overviewApi.getNewDataStatus({ n: cfg.n, unit: cfg.unit });
+    if (myGen !== trendFetchGeneration) return;
+    if (currentRange.value !== rangeKey) return;
+    const data = res?.data;
+    if (!data) {
+      trendChangeDisplay.value = "—";
+      trendDailyDisplay.value = "—";
+      trendChangeRateRaw.value = null;
+      applyTrendChartOption([], [], cfg.unit);
+      return;
+    }
+    const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+    const labels = buckets.map((b) => formatBucketLabel(b.period_start, data.unit || cfg.unit));
+    const values = buckets.map((b) => Number(b.doc_count) || 0);
+    trendChangeRateRaw.value =
+      data.change_rate_percent == null ? null : Number(data.change_rate_percent);
+    trendChangeDisplay.value = formatChangeRatePercent(data.change_rate_percent);
+    const avg = data.average_daily;
+    trendDailyDisplay.value =
+      avg == null ? "—" : `${Number(avg).toLocaleString()}条`;
+    applyTrendChartOption(labels, values, data.unit || cfg.unit);
+  } catch {
+    if (myGen !== trendFetchGeneration) return;
+    if (currentRange.value !== rangeKey) return;
+    trendChangeDisplay.value = "—";
+    trendDailyDisplay.value = "—";
+    trendChangeRateRaw.value = null;
+    applyTrendChartOption([], [], cfg.unit);
+  } finally {
+    if (myGen === trendFetchGeneration) overviewTrendLoading.value = false;
+  }
+}
+
+function applyTrendChartOption(labels, values, unit) {
+  if (!trendChart.value) return;
+  const hasData = labels.length > 0;
+  const option = {
+    grid: { left: "3%", right: "4%", bottom: unit === "day" && labels.length > 20 ? "18%" : "10%", top: "10%", containLabel: true },
+    xAxis: {
+      type: "category",
+      data: hasData ? labels : [],
+      axisLine: { lineStyle: { color: "#e5e7eb" } },
+      axisLabel: {
+        color: "#6b7280",
+        fontSize: 11,
+        rotate: unit === "day" && labels.length > 20 ? 45 : 0
+      }
+    },
+    yAxis: {
+      type: "value",
+      axisLine: { lineStyle: { color: "#e5e7eb" } },
+      axisLabel: {
+        color: "#6b7280",
+        fontSize: 12,
+        formatter: (val) => {
+          if (val >= 1000) return `${(val / 1000).toFixed(val >= 10000 ? 0 : 1)}k`;
+          return String(val);
+        }
+      },
+      splitLine: { lineStyle: { color: "#f3f4f6", type: "dashed" } }
+    },
+    series: [
+      {
+        data: hasData ? values : [],
+        type: "line",
+        smooth: true,
+        symbol: "circle",
+        symbolSize: 6,
+        lineStyle: { width: 3, color: "#3b82f6" },
+        itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
+            { offset: 1, color: "rgba(59, 130, 246, 0.05)" }
+          ])
+        }
+      }
+    ],
+    tooltip: {
+      trigger: "axis",
+      triggerOn: "mousemove|click",
+      axisPointer: {
+        type: "cross",
+        snap: true,
+        label: {
+          show: true,
+          precision: 0,
+          backgroundColor: "rgba(59, 130, 246, 0.9)",
+          color: "#fff"
+        },
+        crossStyle: { color: "#93c5fd", width: 1, type: "dashed" }
+      },
+      backgroundColor: "rgba(255, 255, 255, 0.95)",
+      borderColor: "#e5e7eb",
+      borderWidth: 1,
+      textStyle: { color: "#1f2937" },
+      formatter: (params) => {
+        const p = Array.isArray(params) ? params[0] : params;
+        const v = p?.value ?? 0;
+        const num = Number(v);
+        const label = p?.axisValueLabel ?? p?.name ?? "";
+        return `${label}<br/>数量（纵坐标）: <b>${Number.isFinite(num) ? num.toLocaleString() : v}</b> 条`;
+      }
+    }
+  };
+  if (!hasData) {
+    option.graphic = [
+      {
+        type: "text",
+        left: "center",
+        top: "middle",
+        style: { text: "暂无趋势数据", fill: "#9ca3af", fontSize: 14 }
+      }
+    ];
+  } else {
+    option.graphic = [];
+  }
+  trendChart.value.setOption(option, true);
+}
+
+async function fetchPlatformStatus() {
+  overviewPlatformLoading.value = true;
+  try {
+    const res = await overviewApi.getPlatformStatus();
+    const data = res?.data;
+    const rows = Array.isArray(data?.by_platform) ? data.by_platform : [];
+    platformDistribution.value = rows.map((r, i) => ({
+      name: r.platform ?? "",
+      value: Number(r.doc_count) || 0,
+      color: PIE_COLORS[i % PIE_COLORS.length]
+    }));
+    platformSourceCount.value = rows.length;
+    applySourceChartOption();
+  } catch {
+    platformDistribution.value = [];
+    platformSourceCount.value = 0;
+    applySourceChartOption();
+  } finally {
+    overviewPlatformLoading.value = false;
+  }
+}
+
+function applySourceChartOption() {
+  if (!sourceChart.value) return;
+  const data = platformDistribution.value;
+  const hasData = data.some((d) => d.value > 0);
+  const option = {
+    tooltip: {
+      trigger: "item",
+      formatter: (p) => {
+        const n = p?.name ?? "";
+        const c = p?.value ?? 0;
+        const pct = p?.percent != null ? p.percent.toFixed(1) : "0";
+        return `${n}<br/>文档数: ${Number(c).toLocaleString()} (${pct}%)`;
+      }
+    },
+    legend: {
+      orient: "vertical",
+      left: "60%",
+      top: "center",
+      textStyle: { color: "#6b7280", fontSize: 12 },
+      itemGap: 15,
+      formatter: (name) => {
+        const item = data.find((d) => d.name === name);
+        if (!item) return name;
+        return `${name}: ${Number(item.value).toLocaleString()}`;
+      }
+    },
+    series: [
+      {
+        name: "情报来源分布",
+        type: "pie",
+        radius: ["40%", "70%"],
+        center: ["30%", "50%"],
+        avoidLabelOverlap: false,
+        itemStyle: { borderRadius: 8, borderColor: "#fff", borderWidth: 2 },
+        label: { show: false },
+        emphasis: { label: { show: true, fontSize: 14, fontWeight: "bold" } },
+        labelLine: { show: false },
+        data: hasData
+          ? data.map((item) => ({
+              name: item.name,
+              value: item.value,
+              itemStyle: { color: item.color }
+            }))
+          : []
+      }
+    ]
+  };
+  if (!hasData) {
+    option.graphic = [
+      {
+        type: "text",
+        left: "center",
+        top: "middle",
+        style: { text: "暂无分布数据", fill: "#9ca3af", fontSize: 14 }
+      }
+    ];
+  } else {
+    option.graphic = [];
+  }
+  sourceChart.value.setOption(option, true);
+}
 
 function getStatusClass(type) {
       const statusMap = {
@@ -424,55 +762,11 @@ function getStatusClass(type) {
       return statusMap[type] || 'bg-gray-100 text-gray-700'
     }
 
-    function switchRange(range) {
-      if (typeof range === 'string') {
-        currentRange.value = range;
-        setTrendChart(range);
-      } else {
-        setTrendChart(currentRange.value);
-      }
-    }
+function onTrendRangeChange() {
+  fetchNewDataStatus();
+}
 
-    function setTrendChart(dataType) {
-      if (!trendChart.value) return;
-
-      const data = trendData.value[dataType];
-
-      const option = {
-        grid: { left: "3%", right: "4%", bottom: "10%", top: "10%", containLabel: true },
-        xAxis: { type: "category", data: data.dates, axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12 } },
-        yAxis: { type: "value", axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12, formatter: (value) => (value / 1000).toFixed(0) + "k" }, splitLine: { lineStyle: { color: "#f3f4f6", type: "dashed" } } },
-        series: [{
-          data: data.values,
-          type: "line",
-          smooth: true,
-          symbol: "circle",
-          symbolSize: 6,
-          lineStyle: { width: 3, color: "#3b82f6" },
-          itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 },
-          areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(59, 130, 246, 0.3)" }, { offset: 1, color: "rgba(59, 130, 246, 0.05)" }]) }
-        }],
-        tooltip: { trigger: "axis", backgroundColor: "rgba(255, 255, 255, 0.95)", borderColor: "#e5e7eb", borderWidth: 1, textStyle: { color: "#1f2937" }, formatter: (params) => `${params[0].name}<br/>情报数量: <b>${params[0].value.toLocaleString()}条</b>` }
-      };
-
-      trendChart.value.setOption(option);
-    }
-
-    function setSourceChart() {
-      if (!sourceChart.value) return;
-
-      const data = sourceDistribution.value;
-
-      const option = {
-        tooltip: { trigger: "item", formatter: "{a} <br/>{b}: {c}% ({d}%)" },
-        legend: { orient: "vertical", left: "60%", top: "center", textStyle: { color: "#6b7280", fontSize: 12 }, itemGap: 15, formatter: (name) => { const item = data.find((d) => d.name === name); return `${name}: ${item.value}%` } },
-        series: [{ name: "情报来源分布", type: "pie", radius: ["40%", "70%"], center: ["30%", "50%"], avoidLabelOverlap: false, itemStyle: { borderRadius: 8, borderColor: "#fff", borderWidth: 2 }, label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: "bold" } }, labelLine: { show: false }, data: data.map((item) => ({ name: item.name, value: item.value, itemStyle: { color: item.color } })) }]
-      };
-
-      sourceChart.value.setOption(option);
-    }
-
-    function setMetricsCharts() {
+function setMetricsCharts() {
       const m = metrics.value;
 
       if (reportChart.value) {
@@ -490,27 +784,35 @@ function getStatusClass(type) {
 
 let resizeHandler = null;
 
-    function initCharts() {
-      nextTick(() => {
-        trendChart.value = echarts.init(document.getElementById("trend-chart"));
-        sourceChart.value = echarts.init(document.getElementById("source-chart"));
-        reportChart.value = echarts.init(document.getElementById("report-chart"));
-        securityChart.value = echarts.init(document.getElementById("security-chart"));
-        speedChart.value = echarts.init(document.getElementById("speed-chart"));
+function initCharts() {
+  nextTick(() => {
+    const trendEl = document.getElementById("trend-chart");
+    const sourceEl = document.getElementById("source-chart");
+    if (trendEl) trendChart.value = echarts.init(trendEl);
+    if (sourceEl) sourceChart.value = echarts.init(sourceEl);
+    reportChart.value = echarts.init(document.getElementById("report-chart"));
+    securityChart.value = echarts.init(document.getElementById("security-chart"));
+    speedChart.value = echarts.init(document.getElementById("speed-chart"));
 
-        setTrendChart("trend30d");
-        setSourceChart();
-        setMetricsCharts();
+    applyTrendChartOption([], [], "day");
+    applySourceChartOption();
+    setMetricsCharts();
 
-        resizeHandler = () => {
-          trendChart.value?.resize();
-          sourceChart.value?.resize();
-        };
-        window.addEventListener("resize", resizeHandler);
-      });
-    }
+    Promise.all([fetchNewDataStatus(), fetchPlatformStatus()]).catch(() => {});
+
+    resizeHandler = () => {
+      trendChart.value?.resize();
+      sourceChart.value?.resize();
+      reportChart.value?.resize();
+      securityChart.value?.resize();
+      speedChart.value?.resize();
+    };
+    window.addEventListener("resize", resizeHandler);
+  });
+}
 
 onMounted(() => {
+  fetchSummaryStatus();
   initCharts();
 });
 
@@ -518,5 +820,10 @@ onBeforeUnmount(() => {
   if (resizeHandler) {
     window.removeEventListener("resize", resizeHandler);
   }
+  trendChart.value?.dispose();
+  sourceChart.value?.dispose();
+  reportChart.value?.dispose();
+  securityChart.value?.dispose();
+  speedChart.value?.dispose();
 });
 </script>
