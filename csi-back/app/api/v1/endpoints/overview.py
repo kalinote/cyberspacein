@@ -39,7 +39,7 @@ def _time_series_params(
 async def get_platform_status():
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="数据库连接失败")
     try:
         return await fetch_platform_status(es)
     except Exception as e:
@@ -55,12 +55,12 @@ async def get_platform_status():
 async def get_summary_status():
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="数据库连接失败")
     try:
         return await fetch_summary_status(es)
     except Exception as e:
-        logger.error(f"概览汇总统计失败: {e}", exc_info=True)
-        return ApiResponseSchema.error(code=250006, message=f"概览汇总统计失败: {str(e)}")
+        logger.error(f"数据汇总统计失败: {e}", exc_info=True)
+        return ApiResponseSchema.error(code=250006, message=f"数据汇总统计失败: {str(e)}")
 
 
 @router.get(
@@ -73,27 +73,27 @@ async def get_crawl_status(
 ):
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="数据库连接失败")
     try:
         return await fetch_time_field_stats(es, "crawled_at", params.unit, params.n)
     except Exception as e:
-        logger.error(f"crawled_at 概览统计失败: {e}", exc_info=True)
-        return ApiResponseSchema.error(code=250004, message=f"crawled_at 概览统计失败: {str(e)}")
+        logger.error(f"采集数据统计失败: {e}", exc_info=True)
+        return ApiResponseSchema.error(code=250004, message=f"采集数据统计失败: {str(e)}")
 
 
 @router.get(
     "/new-data-status",
     response_model=OverviewTimeSeriesStatsSchema,
-    summary="按最后编辑时间统计（last_edit_at）",
+    summary="数据更新统计",
 )
 async def get_new_data_status(
     params: Annotated[OverviewTimeSeriesParamsSchema, Depends(_time_series_params)],
 ):
     es = get_es()
     if not es:
-        return ApiResponseSchema.error(code=250001, message="Elasticsearch连接未初始化")
+        return ApiResponseSchema.error(code=250001, message="数据库连接失败")
     try:
         return await fetch_time_field_stats(es, "last_edit_at", params.unit, params.n)
     except Exception as e:
-        logger.error(f"last_edit_at 概览统计失败: {e}", exc_info=True)
-        return ApiResponseSchema.error(code=250005, message=f"last_edit_at 概览统计失败: {str(e)}")
+        logger.error(f"数据更新统计失败: {e}", exc_info=True)
+        return ApiResponseSchema.error(code=250005, message=f"数据更新统计失败: {str(e)}")

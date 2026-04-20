@@ -283,19 +283,39 @@
         </el-form-item>
 
         <el-form-item label="平台分类" prop="category">
-          <el-input
+          <el-select
             v-model="formData.category"
-            placeholder="请输入平台分类"
+            placeholder="请选择平台分类"
+            class="w-full"
             clearable
-          />
+          >
+            <el-option label="论坛" value="论坛" />
+            <el-option label="新闻" value="新闻" />
+            <el-option label="博客" value="博客" />
+            <el-option label="视频" value="视频" />
+            <el-option label="社交媒体" value="社交媒体" />
+            <el-option label="群组" value="群组" />
+          </el-select>
         </el-form-item>
 
         <el-form-item label="平台子分类" prop="sub_category">
-          <el-input
+          <el-select
             v-model="formData.sub_category"
-            placeholder="请输入平台子分类"
+            placeholder="请选择或输入平台子分类"
+            class="w-full"
             clearable
-          />
+            filterable
+            allow-create
+            default-first-option
+            :loading="subCategoryLoading"
+          >
+            <el-option
+              v-for="item in subCategoryOptions"
+              :key="item"
+              :label="item"
+              :value="item"
+            />
+          </el-select>
         </el-form-item>
 
         <el-form-item label="信任度" prop="confidence">
@@ -451,19 +471,37 @@ const formRules = {
   url: [
     { required: true, message: '请输入平台URL', trigger: 'blur' }
   ],
-  logo: [
-    { required: true, message: '请输入平台Logo', trigger: 'blur' }
-  ],
   category: [
-    { required: true, message: '请输入平台分类', trigger: 'blur' }
+    { required: true, message: '请选择平台分类', trigger: 'change' }
   ],
   sub_category: [
-    { required: true, message: '请输入平台子分类', trigger: 'blur' }
+    { required: true, message: '请选择或输入平台子分类', trigger: 'change' }
   ]
 }
 
-const handleAddPlatform = () => {
+const subCategoryOptions = ref([])
+const subCategoryLoading = ref(false)
+
+const fetchSubCategoryOptions = async () => {
+  subCategoryLoading.value = true
+  try {
+    const res = await platformApi.getPlatformFilterSubCategory()
+    if (res?.code === 0 && Array.isArray(res.data)) {
+      subCategoryOptions.value = res.data
+    } else {
+      subCategoryOptions.value = []
+    }
+  } catch (error) {
+    console.error('获取子分类列表失败:', error)
+    subCategoryOptions.value = []
+  } finally {
+    subCategoryLoading.value = false
+  }
+}
+
+const handleAddPlatform = async () => {
   dialogVisible.value = true
+  await fetchSubCategoryOptions()
 }
 
 const handleDialogClose = () => {

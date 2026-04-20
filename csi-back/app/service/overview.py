@@ -182,7 +182,11 @@ async def fetch_summary_status(es: AsyncElasticsearch) -> OverviewSummaryStatusS
 
 
 async def fetch_time_field_stats(
-    es: AsyncElasticsearch, field: str, unit: OverviewTimeUnitEnum, n: int
+    es: AsyncElasticsearch,
+    field: str,
+    unit: OverviewTimeUnitEnum,
+    n: int,
+    platform_keyword: Optional[str] = None,
 ) -> OverviewTimeSeriesStatsSchema:
     start_local, end_local = compute_time_window(unit, n)
     day_span = (end_local.date() - start_local.date()).days + 1
@@ -192,12 +196,16 @@ async def fetch_time_field_stats(
     start_iso = start_local.isoformat()
     end_iso = end_local.isoformat()
 
+    filter_clauses: list[dict] = [
+        {"range": {field: {"gte": start_iso, "lte": end_iso}}},
+    ]
+    if platform_keyword:
+        filter_clauses.append({"term": {"platform.keyword": platform_keyword}})
+
     body = {
         "query": {
             "bool": {
-                "filter": [
-                    {"range": {field: {"gte": start_iso, "lte": end_iso}}},
-                ]
+                "filter": filter_clauses,
             }
         },
         "size": 0,

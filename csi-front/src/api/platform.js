@@ -9,11 +9,17 @@ export const platformApi = {
   getPlatformDetail(platformId) {
     return request.get(`/platform/detail/${platformId}`)
   },
+  getPlatformNewDataStatus(platformId, params = {}) {
+    return request.get(`/platform/${platformId}/new-data-status`, params)
+  },
   // 创建平台
   createPlatform(data) {
     return request.post('/platform', data)
   },
   getPlatformFilterPlatforms() {
     return request.get('/platform/filter/platforms')
+  },
+  getPlatformFilterSubCategory() {
+    return request.get('/platform/filter/sub_category')
   }
 }

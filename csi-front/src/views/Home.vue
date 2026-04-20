@@ -115,7 +115,7 @@
             v-loading="overviewTrendLoading"
             class="bg-linear-to-br from-white to-blue-50 rounded-2xl p-6 shadow-sm border border-gray-100"
           >
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex justify-between items-center mb-4">
               <h3 class="text-xl font-bold text-gray-900">情报数量趋势</h3>
               <el-radio-group v-model="currentRange" @change="onTrendRangeChange" size="small">
                 <el-radio-button label="trend30d">30天</el-radio-button>
@@ -124,12 +124,12 @@
               </el-radio-group>
             </div>
 
-            <div class="h-80">
+            <div class="h-60">
               <div id="trend-chart" class="w-full h-full"></div>
             </div>
 
             <div
-              class="grid grid-cols-2 gap-6 mt-6 pt-6 border-t border-gray-100"
+              class="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-gray-100"
             >
               <div class="text-center">
                 <p class="text-sm text-gray-500">首尾变化率</p>
@@ -584,8 +584,15 @@ async function fetchNewDataStatus() {
 function applyTrendChartOption(labels, values, unit) {
   if (!trendChart.value) return;
   const hasData = labels.length > 0;
+  const manyDayLabels = unit === "day" && labels.length > 20;
   const option = {
-    grid: { left: "3%", right: "4%", bottom: unit === "day" && labels.length > 20 ? "18%" : "10%", top: "10%", containLabel: true },
+    grid: {
+      left: 12,
+      right: 10,
+      top: 24,
+      bottom: manyDayLabels ? 40 : 26,
+      containLabel: true
+    },
     xAxis: {
       type: "category",
       data: hasData ? labels : [],
@@ -593,7 +600,8 @@ function applyTrendChartOption(labels, values, unit) {
       axisLabel: {
         color: "#6b7280",
         fontSize: 11,
-        rotate: unit === "day" && labels.length > 20 ? 45 : 0
+        margin: 6,
+        rotate: manyDayLabels ? 45 : 0
       }
     },
     yAxis: {
@@ -666,6 +674,7 @@ function applyTrendChartOption(labels, values, unit) {
     option.graphic = [];
   }
   trendChart.value.setOption(option, true);
+  requestAnimationFrame(() => trendChart.value?.resize());
 }
 
 async function fetchPlatformStatus() {

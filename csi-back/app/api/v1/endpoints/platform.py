@@ -1,10 +1,15 @@
 import logging
 import re
-from datetime import datetime
 from fastapi import APIRouter, Depends, Query
-from typing import Optional, List
+from typing import Annotated, List, Optional
 
-from app.schemas.platform import PlatformBaseInfoSchema, PlatformCreateRequestSchema, PlatformFilterItemSchema, PlatformFilterItemSchema
+from app.db.elasticsearch import get_es
+from app.schemas.overview import (
+    OverviewTimeSeriesParamsSchema,
+    OverviewTimeSeriesStatsSchema,
+    OverviewTimeUnitEnum,
+)
+from app.schemas.platform import PlatformBaseInfoSchema, PlatformCreateRequestSchema, PlatformFilterItemSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.models.platform.platform import PlatformModel
@@ -12,6 +17,7 @@ from app.utils.id_lib import generate_id
 from app.utils.async_fetch import async_download_file
 from app.utils.file_security import validate_image_file, get_file_extension_from_mime, calculate_file_hash
 from app.utils.cos import upload_bytes_with_public_url, file_exists
+from app.service.overview import fetch_time_field_stats
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +25,15 @@ router = APIRouter(
     prefix="/platform",
     tags=["平台管理"],
 )
+
+
+def _time_series_params(
+    n: int = Query(7, ge=1, description="近 n 天、近 n 周或近 n 月，默认 7"),
+    unit: OverviewTimeUnitEnum = Query(
+        OverviewTimeUnitEnum.day, description="统计单位：day / week / month，默认 day"
+    ),
+) -> OverviewTimeSeriesParamsSchema:
+    return OverviewTimeSeriesParamsSchema(n=n, unit=unit)
 
 @router.post("", response_model=ApiResponseSchema[PlatformBaseInfoSchema], summary="创建平台")
 async def create_platform(data: PlatformCreateRequestSchema):
@@ -37,7 +52,7 @@ async def create_platform(data: PlatformCreateRequestSchema):
         return ApiResponseSchema.error(code=240903, message=f"平台URL已存在: {data.url}")
     
     processed_logo = ""
-    if data.logo and data.logo.strip():
+    if (data.logo or "").strip():
         try:
             logger.info(f"开始下载logo: {data.logo}")
             headers = {
@@ -147,8 +162,43 @@ async def get_platform_detail(platform_id: str):
     return ApiResponseSchema.success(data=PlatformBaseInfoSchema.from_doc(platform))
 
 
+@router.get(
+    "/{platform_id}/new-data-status",
+    response_model=OverviewTimeSeriesStatsSchema,
+    summary="数据更新统计",
+)
+async def get_platform_new_data_status(
+    platform_id: str,
+    params: Annotated[OverviewTimeSeriesParamsSchema, Depends(_time_series_params)],
+):
+    platform = await PlatformModel.find_one({"_id": platform_id})
+    if not platform:
+        return ApiResponseSchema.error(code=240407, message=f"平台不存在，ID: {platform_id}")
+    es = get_es()
+    if not es:
+        return ApiResponseSchema.error(code=250001, message="数据库连接失败")
+    try:
+        return await fetch_time_field_stats(
+            es,
+            "last_edit_at",
+            params.unit,
+            params.n,
+            platform_keyword=platform.name,
+        )
+    except Exception as e:
+        logger.error(f"数据更新统计失败: {e}", exc_info=True)
+        return ApiResponseSchema.error(code=250005, message=f"数据更新统计失败: {str(e)}")
+
+
 @router.get("/filter/platforms", response_model=ApiResponseSchema[List[PlatformFilterItemSchema]], summary="平台过滤器列表")
 async def get_platform_filter_list():
     platforms = await PlatformModel.find_all().to_list()
     results = [PlatformFilterItemSchema.from_doc(p) for p in platforms]
     return ApiResponseSchema.success(data=results)
+
+
+@router.get("/filter/sub_category", response_model=ApiResponseSchema[List[str]], summary="子分类过滤器列表")
+async def get_platform_sub_category_filter():
+    values = await PlatformModel.distinct("sub_category")
+    result = sorted({v for v in values if v})
+    return ApiResponseSchema.success(data=result)

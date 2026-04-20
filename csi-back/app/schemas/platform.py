@@ -18,7 +18,7 @@ class PlatformCreateRequestSchema(BaseModel):
     net_type: str = Field(default="明网", description="网络类型(Tor/明网)", min_length=1)
     status: str = Field(description="平台状态", default="活跃")
     url: str = Field(description="平台URL")
-    logo: str = Field(description="平台Logo", default="")
+    logo: str | None = Field(default=None, description="平台Logo（可选），不传或为空则不抓取")
     tags: list[str] = Field(description="平台标签", default_factory=list)
     category: str = Field(description="平台分类，表示站点类型", min_length=1)
     sub_category: str = Field(description="平台子分类，概况站点内容", min_length=1)

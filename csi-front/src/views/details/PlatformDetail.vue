@@ -93,21 +93,42 @@
                             </p>
                         </div>
 
-                        <!-- 数据趋势图表 -->
+                        <!-- 新增数据趋势 -->
                         <div
-                            class="bg-linear-to-br from-white to-blue-50 rounded-xl p-6 shadow-sm border border-gray-100">
-                            <div class="flex justify-between items-center mb-6">
+                            v-loading="platformTrendLoading"
+                            class="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
+                        >
+                            <div class="flex justify-between items-center mb-4">
                                 <h2 class="text-xl font-bold text-gray-900">
-                                    数据采集<span class="text-blue-500">趋势</span>
+                                    新增数据<span class="text-blue-500">趋势</span>
                                 </h2>
-                                <el-radio-group v-model="currentRange" @change="switchRange" size="small">
-                                    <el-radio-button label="7d">7天</el-radio-button>
-                                    <el-radio-button label="30d">30天</el-radio-button>
-                                    <el-radio-button label="90d">90天</el-radio-button>
+                                <el-radio-group v-model="currentRange" @change="onTrendRangeChange" size="small">
+                                    <el-radio-button label="trend30d">30天</el-radio-button>
+                                    <el-radio-button label="trend90d">90天</el-radio-button>
+                                    <el-radio-button label="trend1y">1年</el-radio-button>
                                 </el-radio-group>
                             </div>
-                            <div class="h-80">
-                                <div id="trend-chart" class="w-full h-full"></div>
+                            <div class="h-60">
+                                <div id="platform-detail-trend-chart" class="w-full h-full"></div>
+                            </div>
+                            <div
+                                class="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-gray-100"
+                            >
+                                <div class="text-center">
+                                    <p class="text-sm text-gray-500">首尾变化率</p>
+                                    <p
+                                        class="text-2xl font-bold"
+                                        :class="trendChangeRateClass"
+                                    >
+                                        {{ trendChangeDisplay }}
+                                    </p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-sm text-gray-500">日均数量</p>
+                                    <p class="text-2xl font-bold text-gray-900">
+                                        {{ trendDailyDisplay }}
+                                    </p>
+                                </div>
                             </div>
                         </div>
 
@@ -534,17 +555,23 @@ const props = defineProps({
 const route = useRoute();
 const platformId = computed(() => props.id || route.params.id);
 
-const currentRange = ref("7d");
+const RANGE_CONFIG = {
+    trend30d: { n: 30, unit: "day" },
+    trend90d: { n: 90, unit: "day" },
+    trend1y: { n: 12, unit: "month" }
+};
+
+const currentRange = ref("trend30d");
 const trendChart = ref(null);
+const platformTrendLoading = ref(false);
+let trendFetchGeneration = 0;
+const trendChangeDisplay = ref("—");
+const trendDailyDisplay = ref("—");
+const trendChangeRateRaw = ref(null);
 const platformDetail = ref({
     uuid: "", name: "", description: "", type: "", status: "", netType: "", createdAt: "", updatedAt: "", spiderName: "", url: "", logo: "", tags: [], sections: [], category: "", subCategory: ""
 });
 const statistics = ref({ totalData: 125430, related_actions: 3420, lastUpdate: "2小时前", todayNew: 1250 });
-const trendData = ref({
-    "7d": { dates: ["01-09", "01-10", "01-11", "01-12", "01-13", "01-14", "01-15"], values: [1200, 1350, 1420, 1380, 1520, 1280, 1250] },
-    "30d": { dates: ["12-17","12-18","12-19","12-20","12-21","12-22","12-23","12-24","12-25","12-26","12-27","12-28","12-29","12-30","12-31","01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","01-09","01-10","01-11","01-12","01-13","01-14","01-15"], values: [8500,9200,8800,9500,9100,9300,8700,9600,8900,9400,9200,8800,9500,9100,9300,8700,9600,8900,9400,9200,8800,9500,9100,9300,8700,9600,8900,9400,9200,8800] },
-    "90d": { dates: ["10-18","10-19","10-20","10-21","10-22","10-23","10-24","10-25","10-26","10-27","10-28","10-29","10-30","10-31","11-01","11-02","11-03","11-04","11-05","11-06","11-07","11-08","11-09","11-10","11-11","11-12","11-13","11-14","11-15","11-16","11-17","11-18","11-19","11-20","11-21","11-22","11-23","11-24","11-25","11-26","11-27","11-28","11-29","11-30","12-01","12-02","12-03","12-04","12-05","12-06","12-07","12-08","12-09","12-10","12-11","12-12","12-13","12-14","12-15","12-16","12-17","12-18","12-19","12-20","12-21","12-22","12-23","12-24","12-25","12-26","12-27","12-28","12-29","12-30","12-31","01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","01-09","01-10","01-11","01-12","01-13","01-14","01-15"], values: [35000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000,42000,48000,45000,46000,47000,44000,49000,43000,50000] }
-});
 const categoryStats = ref([
     { name: "视频内容", count: 45230, percentage: 36, color: "bg-blue-500" },
     { name: "用户评论", count: 38240, percentage: 30, color: "bg-green-500" },
@@ -568,7 +595,18 @@ const intelligenceLoading = ref(false);
 
 const snapshotPreviewList = computed(() => snapshots.value.map((s) => s.image));
 
-watch(() => route.params.id, () => loadPlatformDetail());
+const trendChangeRateClass = computed(() => {
+    const v = trendChangeRateRaw.value;
+    if (v == null) return "text-gray-500";
+    if (v > 0) return "text-green-600";
+    if (v < 0) return "text-red-600";
+    return "text-gray-900";
+});
+
+watch(() => route.params.id, () => {
+    loadPlatformDetail();
+    fetchPlatformNewDataStatus();
+});
 watch(intelligenceCurrentPage, () => loadRelatedIntelligence());
 watch(intelligenceSortBy, () => {
     intelligenceCurrentPage.value = 1;
@@ -598,34 +636,176 @@ async function loadPlatformDetail() {
     function getLogoUrl(logo) {
         return getCosUrl(logo);
     }
-    function switchRange(range) {
-        updateChart();
+    function formatBucketLabel(periodStart, unit) {
+        const d = new Date(periodStart);
+        if (Number.isNaN(d.getTime())) return String(periodStart);
+        if (unit === "month") {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        }
+        if (unit === "week") {
+            return `${d.getMonth() + 1}/${d.getDate()}`;
+        }
+        return `${d.getMonth() + 1}/${d.getDate()}`;
     }
+
+    function formatChangeRatePercent(value) {
+        if (value == null || Number.isNaN(Number(value))) return "—";
+        const n = Number(value);
+        const sign = n > 0 ? "+" : "";
+        return `${sign}${n.toFixed(2)}%`;
+    }
+
+    function applyTrendChartOption(labels, values, unit) {
+        if (!trendChart.value) return;
+        const hasData = labels.length > 0;
+        const manyDayLabels = unit === "day" && labels.length > 20;
+        const option = {
+            grid: {
+                left: 12,
+                right: 10,
+                top: 24,
+                bottom: manyDayLabels ? 40 : 26,
+                containLabel: true
+            },
+            xAxis: {
+                type: "category",
+                data: hasData ? labels : [],
+                axisLine: { lineStyle: { color: "#e5e7eb" } },
+                axisLabel: {
+                    color: "#6b7280",
+                    fontSize: 11,
+                    margin: 6,
+                    rotate: manyDayLabels ? 45 : 0
+                }
+            },
+            yAxis: {
+                type: "value",
+                axisLine: { lineStyle: { color: "#e5e7eb" } },
+                axisLabel: {
+                    color: "#6b7280",
+                    fontSize: 12,
+                    formatter: (val) => {
+                        if (val >= 1000) return `${(val / 1000).toFixed(val >= 10000 ? 0 : 1)}k`;
+                        return String(val);
+                    }
+                },
+                splitLine: { lineStyle: { color: "#f3f4f6", type: "dashed" } }
+            },
+            series: [
+                {
+                    data: hasData ? values : [],
+                    type: "line",
+                    smooth: true,
+                    symbol: "circle",
+                    symbolSize: 6,
+                    lineStyle: { width: 3, color: "#3b82f6" },
+                    itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
+                            { offset: 1, color: "rgba(59, 130, 246, 0.05)" }
+                        ])
+                    }
+                }
+            ],
+            tooltip: {
+                trigger: "axis",
+                triggerOn: "mousemove|click",
+                axisPointer: {
+                    type: "cross",
+                    snap: true,
+                    label: {
+                        show: true,
+                        precision: 0,
+                        backgroundColor: "rgba(59, 130, 246, 0.9)",
+                        color: "#fff"
+                    },
+                    crossStyle: { color: "#93c5fd", width: 1, type: "dashed" }
+                },
+                backgroundColor: "rgba(255, 255, 255, 0.95)",
+                borderColor: "#e5e7eb",
+                borderWidth: 1,
+                textStyle: { color: "#1f2937" },
+                formatter: (params) => {
+                    const p = Array.isArray(params) ? params[0] : params;
+                    const v = p?.value ?? 0;
+                    const num = Number(v);
+                    const label = p?.axisValueLabel ?? p?.name ?? "";
+                    return `${label}<br/>数量（纵坐标）: <b>${Number.isFinite(num) ? num.toLocaleString() : v}</b> 条`;
+                }
+            }
+        };
+        if (!hasData) {
+            option.graphic = [
+                {
+                    type: "text",
+                    left: "center",
+                    top: "middle",
+                    style: { text: "暂无趋势数据", fill: "#9ca3af", fontSize: 14 }
+                }
+            ];
+        } else {
+            option.graphic = [];
+        }
+        trendChart.value.setOption(option, true);
+        requestAnimationFrame(() => trendChart.value?.resize());
+    }
+
+    async function fetchPlatformNewDataStatus() {
+        const id = platformId.value;
+        const rangeKey = currentRange.value;
+        const cfg = RANGE_CONFIG[rangeKey];
+        if (!id || !cfg) return;
+        const myGen = ++trendFetchGeneration;
+        platformTrendLoading.value = true;
+        try {
+            const res = await platformApi.getPlatformNewDataStatus(id, { n: cfg.n, unit: cfg.unit });
+            if (myGen !== trendFetchGeneration) return;
+            if (currentRange.value !== rangeKey || platformId.value !== id) return;
+            const data = res?.data;
+            if (!data) {
+                trendChangeDisplay.value = "—";
+                trendDailyDisplay.value = "—";
+                trendChangeRateRaw.value = null;
+                applyTrendChartOption([], [], cfg.unit);
+                return;
+            }
+            const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+            const labels = buckets.map((b) => formatBucketLabel(b.period_start, data.unit || cfg.unit));
+            const values = buckets.map((b) => Number(b.doc_count) || 0);
+            trendChangeRateRaw.value =
+                data.change_rate_percent == null ? null : Number(data.change_rate_percent);
+            trendChangeDisplay.value = formatChangeRatePercent(data.change_rate_percent);
+            const avg = data.average_daily;
+            trendDailyDisplay.value =
+                avg == null ? "—" : `${Number(avg).toLocaleString()}条`;
+            applyTrendChartOption(labels, values, data.unit || cfg.unit);
+        } catch {
+            if (myGen !== trendFetchGeneration) return;
+            if (currentRange.value !== rangeKey || platformId.value !== id) return;
+            trendChangeDisplay.value = "—";
+            trendDailyDisplay.value = "—";
+            trendChangeRateRaw.value = null;
+            applyTrendChartOption([], [], cfg.unit);
+        } finally {
+            if (myGen === trendFetchGeneration) platformTrendLoading.value = false;
+        }
+    }
+
+    function onTrendRangeChange() {
+        fetchPlatformNewDataStatus();
+    }
+
     function initChart() {
         nextTick(() => {
-            const chartDom = document.getElementById("trend-chart");
+            const chartDom = document.getElementById("platform-detail-trend-chart");
             if (!chartDom) return;
             trendChart.value = echarts.init(chartDom);
-            updateChart();
+            applyTrendChartOption([], [], "day");
+            fetchPlatformNewDataStatus();
             handleResize = () => trendChart.value?.resize();
             window.addEventListener("resize", handleResize);
         });
-    }
-    function updateChart() {
-        if (!trendChart.value) return;
-        const data = trendData.value[currentRange.value];
-        const dateCount = data.dates.length;
-        let labelInterval = 0;
-        if (dateCount > 30) labelInterval = Math.floor(dateCount / 15);
-        else if (dateCount > 7) labelInterval = Math.floor(dateCount / 10);
-        const option = {
-            grid: { left: "3%", right: "4%", bottom: "15%", top: "10%", containLabel: true },
-            xAxis: { type: "category", data: data.dates, axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12, rotate: 45, interval: labelInterval, formatter: (v) => v } },
-            yAxis: { type: "value", axisLine: { lineStyle: { color: "#e5e7eb" } }, axisLabel: { color: "#6b7280", fontSize: 12, formatter: (v) => (v >= 1000 ? (v / 1000).toFixed(1) + "k" : v) }, splitLine: { lineStyle: { color: "#f3f4f6", type: "dashed" } } },
-            series: [{ data: data.values, type: "line", smooth: true, symbol: "circle", symbolSize: 6, lineStyle: { width: 3, color: "#3b82f6" }, itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(59, 130, 246, 0.3)" }, { offset: 1, color: "rgba(59, 130, 246, 0.05)" }]) } }],
-            tooltip: { trigger: "axis", backgroundColor: "rgba(255, 255, 255, 0.95)", borderColor: "#e5e7eb", borderWidth: 1, textStyle: { color: "#1f2937" }, formatter: (params) => `${params[0].name}<br/>数据量: <b>${params[0].value.toLocaleString()}条</b>` }
-        };
-        trendChart.value.setOption(option);
     }
     function refreshData() {
         ElNotification({ title: "刷新数据", message: "正在刷新平台数据，请稍候...", type: "info", position: "top-right", duration: 3000 });
