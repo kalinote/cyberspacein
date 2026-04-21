@@ -1,4 +1,3 @@
-import logging
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Path, Query
@@ -10,8 +9,6 @@ from app.schemas.annotation import (
     AnnotationUpdateSchema,
 )
 from app.schemas.response import ApiResponseSchema
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/annotation",

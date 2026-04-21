@@ -1,5 +1,5 @@
 import asyncio
-import logging
+from loguru import logger
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends
 
@@ -13,7 +13,7 @@ from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.service import sandbox as sandbox_service
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/sandbox",

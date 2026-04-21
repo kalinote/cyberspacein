@@ -1,10 +1,10 @@
 import socket
-import logging
+from loguru import logger
 import platform
 import subprocess
 import httpx
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 
 def get_local_ip() -> str:

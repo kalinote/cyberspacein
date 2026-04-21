@@ -1,6 +1,6 @@
 import asyncio
 import json
-import logging
+from loguru import logger
 import re
 from datetime import datetime
 from typing import Optional
@@ -38,7 +38,7 @@ from app.utils.agent import inject_template_fields
 import app.utils.status_codes as status_codes
 from app.utils.id_lib import generate_id
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/agent",

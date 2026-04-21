@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from fastapi import APIRouter, Query, Depends
 from elasticsearch.exceptions import NotFoundError
 
@@ -9,7 +9,7 @@ from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/forum",
@@ -237,6 +237,6 @@ async def get_comments(
         )
     
     except Exception as e:
-        logger.error(f"查询论坛{thread_type}失败: {e}", exc_info=True)
+        logger.exception(f"查询论坛{thread_type}失败: {e}")
         return ApiResponseSchema.error(code=250002, message=f"查询失败: {str(e)}")
 

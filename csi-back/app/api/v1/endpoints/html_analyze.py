@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 
 from fastapi import APIRouter
 
@@ -17,7 +17,7 @@ from app.schemas.html_analyze import (
 from app.service.html_analyze import html_analyze_service
 from app.core.exceptions import InternalServerException
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/html-analyze",
@@ -31,7 +31,7 @@ async def extract_text(request: HtmlExtractTextRequest):
         text = html_analyze_service.extract_text(request.html)
         return HtmlExtractTextResponse(text=text)
     except Exception as e:
-        logger.error(f"HTML 文本提取失败: {e}", exc_info=True)
+        logger.exception(f"HTML 文本提取失败: {e}")
         raise InternalServerException(message=f"HTML 文本提取失败: {str(e)}")
 
 
@@ -41,7 +41,7 @@ async def clean_html(request: HtmlCleanRequest):
         html = html_analyze_service.clean_html(request.html)
         return HtmlCleanResponse(html=html)
     except Exception as e:
-        logger.error(f"HTML 清理失败: {e}", exc_info=True)
+        logger.exception(f"HTML 清理失败: {e}")
         raise InternalServerException(message=f"HTML 清理失败: {str(e)}")
 
 
@@ -51,7 +51,7 @@ async def extract_links(request: HtmlExtractLinksRequest):
         links = html_analyze_service.extract_resource_links(request.html)
         return HtmlExtractLinksResponse(links=links)
     except Exception as e:
-        logger.error(f"HTML 资源链接提取失败: {e}", exc_info=True)
+        logger.exception(f"HTML 资源链接提取失败: {e}")
         raise InternalServerException(message=f"HTML 资源链接提取失败: {str(e)}")
 
 
@@ -64,7 +64,7 @@ async def extract_text_batch(request: HtmlBatchRequest):
             result.append(HtmlExtractTextBatchItem(uuid=item.uuid, text=text))
         return result
     except Exception as e:
-        logger.error(f"批量 HTML 文本提取失败: {e}", exc_info=True)
+        logger.exception(f"批量 HTML 文本提取失败: {e}")
         raise InternalServerException(message=f"批量 HTML 文本提取失败: {str(e)}")
 
 
@@ -77,7 +77,7 @@ async def clean_html_batch(request: HtmlBatchRequest):
             result.append(HtmlCleanBatchItem(uuid=item.uuid, html=html))
         return result
     except Exception as e:
-        logger.error(f"批量 HTML 清理失败: {e}", exc_info=True)
+        logger.exception(f"批量 HTML 清理失败: {e}")
         raise InternalServerException(message=f"批量 HTML 清理失败: {str(e)}")
 
 
@@ -90,5 +90,5 @@ async def extract_links_batch(request: HtmlBatchRequest):
             result.append(HtmlExtractLinksBatchItem(uuid=item.uuid, links=links))
         return result
     except Exception as e:
-        logger.error(f"批量 HTML 资源链接提取失败: {e}", exc_info=True)
+        logger.exception(f"批量 HTML 资源链接提取失败: {e}")
         raise InternalServerException(message=f"批量 HTML 资源链接提取失败: {str(e)}")

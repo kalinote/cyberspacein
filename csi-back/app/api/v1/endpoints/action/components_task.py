@@ -1,5 +1,5 @@
 from datetime import datetime
-import logging
+from loguru import logger
 import re
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query
@@ -18,7 +18,7 @@ from app.schemas.response import ApiResponseSchema
 from app.service.component import get_base_component_tasks, get_base_component_schedules
 from app.utils.id_lib import generate_id
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(prefix="/components-task", tags=["基础组件任务"])
 

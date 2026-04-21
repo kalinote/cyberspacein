@@ -1,11 +1,11 @@
-import logging
+from loguru import logger
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import text
 from typing import AsyncGenerator
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 Base = declarative_base()
 

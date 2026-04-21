@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from datetime import datetime
 from fastapi import APIRouter, Path
 from elasticsearch.exceptions import NotFoundError
@@ -8,7 +8,7 @@ from app.schemas.constants import ENTITY_TYPE_NAMES, EntityType
 from app.schemas.highlight import HighlightRequestSchema
 from app.schemas.response import ApiResponseSchema
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/highlight",
@@ -60,5 +60,5 @@ async def set_highlight(
     except NotFoundError:
         return ApiResponseSchema.error(code=240403, message=f"{entity_name}不存在，UUID: {uuid}")
     except Exception as e:
-        logger.error(f"更新{entity_name}标记状态失败: {e}", exc_info=True)
+        logger.exception(f"更新{entity_name}标记状态失败: {e}")
         return ApiResponseSchema.error(code=250004, message=f"更新标记状态失败: {str(e)}")

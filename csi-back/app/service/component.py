@@ -1,9 +1,9 @@
 import json
-import logging
+from loguru import logger
 from app.core.config import settings
 from app.utils.async_fetch import async_get, async_post, unwrap_response
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 async def get_components(page: int = 1, page_size: int = 10):
     try:

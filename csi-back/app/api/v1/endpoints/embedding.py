@@ -1,5 +1,5 @@
-import logging
 from fastapi import APIRouter, Body
+from loguru import logger
 
 from app.schemas.embedding import (
     BatchEmbeddingRequestSchema,
@@ -11,8 +11,7 @@ from app.schemas.response import ApiResponseSchema
 import app.utils.status_codes as status_codes
 from app.utils.embedding import normalize_whitespace, get_embeddings_client
 
-logger = logging.getLogger(__name__)
-logging.getLogger("httpx").setLevel(logging.DEBUG)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/embedding",
@@ -30,7 +29,7 @@ async def embed_text(text: str = Body(embed=True)):
             vector=vector
         ))
     except Exception as e:
-        logger.error(f"嵌入服务调用失败: {e!s}", exc_info=True)
+        logger.exception(f"嵌入服务调用失败: {e!s}")
         if "未初始化" in str(e):
             return ApiResponseSchema.error(code=status_codes.EMBEDDING_NOT_READY, message=f"嵌入服务调用失败: {e!s}")
         return ApiResponseSchema.error(code=status_codes.EMBEDDING_CALL_FAILED, message=f"嵌入服务调用失败: {e!s}")
@@ -51,7 +50,7 @@ async def embed_batch(body: BatchEmbeddingRequestSchema):
         ]
         return ApiResponseSchema.success(data=BatchEmbeddingResponseSchema(datas=result_datas))
     except Exception as e:
-        logger.error(f"批量嵌入服务调用失败: {e!s}", exc_info=True)
+        logger.exception(f"批量嵌入服务调用失败: {e!s}")
         if "未初始化" in str(e):
             return ApiResponseSchema.error(code=status_codes.EMBEDDING_NOT_READY, message=f"嵌入服务调用失败: {e!s}")
         return ApiResponseSchema.error(code=status_codes.EMBEDDING_CALL_FAILED, message=f"嵌入服务调用失败: {e!s}")

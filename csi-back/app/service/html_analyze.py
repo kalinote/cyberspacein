@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 import re
 from typing import Set
 from urllib.parse import urlparse
@@ -9,7 +9,7 @@ from bleach.css_sanitizer import CSSSanitizer
 from bs4 import BeautifulSoup
 
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 MEDIA_TAGS_ATTRS = {
     'img': ['src', 'srcset', 'data-src', 'data-srcset'],
@@ -317,7 +317,7 @@ def _clean_html_impl(content: str,
                         style.decompose()
         return str(soup)
     except Exception as e:
-        logger.error(f"内容分析失败: {str(e)}", exc_info=True)
+        logger.exception(f"内容分析失败: {str(e)}")
         return ""
 
 

@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from fastapi import APIRouter, Depends
 from app.models.action.blueprint import (
     ActionBlueprintModel,
@@ -22,7 +22,7 @@ from app.utils.id_lib import generate_id
 from app.utils.dict_helper import pack_dict
 from app.utils.workflow import count_workflow_paths, graph_model2schemas
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(prefix="/blueprint", tags=["行动蓝图"])
 

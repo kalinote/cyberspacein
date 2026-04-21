@@ -1,5 +1,5 @@
 ---
-description: CSI 后端开发规则（虚拟环境、依赖、目录结构、工具函数与代码规范）
+description: CSI 后端开发规则（虚拟环境、依赖、测试、目录结构、工具函数与代码规范）
 alwaysApply: true
 ---
 
@@ -9,12 +9,17 @@ alwaysApply: true
 
 - 所有运行、调试、测试必须在 **venv 虚拟环境** 下进行（本项目使用 `.venv`）。
 - 执行任何 Python 相关命令前，先检查虚拟环境是否存在（如 `.venv` 目录或 `python -c "import sys; print(sys.prefix)"` 是否在 venv 内）。
-- 若虚拟环境不存在，先创建：`python -m venv .venv`，再激活并安装依赖（如 `pip install -r requirements.txt`），不得在未激活 venv 的情况下直接执行项目代码。
+- 若虚拟环境不存在，先创建：`python -m venv .venv`，再激活并安装依赖（生产：`pip install -r requirements.txt`；本地开发含测试：`pip install -r requirements/requirements-dev.txt`），不得在未激活 venv 的情况下直接执行项目代码。
 
 ## 依赖管理
 
-- 修改时**优先使用项目已安装的依赖**（参考 `requirements.txt` / `pyproject.toml`）。
+- 修改时**优先使用项目已安装的依赖**（参考 `requirements/` 下清单与 `pyproject.toml`）。
 - **若必须引入新依赖**：在任何情况下都**先向用户确认**，列出拟添加的包及用途，**不得直接执行** `pip install` 或修改依赖文件。
+
+## 测试与交付
+
+- **新增或实质性修改功能**（接口、服务、工具函数、中间件等）后，必须补充**对应的 pytest 用例**；用例放置位置与命名需与现有 `tests/` 结构一致（例如工具类对应 `tests/utils/`）。
+- 完成开发与用例编写后，须在 **`.venv` 内完整执行一次全量测试**（例如 `python -m pytest tests`），**全部通过**后方可视为本阶段完成；若有失败，应先修复再继续后续工作或收尾。
 
 ## 目录结构与一致性
 

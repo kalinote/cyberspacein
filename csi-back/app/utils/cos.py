@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 import io
 from typing import Optional, BinaryIO, Dict, List
 from contextlib import asynccontextmanager
@@ -6,7 +6,7 @@ from aioboto3 import Session
 from botocore.exceptions import ClientError
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 cos_session: Optional[Session] = None
 cos_config: Optional[Dict] = None

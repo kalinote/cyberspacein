@@ -1,5 +1,5 @@
 import json
-import logging
+from loguru import logger
 from typing import Callable
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -9,7 +9,7 @@ from starlette.types import ASGIApp
 from app.schemas.response import ApiResponseSchema
 import app.utils.status_codes as status_codes
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 
 class ResponseMiddleware(BaseHTTPMiddleware):

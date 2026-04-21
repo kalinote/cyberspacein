@@ -1,9 +1,9 @@
-import logging
+from loguru import logger
 import aio_pika
 from urllib.parse import quote
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 rabbitmq_connection: aio_pika.Connection = None
 

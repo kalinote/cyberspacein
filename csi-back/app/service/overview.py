@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -15,7 +15,7 @@ from app.schemas.overview import (
 )
 from app.utils.date_time import parse_datetime
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 TZ_SH = timezone(timedelta(hours=8))
 
@@ -232,7 +232,7 @@ async def fetch_time_field_stats(
         try:
             ps = _bucket_period_start(b)
         except ValueError:
-            logger.warning("跳过无法解析的直方图桶: %s", b)
+            logger.warning("跳过无法解析的直方图桶: {}", b)
             continue
         buckets.append(OverviewTimeBucketSchema(period_start=ps, doc_count=int(b.get("doc_count", 0))))
 

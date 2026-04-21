@@ -5,7 +5,7 @@ from typing import Any
 from beanie.operators import In
 from app.core.config import settings
 from app.models.action.action import ActionConfigIOModel, ActionInstanceModel, ActionInstanceNodeModel
-import logging
+from loguru import logger
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
 from app.schemas.action.node import (
@@ -24,7 +24,7 @@ from app.models.action.blueprint import ActionBlueprintModel
 from app.db.rabbitmq import delete_queue
 from app.db.redis import get_redis
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 
 async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:

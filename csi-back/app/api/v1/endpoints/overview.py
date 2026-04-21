@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -14,7 +14,7 @@ from app.schemas.overview import (
 from app.schemas.response import ApiResponseSchema
 from app.service.overview import fetch_platform_status, fetch_summary_status, fetch_time_field_stats
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/overview",
@@ -43,7 +43,7 @@ async def get_platform_status():
     try:
         return await fetch_platform_status(es)
     except Exception as e:
-        logger.error(f"平台数据统计失败: {e}", exc_info=True)
+        logger.exception(f"平台数据统计失败: {e}")
         return ApiResponseSchema.error(code=250003, message=f"平台数据统计失败: {str(e)}")
 
 
@@ -59,7 +59,7 @@ async def get_summary_status():
     try:
         return await fetch_summary_status(es)
     except Exception as e:
-        logger.error(f"数据汇总统计失败: {e}", exc_info=True)
+        logger.exception(f"数据汇总统计失败: {e}")
         return ApiResponseSchema.error(code=250006, message=f"数据汇总统计失败: {str(e)}")
 
 
@@ -77,7 +77,7 @@ async def get_crawl_status(
     try:
         return await fetch_time_field_stats(es, "crawled_at", params.unit, params.n)
     except Exception as e:
-        logger.error(f"采集数据统计失败: {e}", exc_info=True)
+        logger.exception(f"采集数据统计失败: {e}")
         return ApiResponseSchema.error(code=250004, message=f"采集数据统计失败: {str(e)}")
 
 
@@ -95,5 +95,5 @@ async def get_new_data_status(
     try:
         return await fetch_time_field_stats(es, "last_edit_at", params.unit, params.n)
     except Exception as e:
-        logger.error(f"数据更新统计失败: {e}", exc_info=True)
+        logger.exception(f"数据更新统计失败: {e}")
         return ApiResponseSchema.error(code=250005, message=f"数据更新统计失败: {str(e)}")

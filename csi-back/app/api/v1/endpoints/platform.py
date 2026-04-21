@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 import re
 from fastapi import APIRouter, Depends, Query
 from typing import Annotated, List, Optional
@@ -19,7 +19,7 @@ from app.utils.file_security import validate_image_file, get_file_extension_from
 from app.utils.cos import upload_bytes_with_public_url, file_exists
 from app.service.overview import fetch_time_field_stats
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/platform",
@@ -186,7 +186,7 @@ async def get_platform_new_data_status(
             platform_keyword=platform.name,
         )
     except Exception as e:
-        logger.error(f"数据更新统计失败: {e}", exc_info=True)
+        logger.exception(f"数据更新统计失败: {e}")
         return ApiResponseSchema.error(code=250005, message=f"数据更新统计失败: {str(e)}")
 
 

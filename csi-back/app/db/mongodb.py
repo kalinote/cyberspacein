@@ -1,9 +1,9 @@
-import logging
+from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from beanie import init_beanie
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 mongodb_client: AsyncIOMotorClient = None
 mongodb_db: AsyncIOMotorDatabase = None

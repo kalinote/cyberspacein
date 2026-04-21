@@ -1,8 +1,8 @@
-import logging
+from loguru import logger
 from elasticsearch import AsyncElasticsearch
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 es_client: AsyncElasticsearch = None
 

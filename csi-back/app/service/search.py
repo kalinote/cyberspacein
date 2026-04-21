@@ -1,5 +1,5 @@
 import asyncio
-import logging
+from loguru import logger
 
 from app.schemas.search import EntitySearchRequestSchema, SearchResultSchema
 from app.schemas.constants import ALL_INDEX, SearchModeEnum
@@ -10,7 +10,7 @@ from app.utils.date_time import parse_datetime
 from app.utils.search import merge_highlight_tags, has_keywords, rrf_merge
 from app.utils.embedding import embed_query_async
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 
 def _get_es_total(result: dict) -> int:

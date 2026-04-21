@@ -1,11 +1,16 @@
-import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from loguru import logger
+
 from app.core.config import settings
+from app.core.logging_config import setup_logging
+
+setup_logging()
+
 from app.core.exceptions import ApiException
 from app.schemas.response import ApiResponseSchema
 from app.middleware.response import ResponseMiddleware
@@ -21,22 +26,7 @@ from app.utils.cos import init_cos, close_cos
 from app.utils.embedding import init_embedding_client, close_embedding_client
 from app.service.auth import ensure_default_admin
 
-logging.basicConfig(
-    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO if not settings.DEBUG else logging.DEBUG)
-
-logging.getLogger('pymongo').setLevel(logging.WARNING)
-# logging.getLogger('motor').setLevel(logging.WARNING)
-# logging.getLogger('elasticsearch').setLevel(logging.WARNING)
-# logging.getLogger('urllib3').setLevel(logging.WARNING)
-# logging.getLogger('redis').setLevel(logging.WARNING)
-# logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
-# logging.getLogger('aiomysql').setLevel(logging.WARNING)
+logger = logger.bind(name=__name__)
 
 
 @asynccontextmanager
@@ -129,7 +119,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logging.exception(f"未处理的异常: {str(exc)}")
+    logger.exception(f"未处理的异常: {str(exc)}")
     return JSONResponse(
         status_code=200,
         content=ApiResponseSchema.error(

@@ -1,5 +1,5 @@
 import json
-import logging
+from loguru import logger
 from typing import Annotated, Any, Literal
 
 from langchain_core.runnables import RunnableConfig
@@ -12,7 +12,7 @@ from app.schemas.agent.agent import MessageEventPayloadSchema
 from app.schemas.constants import ENTITY_TYPE_INDEX_MAP
 
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 @tool(parse_docstring=True)
 def get_current_time(time_zone: str = "Asia/Shanghai") -> str:

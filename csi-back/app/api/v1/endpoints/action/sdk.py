@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from typing import Dict, Any
 from fastapi import APIRouter, BackgroundTasks
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
@@ -13,7 +13,7 @@ from app.schemas.constants import ActionConfigIOTypeEnum
 from app.service.action import ActionInstanceService
 from app.utils.dict_helper import unpack_dict
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(prefix="/sdk", tags=["行动SDK"])
 

@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from fastapi import APIRouter
 from elasticsearch.exceptions import NotFoundError
 
@@ -8,7 +8,7 @@ from app.schemas.response import ApiResponseSchema
 from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 
 router = APIRouter(

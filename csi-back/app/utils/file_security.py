@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 import io
 import hashlib
 from typing import Tuple, Optional
@@ -7,7 +7,7 @@ import filetype
 from PIL import Image
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 ALLOWED_IMAGE_TYPES = {
     'image/jpeg': ['.jpg', '.jpeg'],

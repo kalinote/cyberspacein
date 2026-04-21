@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 import re
 from datetime import datetime
 from typing import Optional
@@ -19,7 +19,7 @@ from app.schemas.search import (
 from app.service.search import search_entity as search_entity_service
 from app.utils.id_lib import generate_id
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 router = APIRouter(
     prefix="/search",
@@ -41,7 +41,7 @@ async def search_entity(params: EntitySearchRequestSchema):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"搜索实体失败: {e}", exc_info=True)
+        logger.exception(f"搜索实体失败: {e}")
         return ApiResponseSchema.error(code=250002, message=f"搜索实体失败: {str(e)}")
 
 

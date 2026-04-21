@@ -1,6 +1,7 @@
 import asyncio
-import logging
 from datetime import datetime
+
+from loguru import logger
 
 import docker
 from docker.errors import DockerException, NotFound
@@ -12,7 +13,7 @@ from app.models.action.sandbox import SandboxModel
 from app.schemas.constants import SandboxStatusEnum, SandboxTypeEnum
 from app.utils.id_lib import generate_id
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 SANDBOX_LABEL = {"csi.sandbox": "true"}
 
@@ -196,7 +197,7 @@ async def start_sandbox_and_update_status(container_id: str, image_type: Sandbox
         await asyncio.to_thread(_start_sandbox, container_id, image_type)
         await update_sandbox_doc_status(container_id, SandboxStatusEnum.DEPLOYED)
     except Exception:
-        logger.exception("后台启动沙盒失败，容器ID: %s", container_id)
+        logger.exception("后台启动沙盒失败，容器ID: {}", container_id)
 
 
 async def update_sandbox_doc_status(container_id: str, status: SandboxStatusEnum) -> None:

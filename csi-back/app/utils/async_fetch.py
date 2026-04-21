@@ -1,9 +1,9 @@
-import logging
+from loguru import logger
 import aiohttp
 from typing import Optional, Dict
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logger.bind(name=__name__)
 
 
 def unwrap_response(resp):
