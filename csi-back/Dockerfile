@@ -6,10 +6,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/ ./requirements/
-RUN pip install --no-cache-dir -r requirements/requirements-prod.txt
-
+COPY pyproject.toml ./
 COPY app ./app
+RUN pip install --no-cache-dir .
 
 EXPOSE 8080
 

@@ -1,0 +1,35 @@
+from pathlib import Path
+
+from app.service.nanobot.config.paths import (
+    get_data_dir,
+    get_legacy_sessions_dir,
+    get_logs_dir,
+    get_media_dir,
+    get_runtime_subdir,
+    get_workspace_path,
+)
+
+
+def test_runtime_dirs_follow_config_path(monkeypatch, tmp_path: Path) -> None:
+    config_file = tmp_path / "instance-a" / "config.json"
+    monkeypatch.setattr("app.service.nanobot.config.paths.get_config_path", lambda: config_file)
+
+    assert get_data_dir() == config_file.parent
+    assert get_logs_dir() == config_file.parent / "logs"
+
+
+def test_media_dir_supports_channel_namespace(monkeypatch, tmp_path: Path) -> None:
+    config_file = tmp_path / "instance-b" / "config.json"
+    monkeypatch.setattr("app.service.nanobot.config.paths.get_config_path", lambda: config_file)
+
+    assert get_media_dir() == config_file.parent / "media"
+    assert get_media_dir("telegram") == config_file.parent / "media" / "telegram"
+
+
+def test_legacy_sessions_dir_global() -> None:
+    assert get_legacy_sessions_dir() == Path.home() / ".nanobot" / "sessions"
+
+
+def test_workspace_path_is_explicitly_resolved() -> None:
+    assert get_workspace_path() == Path.home() / ".nanobot" / "workspace"
+    assert get_workspace_path("~/custom-workspace") == Path.home() / "custom-workspace"
