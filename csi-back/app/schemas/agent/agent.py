@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -79,86 +79,12 @@ class AgentCreateRequestSchema(BaseModel):
     tools: list[str] = Field(default_factory=list, description="工具列表")
 
 
-class AgentListItemSchema(BaseModel):
-    id: str = Field(description="分析引擎ID")
-    name: str = Field(description="分析引擎名称")
-
-
-class AgentSchema(BaseModel):
-    id: str = Field(description="分析引擎ID")
-    name: str = Field(description="Agent名称")
-    description: str = Field(description="Agent描述")
-    prompt_template_id: str = Field(description="提示词模板id")
-    model_id: str = Field(description="模型配置id")
-    llm_config: dict[str, Any] = Field(description="LLM配置，包括模型、温度等")
-    tools: list[str] = Field(description="工具列表")
-    created_at: datetime = Field(description="创建时间")
-    updated_at: datetime = Field(description="更新时间")
-
 class StartAgentRequestSchema(BaseModel):
     entity_uuid: str = Field(description="实体UUID")
     entity_type: EntityType = Field(description="实体类型")
     agent_id: str = Field(description="分析引擎ID")
 
 
-class StartAgentResponseSchema(BaseModel):
-    thread_id: str = Field(description="会话ID")
-
-
-class ResultPayloadSchema(BaseModel):
-    summary: str = Field(description="任务情况总结")
-    success: bool = Field(description="是否成功")
-    failure_reason: str | None = Field(default=None, description="失败原因")
-
-
-class ResultEventPayloadSchema(BaseModel):
-    """结果回报事件"""
-    thread_id: str = Field(description="会话ID")
-    result: ResultPayloadSchema = Field(description="最终结果")
-
-
-class AgentStatusPayloadSchema(BaseModel):
-    name: str = Field(description="分析会话名称")
-    thread_id: str = Field(description="会话ID")
-    status: str = Field(description="会话状态")
-    meta: dict[str, Any] = Field(default_factory=dict, description="meta信息")
-    steps: list[dict] = Field(default_factory=list, description="执行步骤，人审步骤可含 approval_decision、approval_decision_detail、approved_at、approval_payload")
-    todos: list[dict] = Field(default_factory=list, description="Todo 项")
-    pending_approval: dict | None = Field(default=None, description="当前待审批上下文，重连时恢复审批 UI")
-    updated_at: datetime = Field(description="更新时间")
-    is_running: bool = Field(description="是否正在运行")
-
-
-class ApprovalRequiredPayloadSchema(BaseModel):
-    """审批请求事件"""
-    payload: dict[str, Any] = Field(default_factory=dict, description="审批上下文")
-    thread_id: str = Field(description="会话ID")
-
-
-class SSEEventSchema(BaseModel):
-    type: str = Field(description="事件类型")
-    data: dict[str, Any] = Field(default_factory=dict, description="事件数据")
-
-
 class ApproveRequestSchema(BaseModel):
     thread_id: str = Field(description="会话ID")
     decisions: list[dict] = Field(description="审批决策列表")
-
-
-class ApproveResponseSchema(BaseModel):
-    thread_id: str = Field(description="会话ID")
-    status: str = Field(description="操作状态")
-
-class MessageEventPayloadSchema(BaseModel):
-    """消息事件"""
-    thread_id: str = Field(description="会话ID")
-    message: str = Field(description="消息文本")
-    level: Literal["info", "warning", "error"] = Field(default="info", description="消息级别")
-    created_at: datetime = Field(default_factory=datetime.now, description="消息时间")
-
-ALL_EVENT_PAYLOAD_SCHEMAS = [
-    AgentStatusPayloadSchema,
-    ApprovalRequiredPayloadSchema,
-    ResultEventPayloadSchema,
-    MessageEventPayloadSchema
-]

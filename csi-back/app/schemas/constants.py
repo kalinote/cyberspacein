@@ -215,3 +215,15 @@ class SandboxStatusEnum(str, Enum):
     DEPLOYED = "deployed"
     STOPPED = "stopped"
     DESTROYED = "destroyed"
+
+
+# nanobot
+class NanobotMessageRoleEnum(str, Enum):
+    """
+    nanobot消息角色枚举
+    """
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+    
