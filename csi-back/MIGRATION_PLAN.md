@@ -10,7 +10,7 @@
 
 - 把当前 `csi-nanobot-sdk` 整包移入 `csi-back/app/service/nanobot/`，不作为外部依赖包使用。
 - 全部持久化（配置、会话、记忆、历史、技能状态等）改为 MongoDB（Beanie/Motor），复用 `csi-back` 已有的数据库栈。
-- 在 `csi-back` 层用 nanobot 完整替换 `app/service/agent/` 下的 LangChain 实现，保留现有对外 API（`/agent/*` 路由行为不变）。
+- 在 `csi-back` 层用 nanobot 完整替换 `app/service/agent/` 下的 LangChain 实现；对外 API 路径保留但**语义升级**：新增 Workspace/Agent CRUD，`/agent/start`、`/agent/status (SSE)`、`/agent/approve` 的行为参数化到 `agent_id` 粒度。
 - 保留 LangChain 版已有的关键业务能力：多模型/模板/Agent 配置、HITL 审批、`write_todos`、SSE 实时状态、暂停/取消/恢复、结构化最终结果。
 - **本期先跑通核心流程**：Skills DB 化、Sandbox、Tool 粒度权限、Dream 逻辑优化都留到后续迭代。
 
@@ -18,8 +18,45 @@
 
 - Skills 独立 CRUD 与数据库化（本期仍用源码目录里的静态 md 文件）。
 - Sandbox（workspace 工具先整体禁用，代码保留）。
-- 按 agent 粒度的工具/技能白名单动态下发（本期由 `ToolsConfig` 硬编码）。
-- 跨 agent 知识共享 / 全文检索召回。
+- 跨 workspace 知识共享 / 全文检索召回。
+
+### 1.3 Workspace / Agent 分层架构（核心变动）
+
+引入两层业务域，取代原计划里"agent 即顶层域"的假设：
+
+```
+Workspace（最基本的域，代表一个专项任务领域）
+  │
+  │ 绑定（候选资源池）
+  │   ├─ prompt_template_ids: list[str]       ← 多套可选系统提示词（来自 AgentPromptTemplateModel）
+  │   ├─ model_config_ids: list[str]           ← 多套可选模型提供商（来自 AgentModelConfigModel）
+  │   ├─ enabled_tools: list[str]              ← 白名单（工具）
+  │   ├─ enabled_skills: list[str]             ← 白名单（技能）
+  │   └─ enabled_mcp_servers: dict             ← 白名单（MCP 服务）
+  │
+  │ 共享（按 workspace_id 隔离）
+  │   ├─ nanobot_memory_docs   (MEMORY/SOUL/USER)
+  │   ├─ nanobot_history       (append-only 摘要条目)
+  │   └─ nanobot_history_state (last_cursor / last_dream_cursor)
+  │
+  └─ 包含多个 Agent（多实例 Nanobot，可并行）
+        │
+        ├─ 从 workspace 资源池中各选一个：prompt_template_id / model_config_id
+        ├─ tools/skills/mcp_servers 必须是 workspace 对应白名单的子集
+        ├─ llm_config（temperature / max_tokens / reasoning_effort 等）
+        ├─ 业务运行时状态直接挂在 Agent 上：
+        │    status / current_session_id / steps / todos / pending_approval / result
+        │
+        └─ Session（每次 /start 新建一条，同一 agent 同时只跑 1 个）
+              └─ Message 流（nanobot_session_messages，按 seq 递增）
+```
+
+关键约束：
+
+- **记忆隔离粒度 = workspace**：同 workspace 下所有 agent 共享 MEMORY / history / cursor，可以跨多次任务、多个 agent 累积经验。
+- **子集校验**：创建/更新 Agent 时，服务端强制校验其 prompt/model/tools/skills/mcp 选择必须是所属 workspace 的子集。
+- **Session 语义 = 一次完整任务**：`/agent/start` 每次生成新的 `session_id`，`nanobot_sessions` 表会持续增长；`NanobotAgentModel.current_session_id` 始终指向最近一次 run。
+- **nanobot_configs 全局配置表取消**：nanobot 的 `Config` 对象每次实例化时从 Workspace + Agent + 环境变量拼出来，不落库。
 
 ---
 
@@ -32,18 +69,20 @@
 
 | 模块             | 源文件                                                                | 当前落盘                                                      | 作用                                      | 迁移目标                                            |
 | -------------- | ------------------------------------------------------------------ | --------------------------------------------------------- | --------------------------------------- | ----------------------------------------------- |
-| 全局配置           | `nanobot/config/loader.py`                                         | `~/.nanobot/config.json`                                  | Providers / AgentDefaults / Tools / MCP | `nanobot_configs` 集合                            |
-| 运行时路径派生        | `nanobot/config/paths.py`                                          | `~/.nanobot/{cron,logs,media,...}`                        | 各子目录路径                                  | 大部分删除；仅保留媒体临时目录用于上传缓存                           |
-| 会话             | `nanobot/session/manager.py`                                       | `{workspace}/sessions/{key}.jsonl`                        | 会话 metadata + messages                  | `nanobot_sessions` + `nanobot_session_messages` |
-| 长期记忆           | `nanobot/agent/memory.py::MemoryStore`                             | `{workspace}/memory/MEMORY.md`、`SOUL.md`、`USER.md`        | 长期事实 / 人格 / 用户画像                        | `nanobot_memory_docs`                           |
-| 历史条目           | 同上                                                                 | `{workspace}/memory/history.jsonl`                        | append-only 摘要条目                        | `nanobot_history`                               |
-| 游标             | 同上                                                                 | `.cursor` / `.dream_cursor`                               | 最新 cursor / Dream 已处理 cursor            | `nanobot_history_state`                         |
+| 全局配置           | `nanobot/config/loader.py`                                         | `~/.nanobot/config.json`                                  | Providers / AgentDefaults / Tools / MCP | **取消全局配置集合与文件读取**：`Config` 每次实例化时从 Workspace + Agent + 环境变量动态拼装；`load_config` / `save_config` / `config.json` 相关文件读写代码直接删除 |
+| 运行时路径派生        | `nanobot/config/paths.py`                                          | `~/.nanobot/{logs,media,...}`                             | 各子目录路径                                  | 大部分删除；仅保留媒体临时目录用于上传缓存                           |
+| 会话             | `nanobot/session/manager.py`                                       | `{workspace}/sessions/{key}.jsonl`                        | 会话 metadata + messages                  | `nanobot_sessions` + `nanobot_session_messages`（按 `agent_id` 查询） |
+| 长期记忆           | `nanobot/agent/memory.py::MemoryStore`                             | `{workspace}/memory/MEMORY.md`、`SOUL.md`、`USER.md`        | 长期事实 / 人格 / 用户画像                        | `nanobot_memory_docs`（**按 workspace_id 隔离**，同 workspace 下多 agent 共享） |
+| 历史条目           | 同上                                                                 | `{workspace}/memory/history.jsonl`                        | append-only 摘要条目                        | `nanobot_history`（按 workspace_id 隔离）            |
+| 游标             | 同上                                                                 | `.cursor` / `.dream_cursor`                               | 最新 cursor / Dream 已处理 cursor            | `nanobot_history_state`（`_id = workspace_id`）   |
 | 记忆版本控制         | `nanobot/utils/gitstore.py`                                        | `{workspace}/.git` (dulwich)                              | 版本/line_ages                            | **清理（见 §4.2）**                                  |
 | 技能             | `nanobot/agent/skills.py`                                          | `{workspace}/skills/*/SKILL.md` + 源码内置 `nanobot/skills/`* | SKILL.md + frontmatter                  | **本期仅保留源码内置目录**；workspace skills 不启用            |
 | 定时任务           | `nanobot/cron/service.py`                                          | `{cron_dir}/store.json`+`action.jsonl`+lock               | 定时 job                                  | **清理（见 §4.1）**                                  |
 | 工作区工具          | `nanobot/agent/tools/{filesystem,shell,search,notebook,web,spawn}` | 直接读写 workspace 文件                                         | 文件/命令/浏览/Web                            | **代码保留，默认全关**，等后续 sandbox                       |
-| MCP 连接         | `nanobot/agent/tools/mcp.py` + `ToolsConfig.mcp_servers`           | 配置项                                                       | 外部 MCP 服务                               | 保留，随 `nanobot_configs` 一起入库                     |
+| MCP 连接         | `nanobot/agent/tools/mcp.py` + `ToolsConfig.mcp_servers`           | 配置项                                                       | 外部 MCP 服务                               | 保留实现；配置项从 workspace/agent 拼装（workspace 存白名单，agent 存子集引用） |
+| 工具/Skill 白名单   | 硬编码 `ToolsConfig`                                                  | 源码常量                                                      | 默认工具集                                   | 业务层由 `NanobotWorkspaceModel` 维护白名单，`NanobotAgentModel` 存子集；nanobot 侧注册工具时按 agent 级传入 |
 | 运行时 checkpoint | `AgentLoop._set_runtime_checkpoint`                                | 写入 `session.metadata`                                     | 中断恢复                                    | 随 session 入库即可                                  |
+| 业务运行时状态        | 原 LangChain 版 `AgentAnalysisSessionModel`                          | MongoDB                                                   | steps/todos/pending_approval/result     | **合并进 `NanobotAgentModel`**（见 §6）；利用"agent 同时只跑 1 session"的约束去掉独立表 |
 
 
 ### 2.2 csi-back 侧：LangChain 现状与业务能力
@@ -76,13 +115,18 @@
 | 决策点                                      | 结论                                                                                                                         |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | 存储选型                                     | 所有 nanobot 数据 → **MongoDB**（Beanie）；ES 维持不变只服务实体检索                                                                         |
-| 记忆隔离粒度                                   | `workspace_key = agent_id`（按 agent 隔离；不按 thread 也不全局共享）                                                                    |
+| **分层架构**                                 | **Workspace → Agent → Session** 三层，详见 §1.3                                                                                 |
+| **记忆隔离粒度**                               | **`workspace_key = workspace_id`**（按 workspace 隔离；同 workspace 下所有 agent 共享 MEMORY/history/cursor）                         |
+| **全局配置集合**                               | **取消**；原 `nanobot_configs` 集合不再使用；`Config` 每次实例化时从 Workspace + Agent + env 拼出                                             |
+| **业务运行时状态**                              | 合并进 `NanobotAgentModel`（status / current_session_id / steps / todos / pending_approval / result）；不单独建 `AgentAnalysisSessionModel` |
+| **Session 生命周期**                         | `/agent/start` 每次生成新 `session_id`（`new_per_run`）；同 agent 同时只跑 1 个；`NanobotAgentModel.current_session_id` 指向最近一次         |
+| **资源白名单 / 子集约束**                         | `NanobotWorkspaceModel` 存 prompt_template_ids / model_config_ids / enabled_tools / enabled_skills / enabled_mcp_servers；`NanobotAgentModel` 各字段必须是对应白名单的子集，服务端在 create/update 时强校验 |
 | Dream 触发                                 | 默认关闭；**改为基于 token 预测触发**：`当前 prompt tokens + Dream 自身提示词 tokens ≥ context_window × 90%` 时强制执行一次 Dream                      |
 | Cron                                     | **迁移前彻底清理**（模块、工具、测试、skill md 全删）                                                                                          |
 | GitStore                                 | **迁移前彻底清理**（含 `annotate_line_ages`、`MemoryStore.git`、相关 command/skill/ignore 逻辑）                                           |
-| workspace 工具（fs/exec/web/spawn/notebook） | 代码保留；`ToolsConfig` 默认全关；后续 sandbox 上线再放开                                                                                   |
+| workspace 工具（fs/exec/web/spawn/notebook） | 代码保留；默认全关；后续 sandbox 上线再放开                                                                                                 |
 | builtin skills                           | 保留源码目录（`nanobot/skills/`*），**cron skill 一并删除**，`SkillsLoader` 只从源码内置目录读；workspace skill 不启用                                |
-| Model Provider                           | 每个 Agent 实例化时从 `AgentModelConfigModel` 读取 `base_url/api_key/model` + `AgentModel.llm_config`，映射到 nanobot 的 `AgentDefaults` |
+| Model Provider                           | 每个 Agent 实例化时从其绑定的 `AgentModelConfigModel` 读取 `base_url/api_key/model`，叠加 `NanobotAgentModel.llm_config`，映射到 nanobot 的 `AgentDefaults` |
 | 目标路径                                     | `csi-back/app/service/nanobot/`，与现有 `app/service/agent/` 同级；迁入后删除旧 `agent/` 目录                                             |
 
 
@@ -216,28 +260,30 @@ csi-back/
 │  │  │  └─ storage/                 ← 新增：存储抽象 + Mongo 实现
 │  │  │     ├─ __init__.py
 │  │  │     ├─ base.py               ← Protocol 定义
-│  │  │     ├─ mongo_config.py
-│  │  │     ├─ mongo_session.py
+│  │  │     ├─ mongo_session.py       ← ConfigStore 不再需要
 │  │  │     ├─ mongo_memory.py
-│  │  │     └─ models.py             ← Beanie Document（nanobot_* 集合）
+│  │  │     └─ models.py              ← 不在这里放 Beanie Document（统一放在 app/models/agent/）
 │  │  │
 │  │  ├─ analyst/                     ← 替代旧 agent/，负责业务编排
 │  │  │  ├─ __init__.py
-│  │  │  ├─ service.py                ← AnalystService（启动/停止/审批/SSE）
+│  │  │  ├─ service.py                ← AnalystService（启动/停止/审批/SSE + Workspace/Agent CRUD 编排）
+│  │  │  ├─ workspace.py              ← Workspace CRUD / 资源子集校验逻辑
+│  │  │  ├─ agent.py                  ← Agent CRUD（创建时做子集校验、更新时同步状态）
 │  │  │  ├─ tools.py                  ← get_entity / modify_entity / notify_user / write_todos
-│  │  │  ├─ hooks.py                  ← StatusHook / TodosHook / ApprovalHook / ResultHook
-│  │  │  ├─ context.py                ← ContextVar 绑定 thread_id / AnalystService 引用
+│  │  │  ├─ hooks.py                  ← StatusHook / TodosHook / ApprovalHook / ResultHook（目标是更新 NanobotAgentModel）
+│  │  │  ├─ context.py                ← ContextVar 绑定 agent_id / session_id / AnalystService 引用
 │  │  │  ├─ prompt.py                 ← 结果格式约束、todo 提示词等
 │  │  │  └─ result.py                 ← 最终 JSON 解析与兜底
 │  │  └─ （旧 agent/ 目录删除）
 │  │
 │  ├─ models/
 │  │  └─ agent/
-│  │     ├─ agent.py                  ← 保留 AgentModel / AgentAnalysisSessionModel
+│  │     ├─ nanobot.py                ← Workspace/Agent/Session/Message/Memory/History/HistoryState 七张表
 │  │     ├─ configs.py                ← 保留 AgentModelConfigModel / AgentPromptTemplateModel
 │  │     └─ checkpoint.py             ← 删除
 │  │
-│  ├─ api/v1/endpoints/agent.py       ← 只改 import 与 Service 类型，路由体不变
+│  ├─ api/v1/endpoints/agent.py       ← 接口升级：新增 /agent/workspaces/*、/agent/agents/*（CRUD），
+│  │                                     保留 /agent/configs/*、/agent/start、/agent/status、/agent/approve
 │  └─ ...
 ```
 
@@ -251,72 +297,155 @@ csi-back/
 
 ## 六、MongoDB 数据模型
 
-全部以 `nanobot_` 前缀，避开 csi-back 已有命名空间。Beanie Document 定义放在 `app/service/nanobot/storage/models.py`，并在 `app/models/__init__.py::get_all_models()` 注册。
+全部以 `nanobot_` 前缀，避开 csi-back 已有命名空间。Beanie Document 统一放在 `app/models/agent/nanobot.py`，并在 `app/models/__init__.py::get_all_models()` 注册。
+
+本期共 **7 个集合**（删除了原计划里的 `nanobot_configs`）：
+
+```
+nanobot_workspaces          业务：workspace 元数据 + 资源白名单
+nanobot_agents              业务：agent 元数据 + 运行时状态（status/steps/todos/result 等）
+nanobot_sessions            nanobot：会话元数据（每次 /start 新建一条）
+nanobot_session_messages    nanobot：消息事件流（按 session_id + seq）
+nanobot_memory_docs         nanobot：MEMORY/SOUL/USER 记忆文档（按 workspace_id 隔离）
+nanobot_history             nanobot：append-only history 条目（按 workspace_id 隔离）
+nanobot_history_state       nanobot：游标状态（_id = workspace_id）
+```
 
 ### 6.1 集合设计
 
 ```text
-nanobot_configs
-  _id: str                 # "global" / agent_id
-  data: dict               # Config.model_dump(by_alias=True)
+# === 业务层 ===
+
+nanobot_workspaces
+  _id: str                       # workspace_id（业务生成）
+  name: str                      # 展示名
+  description: str | None
+  prompt_template_ids: list[str] # 绑定的候选系统提示词（来自 AgentPromptTemplateModel）
+  model_config_ids: list[str]    # 绑定的候选模型提供商（来自 AgentModelConfigModel）
+  enabled_tools: list[str]       # 工具白名单（agent 只能从中选）
+  enabled_skills: list[str]      # 技能白名单
+  enabled_mcp_servers: dict      # MCP 服务白名单，key = server_name → MCPServerConfig dump
+  created_at: datetime
   updated_at: datetime
 
-nanobot_sessions
-  _id: str                 # session_key（csi-back 侧就是 thread_id）
-  workspace_key: str       # agent_id
+nanobot_agents
+  _id: str                        # agent_id
+  workspace_id: str               # 索引，指向所属 workspace
+  name: str
+  description: str | None
+  # 选定资源（必须是 workspace 对应字段的子集，创建/更新时强校验）
+  prompt_template_id: str         # 必须 ∈ workspace.prompt_template_ids
+  model_config_id: str            # 必须 ∈ workspace.model_config_ids
+  tools: list[str]                # ⊆ workspace.enabled_tools
+  skills: list[str]               # ⊆ workspace.enabled_skills
+  mcp_servers: list[str]          # ⊆ workspace.enabled_mcp_servers.keys()
+  llm_config: dict                # temperature / max_tokens / reasoning_effort 等
+  # 运行时业务状态（原 AgentAnalysisSessionModel 的内容合并到这里）
+  status: str                     # idle / running / awaiting_approval / paused / completed / failed
+  current_session_id: str | None  # 最近一次 /start 的 session_id
+  steps: list[dict]               # 步骤流水
+  todos: list[dict]               # write_todos 结果
+  pending_approval: dict | None   # 待审批载荷
+  result: dict | None             # 最近一次 ResultPayloadSchema
   created_at: datetime
-  updated_at: datetime     # 索引 + 可做 TTL
-  metadata: dict           # runtime_checkpoint / pending_user_turn / _last_summary / ...
-  last_consolidated: int
-  status: str              # 业务字段，可选（也可以继续由 AgentAnalysisSessionModel 独占）
+  updated_at: datetime
+
+# === nanobot 内部（按 workspace 隔离） ===
+
+nanobot_sessions
+  _id: str                   # session_id（每次 /start 新生成）
+  agent_id: str              # 索引，反查 agent → workspace
+  workspace_id: str          # 索引（冗余但方便按 workspace 聚合）
+  metadata: dict             # runtime_checkpoint / pending_user_turn / _last_summary
+  last_consolidated_seq: int # 已合并到 history 的消息 seq 上限
+  created_at: datetime
+  updated_at: datetime
 
 nanobot_session_messages
-  session_key: str         # 索引
-  seq: int                 # 索引，与 session_key 复合唯一
-  role: str
-  content: Any             # str 或 list[dict]
-  tool_calls: list | None
-  tool_call_id: str | None
-  name: str | None
-  reasoning_content: str | None
-  thinking_blocks: list | None
-  timestamp: datetime
+  session_id: str            # 与 seq 复合唯一
+  seq: int                   # 递增序号
+  role: str                  # user / assistant / system / tool
+  content: Any               # str 或 list[dict]（含图片等多模态块）
+  created_at: datetime
+  # 可选字段（按 role 有选择性填充）
+  sender_id: str | None
   injected_event: str | None
   subagent_task_id: str | None
-  extras: dict             # 兜底
+  # assistant only
+  tool_calls: list[dict]
+  reasoning_content: str | None
+  # anthropic only
+  thinking_blocks: list[dict]
+  # tool only
+  tool_call_id: str | None
+  tool_call_name: str | None
 
 nanobot_memory_docs
-  _id: str                 # f"{workspace_key}:{filename}"（filename ∈ MEMORY.md/SOUL.md/USER.md）
-  workspace_key: str       # 索引
-  filename: str
+  workspace_id: str          # 索引；与 type 复合唯一
+  type: str                  # "memory" / "soul" / "user"（USER 后续可能下线，SOUL 语义可能调整为报告风格）
   content: str
+  created_at: datetime
   updated_at: datetime
 
 nanobot_history
-  workspace_key: str       # 索引
-  cursor: int              # 与 workspace_key 复合唯一，单调递增
-  timestamp: datetime
+  workspace_id: str          # 索引；与 cursor 复合唯一
+  cursor: int                # 单调递增
   content: str
+  created_at: datetime
 
 nanobot_history_state
-  _id: str                 # workspace_key
-  last_cursor: int
-  last_dream_cursor: int
+  _id: str                   # workspace_id
+  last_cursor: int           # 已分配的最大 cursor
+  last_dream_cursor: int     # Dream 已处理到的 cursor
   updated_at: datetime
 ```
 
 ### 6.2 索引
 
 ```python
-IndexModel([("session_key", ASCENDING), ("seq", ASCENDING)], unique=True)
-IndexModel([("workspace_key", ASCENDING), ("cursor", ASCENDING)], unique=True)
-IndexModel([("workspace_key", ASCENDING)])
-IndexModel([("updated_at", ASCENDING)])  # 如需 TTL 可加 expireAfterSeconds
+# nanobot_workspaces
+IndexModel([("name", ASCENDING)])
+
+# nanobot_agents
+IndexModel([("workspace_id", ASCENDING)])
+IndexModel([("workspace_id", ASCENDING), ("name", ASCENDING)], unique=True)  # 同 workspace 下 agent 名称唯一
+IndexModel([("status", ASCENDING)])
+
+# nanobot_sessions
+IndexModel([("agent_id", ASCENDING), ("created_at", DESCENDING)])
+IndexModel([("workspace_id", ASCENDING)])
+IndexModel([("updated_at", ASCENDING)])  # 可加 TTL expireAfterSeconds
+
+# nanobot_session_messages
+IndexModel([("session_id", ASCENDING), ("seq", ASCENDING)], unique=True)
+
+# nanobot_memory_docs
+IndexModel([("workspace_id", ASCENDING), ("type", ASCENDING)], unique=True)
+
+# nanobot_history
+IndexModel([("workspace_id", ASCENDING), ("cursor", ASCENDING)], unique=True)
+
+# nanobot_history_state： _id 即 workspace_id，自动唯一
 ```
 
-### 6.3 为什么不用 messages 内嵌数组
+### 6.3 为什么 messages 独立成集合、其他不合并
 
-会话消息会随对话增长（单次分析 agent 可能产生数百条 tool call/result），内嵌会碰到 16MB 上限；并且 `AgentLoop._save_turn` 是增量 append，独立集合更自然。`SessionManager` 内仍然把 messages 装到 `Session.messages: list[dict]` 给 `ContextBuilder` 用，只是读写由 Mongo backend 承担。
+- 会话消息会随对话增长（单次分析 agent 可能产生数百条 tool call/result），内嵌 `nanobot_sessions.messages` 会碰到 16 MB 上限；并且 `AgentLoop._save_turn` 是增量 append，独立集合更自然。`SessionManager` 内仍然把 messages 装到 `Session.messages: list[dict]` 给 `ContextBuilder` 用，只是读写由 Mongo backend 承担。
+- 业务状态（status/steps/todos/result）合并进 `nanobot_agents` 是利用"**同一 agent 同时只跑 1 个 session**"这个新约束：运行时 UI 关心的就是"这个 agent 现在怎么样"，查 agent 一张表即可；历史 run 可以按需要再做归档（本期不做）。
+
+### 6.4 业务子集校验（service 层）
+
+`AnalystService.create_agent` / `update_agent` 在写入前必须校验：
+
+```python
+assert agent.prompt_template_id in workspace.prompt_template_ids
+assert agent.model_config_id    in workspace.model_config_ids
+assert set(agent.tools)       <= set(workspace.enabled_tools)
+assert set(agent.skills)      <= set(workspace.enabled_skills)
+assert set(agent.mcp_servers) <= set(workspace.enabled_mcp_servers.keys())
+```
+
+Workspace 更新时如果**收窄了白名单**（去掉了某 tool/skill/mcp/prompt/model），需要级联校验"是否有已存在的 agent 仍在引用"：有的话要么拒绝更新，要么把相关字段从 agent 里清掉（本期选"拒绝更新"，更保守）。
 
 ---
 
@@ -335,51 +464,52 @@ IndexModel([("updated_at", ASCENDING)])  # 如需 TTL 可加 expireAfterSeconds
   - 注意 `anthropic` / `openai` 如果 csi-back 已有就对齐版本。
 4. **不要**拷贝 `nanobot_tester.py`、`pyproject.toml`、`requirements*.txt`、`tests/`；这些留在 sdk 仓库作参考。tests 的迁移见阶段 6。
 5. 在 csi-back 的 `.venv` 里 `pip install -r requirements.txt` 验证不报 import 错误。
-6. 暂时不接入业务，先写一个最小脚本跑通 `Nanobot.from_config(config_path=".../config.json")` + `await bot.run("hello")`，确认 import 路径全改对、文件存储依然工作（这一步仍用文件系统，不碰数据库）。
+6. 暂时不接入业务，验证 `app/service/nanobot/` 能被 import、语法与依赖正常即可；冒烟运行推迟到阶段 2 用 Mongo backend 跑。
 
 **产出**：`app/service/nanobot/` 可以脱离 csi-back 其他部分独立实例化。
 
-### 阶段 2：抽象存储 backend + Mongo 实现
+### 阶段 2：Mongo 存储 + 彻底去文件化
 
-这一步**不动业务**，只把 §2.1 清单里的文件 I/O 改可插拔。
+这一步**不动业务**，目标是把 §2.1 清单里所有文件 I/O **直接替换为 Mongo 版本**，不做"文件 + Mongo 双后端"的兼容层，存量文件路径相关代码（含 `~/.nanobot/`、workspace 目录下的 `sessions/` / `memory/` / `.cursor` / `.dream_cursor` / 历史迁移 `_maybe_migrate_legacy_history` / `legacy_sessions_dir` 等）一律删除。
+
+Protocol 接口层的定义仍然保留，一方面给 `SessionManager` / `MemoryStore` 解耦于具体的 Beanie Document 调用（便于后续写单测时用 in-memory fake），一方面沿用 Python 惯例不让 nanobot 内部直接 import `app.models.*`。
 
 #### 2.1 定义 Protocol（`app/service/nanobot/storage/base.py`）
 
 ```python
-class ConfigStore(Protocol):
-    async def load(self, key: str = "global") -> dict | None: ...
-    async def save(self, key: str, data: dict) -> None: ...
-
 class SessionStore(Protocol):
-    async def load(self, key: str) -> Session | None: ...
+    async def load(self, session_id: str) -> Session | None: ...
     async def save(self, session: Session) -> None: ...
-    async def list(self) -> list[dict]: ...
-    async def invalidate(self, key: str) -> None: ...  # 内存缓存失效，默认 no-op
+    async def list_by_agent(self, agent_id: str) -> list[dict]: ...
+    async def invalidate(self, session_id: str) -> None: ...  # 内存缓存失效，默认 no-op
 
 class MemoryBackend(Protocol):
-    async def read_doc(self, ws: str, filename: str) -> str: ...
-    async def write_doc(self, ws: str, filename: str, content: str) -> None: ...
-    async def append_history(self, ws: str, entry: str) -> int: ...
-    async def read_unprocessed_history(self, ws: str, since_cursor: int) -> list[dict]: ...
-    async def compact_history(self, ws: str, max_entries: int) -> None: ...
-    async def get_cursors(self, ws: str) -> tuple[int, int]: ...  # (last_cursor, last_dream_cursor)
-    async def set_dream_cursor(self, ws: str, cursor: int) -> None: ...
+    # 注意：workspace_key 的实际取值是 workspace_id（不是 agent_id，也不是 session_id）
+    async def read_doc(self, workspace_id: str, doc_type: str) -> str: ...
+    async def write_doc(self, workspace_id: str, doc_type: str, content: str) -> None: ...
+    async def append_history(self, workspace_id: str, entry: str) -> int: ...
+    async def read_unprocessed_history(self, workspace_id: str, since_cursor: int) -> list[dict]: ...
+    async def compact_history(self, workspace_id: str, max_entries: int) -> None: ...
+    async def get_cursors(self, workspace_id: str) -> tuple[int, int]: ...  # (last_cursor, last_dream_cursor)
+    async def set_dream_cursor(self, workspace_id: str, cursor: int) -> None: ...
 ```
 
 > `SessionManager` 当前接口是同步的（`get_or_create/save`），但 `AgentLoop` 使用时已经在协程上下文。**改造时把 `SessionManager.save/_load/list_sessions` 一次性改 async**，对应调用点统一 `await`。这是本期工作量最大的一处改动。
 
+> `SessionManager.get_or_create(key)` 的语义要从"按 key 懒加载"改成"按 session_id 精确加载 / create_new(agent_id) 新建"。`/agent/start` 每次走 create_new，不再复用同一 key。
+
 #### 2.2 改 nanobot 内部调用链
 
-- `nanobot/config/loader.py`：`load_config` / `save_config` 改为接收 `store: ConfigStore`。保留旧的文件路径实现作为 `FileConfigStore`，并新增 `MongoConfigStore`。
-- `nanobot/session/manager.py::SessionManager`：`_load` / `save` 委托给 `store`；`_cache` 保留（内存层 LRU 无所谓）；所有读写改 async。
-- `nanobot/agent/memory.py::MemoryStore`：所有 `.read_text` / `.write_text` / `open(...).write` 改走 `backend`；`_cursor_file` / `_dream_cursor_file` 改成 `backend.get_cursors / set_dream_cursor`；`append_history` 改 async。
+- `nanobot/config/loader.py`：**删除** `load_config` / `save_config` / `resolve_config_env_vars` 等所有文件读取逻辑；只保留 `Config` / `ProviderConfig` / `AgentDefaults` 等 pydantic schema 定义（`config/schema.py`），让 `AnalystService.build_bot` 直接 `Config(...)` 构造。
+- `nanobot/session/manager.py::SessionManager`：**删除** `workspace` / `sessions_dir` / `legacy_sessions_dir` / `_get_session_path` / `_get_legacy_session_path` / `_load` 文件版本 / `save` 文件版本 / `list_sessions` 目录扫描；重写为直接委托给 `SessionStore`；`_cache` 保留（内存层 LRU）；所有读写改 async；`get_or_create(key)` 拆成 `load(session_id)` 与 `create(agent_id, workspace_id) -> Session`。
+- `nanobot/agent/memory.py::MemoryStore`：**删除** `memory_dir` / `memory_file` / `history_file` / `legacy_history_file` / `soul_file` / `user_file` / `_cursor_file` / `_dream_cursor_file` / `_maybe_migrate_legacy_history` 等所有 Path 字段；所有 `.read_text` / `.write_text` / `open(...).write` 改走 `MemoryBackend`；`append_history` 改 async。
 - `nanobot/agent/loop.py`：`_save_turn` / `consolidator.maybe_consolidate_by_tokens` / `_schedule_background` 的调用点统一走 async。
 - `nanobot/agent/context.py::ContextBuilder`：`build_system_prompt` 里 `self.memory.read_memory()` 等也要改 async（或让 ContextBuilder 自己缓存"一次对话期内的 memory snapshot"，减少阻塞）。**推荐后者**：`ContextBuilder.refresh_memory_snapshot()` 在 `_process_message` 入口先 await 一次，后续同步读快照。
 
 #### 2.3 Beanie Document 与实现
 
-- `storage/models.py`：按 §6 定义 7 个 Document。
-- `storage/mongo_config.py` / `mongo_session.py` / `mongo_memory.py`：直白的 CRUD 封装。
+- `app/models/agent/nanobot.py`：按 §6 定义 **7 个 Document**（Workspace/Agent/Session/Message/Memory/History/HistoryState）。
+- `app/service/nanobot/storage/mongo_session.py` / `mongo_memory.py`：直白的 CRUD 封装，依赖 `app/models/agent/nanobot.py` 里的 Document。
 - `app/models/__init__.py::get_all_models()`：把 7 个新 Document 加进列表，旧的 `CheckpointModel` / `CheckpointWriteModel` 删掉。
 
 #### 2.4 `Nanobot` 入口
@@ -395,58 +525,88 @@ class Nanobot:
         *,
         session_store: SessionStore,
         memory_backend: MemoryBackend,
-        workspace_key: str,                    # = agent_id
+        agent_id: str,
+        workspace_id: str,                     # 记忆隔离维度
+        session_id: str,                       # 每次 run 由 AnalystService 分配
     ) -> "Nanobot":
         ...
 ```
 
-保留 `from_config` 做本地脚本冒烟用（默认 file backend）。
+**`from_config` 直接删除**（它依赖 `load_config` + 文件 SessionManager，已一并删除）。`app/service/nanobot/nanobot.py` 里 `Nanobot` 只暴露 `from_components` 一种构造方式，`_make_provider` 私有函数里对 `config_path` 的引用也清理掉。本地冒烟脚本改为在 csi-back 的 `.venv` 下连真实 Mongo，直接 `from_components(...)` 跑。
 
 **产出**：`Nanobot.from_components(...)` 能用 MongoDB 跑一条会话，消息/记忆/历史落到 Mongo。文件系统完全不使用。
 
 ### 阶段 3：业务 Service 层
 
-在 `app/service/analyst/` 里重建 LangChain 版的全部业务能力。
+在 `app/service/analyst/` 里重建 LangChain 版的全部业务能力，并**新增 Workspace / Agent 的完整 CRUD**。
 
-#### 3.1 AnalystService（`service.py`）
+#### 3.1 AnalystService（`service.py` + `workspace.py` + `agent.py`）
 
-替换旧 `AgentService` 的所有 classmethod，接口兼容：
+**3.1.1 Workspace CRUD（`workspace.py`）**
+
+- `create_workspace(name, description, prompt_template_ids, model_config_ids, enabled_tools, enabled_skills, enabled_mcp_servers)`：
+  - 校验 `prompt_template_ids` / `model_config_ids` 在对应表里存在。
+  - 校验 `enabled_tools` / `enabled_skills` 在系统支持列表里（工具来自 nanobot 注册表 + 业务工具；skills 来自 `nanobot/skills/` 目录）。
+  - 写入 `NanobotWorkspaceModel`。
+- `update_workspace(...)`：支持字段修改；如果收窄白名单，要先校验"没有 agent 仍在引用"，否则拒绝。
+- `list_workspaces` / `get_workspace` / `delete_workspace`（删除前校验没有 agent 关联）。
+
+**3.1.2 Agent CRUD（`agent.py`）**
+
+- `create_agent(workspace_id, name, description, prompt_template_id, model_config_id, tools, skills, mcp_servers, llm_config)`：
+  - 拉出所属 workspace → 做 §6.4 列的 5 个子集校验。
+  - 写入 `NanobotAgentModel`，初始 `status=idle / current_session_id=None / steps=[] / todos=[] / pending_approval=None / result=None`。
+- `update_agent(...)`：改动资源字段时同样做子集校验；`status/current_session_id/steps/...` 等运行时字段**只由 AnalystService 内部修改**，不开放对外编辑接口。
+- `list_agents(workspace_id=None)` / `get_agent` / `delete_agent`（运行中的 agent 拒绝删除）。
+
+**3.1.3 运行时编排（`service.py`）**
+
+替换旧 `AgentService`：
 
 ```python
 class AnalystService:
-    _bots: dict[str, Nanobot] = {}          # key = agent_id
+    _bots: dict[str, Nanobot] = {}               # key = agent_id，仅在运行期间存活
     _bots_lock = asyncio.Lock()
-    sse_subscribers: dict[str, list[asyncio.Queue]] = {}
+    sse_subscribers: dict[str, list[asyncio.Queue]] = {}  # key = agent_id
     sse_lock = asyncio.Lock()
-    running_tasks: dict[str, asyncio.Task] = {}
+    running_tasks: dict[str, asyncio.Task] = {}           # key = agent_id
     task_lock = asyncio.Lock()
-    cancel_reasons: dict[str, str] = {}
-    pending_resumes: dict[str, asyncio.Queue] = {}
+    cancel_reasons: dict[str, str] = {}                   # key = agent_id
+    pending_resumes: dict[str, asyncio.Queue] = {}        # key = agent_id
 
     @classmethod
-    async def get_or_build_bot(cls, agent: AgentModel, model: AgentModelConfigModel) -> Nanobot: ...
+    async def build_bot(cls, agent: NanobotAgent, workspace: NanobotWorkspace) -> tuple[Nanobot, str]:
+        """构造 Nanobot 实例并分配新 session_id。返回 (bot, session_id)。"""
+        ...
+
     @classmethod
-    async def start_agent(cls, system_prompt, user_prompt, agent_template, model_config, data) -> str: ...
+    async def start_agent(cls, agent_id: str, user_prompt: str, context: dict | None = None) -> str:
+        """/agent/start 入口：拉 agent+workspace → build_bot → run_analysis（后台）→ 返回 session_id。"""
+        ...
+
     @classmethod
-    async def run_analysis(cls, thread_id, bot, user_prompt): ...
+    async def run_analysis(cls, agent_id: str, session_id: str, bot: Nanobot, user_prompt: str): ...
+
     @classmethod
-    async def broadcast_sse(cls, thread_id, payload): ...
-    @classmethod
-    def sse_event(cls, type, data) -> dict: ...
+    async def broadcast_sse(cls, agent_id: str, payload): ...
 ```
 
-- `get_or_build_bot`：按 `agent_id` 缓存；miss 时：
-  1. 从 `AgentModelConfigModel` 取 `base_url/api_key/model`，合并 `AgentModel.llm_config`（temperature 等）。
-  2. 构造 `Config`，设 `providers.openai_compat.api_key/api_base`、`agents.defaults.model`。
-  3. `Nanobot.from_components(config, session_store=mongo_session_store, memory_backend=mongo_memory_backend, workspace_key=agent_id)`。
-  4. 注入 hooks + 业务工具（见 3.2/3.3）。
+- `build_bot` 做这几件事（每次 /start 都重新构造，不做跨 run 缓存）：
+  1. 拉 agent 绑定的 `AgentModelConfigModel` → `base_url/api_key/model`；叠加 `agent.llm_config`。
+  2. 拉 agent 绑定的 `AgentPromptTemplateModel` → `system_prompt`。
+  3. 构造 nanobot `Config` 对象（不落库）：只填 `providers.openai_compat` / `agents.defaults` / `tools.mcp_servers`（按 agent.mcp_servers 从 workspace.enabled_mcp_servers 里挑子集）。
+  4. 生成新 `session_id`（`generate_id()`），更新 `agent.current_session_id` 并重置运行时字段（steps/todos/pending_approval/result 清空，status=running）。
+  5. `Nanobot.from_components(config, session_store=mongo_session_store, memory_backend=mongo_memory_backend, agent_id=agent.id, workspace_id=workspace.id, session_id=session_id)`。
+  6. 注入 hooks + 业务工具（见 3.2/3.3），业务工具里通过 `agent.tools/skills/mcp_servers` 动态过滤。
 
 #### 3.2 Hooks（`hooks.py`）
 
-- `StatusHook`：`before_execute_tools` / `after_iteration` 里把 step 写入 `AgentAnalysisSessionModel.steps` 并 SSE 广播 `status`。
-- `TodosHook`：响应 `write_todos` 工具调用结果，把新 todos 同步到 `AgentAnalysisSessionModel.todos`。
+- `StatusHook`：`before_execute_tools` / `after_iteration` 里把 step 写入 **`NanobotAgentModel.steps`** 并 SSE 广播 `status`。
+- `TodosHook`：响应 `write_todos` 工具调用结果，把新 todos 同步到 **`NanobotAgentModel.todos`**。
 - `ApprovalHook`：在工具执行之前不能 skip（nanobot 没提供原生接口），**审批逻辑放进工具本身**（见 3.3），Hook 只负责 SSE 的 `approval_required` 广播与 `pending_approval` 字段清理。
-- `ResultHook`：`on_run_complete`（或读 `RunResult.content`）里解析最终 JSON → `ResultPayloadSchema`；广播 `result`；落到 `AgentAnalysisSessionModel.result`。
+- `ResultHook`：`on_run_complete`（或读 `RunResult.content`）里解析最终 JSON → `ResultPayloadSchema`；广播 `result`；落到 **`NanobotAgentModel.result`**，同时 `status=completed/failed`。
+
+所有 Hook 写库目标都统一到 `NanobotAgentModel`（按 `agent_id`）。
 
 #### 3.3 业务工具（`tools.py`）
 
@@ -456,13 +616,15 @@ class AnalystService:
 | 工具                 | 说明                                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `get_current_time` | 直接返回时间字符串，无状态。                                                                                                                                                                                                                                                            |
-| `get_entity`       | 从 `contextvars` 拿不到可以省略 thread_id；直接复用 `get_es()`。                                                                                                                                                                                                                        |
-| `modify_entity`    | **在 `execute()` 里完成审批握手**：`contextvars` 取 `thread_id` → 更新 `AgentAnalysisSessionModel.status=awaiting_approval` + `pending_approval=payload` → SSE `approval_required` → `await AnalystService.pending_resumes[thread_id].get()` → 按决策走 approve/reject 分支。无需改 nanobot 核心。 |
-| `notify_user`      | SSE 广播 `message`；`thread_id` 也从 `contextvars` 拿。                                                                                                                                                                                                                          |
-| `write_todos`      | 参数 `todos: list[{content, status}]`；写 `AgentAnalysisSessionModel.todos` + SSE `status`。                                                                                                                                                                                   |
+| `get_entity`       | 从 `contextvars` 拿不到可以省略 agent_id；直接复用 `get_es()`。                                                                                                                                                                                                                         |
+| `modify_entity`    | **在 `execute()` 里完成审批握手**：`contextvars` 取 `agent_id` → 更新 `NanobotAgentModel.status=awaiting_approval` + `pending_approval=payload` → SSE `approval_required` → `await AnalystService.pending_resumes[agent_id].get()` → 按决策走 approve/reject 分支。无需改 nanobot 核心。           |
+| `notify_user`      | SSE 广播 `message`；`agent_id` 也从 `contextvars` 拿。                                                                                                                                                                                                                           |
+| `write_todos`      | 参数 `todos: list[{content, status}]`；写 `NanobotAgentModel.todos` + SSE `status`。                                                                                                                                                                                          |
 
 
-`thread_id` 注入方式：`app/service/analyst/context.py` 定义 `current_thread_id: ContextVar[str]`，`AnalystService.run_analysis` 在 await `bot.run(...)` 外层 `token = current_thread_id.set(thread_id)`，finally 里 reset。
+上下文注入方式：`app/service/analyst/context.py` 定义 `current_agent_id: ContextVar[str]` 和 `current_session_id: ContextVar[str]`，`AnalystService.run_analysis` 在 await `bot.run(...)` 外层 set，finally 里 reset。
+
+> 对外 API 的 `thread_id` 参数本期直接替换为 `agent_id`；SSE 订阅也按 `agent_id` 分发。`session_id` 作为只读字段在 SSE 事件里返回给前端用于调试。
 
 #### 3.4 系统提示装配（`prompt.py`）
 
@@ -480,9 +642,14 @@ class AnalystService:
 
 ### 阶段 4：路由切换
 
-- `app/api/v1/endpoints/agent.py`：只需要改两处 import（`AgentService` → `AnalystService`）即可，接口行为不变。
-- SSE `/agent/status` 的订阅/分发逻辑保持不变（`AnalystService.sse_subscribers` 与旧同名）。
-- `/agent/approve` 的 `pending_resumes[thread_id].put_nowait(...)` 由新的 `modify_entity` 工具端消费。
+- `app/api/v1/endpoints/agent.py`：
+  - **新增**：`/agent/workspaces` CRUD（create / list / get / update / delete）。
+  - **新增**：`/agent/agents` CRUD（create / list / get / update / delete，支持按 `workspace_id` 过滤）。
+  - **保留**：`/agent/configs/models/*`、`/agent/configs/prompt-templates/*`（已经在用）。
+  - **重写**：`/agent/start`（入参改为 `agent_id + user_prompt + 可选业务上下文`）、`/agent/status?agent_id=...`（SSE）、`/agent/approve`（body 用 `agent_id`）。
+- SSE 订阅按 `agent_id` 分发（`AnalystService.sse_subscribers`）。
+- `/agent/approve` 的 `pending_resumes[agent_id].put_nowait(...)` 由新的 `modify_entity` 工具端消费。
+- `/agent/configs/tools`、`/agent/configs/tools-list`：返回系统级支持的工具/技能/MCP 清单（而不是具体 agent 的），供前端创建 workspace 时选白名单用。
 
 ### 阶段 5：彻底移除 LangChain
 
@@ -598,26 +765,35 @@ async def maybe_force_run(self, session) -> bool:
 ## 十一、TODO（建议拆成独立 commit 的颗粒度）
 
 
-| #   | 内容                                                                        | 阶段   | 预估影响文件数 |
-| --- | ------------------------------------------------------------------------- | ---- | ------- |
-| 1   | 清理 cron 模块、工具、测试、skill、模板、依赖                                              | 阶段 0 | ~20     |
-| 2   | 清理 GitStore、Dream 注释与 `annotate_line_ages`、dulwich 依赖                     | 阶段 0 | ~10     |
-| 3   | 清理 heartbeat、evaluator、`cmd_restart`                                      | 阶段 0 | ~8      |
-| 4   | 清理后回归：`pytest` + `nanobot_tester.py`                                      | 阶段 0 | 0       |
-| 5   | nanobot → `csi-back/app/service/nanobot/` 整包拷贝 + import 替换                | 阶段 1 | all     |
-| 6   | 合并 python 依赖到 csi-back                                                    | 阶段 1 | 1       |
-| 7   | 定义 storage Protocol + 抽出 File 默认实现                                        | 阶段 2 | ~5      |
-| 8   | Beanie Document + Mongo 实现（Config/Session/Memory）                         | 阶段 2 | ~6      |
-| 9   | `SessionManager` / `MemoryStore` / `ContextBuilder` / `AgentLoop` 改 async | 阶段 2 | ~15     |
-| 10  | 删除 `AgentLoop.run/_dispatch` 主循环与 slash 命令不需要的分支                          | 阶段 2 | ~3      |
-| 11  | Dream 改阈值触发 + `DreamConfig` 字段调整                                          | 阶段 2 | ~3      |
-| 12  | `app/service/analyst/` 业务层（Service + Hooks + Tools + Context）             | 阶段 3 | ~8      |
-| 13  | 结构化结果 & response_format 接入                                                | 阶段 3 | ~3      |
-| 14  | 路由切换 `app/api/v1/endpoints/agent.py`                                      | 阶段 4 | 1       |
-| 15  | 删除 langchain/langgraph、旧 Service、Checkpoint 模型与集合                         | 阶段 5 | ~6      |
-| 16  | 新增 / 迁移核心单测                                                               | 阶段 6 | ~10     |
+| #   | 内容                                                                                               | 阶段     | 状态   | 预估影响文件数 |
+| --- | ------------------------------------------------------------------------------------------------ | ------ | ---- | ------- |
+| 1   | 清理 cron 模块、工具、测试、skill、模板、依赖                                                                     | 阶段 0   | 完成   | ~20     |
+| 2   | 清理 GitStore、Dream 注释与 `annotate_line_ages`、dulwich 依赖                                            | 阶段 0   | 完成   | ~10     |
+| 3   | 清理 heartbeat、evaluator、`cmd_restart`                                                             | 阶段 0   | 完成   | ~8      |
+| 4   | 清理后回归：`pytest` + `nanobot_tester.py`                                                             | 阶段 0   | 完成   | 0       |
+| 5   | nanobot → `csi-back/app/service/nanobot/` 整包拷贝 + import 替换                                       | 阶段 1   | 完成   | all     |
+| 6   | 合并 python 依赖到 csi-back                                                                           | 阶段 1   | 完成   | 1       |
+| 7   | 定义 7 张 Beanie Document（Workspace / Agent / Session / Message / Memory / History / HistoryState） | 阶段 2   | 进行中  | 2       |
+| 8   | `get_all_models()` 注册新 Document；删除旧 `CheckpointModel`                                            | 阶段 2   | 待做   | 2       |
+| 9   | 定义 storage Protocol（SessionStore / MemoryBackend，不含 ConfigStore）                                 | 阶段 2   | 待做   | 1       |
+| 10  | Mongo 实现（`mongo_session.py` / `mongo_memory.py`）                                                 | 阶段 2   | 待做   | 2       |
+| 11  | `SessionManager` 改 async + 对接 SessionStore；`get_or_create` 语义改 `load/create`                    | 阶段 2   | 待做   | ~6      |
+| 12  | `MemoryStore` / `Consolidator` / `Dream` 改 async + 对接 MemoryBackend                              | 阶段 2   | 待做   | ~4      |
+| 13  | `ContextBuilder.refresh_memory_snapshot` 异步快照                                                    | 阶段 2   | 待做   | ~2      |
+| 14  | `AgentLoop` 调用点全部 await；删除 `run/_dispatch` 主循环与 slash 命令多余分支                                    | 阶段 2   | 待做   | ~5      |
+| 15  | Dream 改阈值触发 + `DreamConfig` 字段调整                                                                 | 阶段 2   | 待做   | ~3      |
+| 16  | `Nanobot.from_components(agent_id, workspace_id, session_id, ...)` 新构造器                          | 阶段 2   | 待做   | 1       |
+| 17  | **Workspace Service** + CRUD 接口 + 白名单收窄级联校验                                                     | 阶段 3   | 待做   | ~4      |
+| 18  | **Agent Service** + CRUD 接口 + 子集校验                                                              | 阶段 3   | 待做   | ~4      |
+| 19  | `AnalystService`（build_bot / start_agent / run_analysis / SSE / approve），业务状态写入 `NanobotAgentModel` | 阶段 3   | 待做   | ~3      |
+| 20  | Hooks（Status / Todos / Approval / Result）+ 业务工具（get/modify/notify/write_todos）                  | 阶段 3   | 待做   | ~4      |
+| 21  | 结构化结果 & `response_format: json_schema` 接入                                                        | 阶段 3   | 待做   | ~3      |
+| 22  | 路由升级：`app/api/v1/endpoints/agent.py`（Workspace/Agent CRUD + /start/status/approve 改 agent_id 参数） | 阶段 4 | 待做   | 1       |
+| 23  | 删除 `app/service/agent/`、`motor_checkpinter.py`、`checkpoint.py`、`langchain/langgraph` 依赖          | 阶段 5   | 待做   | ~6      |
+| 24  | drop 旧集合 `agent_checkpointer` / `agent_checkpointer_writes`                                      | 阶段 5   | 待做   | 0       |
+| 25  | 新增 / 迁移核心单测                                                                                     | 阶段 6   | 待做   | ~10     |
 
 
 ---
 
-*最后更新：迁移开始前；实施过程中请同步更新各阶段完成情况。*
+*最后更新：接入 Workspace/Agent 分层架构后；实施过程中请同步更新各阶段完成情况。*

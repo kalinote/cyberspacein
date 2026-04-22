@@ -227,3 +227,22 @@ class NanobotMessageRoleEnum(str, Enum):
     SYSTEM = "system"
     TOOL = "tool"
     
+class NanobotMemoryDocTypeEnum(str, Enum):
+    """
+    nanobot记忆类型枚举
+    """
+    MEMORY = "memory"
+    SOUL = "soul"
+    USER = "user"
+
+
+class NanobotAgentStatusEnum(str, Enum):
+    """
+    Agent运行时业务状态枚举
+    """
+    IDLE = "idle"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"

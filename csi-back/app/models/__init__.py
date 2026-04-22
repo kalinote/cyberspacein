@@ -10,6 +10,15 @@ from app.models.action.accounts import AccountModel
 from app.models.action.sandbox import SandboxModel
 from app.models.platform.platform import PlatformModel
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
+from app.models.agent.nanobot import (
+    NanobotAgentModel,
+    NanobotHistoryModel,
+    NanobotHistoryStateModel,
+    NanobotMemoryDocsModel,
+    NanobotSessionMessagesModel,
+    NanobotSessionModel,
+    NanobotWorkspaceModel,
+)
 from app.models.annotation import AnnotationModel
 from app.models.search_template import SearchTemplateModel
 from app.models.auth.group import GroupModel
@@ -30,6 +39,13 @@ def get_all_models() -> List[Type[Document]]:
         PlatformModel,
         AgentModelConfigModel,
         AgentPromptTemplateModel,
+        NanobotWorkspaceModel,
+        NanobotAgentModel,
+        NanobotSessionModel,
+        NanobotSessionMessagesModel,
+        NanobotMemoryDocsModel,
+        NanobotHistoryModel,
+        NanobotHistoryStateModel,
         AnnotationModel,
         SearchTemplateModel,
         GroupModel,
