@@ -5,20 +5,18 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
-import os
 import time
-from contextlib import AsyncExitStack, nullcontext
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from loguru import logger
 
-from app.service.nanobot.agent.autocompact import AutoCompact
 from app.service.nanobot.agent.context import ContextBuilder
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
-from app.service.nanobot.agent.memory import Consolidator, Dream
-from app.service.nanobot.agent.runner import _MAX_INJECTIONS_PER_TURN, AgentRunner, AgentRunSpec
-from app.service.nanobot.agent.skills import BUILTIN_SKILLS_DIR
+from app.service.nanobot.agent.memory import Consolidator, Dream, MemoryStore
+from app.service.nanobot.agent.runner import AgentRunner, AgentRunSpec
+from app.service.nanobot.agent.skills import BUILTIN_SKILLS_DIR, SkillsLoader
 from app.service.nanobot.agent.subagent import SubagentManager
 from app.service.nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from app.service.nanobot.agent.tools.notebook import NotebookEditTool
@@ -31,7 +29,7 @@ from app.service.nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from app.service.nanobot.bus.events import InboundMessage, OutboundMessage
 from app.service.nanobot.bus.queue import MessageBus
 from app.service.nanobot.command import CommandContext, CommandRouter, register_builtin_commands
-from app.service.nanobot.config.schema import AgentDefaults
+from app.service.nanobot.config.schema import AgentDefaults, DreamConfig
 from app.service.nanobot.providers.base import LLMProvider
 from app.service.nanobot.session.manager import Session, SessionManager
 from app.service.nanobot.utils.document import extract_documents
@@ -41,9 +39,6 @@ from app.service.nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
     from app.service.nanobot.config.schema import ExecToolConfig, ToolsConfig, WebToolsConfig
-
-
-UNIFIED_SESSION_KEY = "unified:default"
 
 
 class _LoopHook(AgentHook):
@@ -136,6 +131,9 @@ class AgentLoop:
         self,
         bus: MessageBus,
         provider: LLMProvider,
+        memory: MemoryStore,
+        sessions: SessionManager,
+        agent_id: str,
         workspace: Path,
         model: str | None = None,
         max_iterations: int | None = None,
@@ -146,21 +144,33 @@ class AgentLoop:
         web_config: WebToolsConfig | None = None,
         exec_config: ExecToolConfig | None = None,
         restrict_to_workspace: bool = False,
-        session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         send_progress: bool = True,
         send_tool_hints: bool = False,
         timezone: str | None = None,
-        session_ttl_minutes: int = 0,
         hooks: list[AgentHook] | None = None,
-        unified_session: bool = False,
         disabled_skills: list[str] | None = None,
         tools_config: ToolsConfig | None = None,
+        dream_config: DreamConfig | None = None,
     ):
+        """构造 AgentLoop。
+
+        新架构下的参数说明：
+        - `memory`：已按 `workspace_id` 预先绑定的 `MemoryStore`，AgentLoop 内部
+          的 `ContextBuilder` / `Consolidator` / `Dream` 共享同一个实例。
+        - `sessions`：外部注入的 `SessionManager`（其 store 决定了底层实现），
+          AgentLoop 不再自行构造 SessionManager。
+        - `agent_id`：AgentLoop 所属的 Agent 唯一标识。同一 AgentLoop 实例
+          绑定到单个 agent，所有 session 都在该 agent 下创建。
+        - `workspace`：仅作为 **文件系统沙箱根目录**（供 ReadFile/ExecTool 等工具使用），
+          与长期记忆、session、配置等持久化完全无关。
+        - `dream_config`：Dream 触发阈值等配置，未传入时使用默认 `DreamConfig()`。
+        """
         from app.service.nanobot.config.schema import ExecToolConfig, ToolsConfig, WebToolsConfig
 
         _tc = tools_config or ToolsConfig()
         defaults = AgentDefaults()
+        _dream_cfg = dream_config or DreamConfig()
         self.bus = bus
         self.send_progress = send_progress
         self.send_tool_hints = send_tool_hints
@@ -189,8 +199,21 @@ class AgentLoop:
         self._last_usage: dict[str, int] = {}
         self._extra_hooks: list[AgentHook] = hooks or []
 
-        self.context = ContextBuilder(workspace, timezone=timezone, disabled_skills=disabled_skills)
-        self.sessions = session_manager or SessionManager(workspace)
+        self.memory = memory
+        self.sessions = sessions
+        self.agent_id = agent_id
+        # workspace_id 源自 MemoryStore（已由外层构造时按 workspace 绑定），
+        # AgentLoop 不再独立维护，保持单一来源。
+        self.workspace_id = memory.workspace_id
+        self.skills = SkillsLoader(
+            workspace,
+            disabled_skills=set(disabled_skills) if disabled_skills else None,
+        )
+        self.context = ContextBuilder(
+            memory=memory,
+            skills=self.skills,
+            timezone=timezone,
+        )
         self.tools = ToolRegistry()
         self.runner = AgentRunner(provider)
         self.subagents = SubagentManager(
@@ -204,26 +227,14 @@ class AgentLoop:
             restrict_to_workspace=restrict_to_workspace,
             disabled_skills=disabled_skills,
         )
-        self._unified_session = unified_session
-        self._running = False
         self._mcp_servers = mcp_servers or {}
         self._mcp_stacks: dict[str, AsyncExitStack] = {}
         self._mcp_connected = False
         self._mcp_connecting = False
-        self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
+        # 背景任务容器：consolidator / dream 等异步任务落在这里，shutdown 时统一等待
         self._background_tasks: list[asyncio.Task] = []
-        self._session_locks: dict[str, asyncio.Lock] = {}
-        # Per-session pending queues for mid-turn message injection.
-        # When a session has an active task, new messages for that session
-        # are routed here instead of creating a new task.
-        self._pending_queues: dict[str, asyncio.Queue] = {}
-        # NANOBOT_MAX_CONCURRENT_REQUESTS: <=0 means unlimited; default 3.
-        _max = int(os.environ.get("NANOBOT_MAX_CONCURRENT_REQUESTS", "3"))
-        self._concurrency_gate: asyncio.Semaphore | None = (
-            asyncio.Semaphore(_max) if _max > 0 else None
-        )
         self.consolidator = Consolidator(
-            store=self.context.memory,
+            store=memory,
             provider=provider,
             model=self.model,
             sessions=self.sessions,
@@ -232,15 +243,11 @@ class AgentLoop:
             get_tool_definitions=self.tools.get_definitions,
             max_completion_tokens=provider.generation.max_tokens,
         )
-        self.auto_compact = AutoCompact(
-            sessions=self.sessions,
-            consolidator=self.consolidator,
-            session_ttl_minutes=session_ttl_minutes,
-        )
         self.dream = Dream(
-            store=self.context.memory,
+            store=memory,
             provider=provider,
             model=self.model,
+            config=_dream_cfg,
         )
         self._register_default_tools()
         if _tc.my.enable:
@@ -329,11 +336,16 @@ class AgentLoop:
 
         return format_tool_hints(tool_calls)
 
-    def _effective_session_key(self, msg: InboundMessage) -> str:
-        """Return the session key used for task routing and mid-turn injections."""
-        if self._unified_session and not msg.session_key_override:
-            return UNIFIED_SESSION_KEY
-        return msg.session_key
+    async def _ensure_session(self, session_id: str) -> Session:
+        """按 session_id 读取；不存在则在当前 agent/workspace 下新建并返回"""
+        session = await self.sessions.load(session_id)
+        if session is not None:
+            return session
+        return await self.sessions.create(
+            agent_id=self.agent_id,
+            workspace_id=self.workspace_id,
+            session_id=session_id,
+        )
 
     async def _run_agent_loop(
         self,
@@ -346,7 +358,6 @@ class AgentLoop:
         session: Session | None = None,
         channel: str = "cli",
         chat_id: str = "direct",
-        pending_queue: asyncio.Queue | None = None,
     ) -> tuple[str | None, list[str], list[dict], str, bool]:
         """Run the agent iteration loop.
 
@@ -372,35 +383,11 @@ class AgentLoop:
         async def _checkpoint(payload: dict[str, Any]) -> None:
             if session is None:
                 return
-            self._set_runtime_checkpoint(session, payload)
+            await self._set_runtime_checkpoint(session, payload)
 
-        async def _drain_pending(*, limit: int = _MAX_INJECTIONS_PER_TURN) -> list[dict[str, Any]]:
-            """Non-blocking drain of follow-up messages from the pending queue."""
-            if pending_queue is None:
-                return []
-            items: list[dict[str, Any]] = []
-            while len(items) < limit:
-                try:
-                    pending_msg = pending_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-                content = pending_msg.content
-                media = pending_msg.media if pending_msg.media else None
-                if media:
-                    content, media = extract_documents(content, media)
-                    media = media or None
-                user_content = self.context._build_user_content(content, media)
-                runtime_ctx = self.context._build_runtime_context(
-                    pending_msg.channel,
-                    pending_msg.chat_id,
-                    self.context.timezone,
-                )
-                if isinstance(user_content, str):
-                    merged: str | list[dict[str, Any]] = f"{runtime_ctx}\n\n{user_content}"
-                else:
-                    merged = [{"type": "text", "text": runtime_ctx}] + user_content
-                items.append({"role": "user", "content": merged})
-            return items
+        # Bus 驱动的 mid-turn injection 已随 run/_dispatch 一并移除。
+        # 后续如需支持 SSE 流程里的"跑批中继续提问"，请在 AnalystService 层
+        # 以显式队列的形式重新接入 runner 的 `injection_callback`。
 
         result = await self.runner.run(AgentRunSpec(
             initial_messages=initial_messages,
@@ -412,14 +399,13 @@ class AgentLoop:
             error_message="Sorry, I encountered an error calling the AI model.",
             concurrent_tools=True,
             workspace=self.workspace,
-            session_key=session.key if session else None,
+            session_key=session.id if session else None,
             context_window_tokens=self.context_window_tokens,
             context_block_limit=self.context_block_limit,
             provider_retry_mode=self.provider_retry_mode,
             progress_callback=on_progress,
             retry_wait_callback=on_retry_wait,
             checkpoint_callback=_checkpoint,
-            injection_callback=_drain_pending,
         ))
         self._last_usage = result.usage
         if result.stop_reason == "max_iterations":
@@ -431,161 +417,6 @@ class AgentLoop:
         elif result.stop_reason == "error":
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
         return result.final_content, result.tools_used, result.messages, result.stop_reason, result.had_injections
-
-    async def run(self) -> None:
-        """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
-        self._running = True
-        await self._connect_mcp()
-        logger.info("Agent loop started")
-
-        while self._running:
-            try:
-                msg = await asyncio.wait_for(self.bus.consume_inbound(), timeout=1.0)
-            except asyncio.TimeoutError:
-                self.auto_compact.check_expired(
-                    self._schedule_background,
-                    active_session_keys=self._pending_queues.keys(),
-                )
-                continue
-            except asyncio.CancelledError:
-                # Preserve real task cancellation so shutdown can complete cleanly.
-                # Only ignore non-task CancelledError signals that may leak from integrations.
-                if not self._running or asyncio.current_task().cancelling():
-                    raise
-                continue
-            except Exception as e:
-                logger.warning("Error consuming inbound message: {}, continuing...", e)
-                continue
-
-            raw = msg.content.strip()
-            if self.commands.is_priority(raw):
-                ctx = CommandContext(msg=msg, session=None, key=msg.session_key, raw=raw, loop=self)
-                result = await self.commands.dispatch_priority(ctx)
-                if result:
-                    await self.bus.publish_outbound(result)
-                continue
-            effective_key = self._effective_session_key(msg)
-            # If this session already has an active pending queue (i.e. a task
-            # is processing this session), route the message there for mid-turn
-            # injection instead of creating a competing task.
-            if effective_key in self._pending_queues:
-                pending_msg = msg
-                if effective_key != msg.session_key:
-                    pending_msg = dataclasses.replace(
-                        msg,
-                        session_key_override=effective_key,
-                    )
-                try:
-                    self._pending_queues[effective_key].put_nowait(pending_msg)
-                except asyncio.QueueFull:
-                    logger.warning(
-                        "Pending queue full for session {}, falling back to queued task",
-                        effective_key,
-                    )
-                else:
-                    logger.info(
-                        "Routed follow-up message to pending queue for session {}",
-                        effective_key,
-                    )
-                    continue
-            # Compute the effective session key before dispatching
-            # This ensures /stop command can find tasks correctly when unified session is enabled
-            task = asyncio.create_task(self._dispatch(msg))
-            self._active_tasks.setdefault(effective_key, []).append(task)
-            task.add_done_callback(
-                lambda t, k=effective_key: self._active_tasks.get(k, [])
-                and self._active_tasks[k].remove(t)
-                if t in self._active_tasks.get(k, [])
-                else None
-            )
-
-    async def _dispatch(self, msg: InboundMessage) -> None:
-        """Process a message: per-session serial, cross-session concurrent."""
-        session_key = self._effective_session_key(msg)
-        if session_key != msg.session_key:
-            msg = dataclasses.replace(msg, session_key_override=session_key)
-        lock = self._session_locks.setdefault(session_key, asyncio.Lock())
-        gate = self._concurrency_gate or nullcontext()
-
-        # Register a pending queue so follow-up messages for this session are
-        # routed here (mid-turn injection) instead of spawning a new task.
-        pending = asyncio.Queue(maxsize=20)
-        self._pending_queues[session_key] = pending
-
-        try:
-            async with lock, gate:
-                try:
-                    on_stream = on_stream_end = None
-                    if msg.metadata.get("_wants_stream"):
-                        # Split one answer into distinct stream segments.
-                        stream_base_id = f"{msg.session_key}:{time.time_ns()}"
-                        stream_segment = 0
-
-                        def _current_stream_id() -> str:
-                            return f"{stream_base_id}:{stream_segment}"
-
-                        async def on_stream(delta: str) -> None:
-                            meta = dict(msg.metadata or {})
-                            meta["_stream_delta"] = True
-                            meta["_stream_id"] = _current_stream_id()
-                            await self.bus.publish_outbound(OutboundMessage(
-                                channel=msg.channel, chat_id=msg.chat_id,
-                                content=delta,
-                                metadata=meta,
-                            ))
-
-                        async def on_stream_end(*, resuming: bool = False) -> None:
-                            nonlocal stream_segment
-                            meta = dict(msg.metadata or {})
-                            meta["_stream_end"] = True
-                            meta["_resuming"] = resuming
-                            meta["_stream_id"] = _current_stream_id()
-                            await self.bus.publish_outbound(OutboundMessage(
-                                channel=msg.channel, chat_id=msg.chat_id,
-                                content="",
-                                metadata=meta,
-                            ))
-                            stream_segment += 1
-
-                    response = await self._process_message(
-                        msg, on_stream=on_stream, on_stream_end=on_stream_end,
-                        pending_queue=pending,
-                    )
-                    if response is not None:
-                        await self.bus.publish_outbound(response)
-                    elif msg.channel == "cli":
-                        await self.bus.publish_outbound(OutboundMessage(
-                            channel=msg.channel, chat_id=msg.chat_id,
-                            content="", metadata=msg.metadata or {},
-                        ))
-                except asyncio.CancelledError:
-                    logger.info("Task cancelled for session {}", session_key)
-                    raise
-                except Exception:
-                    logger.exception("Error processing message for session {}", session_key)
-                    await self.bus.publish_outbound(OutboundMessage(
-                        channel=msg.channel, chat_id=msg.chat_id,
-                        content="Sorry, I encountered an error.",
-                    ))
-        finally:
-            # Drain any messages still in the pending queue and re-publish
-            # them to the bus so they are processed as fresh inbound messages
-            # rather than silently lost.
-            queue = self._pending_queues.pop(session_key, None)
-            if queue is not None:
-                leftover = 0
-                while True:
-                    try:
-                        item = queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
-                    await self.bus.publish_inbound(item)
-                    leftover += 1
-                if leftover:
-                    logger.info(
-                        "Re-published {} leftover message(s) to bus for session {}",
-                        leftover, session_key,
-                    )
 
     async def close_mcp(self) -> None:
         """Drain pending background archives, then close MCP connections."""
@@ -605,35 +436,36 @@ class AgentLoop:
         self._background_tasks.append(task)
         task.add_done_callback(self._background_tasks.remove)
 
-    def stop(self) -> None:
-        """Stop the agent loop."""
-        self._running = False
-        logger.info("Agent loop stopping")
-
     async def _process_message(
         self,
         msg: InboundMessage,
-        session_key: str | None = None,
+        session_id: str | None = None,
         on_progress: Callable[[str], Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
-        pending_queue: asyncio.Queue | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
+        # 请求开始前刷新 workspace 级记忆快照（MEMORY/SOUL/USER + 最近 history），
+        # 后续 build_system_prompt / build_messages 均从 self.context.snapshot 直接读
+        await self.context.refresh_memory_snapshot()
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
             channel, chat_id = (
                 msg.chat_id.split(":", 1) if ":" in msg.chat_id else ("cli", msg.chat_id)
             )
             logger.info("Processing system message from {}", msg.sender_id)
-            key = f"{channel}:{chat_id}"
-            session = self.sessions.get_or_create(key)
+            # system 消息在新架构下不再由 bus 驱动，session_id 必须由调用方显式传入；
+            # 未传入时退化为基于 channel:chat_id 的稳定派生 id，保证同一通道落到同一会话。
+            sys_session_id = session_id or f"system:{channel}:{chat_id}"
+            session = await self._ensure_session(sys_session_id)
             if self._restore_runtime_checkpoint(session):
-                self.sessions.save(session)
+                await self.sessions.save(session)
             if self._restore_pending_user_turn(session):
-                self.sessions.save(session)
+                await self.sessions.save(session)
 
-            session, pending = self.auto_compact.prepare_session(session, key)
+            # AutoCompact 已移除：pending 暂时固定为 None，后续如需从
+            # session.metadata 读取上一次 summary 可在 #19 AnalystService 处补充。
+            pending = None
 
             await self.consolidator.maybe_consolidate_by_tokens(
                 session,
@@ -646,7 +478,7 @@ class AgentLoop:
             # LLM via the merged prompt. See _persist_subagent_followup.
             is_subagent = msg.sender_id == "subagent"
             if is_subagent and self._persist_subagent_followup(session, msg):
-                self.sessions.save(session)
+                await self.sessions.save(session)
             self._set_tool_context(channel, chat_id)
             history = session.get_history(max_messages=0)
             current_role = "assistant" if is_subagent else "user"
@@ -666,7 +498,7 @@ class AgentLoop:
             )
             self._save_turn(session, all_msgs, 1 + len(history))
             self._clear_runtime_checkpoint(session)
-            self.sessions.save(session)
+            await self.sessions.save(session)
             self._schedule_background(self.consolidator.maybe_consolidate_by_tokens(session))
             return OutboundMessage(
                 channel=channel,
@@ -682,18 +514,21 @@ class AgentLoop:
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
 
-        key = session_key or msg.session_key
-        session = self.sessions.get_or_create(key)
+        # session_id 取来源顺序：显式参数 > 基于 InboundMessage.session_key 派生
+        # （后者仅在 bus 主循环存活期作为兼容方案，#14/C.5.3 删除主循环后会完全由参数驱动）
+        sid = session_id or msg.session_key
+        session = await self._ensure_session(sid)
         if self._restore_runtime_checkpoint(session):
-            self.sessions.save(session)
+            await self.sessions.save(session)
         if self._restore_pending_user_turn(session):
-            self.sessions.save(session)
+            await self.sessions.save(session)
 
-        session, pending = self.auto_compact.prepare_session(session, key)
+        # AutoCompact 已移除：pending 暂时固定为 None
+        pending = None
 
         # Slash commands
         raw = msg.content.strip()
-        ctx = CommandContext(msg=msg, session=session, key=key, raw=raw, loop=self)
+        ctx = CommandContext(msg=msg, session=session, session_id=session.id, raw=raw, loop=self)
         if result := await self.commands.dispatch(ctx):
             return result
 
@@ -750,7 +585,7 @@ class AgentLoop:
         if isinstance(msg.content, str) and msg.content.strip():
             session.add_message("user", msg.content)
             self._mark_pending_user_turn(session)
-            self.sessions.save(session)
+            await self.sessions.save(session)
             user_persisted_early = True
 
         final_content, _, all_msgs, stop_reason, had_injections = await self._run_agent_loop(
@@ -762,7 +597,6 @@ class AgentLoop:
             session=session,
             channel=msg.channel,
             chat_id=msg.chat_id,
-            pending_queue=pending_queue,
         )
 
         if final_content is None or not final_content.strip():
@@ -773,7 +607,7 @@ class AgentLoop:
         self._save_turn(session, all_msgs, save_skip)
         self._clear_pending_user_turn(session)
         self._clear_runtime_checkpoint(session)
-        self.sessions.save(session)
+        await self.sessions.save(session)
         self._schedule_background(self.consolidator.maybe_consolidate_by_tokens(session))
 
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
@@ -898,10 +732,10 @@ class AgentLoop:
         )
         return True
 
-    def _set_runtime_checkpoint(self, session: Session, payload: dict[str, Any]) -> None:
+    async def _set_runtime_checkpoint(self, session: Session, payload: dict[str, Any]) -> None:
         """Persist the latest in-flight turn state into session metadata."""
         session.metadata[self._RUNTIME_CHECKPOINT_KEY] = payload
-        self.sessions.save(session)
+        await self.sessions.save(session)
 
     def _mark_pending_user_turn(self, session: Session) -> None:
         session.metadata[self._PENDING_USER_TURN_KEY] = True
@@ -1002,7 +836,7 @@ class AgentLoop:
     async def process_direct(
         self,
         content: str,
-        session_key: str = "cli:direct",
+        session_id: str | None = None,
         channel: str = "cli",
         chat_id: str = "direct",
         media: list[str] | None = None,
@@ -1010,7 +844,12 @@ class AgentLoop:
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
-        """Process a message directly and return the outbound payload."""
+        """单次直连调用入口（非 bus 路径）。
+
+        session_id 为 None 时 `_process_message` 会按 `msg.session_key`（即
+        `channel:chat_id`）派生一个稳定 id，保证同一 channel+chat_id 的多轮对话
+        落到同一 session；调用方需要显式会话生命周期管理时请传入 session_id。
+        """
         await self._connect_mcp()
         msg = InboundMessage(
             channel=channel, sender_id="user", chat_id=chat_id,
@@ -1018,7 +857,7 @@ class AgentLoop:
         )
         return await self._process_message(
             msg,
-            session_key=session_key,
+            session_id=session_id,
             on_progress=on_progress,
             on_stream=on_stream,
             on_stream_end=on_stream_end,

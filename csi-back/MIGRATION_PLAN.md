@@ -661,11 +661,10 @@ class AnalystService:
 
 ### 阶段 6：测试迁移与回归
 
-- sdk 仓库里保留的单元测试中，有用的迁进 `csi-back/tests/nanobot/`：
-  - `tests/agent/test_runner.py`、`test_consolidator.py`、`test_consolidate_offset.py`、`test_dream.py`、`test_memory_store.py`、`test_session_manager_history.py`、`test_auto_compact.py`、`test_hook_composite.py`、`test_runner.py`、`test_context_documents.py` 这些核心逻辑测试改 async + mock storage 后迁移。
-  - Provider 相关测试按需迁移。
-  - cron/git/heartbeat/evaluator 相关测试整体丢弃（已在阶段 0 清理）。
-- 新增 csi-back 侧集成测试：`tests/agent/test_analyst_flow.py` 覆盖 `/agent/start -> SSE -> /agent/approve -> SSE:result` 全链路（pytest-asyncio + httpx.AsyncClient + mongomock/真实 mongo）。
+- **现状（2026-04）**：旧版 nanobot 中与「总线调度、统一 session、文件型 session、AutoCompact、旧 Consolidator/Dream/MemoryStore 文件路径」强耦合的 `tests/nanobot/**` 用例已**整文件删除**；与新版仍兼容的部分（Provider、多数 tools、security、config 插值等）保留。新架构覆盖按本文 **§12** 清单在 `tests/models/`、`tests/nanobot/` 下**分批新增**（见 TODO #25）。
+- 已从仓库移除的 nanobot 单测文件（非穷举，便于审计）：`test_auto_compact.py`、`test_unified_session.py`、`test_task_cancel.py`、`test_session_manager_history.py`、`test_runner.py`、`test_loop_save_turn.py`、`test_loop_consolidation_tokens.py`、`test_consolidator.py`、`test_dream.py`、`test_memory_store.py`、`test_consolidate_offset.py`、`test_context_prompt_cache.py`、`test_hook_composite.py`、`cli/test_restart_command.py`、`test_mcp_connection.py`。
+- **辅助**：`tests/nanobot/fakes.py` 提供 `FakeMemoryBackend` / `FakeSessionStore`，供仍依赖 `AgentLoop` 构造的轻量用例（如 `tools/test_search_tools.py`）在无 Mongo 时注入。
+- 后续：按 §12.3 起继续补 MongoSessionStore / MongoMemoryBackend 等集成单测；全链路 `AnalystService` 集成测试另立 `tests/.../test_analyst_flow.py`（待排期）。
 
 ---
 
@@ -773,26 +772,481 @@ async def maybe_force_run(self, session) -> bool:
 | 4   | 清理后回归：`pytest` + `nanobot_tester.py`                                                             | 阶段 0   | 完成   | 0       |
 | 5   | nanobot → `csi-back/app/service/nanobot/` 整包拷贝 + import 替换                                       | 阶段 1   | 完成   | all     |
 | 6   | 合并 python 依赖到 csi-back                                                                           | 阶段 1   | 完成   | 1       |
-| 7   | 定义 7 张 Beanie Document（Workspace / Agent / Session / Message / Memory / History / HistoryState） | 阶段 2   | 进行中  | 2       |
-| 8   | `get_all_models()` 注册新 Document；删除旧 `CheckpointModel`                                            | 阶段 2   | 待做   | 2       |
-| 9   | 定义 storage Protocol（SessionStore / MemoryBackend，不含 ConfigStore）                                 | 阶段 2   | 待做   | 1       |
-| 10  | Mongo 实现（`mongo_session.py` / `mongo_memory.py`）                                                 | 阶段 2   | 待做   | 2       |
-| 11  | `SessionManager` 改 async + 对接 SessionStore；`get_or_create` 语义改 `load/create`                    | 阶段 2   | 待做   | ~6      |
-| 12  | `MemoryStore` / `Consolidator` / `Dream` 改 async + 对接 MemoryBackend                              | 阶段 2   | 待做   | ~4      |
-| 13  | `ContextBuilder.refresh_memory_snapshot` 异步快照                                                    | 阶段 2   | 待做   | ~2      |
-| 14  | `AgentLoop` 调用点全部 await；删除 `run/_dispatch` 主循环与 slash 命令多余分支                                    | 阶段 2   | 待做   | ~5      |
-| 15  | Dream 改阈值触发 + `DreamConfig` 字段调整                                                                 | 阶段 2   | 待做   | ~3      |
-| 16  | `Nanobot.from_components(agent_id, workspace_id, session_id, ...)` 新构造器                          | 阶段 2   | 待做   | 1       |
-| 17  | **Workspace Service** + CRUD 接口 + 白名单收窄级联校验                                                     | 阶段 3   | 待做   | ~4      |
-| 18  | **Agent Service** + CRUD 接口 + 子集校验                                                              | 阶段 3   | 待做   | ~4      |
-| 19  | `AnalystService`（build_bot / start_agent / run_analysis / SSE / approve），业务状态写入 `NanobotAgentModel` | 阶段 3   | 待做   | ~3      |
-| 20  | Hooks（Status / Todos / Approval / Result）+ 业务工具（get/modify/notify/write_todos）                  | 阶段 3   | 待做   | ~4      |
-| 21  | 结构化结果 & `response_format: json_schema` 接入                                                        | 阶段 3   | 待做   | ~3      |
-| 22  | 路由升级：`app/api/v1/endpoints/agent.py`（Workspace/Agent CRUD + /start/status/approve 改 agent_id 参数） | 阶段 4 | 待做   | 1       |
-| 23  | 删除 `app/service/agent/`、`motor_checkpinter.py`、`checkpoint.py`、`langchain/langgraph` 依赖          | 阶段 5   | 待做   | ~6      |
-| 24  | drop 旧集合 `agent_checkpointer` / `agent_checkpointer_writes`                                      | 阶段 5   | 待做   | 0       |
-| 25  | 新增 / 迁移核心单测                                                                                     | 阶段 6   | 待做   | ~10     |
+| 7   | 定义 7 张 Beanie Document（Workspace / Agent / Session / Message / Memory / History / HistoryState） | 阶段 2   | 完成   | 2       |
+| 8   | `get_all_models()` 注册新 Document；删除旧 `CheckpointModel`                                            | 阶段 2   | 完成   | 2       |
+| 9   | 定义 storage Protocol（SessionStore / MemoryBackend，不含 ConfigStore）                                 | 阶段 2   | 完成   | 1       |
+| 10  | Mongo 实现（`mongo_session.py` / `mongo_memory.py`）                                                 | 阶段 2   | 完成   | 2       |
+| 11  | `SessionManager` 改 async + 对接 SessionStore；`get_or_create` 语义改 `load/create`                    | 阶段 2   | 完成   | ~6      |
+| 12  | `MemoryStore` / `Consolidator` / `Dream` 改 async + 对接 MemoryBackend                              | 阶段 2   | 完成   | ~4      |
+| 13  | `ContextBuilder.refresh_memory_snapshot` 异步快照                                                    | 阶段 2   | 完成   | ~2      |
+| 14  | `AgentLoop` 调用点全部 await；删除 `run/_dispatch` 主循环与 slash 命令多余分支                                    | 阶段 2   | 完成   | ~5      |
+| 15  | Dream 改阈值触发 + `DreamConfig` 字段调整                                                                 | 阶段 2   | 完成   | ~3      |
+| 16  | `Nanobot.from_components(agent_id, workspace_id, session_id, ...)` 新构造器                          | 阶段 2   | 完成   | 1       |
+| 17  | **Workspace Service** + CRUD 接口 + 白名单收窄级联校验                                                     | 阶段 3   | 完成   | ~4      |
+| 18  | **Agent Service** + CRUD 接口 + 子集校验                                                              | 阶段 3   | 完成   | ~4      |
+| 19  | `AnalystService`（build_bot / start_agent / run_analysis / SSE / approve），业务状态写入 `NanobotAgentModel` + `ContextBuilder.extra_system_suffix` + `/start`/`/status`/`/approve` 路由 | 阶段 3 | 完成 | ~3 |
+| 20  | Hooks（Status / Todos / Approval / Result）+ 业务工具（get_current_time/get_entity/modify_entity/notify_user/write_todos）在 `build_bot` 中注入 | 阶段 3 | 完成 | ~4 |
+| 21  | 结构化结果 `ResultPayloadSchema` + `response_format: json_schema` 透传 + `parse_run_result` 兜底 + system suffix 注入 | 阶段 3 | 完成 | ~3 |
+| 22  | 路由升级：`app/api/v1/endpoints/agent.py`（Workspace/Agent CRUD + /start/status/approve/cancel + /configs/tools\* + /configs/statistics） | 阶段 4 | 完成 | 1 |
+| 23  | 删除 `app/service/agent/`、`motor_checkpinter.py`、`checkpoint.py`、langchain/langgraph 依赖（完成：目录已移除、代码 import 无残留；`langchain-openai` 保留仅供 embedding 业务链路） | 阶段 5 | 完成 | ~6 |
+| 24  | drop 旧集合 `agent_checkpointer` / `agent_checkpointer_writes`（核查 `csi_db` 实际无残留，NOOP 完成；若其它环境出现旧集合按文末命令执行） | 阶段 5 | 完成 | 0 |
+| 25  | 新增 / 迁移核心单测（§12.1 `tests/models/test_nanobot_models.py`；§12.2 `tests/nanobot/storage/test_storage_protocol.py`；已清理旧 `tests/nanobot` 与总线/文件 session 相关用例） | 阶段 6 | 进行中 | ~10 |
 
+
+---
+
+## 十二、测试计划（test points & goals）
+
+> 本章节记录**每次代码改动后需要补充的测试点**，只列目标与验证维度，不写具体实现。
+> 最终统一在阶段 6（#25）落地，按模块归档在 `tests/nanobot/` 下。
+> 约定：所有 Mongo 相关测试使用 `pytest-asyncio` + 隔离的 `csi_db_test` 数据库，每个 case 前清空涉及集合。
+
+---
+
+### 12.1 数据模型层（`app/models/agent/nanobot.py`、`app/schemas/constants.py`）
+
+对应改动：7 个 Beanie Document + 3 个 Enum（`NanobotAgentStatusEnum` / `NanobotMemoryDocTypeEnum` / `NanobotMessageRoleEnum`）。
+
+**已实现单测文件**：`tests/models/test_nanobot_models.py`（依赖可连通的 MongoDB；不可连时集成用例 `pytest.skip`）。映射：`test_models_registered` → `test_nanobot_models_are_registered_in_get_all_models` + `test_models_registered_collections_exist_after_insert`；其余用例与下表同名或语义一一对应。
+
+| 用例                         | 测试点                                                              | 测试目标                                                       |
+| -------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| `test_models_registered`   | `init_beanie` 后所有 7 个 Document 均可被 `.find()` 调用，且对应集合存在           | 确认 `models/__init__.py::get_all_models()` 注册完整，无遗漏         |
+| `test_indexes_created`     | 启动时 7 张集合上的 index 与代码声明一一对应（名字 / 字段 / unique / 方向）               | 防止改索引定义后忘了清旧索引；校验 unique 复合索引                              |
+| `test_id_alias`            | `NanobotWorkspaceModel / NanobotAgentModel / NanobotSessionModel / NanobotHistoryStateModel` 的 `id` 字段通过 alias 写入 / 读取 `_id` | 防止 alias 配错导致查询 miss                                       |
+| `test_enum_roundtrip`      | 3 个 Enum 字段写入 Mongo 为 string value，读出自动还原为 Enum 实例                | 防止某些字段存成 int / dict                                        |
+| `test_defaults_not_shared` | 多次 `NanobotAgentModel()` 默认的 `tools / steps / todos` 不共享同一 list 引用 | 防止 `default=[]` 类错误                                        |
+| `test_unique_conflict`     | 重复插入 `(workspace_id, name)` Agent / `(session_id, seq)` Message / `(workspace_id, cursor)` History 触发 DuplicateKeyError | 保证业务层可依赖 unique 作强约束                                       |
+| `test_agent_status_default`| 新建 Agent 默认 `status=IDLE`、`current_session_id=None`、`steps/todos=[]`、`pending_approval/result=None` | 防止默认值漂移影响上层判空                                              |
+
+---
+
+### 12.2 Storage Protocol（`app/service/nanobot/storage/base.py`）
+
+对应改动：`SessionStore` / `MemoryBackend` 两个 `runtime_checkable` Protocol。
+
+**已实现单测文件**：`tests/nanobot/storage/test_storage_protocol.py`（`test_protocol_isinstance_pass` + 两个 incomplete stub 的 `isinstance` 否定用例）。
+
+| 用例                              | 测试点                                                       | 测试目标                             |
+| ------------------------------- | --------------------------------------------------------- | -------------------------------- |
+| `test_protocol_isinstance_pass` | `isinstance(MongoSessionStore(), SessionStore)` / `MongoMemoryBackend()` 对 `MemoryBackend` 返回 True | 保证实现类契约完整，也是 Protocol 稳定性的回归用例 |
+| `test_protocol_isinstance_fail` | 构造一个缺方法的 stub 类，`isinstance` 返回 False                      | 防止接口签名悄悄放宽                       |
+
+---
+
+### 12.3 `MongoSessionStore`（`storage/mongo_session.py`）
+
+> 覆盖目标：session 元数据 upsert + message 增量 append + 按 agent 列表。
+
+| 用例                              | 测试点                                                                                                       | 测试目标                                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `test_save_new_session`         | 新 Session：先 `add_message` 写 3 条，再 `save`；`nanobot_sessions` 有 1 条元数据，`nanobot_session_messages` 有 3 条、seq=[1,2,3] | 验证首次 save 同时落元数据 + messages                       |
+| `test_save_incremental_append`  | 已 save 过的 Session 再 `add_message` 2 条后 `save`；只新插 2 条，总计 5 条，seq=[1..5]                                  | 验证已带 seq 的消息不重复写入；seq 连续递增                         |
+| `test_save_inplace_seq`         | save 完成后 `session.messages[i]["seq"]` 全部有值                                                                 | 确保 seq 原地写回，供下次 save 判幂等                           |
+| `test_save_meta_overwrite`      | 修改 `session.metadata` / `last_consolidated` 后 save，DB 元数据同步更新，不产生新行                                         | 验证 upsert 语义                                       |
+| `test_load_existing`            | save 后 `load(session_id)`：messages 按 seq 升序、所有可选字段（sender_id / tool_calls / thinking_blocks / tool_call_id 等）完整还原 | 验证完整字段映射                                           |
+| `test_load_not_found`           | `load("not_exist")` 返回 None                                                                               | 防止返回假对象                                            |
+| `test_load_roundtrip`           | `save → load → save → load`，最终 messages / metadata / last_consolidated 完全一致                               | 往返一致性保护                                            |
+| `test_list_by_agent_order`      | 同一 agent 连续 start 3 个 session，`list_by_agent` 按 `created_at DESC` 返回且 `limit` 生效                             | 验证索引方向与分页                                          |
+| `test_list_by_agent_isolation`  | 不同 agent_id 互不串                                                                                           | workspace 内 agent 数据隔离                             |
+| `test_invalidate_cache_only`    | `invalidate` 后再 `load` 能从 DB 还原（未删 DB 记录）                                                                 | `invalidate` 只清缓存                                  |
+| `test_save_empty_messages`      | 空 messages 的 Session `save` 只写元数据，不报错                                                                    | 边界兼容                                               |
+
+---
+
+### 12.4 `MongoMemoryBackend`（`storage/mongo_memory.py`）
+
+> 覆盖目标：memory docs upsert + history append 原子性 + cursor 一致性 + workspace 隔离。
+
+| 用例                              | 测试点                                                                                                   | 测试目标                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `test_read_doc_default_empty`   | 空库读 `(workspace_id, "memory")` 返回 `""`                                                                | 不抛异常；约定 None→空串                                |
+| `test_write_doc_upsert`         | 先 write 再 read 得到同 content；第二次 write 更新 content 与 updated_at，行数仍为 1                                  | 验证 upsert + 无重复行                               |
+| `test_write_doc_all_types`      | 对 `memory / soul / user` 三种 doc_type 均可独立读写                                                           | 验证 unique `(workspace_id, type)` 约束不误伤         |
+| `test_append_history_cursor_increment`  | 连续 append 3 条，返回值为 1,2,3；`nanobot_history` 与 `nanobot_history_state.last_cursor` 一致                   | 验证 `$inc` + `ReturnDocument.AFTER` 逻辑           |
+| `test_append_history_state_autocreate`  | workspace_id 无 state 行时首次 append 自动创建 state（含 `last_dream_cursor=0`）                                  | 验证 `$setOnInsert`                               |
+| `test_append_history_concurrent`        | `asyncio.gather` 并发 50 次 append，最终 cursor ∈ [1..50] 无重复、无缺口                                          | 验证原子分配，防并发竞争                                   |
+| `test_read_history_filter_limit`        | `since_cursor` 过滤 + `limit` 生效 + 升序返回                                                                 | 验证查询参数                                         |
+| `test_compact_history_over_limit`       | 20 条 + compact(10)：返回 deleted_count=10，剩下最新 10 条                                                    | 验证按 cursor 升序删除最旧                              |
+| `test_compact_history_under_limit`      | 5 条 + compact(10)：返回 0，无删除                                                                            | 边界：≤阈值不动                                       |
+| `test_compact_history_zero_limit`       | compact(0)：全删                                                                                         | 边界                                             |
+| `test_cursors_default`          | 无 state 行时 `get_cursors` 返回 `(0, 0)`                                                                  | 防 None 解包                                      |
+| `test_set_dream_cursor`         | `set_dream_cursor(X)`：last_dream_cursor=X，last_cursor 不变；state 不存在时自动建                                  | 验证 dream 游标独立推进                                 |
+| `test_workspace_isolation`      | workspace_A 与 workspace_B 的 memory_docs / history / cursors 互不可见                                     | 多 workspace 并存的基础隔离保证                           |
+
+---
+
+### 12.5 `Session` 领域对象（`session/manager.py::Session`）
+
+| 用例                                         | 测试点                                                                                                       | 测试目标                                              |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `test_session_init_required_fields`        | 构造 Session 必须提供 `id / agent_id / workspace_id`；缺失会 `TypeError`                                            | 防止字段漂移                                            |
+| `test_session_add_message_fields`          | `add_message("user", "hi", tool_call_id="x")` 后 messages 末位含 role / content / timestamp / tool_call_id；**不含 seq** | seq 由 SessionStore 分配，领域对象不管                       |
+| `test_session_clear`                       | `clear()` 后 messages 为空、last_consolidated=0                                                               | 语义正确                                              |
+| `test_retain_recent_legal_suffix_boundary` | 构造带 user / assistant / tool_call 的消息序列，`retain_recent_legal_suffix(n)` 后首条为 user；orphan tool 消息被剥离         | 保护上下文窗口裁剪的合法性                                     |
+| `test_retain_recent_zero_clears`           | `retain_recent_legal_suffix(0)` 等价于 clear                                                                 | 边界                                                |
+| `test_get_history_skip_consolidated`       | `last_consolidated=N` 后 `get_history()` 只返回 `messages[N:]`                                                | 与 Consolidator 衔接                                  |
+
+---
+
+### 12.6 `SessionManager`（async 协调层）
+
+| 用例                                 | 测试点                                                                                                        | 测试目标                                                        |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `test_manager_create_assigns_uuid` | 未传 session_id 的 `create()` 生成 uuid4，落入 DB 且 `status.metadata == {}`                                         | session_id 生成逻辑稳定                                            |
+| `test_manager_create_custom_id`    | 传入 `session_id="fixed"` 被原样使用                                                                              | 可外部指定（测试 / 幂等恢复）                                            |
+| `test_manager_create_conflict`     | 同一 session_id 二次 `create` 抛 DuplicateKeyError（由 `_id` 唯一约束保证）                                              | 防止重复创建                                                      |
+| `test_manager_load_after_create`   | create → load 返回的是同一内存对象（命中 store 缓存）                                                                      | 进程内共享语义                                                     |
+| `test_manager_load_missing`        | 未知 session_id 返回 None                                                                                      | 不抛异常                                                        |
+| `test_manager_save_incremental`    | `add_message` → save → `add_message` → save，消息总量等于两次追加之和；无重复                                                | 增量 append 在 Manager 层一致                                      |
+| `test_manager_list_by_agent`       | 同 agent 创建 3 个 session，`list_by_agent(agent_id)` 按时间倒序返回 3 条元数据；`limit=1` 只返回最新                              | 列表 API 合约                                                   |
+| `test_manager_invalidate`          | `invalidate(session_id)` 后 `load(session_id)` 会重新走 DB（重新构造 Session 实例，但内容相同）                                | cache 语义                                                    |
+| `test_manager_agent_isolation`     | 两个 Agent 各自 `list_by_agent` 不互相可见                                                                           | 隔离保证                                                        |
+
+---
+
+### 12.7 `MemoryStore`（`agent/memory.py::MemoryStore`）
+
+> 覆盖目标：workspace 级长期记忆门面，所有路径都走 MemoryBackend。
+
+| 用例                                  | 测试点                                                                                                          | 测试目标                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `test_memory_roundtrip`             | `write_memory/soul/user(x)` → `read_*` 等于 x                                                                 | 验证三份 doc 映射到正确 doc_type                             |
+| `test_memory_context_empty_vs_full` | `read_memory()==""` 时 `get_memory_context()` 返回空串；非空时返回 `## Long-term Memory\n...`                           | 防止把空文档塞进 system prompt                             |
+| `test_append_history_strips_think`  | 传入含 `<think>...</think>` 的 entry，落库 content 已被 strip_think 处理                                                | 验证 append 前置处理                                     |
+| `test_read_unprocessed_filter`      | append 5 条后 `read_unprocessed_history(since_cursor=2)` 只返回后 3 条                                               | cursor 语义与 backend 一致                              |
+| `test_count_unprocessed_history`    | 同上场景下 `count_unprocessed_history(2)==3`                                                                     | 供 Dream 阈值判断                                       |
+| `test_compact_history_by_limit`     | `max_history_entries=5` 时超过 5 条会裁剪；`<=0` 时不做事                                                                | 验证参数生效                                             |
+| `test_cursor_dream_roundtrip`       | `set_last_dream_cursor(10)` 后 `get_last_dream_cursor()==10`；不影响 `get_last_cursor()`                         | Dream 游标独立于 history cursor                          |
+| `test_raw_archive_fallback`         | `raw_archive(msgs)` append 的 entry 以 `[RAW]` 开头且含消息条数                                                         | 兜底路径仍可观测                                           |
+| `test_workspace_isolation`          | 两个 workspace_id 互不可见所有 doc / history / cursor                                                              | workspace 级隔离                                      |
+
+---
+
+### 12.8 `Consolidator`（`agent/memory.py::Consolidator`）
+
+> 覆盖目标：token 预算触发的滚动归档；锁按 `session.id` 区分；通过 SessionManager/SessionStore 保存。
+
+| 用例                                     | 测试点                                                                                                                        | 测试目标                                                 |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `test_lock_per_session_id`             | `get_lock("s1") is get_lock("s1")`；`get_lock("s1") is not get_lock("s2")`                                                 | 锁粒度按 session.id（而非 workspace）                          |
+| `test_pick_boundary_at_user_turn`      | 构造 user/assistant/tool 混合序列，`pick_consolidation_boundary` 返回的 idx 所在消息 `role=="user"`                                     | 只在 user 回合边界做切分                                      |
+| `test_pick_boundary_insufficient_tokens` | 剩余 tokens 不够时返回最后一个合法 boundary（`remove_tokens < target`）                                                                  | fallback 策略                                           |
+| `test_cap_chunk_size`                  | `_MAX_CHUNK_MESSAGES=60` 时若理想 end_idx 超过该值，cap 到 user 边界                                                                   | 单轮归档不无限膨胀                                            |
+| `test_archive_success_appends_history` | 模拟 provider 返回 summary，`archive(msgs)` 返回 summary 字符串，同 workspace 的 history 新增 1 条且内容等于 summary                            | 验证 LLM 成功路径                                          |
+| `test_archive_failure_raw_dump`        | provider.chat_with_retry 抛异常，`archive(msgs)` 返回 None，history 新增 1 条 `[RAW] ...`                                            | 验证失败兜底                                              |
+| `test_maybe_consolidate_noop_under_budget` | estimated_tokens < budget 时不调用 archive，session.last_consolidated 不变                                                       | 不必要时不做归档                                            |
+| `test_maybe_consolidate_loop_advances`     | estimated_tokens > budget 时循环归档直到 <= target 或 boundary 耗尽；`session.last_consolidated` 前移；`session.metadata["_last_summary"]` 被写入 | 主循环正确性 + session 元数据回写                                |
+| `test_maybe_consolidate_session_saved`     | 每轮归档后都 await sessions.save(session)（可 mock 验证 save 调用次数 == 归档轮数 + metadata 落库次数）                                          | 与 SessionManager 正确衔接                                 |
+| `test_probe_build_messages_channel_none`   | `estimate_session_prompt_tokens` 传给 `_build_messages` 的 channel/chat_id 均为 None                                             | token 探针与线上调用解耦（由 loop.py 在真实调用时补齐）                    |
+
+---
+
+### 12.9 `Dream`（`agent/memory.py::Dream`）
+
+> 覆盖目标：阈值触发 + 单次 LLM 全量回写；段落解析稳定。
+
+| 用例                                  | 测试点                                                                                                                       | 测试目标                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `test_should_trigger_disabled`      | `DreamConfig.enabled=False` 时 `should_trigger()==False`                                                                  | 硬开关有效                                              |
+| `test_should_trigger_below_threshold` | 未处理条目数 < `trigger_unprocessed_count` 返回 False                                                                             | 阈值语义                                               |
+| `test_should_trigger_at_threshold`  | 未处理条目数 == `trigger_unprocessed_count` 返回 True                                                                             | 边界                                                 |
+| `test_run_noop_when_no_entries`     | `read_unprocessed_history` 为空时 `run()==False`，cursor 不变                                                                  | 早退路径                                               |
+| `test_run_llm_failure_returns_false` | provider 抛异常时 `run()==False`，cursor 不前移、memory doc 不被改写                                                                   | 失败不破坏状态                                            |
+| `test_run_no_change_preserves_docs` | LLM 返回三段都是 NO_CHANGE，doc 内容不变；cursor 仍前移到 batch[-1]["cursor"]                                                           | "无更新但已处理"                                           |
+| `test_run_partial_update`           | LLM 返回 MEMORY=新文本 / SOUL=NO_CHANGE / USER=新文本，write_memory/write_user 被调用且内容正确，write_soul 不被调用                          | 单独写回受影响的 doc                                       |
+| `test_run_advances_cursor_and_compacts` | run 成功后 `last_dream_cursor == batch[-1]["cursor"]`；`compact_history` 按 `max_history_entries` 触发                             | 游标前移 + 历史压缩联动                                      |
+| `test_parse_sections_basic`         | 三段都有 → 返回 dict 三键都非 None                                                                                                 | 正则正确                                               |
+| `test_parse_sections_with_no_change` | 段内为 `NO_CHANGE` / 空 → 该键对应 value 为 None                                                                                  | NO_CHANGE 语义                                       |
+| `test_parse_sections_missing_section` | 只输出 MEMORY 段 → SOUL/USER 键值为 None                                                                                        | 缺段兜底                                              |
+| `test_parse_sections_extra_whitespace` | 多行空白 / 含中文 / 含 ```markdown``` 代码块时不截断内容                                                                                 | 解析器鲁棒性                                             |
+| `test_batch_size_honored`           | 未处理条目 50 条、`max_batch_size=20`，`run()` 只处理前 20 条；`last_dream_cursor` 前移到第 20 条                                         | batch 限制                                           |
+
+---
+
+### 12.10 `ContextBuilder` + `MemorySnapshot`（`agent/context.py`）
+
+> 覆盖目标：快照刷新并发性、空快照安全兜底、system prompt 段落可控组装。
+
+| 用例                                   | 测试点                                                                                                                            | 测试目标                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `test_empty_snapshot_prompt`         | 全空 MemorySnapshot → system prompt 只含 identity + Search & Discovery，不渲染空的 SOUL/USER/Memory/Recent History 段落                      | 防止空字符串污染 prompt                                   |
+| `test_refresh_snapshot_concurrent`   | mock memory 返回 (memory, soul, user, dream_cursor, history)，`refresh_memory_snapshot` 触发一次 `asyncio.gather`，snapshot 四字段均正确填充      | 验证并发预取，4 次 read\* 一次 gather                        |
+| `test_refresh_history_capped`        | history 返回 100 条时 snapshot.recent_history 只保留最后 50 条（`_MAX_RECENT_HISTORY`）                                                       | 上下文体积上限                                           |
+| `test_persona_block_soul_only`       | SOUL 有内容、USER 空 → prompt 含 `## SOUL` 不含 `## USER`；只 USER 有内容同理                                                                 | 可选段落逻辑                                           |
+| `test_memory_section_injection`      | snapshot.memory 非空 → prompt 含 `# Memory\n\n## Long-term Memory\n...`                                                            | Memory 片段挂载点                                      |
+| `test_recent_history_render`         | snapshot.recent_history 条目渲染为 `- [YYYY-MM-DD HH:MM] content`，接受 datetime / ISO 字符串 / 缺失                                          | 时间格式归一化                                          |
+| `test_build_messages_single_user_turn` | 末条是 user 时 `build_messages(..., current_role='user')` 会合并到末条 content，不追加新条                                                      | 与旧实现行为一致（防多轮 user）                                 |
+| `test_build_messages_runtime_ctx_merged` | runtime_ctx 前缀出现在 user message 开头，包含 Current Time / Channel / Chat ID                                                          | 注入位置正确                                          |
+| `test_identity_no_workspace_path`    | identity.md 渲染结果**不含** `{{ workspace_path }}` 占位符或任何文件路径提示                                                                     | 确认模板迁移干净                                          |
+| `test_skills_none_safely`            | `ContextBuilder(skills=None)` 调 build_system_prompt 不抛异常，只是没有 Active Skills / Skills Summary 段                                   | skills 未配置时的兜底                                    |
+
+---
+
+### 12.11 `WorkspaceService`（`app/service/analyst/workspace.py`）
+
+> 覆盖目标：CRUD 基本 contract + 资源存在性校验 + 白名单收窄级联一致性 + 删除保护。
+
+| 用例                                           | 测试点                                                                                                                          | 测试目标                                           |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `test_create_success`                        | 写入 `prompt_template_ids` / `model_config_ids` 均存在、MCP 配置合法 → DB 落 1 行，返回 Schema 中字段齐全                                      | 基本 create 路径                                   |
+| `test_create_name_conflict`                  | 同名 workspace 再次 create 返回 `CONFLICT_NAME`                                                                                   | 同名保护                                           |
+| `test_create_missing_prompt_template`        | `prompt_template_ids` 含不存在的 ID → `NOT_FOUND_TEMPLATE`                                                                        | 资源存在性校验                                       |
+| `test_create_missing_model_config`           | `model_config_ids` 含不存在的 ID → `NOT_FOUND_MODEL_CONFIG`                                                                       | 资源存在性校验                                       |
+| `test_create_duplicate_prompt_ids`           | `prompt_template_ids` / `model_config_ids` 含重复项 → `INVALID_ARGUMENT`                                                          | 数据清洁                                           |
+| `test_create_invalid_mcp_config`             | `enabled_mcp_servers` value 不符合 `MCPServerConfig` → `INVALID_ARGUMENT` 且错误信息含 server_name                                    | MCP 配置合法性                                      |
+| `test_create_empty_mcp_server_name`          | `enabled_mcp_servers` 出现空字符串 key → `INVALID_ARGUMENT`                                                                        | 边界                                             |
+| `test_get_not_found`                         | `get("missing")` 抛 `WorkspaceServiceError(NOT_FOUND_WORKSPACE)`                                                                | 错误路径                                          |
+| `test_list_page_pagination`                  | 创建 3 个 workspace，`list_page(page=1,page_size=2)` 返回 2 条 + total=3                                                            | 分页准确                                          |
+| `test_list_page_search`                      | `search='foo'` 只匹配名称或描述含 `foo` 的 workspace                                                                                   | 模糊搜索                                          |
+| `test_list_all_brief`                        | 返回 id/name 列表，按 `created_at DESC`                                                                                            | 下拉用列表顺序稳定                                      |
+| `test_update_success`                        | 合法更新 → DB 字段更新、`updated_at` 前移；返回 Schema 一致                                                                                 | update 基本路径                                    |
+| `test_update_name_conflict`                  | 改名到另一个存在的 workspace 名称 → `CONFLICT_NAME`                                                                                     | 同名保护                                          |
+| `test_update_narrow_tools_with_reference`    | Workspace 现有 Agent 引用 tool=`t1`，更新时移除 `t1` → `CONFLICT_STATE` 且 `data.conflicts` 列出该 Agent                                  | 白名单收窄级联                                       |
+| `test_update_narrow_prompt_template`         | 移除某 prompt_template_id 但有 Agent 仍选 → `CONFLICT_STATE`                                                                        | 同上                                             |
+| `test_update_widen_allowed`                  | 在保留原有引用的前提下新增条目 → 更新成功                                                                                                   | 允许"放宽"                                         |
+| `test_update_resource_missing`               | 更新时给出不存在的 prompt_template_id → `NOT_FOUND_TEMPLATE`，不触发级联校验分支                                                              | 校验顺序                                           |
+| `test_delete_success`                        | 无关联 Agent 时删除成功，DB 中 workspace 消失                                                                                            | 删除基本路径                                         |
+| `test_delete_blocked_by_agents`              | 存在关联 Agent 时返回 `CONFLICT_STATE`，workspace 仍然存在                                                                              | 删除保护                                           |
+| `test_route_create_201`                      | `POST /agent/workspaces` 200 → `ApiResponseSchema` code=0，返回完整 workspace                                                      | 路由层契约                                         |
+| `test_route_not_found`                       | `GET /agent/workspaces/missing` 返回 `NOT_FOUND_WORKSPACE`                                                                     | 错误码透传                                         |
+| `test_route_narrowing_conflict_payload`      | `PUT /agent/workspaces/{id}` 收窄冲突时，响应 `data.conflicts` 清晰列出冲突 Agent                                                         | 错误载荷一致性                                      |
+
+---
+
+### 12.12 `AgentService`（`app/service/analyst/agent.py`）
+
+> 覆盖目标：CRUD 基本 contract + 资源子集校验 + 运行时写保护 + workspace_id 过滤隔离。
+
+| 用例                                           | 测试点                                                                                                         | 测试目标                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `test_create_success`                        | 合法 subset 下创建 Agent，DB 写 1 行，`status=IDLE`、`current_session_id=None`                                      | 基本 create + 默认运行时字段                                |
+| `test_create_workspace_missing`              | `workspace_id` 不存在 → `NOT_FOUND_WORKSPACE`                                                                   | 关联校验                                            |
+| `test_create_prompt_not_in_whitelist`        | `prompt_template_id` 不在 workspace.prompt_template_ids → `INVALID_ARGUMENT` 且 `data.violations` 列出原因           | 子集校验（prompt）                                      |
+| `test_create_model_not_in_whitelist`         | 同上，model_config_id                                                                                         | 子集校验（model）                                       |
+| `test_create_tools_outside`                  | `tools` 含 workspace.enabled_tools 之外的条目 → `INVALID_ARGUMENT` + violations 列出全部额外工具                         | 子集校验（tools）                                       |
+| `test_create_skills_outside`                 | 同上，skills                                                                                                   | 子集校验（skills）                                      |
+| `test_create_mcp_outside`                    | `mcp_servers` 含 workspace.enabled_mcp_servers 之外的 server 名 → `INVALID_ARGUMENT`                              | 子集校验（MCP）                                         |
+| `test_create_duplicate_fields`               | tools / skills / mcp_servers 中存在重复项 → `INVALID_ARGUMENT`                                                     | 数据清洁                                            |
+| `test_create_name_unique_per_workspace`      | 同 workspace 下重名 → `CONFLICT_NAME`；不同 workspace 下同名可共存                                                      | `(workspace_id, name)` 唯一约束                         |
+| `test_get_not_found`                         | `get('missing')` 抛 `AgentServiceError(NOT_FOUND_AGENT)`                                                        | 错误路径                                            |
+| `test_list_page_filter_by_workspace`         | 两个 workspace 各自有 Agent，`list_page(workspace_id=wsA)` 只返回 wsA 的                                               | workspace 过滤 + 隔离                                   |
+| `test_list_page_search`                      | `search='foo'` 模糊匹配 name / description                                                                     | 模糊搜索                                            |
+| `test_list_brief`                            | 返回 id / name / workspace_id / status，按 `created_at DESC`                                                      | 简表                                               |
+| `test_update_success`                        | IDLE 状态下合法更新 → 字段更新、`updated_at` 前移；运行时状态字段（status / steps / todos / result）保持不变                     | 仅更新配置字段，不污染业务状态                              |
+| `test_update_blocked_running`                | `status=RUNNING` 时更新 → `CONFLICT_STATE`                                                                    | 运行时写保护                                         |
+| `test_update_blocked_awaiting_approval`      | `status=AWAITING_APPROVAL` 时更新 → `CONFLICT_STATE`                                                          | HITL 阶段写保护                                       |
+| `test_update_allowed_after_completed`        | `status=COMPLETED` / `FAILED` / `PAUSED` 时允许更新                                                               | 状态分区正确                                         |
+| `test_update_rename_conflict`                | 同 workspace 下改名到别的 Agent 已有名称 → `CONFLICT_NAME`                                                            | 同名保护                                            |
+| `test_update_rename_no_conflict_self`        | 保持自己名称时不触发 name 冲突分支                                                                                      | 不误伤                                              |
+| `test_update_resubset_check`                 | Workspace 白名单变化后（非收窄，通过另一路径）更新 Agent 时资源子集校验仍基于最新 workspace                                             | 总是拿最新 workspace 做校验                                |
+| `test_delete_success`                        | 非运行时删除成功，DB 中消失                                                                                             | 删除基本路径                                         |
+| `test_delete_blocked_running`                | `status=RUNNING` / `AWAITING_APPROVAL` 时删除 → `CONFLICT_STATE`                                              | 运行时写保护                                         |
+| `test_route_create_201`                      | `POST /agent/agents` 200 → `ApiResponseSchema` code=0，返回完整 Agent                                             | 路由层契约                                         |
+| `test_route_not_found`                       | `GET /agent/agents/missing` 返回 `NOT_FOUND_AGENT`                                                             | 错误码透传                                         |
+| `test_route_subset_violation_payload`        | `POST /agent/agents` 触发 subset 违规时，响应 `data.violations` 明细齐全                                                 | 错误载荷                                         |
+| `test_route_list_filter_query`               | `GET /agent/agents?workspace_id=xxx&search=foo` 传参生效                                                          | Query 契约                                         |
+
+---
+
+### 12.13 `AnalystService`（`app/service/analyst/service.py` + `context.py` + `/start` `/status` `/approve` 路由）
+
+对应改动（TODO #19）：
+- 新增 `app/service/analyst/context.py`：`current_agent_id` / `current_session_id` ContextVar
+- 新增 `app/service/analyst/service.py`：`AnalystService` 类（SSE / HITL / build_bot / start_agent / run_analysis / cancel_agent）
+- 在 `ContextBuilder` 上新增 `extra_system_suffix` 字段并在 `build_system_prompt` 末尾追加
+- 路由升级：`POST /agent/start` → `AnalystService.start_agent` / `GET /agent/status?agent_id=...` → SSE / `POST /agent/approve` → `submit_approval`
+- Schema 升级：`StartAgentRequestSchema` 改为 `agent_id + user_prompt + extra_context`；`ApproveRequestSchema` 改为 `agent_id + decisions`；新增 `StartAgentResponseSchema`
+
+| 用例                                              | 测试点                                                                                                                                          | 测试目标                                                               |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `test_context_set_reset`                        | `current_agent_id.set()` / `current_session_id.set()` 后 `get_current_*` 返回正确值，`reset(token)` 后恢复 None                                     | ContextVar 正确性                                                    |
+| `test_context_isolation_between_tasks`          | 两个并发 `asyncio.create_task`，各自 set 不同 `agent_id`，互不污染                                                                                      | 协程级上下文隔离                                                         |
+| `test_sse_subscribe_and_broadcast`              | `subscribe(agent_id)` → Queue；`broadcast_sse` 事件能从 Queue 取到                                                                                | SSE 基本通路                                                         |
+| `test_sse_multiple_subscribers`                 | 同一 agent 订阅 2 路，每路都能收到同一事件；`unsubscribe` 其中一路后，另一路仍能收到                                                                                  | 扇出 + 个别退订                                                        |
+| `test_sse_unsubscribe_cleans_subs_map`          | 订阅者全部 unsubscribe 后，`_sse_subscribers` 中不再保留该 agent_id                                                                                    | 防内存泄漏                                                           |
+| `test_submit_approval_puts_queue`               | AWAITING_APPROVAL 时 `submit_approval(agent_id, decisions)` 后 `await_approval(agent_id)` 能取到相同 decisions                                  | HITL 决策通路                                                       |
+| `test_submit_approval_non_awaiting_warns`       | 非 AWAITING_APPROVAL 状态 `submit_approval` 仍入队但 log warning（通过 `caplog` 断言）                                                                  | 幂等写入，避免决策丢失                                                   |
+| `test_submit_approval_unknown_agent_404`        | `submit_approval` 到不存在的 agent_id → `AgentServiceError(NOT_FOUND_AGENT)`                                                                    | 路由层 404                                                         |
+| `test_build_bot_reads_model_and_prompt`         | `build_bot` 会按 agent 的 `model_config_id` / `prompt_template_id` 查模型和提示词；缺失时抛 `NOT_FOUND_MODEL_CONFIG` / `NOT_FOUND_TEMPLATE`                 | 资源查询闭合                                                         |
+| `test_build_bot_mcp_subset_filter`              | agent.mcp_servers 中出现但不在 workspace.enabled_mcp_servers 的 key 被过滤掉                                                                        | 避免越权使用 MCP                                                      |
+| `test_build_bot_resets_runtime_fields`          | `build_bot` 写入新 `current_session_id`，并把 `steps/todos=[]`、`pending_approval/result=None`                                                 | 每次 /start 是全新回合                                                 |
+| `test_build_bot_injects_system_suffix`          | `bot.loop.context.extra_system_suffix == prompt_tpl.system_prompt.strip()`；`build_system_prompt()` 末尾包含该字符串                             | prompt template 正确落地                                             |
+| `test_start_agent_returns_session_id`           | `start_agent(agent_id, prompt)` 返回非空 session_id，且与 DB 中 `current_session_id` 一致                                                        | 基本启动路径                                                         |
+| `test_start_agent_broadcasts_status`            | 启动成功后 SSE 发一条 `event=status, status=running`                                                                                            | 前端能立即看到状态切换                                                  |
+| `test_start_agent_rejects_running`              | agent.status=RUNNING 再 start → `CONFLICT_STATE`；AWAITING_APPROVAL 同理                                                                      | 单会话并发约束                                                        |
+| `test_start_agent_rejects_duplicate_task`       | 即便 DB status=IDLE（状态漂移），但 `_running_tasks[agent_id]` 仍存在且未 done → 拒绝                                                                    | 本进程幂等                                                           |
+| `test_start_agent_unknown_agent_404`            | 未知 agent_id → `NOT_FOUND_AGENT`                                                                                                            | 错误码透传                                                           |
+| `test_start_agent_missing_workspace_404`        | agent 存在但其 workspace_id 对应 workspace 不存在 → `NOT_FOUND_WORKSPACE`                                                                         | 级联校验                                                             |
+| `test_run_analysis_success_path`                | `bot.run` 正常返回 → agent.status=COMPLETED，`result` 含 content/tools_used；SSE 发 `event=result`；`bot.close()` 被调用；`_bots/_running_tasks/_pending_resumes` 清空 | 成功路径完整闭环                                                      |
+| `test_run_analysis_exception_to_failed`         | `bot.run` 抛异常 → agent.status=FAILED，`result={"error": ...}`；SSE result 事件含 `error`；bot.close 仍被调用                                     | 异常兜底                                                             |
+| `test_run_analysis_cancel_to_paused`            | `cancel_agent(agent_id, reason="pause")` → agent.status=PAUSED                                                                           | 手动暂停 / 取消区分                                                   |
+| `test_run_analysis_cancel_to_failed_default`    | `cancel_agent(agent_id)` 默认 reason=cancel → agent.status=FAILED                                                                           | 默认取消语义                                                         |
+| `test_run_analysis_context_var_scoped`          | run 期间 `get_current_agent_id()` 返回正确值；run 结束后回到 None（token 被 reset）                                                                    | ContextVar 生命周期                                                 |
+| `test_run_analysis_closes_bot_on_any_exit`      | 成功 / 异常 / 取消三路径，`bot.close()` 均被调用至少一次                                                                                                 | 资源释放                                                             |
+| `test_start_resets_pending_resumes`             | 上一轮未消费的 `_pending_resumes[agent_id]` 在 `start_agent` 时被清理                                                                                | 防串场                                                               |
+| `test_route_start_returns_session_id`           | `POST /agent/start` 返回 code=0，`data.agent_id` / `data.session_id` 齐全                                                                      | 路由契约                                                             |
+| `test_route_start_conflict_state_payload`       | agent RUNNING 时调用 `/agent/start` → `ApiResponseSchema.error(code=CONFLICT_STATE, message=...)`                                             | 错误码直出                                                           |
+| `test_route_status_sse_keepalive_and_event`     | `GET /agent/status?agent_id=...` 响应 text/event-stream；收到 `broadcast_sse` 的 `event:` 行；空闲 15s 发 `: keep-alive`                         | SSE 协议正确 + keep-alive                                        |
+| `test_route_status_unsubscribes_on_disconnect`  | 客户端断开后 `_sse_subscribers` 中该 queue 被移除                                                                                               | 断线清理                                                             |
+| `test_route_approve_submits_queue`              | `POST /agent/approve` 200，`_pending_resumes[agent_id].get()` 能取到 decisions                                                              | approve 路由闭环                                                   |
+| `test_route_approve_unknown_agent_404`          | `/agent/approve` 对未知 agent_id → `NOT_FOUND_AGENT`                                                                                      | 错误码透传                                                           |
+
+### 12.14 业务 Hooks（`app/service/analyst/hooks.py`）
+
+对应改动（TODO #20）：
+- `StatusHook` / `TodosHook` / `ApprovalHook` / `ResultHook` 继承 `AgentHook`，通过 `ContextVar` 读取 `agent_id` / `session_id`
+- `default_analyst_hooks()` 按固定顺序返回 4 个 Hook，注入点位于 `AnalystService.build_bot` → `Nanobot.from_components(..., hooks=...)`
+
+| 用例                                         | 测试点                                                                                                                              | 测试目标                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `test_default_hooks_order`                 | `default_analyst_hooks()` 返回顺序固定为 `[StatusHook, TodosHook, ApprovalHook, ResultHook]`                                        | Hook 固定顺序保证 `finalize_content` pipeline 可预测        |
+| `test_hook_noop_without_context`           | `get_current_agent_id()` 未 set 时，所有 Hook 的 `before_*/after_*` 方法安静返回（不抛异常、不访问 DB）                                           | ContextVar 防御                                          |
+| `test_status_hook_before_tools_broadcasts` | `before_execute_tools(ctx)` 触发 SSE `event=step phase=before_tools`，`data.tool_calls` 含每个 tool call 的 name 和 arguments | 工具前预览事件                                             |
+| `test_status_hook_after_iteration_step`    | `after_iteration(ctx)` 追加一条 step 到 `agent.steps` 并 save；SSE 发一条 `event=step phase=after_iteration`                       | step 流水 DB + SSE 双路                                 |
+| `test_status_hook_step_fields_complete`    | step 包含 iteration / content / tool_calls / tool_events / usage / stop_reason / error / created_at                     | 避免字段漂移                                              |
+| `test_status_hook_db_error_isolated`       | `agent.save()` 抛异常时，Hook 捕获并打 exception log，不传播到外层                                                                          | 单 Hook 故障不影响 loop                                  |
+| `test_todos_hook_broadcast_on_write_todos` | tool_events 中含 `name=write_todos` 时，Hook 从 DB 读最新 `agent.todos` 并 SSE `event=todos`                                        | 与工具侧 DB 写解耦，Hook 负责广播兜底                       |
+| `test_todos_hook_noop_on_other_events`     | tool_events 只含其它工具时不广播 `todos` 事件                                                                                            | 最小化副作用                                              |
+| `test_approval_hook_resets_stuck_state`    | agent.status=AWAITING_APPROVAL 且 stop_reason != "awaiting_approval" 时，Hook 将 status 复位为 RUNNING，`pending_approval=None` | 异常退出兜底                                              |
+| `test_approval_hook_skips_when_healthy`    | status=RUNNING 时 Hook 不修改 DB                                                                                                | 不误伤正常路径                                            |
+| `test_result_hook_strips_whitespace`       | `finalize_content(ctx, "  hi\\n")` 返回 `"hi"`；None 原样返回                                                                      | 输出规整化                                                |
+
+### 12.15 业务工具（`app/service/analyst/tools.py`）
+
+对应改动（TODO #20）：5 个工具 + `build_business_tools(enabled_names)` 白名单过滤。
+
+| 用例                                              | 测试点                                                                                                                                                                                     | 测试目标                                                       |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `test_tool_schemas_valid`                       | 5 个工具的 `to_schema()` 均可被 json.dumps，且 function.name 与类属性一致                                                                                                                           | OpenAI tool schema 契约                                    |
+| `test_build_business_tools_whitelist`           | 传入 `['notify_user', 'write_todos', 'unknown']` → 仅返回前 2 个实例，`unknown` 打 warn                                                                                                        | 白名单过滤 + 未知项容错                                        |
+| `test_get_current_time_returns_iso`             | `execute()` 返回 ISO 8601 字符串，`datetime.fromisoformat(r)` 解析不抛错                                                                                                                         | 无状态工具契约                                               |
+| `test_get_entity_missing_type`                  | 未知 `entity_type` → 返回 `"[错误] 不支持的实体类型..."`                                                                                                                                          | 输入校验                                                     |
+| `test_get_entity_es_not_initialized`            | `get_es()` 返回 None → 返回 `"[错误] Elasticsearch 未初始化"`                                                                                                                                  | 服务未就绪保护                                               |
+| `test_get_entity_success`                       | mock es.get 返回 `{"_source": {...}}` → execute 返回源数据字符串                                                                                                                                 | 查询成功路径                                                 |
+| `test_get_entity_es_exception_returns_error_str`| es.get 抛异常 → 返回 `"[错误] 查询实体失败: ..."`，不向上抛                                                                                                                                           | 工具永远不该 raise                                        |
+| `test_tool_requires_context_var`                | 不 set `current_agent_id` 时，`write_todos.execute()` 抛 RuntimeError（ContextVar 防御）                                                                                                    | 防止工具在错误调用位置被触发                                 |
+| `test_write_todos_updates_db_and_broadcasts`    | `execute(todos=[...])` → `agent.todos` 被完整替换，`updated_at` 刷新，SSE `event=todos` 含同一份列表                                                                                        | DB + SSE 一致                                              |
+| `test_write_todos_normalizes_fields`            | 传入带前后空格、多余字段的 todos → 标准化后 `content` 被 strip、未知字段被丢弃、`id/status/updated_at` 补齐                                                                                                | 输入清洗                                                   |
+| `test_write_todos_agent_missing`                | ContextVar agent_id 指向不存在的 agent → 返回 `"[错误] 当前 agent 不存在"`                                                                                                                        | 错误消息透传                                                |
+| `test_notify_user_broadcasts`                   | `execute(message="hi", level="warning")` → SSE `event=notification data.level=warning data.message=hi`                                                                                   | SSE 消息契约                                                |
+| `test_notify_user_empty_message`                | message 为空或纯空白 → 返回 `"[错误] message 不能为空"`，不广播                                                                                                                                   | 最小输入校验                                                |
+| `test_modify_entity_handshake_approve`          | 工具启动 → status=AWAITING_APPROVAL + pending_approval 写入 + SSE 2 条（approval_required + status=awaiting_approval）；`submit_approval` approve → 工具返回 "获批准"、status 恢复 RUNNING、pending_approval=None、SSE `status=running` | HITL 同意分支                                               |
+| `test_modify_entity_handshake_reject`           | `submit_approval` reject 且带 reason → 返回 "修改被拒绝：&lt;reason&gt;"，status 仍复位 RUNNING                                                                                                 | HITL 拒绝分支                                               |
+| `test_modify_entity_empty_decisions`            | `submit_approval` 传空 decisions → 返回 "修改未获得任何批准，未执行。"                                                                                                                             | 决策缺省兜底                                                |
+| `test_modify_entity_decision_parser_variants`   | `_parse_approval_decisions` 能识别 `{"action":"approve"}`、`{"approved":True}`、`{"action":"reject","reason":"bad"}` 三种形式                                                          | 决策结构兼容                                                |
+| `test_modify_entity_await_exception_returns`    | `AnalystService.await_approval` 抛异常（通过 mock）→ 工具返回 `"[错误] 等待审批异常: ..."`，不上抛                                                                                                   | 工具异常隔离                                                |
+| `test_build_bot_injects_hooks_and_tools`        | `AnalystService.build_bot` 完成后：`bot.loop._extra_hooks` 含 4 个 hook；`bot.loop.tools._tools` 键集包含 agent.tools 白名单、排除未启用的工具                                                 | 组装正确性                                                   |
+
+### 12.16 结构化最终结果（`app/schemas/agent/result.py` + `AnalystService` + `OpenAICompatProvider`）
+
+对应改动（TODO #21）：
+- 新增 `app/schemas/agent/result.py`：`ResultPayloadSchema` / `RESULT_FORMAT_INSTRUCTION` / `build_response_format_schema()` / `parse_run_result(raw)`
+- `OpenAICompatProvider.__init__` 新增 `response_format` 参数，`_build_kwargs` 透传；构造时未提供则请求里不含该字段
+- `AnalystService.build_bot`：
+  - 用 `build_response_format_schema()` 构造 provider 的 `response_format`
+  - `ContextBuilder.extra_system_suffix` 叠加 `AgentPromptTemplateModel.system_prompt` + `RESULT_FORMAT_INSTRUCTION`
+- `AnalystService.run_analysis` 成功路径改为 `parse_run_result(run_result.content)`，落库字段扩展为 `{**parsed.model_dump(), parsed, raw_content, tools_used}`
+
+| 用例                                              | 测试点                                                                                                                                                                 | 测试目标                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `test_result_schema_roundtrip`                  | `ResultPayloadSchema(...).model_dump()` 与 `ResultPayloadSchema.model_validate(dump)` 双向互通，所有字段类型稳定                                                            | Pydantic schema 稳定                                 |
+| `test_result_schema_required_fields`            | 缺 `summary` / `success` 抛 `ValidationError`                                                                                                                      | 必填约束                                             |
+| `test_response_format_payload_shape`            | `build_response_format_schema()` 返回 `{"type":"json_schema","json_schema":{"name":"result","schema":{...},"strict":False}}`，`schema.properties` 含 5 个字段   | OpenAI 兼容契约                                      |
+| `test_parse_strict_json`                        | `parse_run_result('{"summary":"x","success":true}')` → `(schema, True)`，字段与输入匹配                                                                             | 严格 JSON 路径                                       |
+| `test_parse_fenced_json`                        | 带三反引号 ` ```json ... ``` ` 围栏的内容仍能解析成功（依赖 `json_repair`）                                                                                                       | 宽松修复路径                                         |
+| `test_parse_extra_text_around_json`             | 前后附带散文本时 `json_repair` 能抽出核心 JSON（若 lib 能力支持）                                                                                                                  | 健壮性                                               |
+| `test_parse_invalid_json_fallback`              | 传非 JSON 文本 → `(schema, False)`，`schema.success=False`，`failure_reason` 含 "无法解析"，`summary` ≤ 2000 字符并为原文前缀                                                | 兜底路径                                             |
+| `test_parse_empty_or_none`                      | `None` / `""` / 纯空白 → `(schema, False)`，`failure_reason` 含 "未返回"                                                                                              | 空内容兜底                                           |
+| `test_parse_missing_required_fallback`          | JSON 有效但缺 `summary/success` → `(schema, False)`，走兜底分支                                                                                                        | Pydantic 校验失败也走兜底                            |
+| `test_parse_long_content_truncates_to_2000`     | 传长度 5000 的非 JSON 文本 → `len(schema.summary) == 2000`                                                                                                              | 防止巨型 prompt 落库                                 |
+| `test_result_format_instruction_contains_keys`  | `RESULT_FORMAT_INSTRUCTION` 文本包含 `summary`、`success`、`failure_reason`、`details`、`todos_snapshot`、"输出格式"                                                | prompt 与 schema 同步                                |
+| `test_provider_kwargs_includes_response_format` | 构造时传 `response_format` → `_build_kwargs(...)` 返回字典含同一对象                                                                                                      | provider 透传                                        |
+| `test_provider_kwargs_without_response_format`  | 未传 `response_format` → `_build_kwargs` 返回字典**不含** `response_format` 键                                                                                      | 不意外注入                                          |
+| `test_provider_response_format_coexists_tools`  | 同时传 `tools` + `response_format` → 两者同时出现在 kwargs                                                                                                              | 与 function calling 共存                             |
+| `test_build_bot_sets_provider_response_format`  | `AnalystService.build_bot` 完成后 `bot.loop.provider.response_format['json_schema']['name'] == 'result'`                                                           | build_bot 正确装配                                  |
+| `test_build_bot_system_suffix_combines`         | `bot.loop.context.extra_system_suffix` 同时包含 `prompt_tpl.system_prompt` 去空白后的内容和 `RESULT_FORMAT_INSTRUCTION`，两者以空行分隔                                   | prompt suffix 双段叠加                              |
+| `test_run_analysis_success_structured_result`   | mock `bot.run` 返回合法 JSON → SSE `event=result data.result` 含 `parsed=True`、`success/summary/details` 与原始解析一致；`agent.result` 与 SSE 同步；`raw_content` 保留原文 | 成功路径端到端                                      |
+| `test_run_analysis_unparseable_result`          | bot.run 返回非 JSON → SSE `data.result.parsed=False`、`success=False`、`failure_reason` 含 "无法解析"，`summary=raw_content`；status=COMPLETED（解析失败不等于运行失败） | 兜底路径                                             |
+| `test_run_analysis_exception_result_shape`      | `bot.run` 抛异常 → `agent.result == {"error": "..."}`（不经 ResultPayloadSchema）、status=FAILED；SSE result 事件 `data.error` 存在                                   | 异常路径 result 结构保持                           |
+| `test_build_bot_prompt_suffix_without_template` | 当 `prompt_tpl.system_prompt` 为空字符串时，`extra_system_suffix` 只含 `RESULT_FORMAT_INSTRUCTION`                                                                  | 空模板兼容                                         |
+
+### 12.17 API 路由（`app/api/v1/endpoints/agent.py`）
+
+对应改动（TODO #22）：
+- 新增 `CancelAgentRequestSchema` / `CancelAgentResponseSchema` / `ToolDescriptorSchema`（`app/schemas/agent/agent.py`）
+- 新增 `POST /agent/cancel`：调用 `AnalystService.cancel_agent`，允许 cancelled=False 的 2xx 返回
+- `GET /agent/configs/tools-list`：返回 `list(BUSINESS_TOOL_CLASSES.keys())`，替换旧占位
+- `GET /agent/configs/tools`：返回 `ToolDescriptorSchema[]`，含 name/description/read_only/exclusive 元信息
+- `GET /agent/configs/statistics`：返回 `{model_configs, prompt_templates, workspaces, agents, business_tools}` 计数
+- 移除 `PLACEHOLDER_MESSAGE` 常量
+
+共 26 条 `/agent/**` 路由，涵盖：/start、/status（SSE）、/approve、/cancel、Workspace CRUD×6、Agent CRUD×6、configs/models×3、configs/prompt-templates×5、configs/tools×2、configs/statistics×1。
+
+| 用例                                           | 测试点                                                                                                                                       | 测试目标                                   |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `test_router_registers_all_26_endpoints`     | `include_router` 后 `app.routes` 中 `/agent/**` 数量 == 26，必备 `(method, path)` 全部命中                                                     | 路由注册回归                             |
+| `test_get_tools_list_returns_business_names` | `GET /agent/configs/tools-list` → 200 / `code=0` / `data` 为 `BUSINESS_TOOL_CLASSES` 键集合（含 5 个默认业务工具）                             | 真实工具名暴露                           |
+| `test_get_tools_returns_descriptors`         | `GET /agent/configs/tools` → 数据含 `name/description/read_only/exclusive`；`get_current_time.read_only=True`、`modify_entity.exclusive=True` | 工具元信息暴露正确                     |
+| `test_get_tools_instance_failure_skipped`    | 当某个工具类 `__init__` 抛异常时，不影响其它工具返回，只打 WARN                                                                                             | 工具注册表健壮性                       |
+| `test_get_statistics_aggregates_counts`      | mock 各 Model.find().count() 的返回值 → 统计响应精确匹配 mock 值；`business_tools == len(BUSINESS_TOOL_CLASSES)`                                  | 统计聚合正确                           |
+| `test_post_cancel_with_running_task`         | mock `AnalystService.cancel_agent` → True；响应 `data.cancelled=True` + message="取消请求已发送"；`cancel_agent` 被以 `reason=<传入>` 唤醒        | 取消成功路径                           |
+| `test_post_cancel_without_running_task`      | mock `AnalystService.cancel_agent` → False；响应 200 + `data.cancelled=False` + message="该 Agent 当前没有正在运行的任务"                        | 无任务仍 2xx                           |
+| `test_post_cancel_missing_agent_id_422`      | POST body `{}` → 422                                                                                                                      | 必填校验                               |
+| `test_post_cancel_default_reason`            | POST `{ "agent_id": "a1" }`（不传 reason） → `cancel_agent` 以 `reason="user cancel"` 被调用                                                 | 默认理由                               |
+| `test_start_agent_uses_agent_id`             | `POST /agent/start` 以 `agent_id` / `user_prompt` 调用 `AnalystService.start_agent`；上下文注入 `entity_uuid/entity_type/extra_context`        | 启动路径接入                           |
+| `test_start_agent_service_error_mapped`      | `AnalystService.start_agent` 抛 `AgentServiceError(code=..., message=...)` → 响应 2xx 且 `code=业务码`，`message` 与 `data` 透传                | 业务错误映射                           |
+| `test_status_sse_event_stream_format`        | `GET /agent/status?agent_id=...` 订阅后，`broadcast_sse` 推送 → 流中收到 `event: <name>\ndata: <json>\n\n`；断连后走 `finally` 取消订阅               | SSE 流格式                             |
+| `test_status_sse_keepalive_on_idle`          | 无事件到达时 15s 超时 → 流输出 `: keep-alive\n\n`                                                                                              | 连接保活                               |
+| `test_approve_submits_to_analyst`            | `POST /agent/approve` 调用 `AnalystService.submit_approval(agent_id, decisions)`；响应 `code=0 message="批准决策已提交"`                       | 审批路径接入                           |
+| `test_workspace_crud_routes`                 | create/list/list-brief/get/update/delete 端到端覆盖；`WorkspaceServiceError` 被映射为 `code=业务码` 返回 2xx                                    | Workspace CRUD + 错误映射            |
+| `test_agent_crud_routes`                     | create/list/list-brief/get/update/delete 覆盖；workspace_id 过滤生效；`AgentServiceError` 被映射为业务码                                       | Agent CRUD + 错误映射                |
+| `test_placeholder_removed`                   | 模块不再引用 `PLACEHOLDER_MESSAGE` 常量（grep 确认）                                                                                             | 占位清理                               |
+
+### 12.18 清理回归（TODO #23）
+
+对应改动：
+- 确认 `app/service/agent/` 目录整体删除（本期只剩空 `__init__.py` + `__pycache__`，已一并移除）
+- 确认 `app/models/agent/` 下仅保留 `nanobot.py`、`configs.py`，`agent.py` / `checkpoint.py` 已不存在
+- `app/**` 源码中对 `from langchain` / `from langgraph` / `CheckpointModel` / `motor_checkpinter` / `agent_checkpointer` / `app.service.agent` 的引用全部为 0
+- `pyproject.toml` 仅保留 `langchain-openai`（被 `app/utils/embedding.py` 业务模块使用，不属于 agent 栈），`langfuse` 被 `openai_compat_provider.py` 使用
+
+| 用例                                          | 测试点                                                                                                                                                  | 测试目标                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `test_legacy_agent_paths_absent`            | `Path('app/service/agent').exists()` → False；`Path('app/models/agent/agent.py').exists()` → False；`Path('app/models/agent/checkpoint.py').exists()` → False | 目录/文件已移除                 |
+| `test_no_forbidden_agent_imports_in_app`    | `rg -g 'app/**' 'app\\.service\\.agent\\.\|CheckpointModel\|motor_checkpinter\|agent_checkpointer\|from langgraph\|import langgraph'` 结果为空           | import 链路干净               |
+| `test_main_import_chain_clean`              | `import app.main` 后，`sys.modules` 中不含 `langgraph` / `langchain.chat_models` / `langchain.agents` / `app.service.agent` / `app.models.agent.checkpoint` / `app.models.agent.agent` | 运行时也不会意外加载          |
+| `test_langchain_core_only_via_embedding`    | `sys.modules` 中存在的 `langchain_*` 模块全部来自 `langchain_core` / `langchain_openai`，且可追溯至 `app.utils.embedding`                                      | 仅允许 embedding 业务保留    |
+| `test_get_all_models_contains_7_nanobot`    | `get_all_models()` 返回的 Document 类集合名 ⊇ {`nanobot_agents, nanobot_workspaces, nanobot_sessions, nanobot_session_messages, nanobot_history, nanobot_history_state, nanobot_memory_docs`}，且不含任何 `*checkpointer*` 集合 | 新模型注册、旧模型彻底下线    |
+| `test_tests_dir_no_legacy_references`       | `rg -g 'tests/**' 'CheckpointModel\|motor_checkpinter\|agent_checkpointer\|app\\.service\\.agent\\.'` 结果为空                                       | 单测侧也无旧引用              |
+
+### 12.19 旧 MongoDB 集合核查（TODO #24）
+
+对应改动（纯数据运维，无源码改动）：
+- 使用 `.env` 配置连接 `csi_db`，`db.listCollectionNames()` 结果中**不包含** `agent_checkpointer` / `agent_checkpointer_writes`（也不含 `agent_analysis_sessions`）；全部 23 个集合中 7 个 `nanobot_*` 新集合齐全。
+- 结论：本环境 drop 为 NOOP；记录命令以供其它环境（例如从旧快照恢复后）使用：
+
+```js
+// 需先通过 .env 的 MONGODB_USERNAME/PASSWORD 以 admin 身份认证
+use csi_db;
+db.agent_checkpointer.drop();           // 返回 true 表示存在并已删除；false 则原本不存在
+db.agent_checkpointer_writes.drop();
+// 可选：若早期曾使用 LangGraph analysis sessions，同步清理
+// db.agent_analysis_sessions.drop();
+```
+
+| 用例                                          | 测试点                                                                                                                         | 测试目标                       |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `test_no_legacy_checkpointer_collections`   | 连接 `csi_db` 后，`list_collection_names()` 结果不包含 `agent_checkpointer` 与 `agent_checkpointer_writes`                    | 旧集合已下线                 |
+| `test_seven_nanobot_collections_present`    | 同样的连接下，集合集合 ⊇ `{nanobot_agents, nanobot_workspaces, nanobot_sessions, nanobot_session_messages, nanobot_history, nanobot_history_state, nanobot_memory_docs}` | 新模型已落位                 |
+| `test_drop_cmd_idempotent`                  | 在本地测试库对不存在的 `agent_checkpointer` 调用 `drop_collection` 应当不抛异常（或被明确捕获），保证命令可在任意环境重放                                          | drop 命令幂等                |
+
+### 12.20 上述待实现模块的先行测试点（占位，后续 Step 完成时补实现）
+
+| 用例簇                        | 对应 TODO | 核心测试点（摘要）                                                                                                                       |
+| -------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `AgentLoop` 全 await         | #14     | step 流水正常推进，无 `asyncio` warning；中断→ paused / await approval / result 上报各走一遍                                                       |
+| `Nanobot.from_components`   | #16     | 只需 `(agent_id, workspace_id, session_id)` 即可拼装可运行 bot，无文件依赖                                                                      |
 
 ---
 

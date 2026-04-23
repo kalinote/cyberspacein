@@ -1,12 +1,13 @@
 from app.service.nanobot.config.schema import DreamConfig
 
 
-def test_dream_config_defaults_to_interval_hours() -> None:
+def test_dream_config_defaults_match_schema() -> None:
     cfg = DreamConfig()
 
+    assert cfg.enabled is True
     assert cfg.model_override is None
     assert cfg.max_batch_size == 20
-    assert cfg.max_iterations == 15
+    assert cfg.trigger_unprocessed_count == 50
 
 
 def test_dream_config_dump_has_expected_keys() -> None:
@@ -16,6 +17,7 @@ def test_dream_config_dump_has_expected_keys() -> None:
 
     assert dumped["maxBatchSize"] == 7
     assert "modelOverride" in dumped
+    assert dumped.get("triggerUnprocessedCount") == 50
 
 
 def test_dream_config_uses_model_override_name_and_accepts_legacy_model() -> None:

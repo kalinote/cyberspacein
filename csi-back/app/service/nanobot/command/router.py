@@ -14,11 +14,17 @@ Handler = Callable[["CommandContext"], Awaitable["OutboundMessage | None"]]
 
 @dataclass
 class CommandContext:
-    """Everything a command handler needs to produce a response."""
+    """Everything a command handler needs to produce a response.
+
+    `session_id` 是当前命令所作用的会话 id。对于 priority 命令（/stop 等），
+    dispatch 发生在 session 加载之前，此时 session 尚未就绪，`session_id`
+    由上层按 `InboundMessage.session_key` 派生（仅作临时路由标识），
+    相关命令应自己去 `loop.sessions.load` 或走 bus 级路由。
+    """
 
     msg: InboundMessage
     session: Session | None
-    key: str
+    session_id: str
     raw: str
     args: str = ""
     loop: Any = None

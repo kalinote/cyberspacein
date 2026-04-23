@@ -80,11 +80,37 @@ class AgentCreateRequestSchema(BaseModel):
 
 
 class StartAgentRequestSchema(BaseModel):
-    entity_uuid: str = Field(description="实体UUID")
-    entity_type: EntityType = Field(description="实体类型")
     agent_id: str = Field(description="分析引擎ID")
+    user_prompt: str = Field(description="用户本轮输入的 prompt", min_length=1)
+    entity_uuid: str | None = Field(default=None, description="实体UUID（可选业务上下文）")
+    entity_type: EntityType | None = Field(default=None, description="实体类型（可选业务上下文）")
+    extra_context: dict[str, Any] = Field(
+        default_factory=dict, description="其它业务上下文，透传给 AnalystService"
+    )
+
+
+class StartAgentResponseSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="本次启动分配的会话ID")
 
 
 class ApproveRequestSchema(BaseModel):
-    thread_id: str = Field(description="会话ID")
+    agent_id: str = Field(description="分析引擎ID")
     decisions: list[dict] = Field(description="审批决策列表")
+
+
+class CancelAgentRequestSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    reason: str = Field(default="user cancel", description="取消原因，用于审计与 SSE 日志")
+
+
+class CancelAgentResponseSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    cancelled: bool = Field(description="是否真的向后台任务发出了取消请求（任务不在则为 False）")
+
+
+class ToolDescriptorSchema(BaseModel):
+    name: str = Field(description="工具名")
+    description: str = Field(description="工具描述")
+    read_only: bool = Field(description="是否只读")
+    exclusive: bool = Field(description="是否需要独占执行（如涉及审批）")

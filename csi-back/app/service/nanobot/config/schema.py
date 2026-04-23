@@ -14,14 +14,23 @@ class Base(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 class DreamConfig(Base):
-    """Dream memory consolidation configuration."""
+    """Dream 记忆整理配置（阈值触发版）。
+
+    Dream 不再由 cron 心跳驱动，而是在每次消息处理完成后由 AgentLoop 按
+    `trigger_unprocessed_count` 阈值判断是否异步触发。
+    """
+
+    enabled: bool = Field(default=True)
     model_override: str | None = Field(
         default=None,
         validation_alias=AliasChoices("modelOverride", "model", "model_override"),
-    )  # Optional Dream-specific model override
-    max_batch_size: int = Field(default=20, ge=1)  # Max history entries per run
-    # Bumped from 10 to 15 in #3212 (exp002: +30% dedup, no accuracy loss; >15 plateaus).
-    max_iterations: int = Field(default=15, ge=1)  # Max tool calls per Phase 2
+    )
+    max_batch_size: int = Field(default=20, ge=1, description="单次 Dream 最多处理多少条未处理 history")
+    trigger_unprocessed_count: int = Field(
+        default=50,
+        ge=1,
+        description="未处理 history 条目数达到该值即触发一次 Dream",
+    )
 
 
 class AgentDefaults(Base):

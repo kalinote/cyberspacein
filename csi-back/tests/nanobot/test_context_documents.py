@@ -12,21 +12,22 @@ from pathlib import Path
 from app.service.nanobot.agent.context import ContextBuilder
 from app.service.nanobot.utils.document import extract_documents
 
+from .fakes import make_memory_store
 
-def _make_builder(tmp_path: Path) -> ContextBuilder:
-    """Create a minimal ContextBuilder for testing."""
-    return ContextBuilder(workspace=tmp_path, timezone="UTC")
+
+def _make_builder() -> ContextBuilder:
+    return ContextBuilder(memory=make_memory_store(), skills=None, timezone="UTC")
 
 
 def test_build_user_content_with_no_media_returns_string(tmp_path: Path) -> None:
-    builder = _make_builder(tmp_path)
+    builder = _make_builder()
     result = builder._build_user_content("hello", None)
     assert result == "hello"
 
 
 def test_build_user_content_with_image_returns_list(tmp_path: Path) -> None:
     """Image files should produce base64 content blocks."""
-    builder = _make_builder(tmp_path)
+    builder = _make_builder()
     png = tmp_path / "test.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
     result = builder._build_user_content("describe this", [str(png)])
@@ -38,7 +39,7 @@ def test_build_user_content_with_image_returns_list(tmp_path: Path) -> None:
 
 def test_build_user_content_ignores_non_image_files(tmp_path: Path) -> None:
     """Non-image files should be silently skipped — extraction is not context builder's job."""
-    builder = _make_builder(tmp_path)
+    builder = _make_builder()
     txt = tmp_path / "notes.txt"
     txt.write_text("some text", encoding="utf-8")
     result = builder._build_user_content("summarize", [str(txt)])
@@ -47,7 +48,7 @@ def test_build_user_content_ignores_non_image_files(tmp_path: Path) -> None:
 
 def test_build_user_content_mixed_image_and_non_image(tmp_path: Path) -> None:
     """Only images should be included; non-image files are skipped."""
-    builder = _make_builder(tmp_path)
+    builder = _make_builder()
     png = tmp_path / "chart.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
     txt = tmp_path / "report.txt"
@@ -85,7 +86,7 @@ def test_drain_pending_path_preserves_document_text(tmp_path: Path) -> None:
     new_content, image_only = extract_documents(content, media)
 
     # Step 2: _build_user_content handles only images (none left here)
-    builder = _make_builder(tmp_path)
+    builder = _make_builder()
     result = builder._build_user_content(new_content, image_only if image_only else None)
 
     # The document text should be present in the final content
@@ -103,7 +104,7 @@ def test_drain_pending_path_without_extract_loses_document(tmp_path: Path) -> No
     docx_path = tmp_path / "report.docx"
     doc.save(docx_path)
 
-    builder = _make_builder(tmp_path)
+    builder = _make_builder()
 
     # Bug path: call _build_user_content directly with document media
     result = builder._build_user_content("summarize", [str(docx_path)])

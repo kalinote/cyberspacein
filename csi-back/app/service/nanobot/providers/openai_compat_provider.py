@@ -145,11 +145,18 @@ class OpenAICompatProvider(LLMProvider):
         default_model: str = "gpt-4o",
         extra_headers: dict[str, str] | None = None,
         spec: ProviderSpec | None = None,
+        response_format: dict[str, Any] | None = None,
     ):
+        """
+        response_format: OpenAI 兼容的 `response_format` 载荷（如 `{"type": "json_schema", ...}`）。
+        一旦在构造时设定，`_build_kwargs` 会把它附加到 Chat Completions 请求中；
+        Responses API 分支目前不携带该字段（由业务层在 prompt + 后处理兜底）。
+        """
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
         self._spec = spec
+        self.response_format = response_format
 
         if api_key and spec and spec.env_key:
             self._setup_env(api_key, api_base)
@@ -344,6 +351,10 @@ class OpenAICompatProvider(LLMProvider):
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
+
+        # Chat Completions 路径直接透传 response_format；Responses API 路径不适用。
+        if self.response_format:
+            kwargs["response_format"] = self.response_format
 
         return kwargs
 

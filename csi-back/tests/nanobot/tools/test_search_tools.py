@@ -15,6 +15,8 @@ from app.service.nanobot.agent.subagent import SubagentManager, SubagentStatus
 from app.service.nanobot.agent.tools.search import GlobTool, GrepTool
 from app.service.nanobot.bus.queue import MessageBus
 
+from ..fakes import make_memory_store, make_session_manager
+
 
 @pytest.mark.asyncio
 async def test_glob_matches_recursively_and_skips_noise_dirs(tmp_path: Path) -> None:
@@ -292,8 +294,17 @@ def test_agent_loop_registers_grep_and_glob(tmp_path: Path) -> None:
     bus = MessageBus()
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
+    provider.generation.max_tokens = 4096
 
-    loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path, model="test-model")
+    loop = AgentLoop(
+        bus=bus,
+        provider=provider,
+        memory=make_memory_store("ws_loop_tools"),
+        sessions=make_session_manager(),
+        agent_id="agent_tools_test",
+        workspace=tmp_path,
+        model="test-model",
+    )
 
     assert "grep" in loop.tools.tool_names
     assert "glob" in loop.tools.tool_names

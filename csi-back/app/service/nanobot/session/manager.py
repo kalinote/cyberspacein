@@ -1,52 +1,64 @@
-"""Session management for conversation history."""
+"""会话领域模型 + 协调层。
 
-import json
-import shutil
+`Session` 不再承担持久化职责；所有落盘逻辑已迁移到 `storage.SessionStore`
+（当前实现为 `MongoSessionStore`）。`SessionManager` 退化为 async 协调层：
+负责生成 session_id、调用 SessionStore 的 CRUD，并透出 `Session` 领域对象。
+"""
+
+from __future__ import annotations
+
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from loguru import logger
+from app.service.nanobot.utils.helpers import find_legal_message_start
 
-from app.service.nanobot.config.paths import get_legacy_sessions_dir
-from app.service.nanobot.utils.helpers import ensure_dir, find_legal_message_start, safe_filename
+if TYPE_CHECKING:
+    from app.service.nanobot.storage.base import SessionStore
 
 
 @dataclass
 class Session:
-    """A conversation session."""
+    """会话领域对象
 
-    key: str  # channel:chat_id
+    - `id`：会话唯一标识，对应 `nanobot_sessions._id`；由 `SessionManager.create()` 生成，
+      每次 `/agent/start` 都是一个新 id，不复用。
+    - `agent_id`：所属 Agent，一个 Agent 同时最多只能有一个 session 在跑。
+    - `workspace_id`：冗余，便于按 workspace 聚合查询、memory 隔离。
+    """
+
+    id: str
+    agent_id: str
+    workspace_id: str
     messages: list[dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
-    last_consolidated: int = 0  # Number of messages already consolidated to files
+    # 已经被 Consolidator 合并进 history 的 message 数量上限
+    last_consolidated: int = 0
 
-    def add_message(self, role: str, content: str, **kwargs: Any) -> None:
-        """Add a message to the session."""
-        msg = {
+    def add_message(self, role: str, content: Any, **kwargs: Any) -> None:
+        """追加一条消息；seq 不在此处分配，由 SessionStore.save 时统一分配"""
+        msg: dict[str, Any] = {
             "role": role,
             "content": content,
             "timestamp": datetime.now().isoformat(),
-            **kwargs
+            **kwargs,
         }
         self.messages.append(msg)
         self.updated_at = datetime.now()
 
     def get_history(self, max_messages: int = 500) -> list[dict[str, Any]]:
-        """Return unconsolidated messages for LLM input, aligned to a legal tool-call boundary."""
+        """返回供 LLM 使用的未合并消息切片，并对齐到合法的工具调用边界"""
         unconsolidated = self.messages[self.last_consolidated:]
         sliced = unconsolidated[-max_messages:]
 
-        # Avoid starting mid-turn when possible.
         for i, message in enumerate(sliced):
             if message.get("role") == "user":
                 sliced = sliced[i:]
                 break
 
-        # Drop orphan tool results at the front.
         start = find_legal_message_start(sliced)
         if start:
             sliced = sliced[start:]
@@ -61,13 +73,17 @@ class Session:
         return out
 
     def clear(self) -> None:
-        """Clear all messages and reset session to initial state."""
+        """清空 messages（只动内存；DB 中的历史消息不会被删除）"""
         self.messages = []
         self.last_consolidated = 0
         self.updated_at = datetime.now()
 
     def retain_recent_legal_suffix(self, max_messages: int) -> None:
-        """Keep a legal recent suffix, mirroring get_history boundary rules."""
+        """裁剪出近 max_messages 条消息并对齐到合法边界（只动内存）
+
+        注意：DB 侧仍然保留完整历史；下次 load 会重新拉取所有消息，
+        裁剪策略仅影响当前进程内的上下文窗口。
+        """
         if max_messages <= 0:
             self.clear()
             return
@@ -76,13 +92,11 @@ class Session:
 
         start_idx = max(0, len(self.messages) - max_messages)
 
-        # If the cutoff lands mid-turn, extend backward to the nearest user turn.
         while start_idx > 0 and self.messages[start_idx].get("role") != "user":
             start_idx -= 1
 
         retained = self.messages[start_idx:]
 
-        # Mirror get_history(): avoid persisting orphan tool results at the front.
         start = find_legal_message_start(retained)
         if start:
             retained = retained[start:]
@@ -94,146 +108,53 @@ class Session:
 
 
 class SessionManager:
+    """基于 SessionStore 的 session 协调层
+
+    约束：一个 Agent 同一时刻只有一个活跃 session。本类不强制该约束，由上层
+    `AnalystService` 在 `/agent/start` 处根据 `NanobotAgentModel.status /
+    current_session_id` 判断后决定是否 `create` 新 session。
     """
-    Manages conversation sessions.
 
-    Sessions are stored as JSONL files in the sessions directory.
-    """
+    def __init__(self, store: SessionStore):
+        self.store = store
 
-    def __init__(self, workspace: Path):
-        self.workspace = workspace
-        self.sessions_dir = ensure_dir(self.workspace / "sessions")
-        self.legacy_sessions_dir = get_legacy_sessions_dir()
-        self._cache: dict[str, Session] = {}
+    async def load(self, session_id: str) -> Session | None:
+        """按 session_id 读取；不存在返回 None"""
+        return await self.store.load(session_id)
 
-    def _get_session_path(self, key: str) -> Path:
-        """Get the file path for a session."""
-        safe_key = safe_filename(key.replace(":", "_"))
-        return self.sessions_dir / f"{safe_key}.jsonl"
+    async def create(
+        self,
+        *,
+        agent_id: str,
+        workspace_id: str,
+        session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Session:
+        """创建新会话并落库（首次 save 只写元数据，messages 为空）
 
-    def _get_legacy_session_path(self, key: str) -> Path:
-        """Legacy global session path (~/.nanobot/sessions/)."""
-        safe_key = safe_filename(key.replace(":", "_"))
-        return self.legacy_sessions_dir / f"{safe_key}.jsonl"
-
-    def get_or_create(self, key: str) -> Session:
+        session_id 缺省生成 uuid4；外部也可传入指定值（用于测试或会话幂等恢复）。
         """
-        Get an existing session or create a new one.
-
-        Args:
-            key: Session key (usually channel:chat_id).
-
-        Returns:
-            The session.
-        """
-        if key in self._cache:
-            return self._cache[key]
-
-        session = self._load(key)
-        if session is None:
-            session = Session(key=key)
-
-        self._cache[key] = session
+        sid = session_id or uuid.uuid4().hex
+        now = datetime.now()
+        session = Session(
+            id=sid,
+            agent_id=agent_id,
+            workspace_id=workspace_id,
+            metadata=dict(metadata or {}),
+            created_at=now,
+            updated_at=now,
+        )
+        await self.store.save(session)
         return session
 
-    def _load(self, key: str) -> Session | None:
-        """Load a session from disk."""
-        path = self._get_session_path(key)
-        if not path.exists():
-            legacy_path = self._get_legacy_session_path(key)
-            if legacy_path.exists():
-                try:
-                    shutil.move(str(legacy_path), str(path))
-                    logger.info("Migrated session {} from legacy path", key)
-                except Exception:
-                    logger.exception("Failed to migrate session {}", key)
+    async def save(self, session: Session) -> None:
+        """持久化 session：upsert 元数据 + 增量 append 新 messages"""
+        await self.store.save(session)
 
-        if not path.exists():
-            return None
+    async def list_by_agent(self, agent_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        """按 agent 列出最近的 session 元数据（不含 messages）"""
+        return await self.store.list_by_agent(agent_id, limit)
 
-        try:
-            messages = []
-            metadata = {}
-            created_at = None
-            updated_at = None
-            last_consolidated = 0
-
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-
-                    data = json.loads(line)
-
-                    if data.get("_type") == "metadata":
-                        metadata = data.get("metadata", {})
-                        created_at = datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None
-                        updated_at = datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None
-                        last_consolidated = data.get("last_consolidated", 0)
-                    else:
-                        messages.append(data)
-
-            return Session(
-                key=key,
-                messages=messages,
-                created_at=created_at or datetime.now(),
-                updated_at=updated_at or datetime.now(),
-                metadata=metadata,
-                last_consolidated=last_consolidated
-            )
-        except Exception as e:
-            logger.warning("Failed to load session {}: {}", key, e)
-            return None
-
-    def save(self, session: Session) -> None:
-        """Save a session to disk."""
-        path = self._get_session_path(session.key)
-
-        with open(path, "w", encoding="utf-8") as f:
-            metadata_line = {
-                "_type": "metadata",
-                "key": session.key,
-                "created_at": session.created_at.isoformat(),
-                "updated_at": session.updated_at.isoformat(),
-                "metadata": session.metadata,
-                "last_consolidated": session.last_consolidated
-            }
-            f.write(json.dumps(metadata_line, ensure_ascii=False) + "\n")
-            for msg in session.messages:
-                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
-
-        self._cache[session.key] = session
-
-    def invalidate(self, key: str) -> None:
-        """Remove a session from the in-memory cache."""
-        self._cache.pop(key, None)
-
-    def list_sessions(self) -> list[dict[str, Any]]:
-        """
-        List all sessions.
-
-        Returns:
-            List of session info dicts.
-        """
-        sessions = []
-
-        for path in self.sessions_dir.glob("*.jsonl"):
-            try:
-                # Read just the metadata line
-                with open(path, encoding="utf-8") as f:
-                    first_line = f.readline().strip()
-                    if first_line:
-                        data = json.loads(first_line)
-                        if data.get("_type") == "metadata":
-                            key = data.get("key") or path.stem.replace("_", ":", 1)
-                            sessions.append({
-                                "key": key,
-                                "created_at": data.get("created_at"),
-                                "updated_at": data.get("updated_at"),
-                                "path": str(path)
-                            })
-            except Exception:
-                continue
-
-        return sorted(sessions, key=lambda x: x.get("updated_at", ""), reverse=True)
+    async def invalidate(self, session_id: str) -> None:
+        """从 store 缓存中移除 session（DB 记录保留）"""
+        await self.store.invalidate(session_id)

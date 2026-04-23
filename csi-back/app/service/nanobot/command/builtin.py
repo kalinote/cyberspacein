@@ -1,4 +1,8 @@
-"""Built-in slash command handlers."""
+"""Built-in slash command handlers.
+
+`/stop` 在 bus 主循环删除后已无处可用（per-agent AgentLoop 不再维护 `_active_tasks`），
+因此不再注册。会话级取消请通过 AnalystService 层的 agent 状态机处理。
+"""
 
 from __future__ import annotations
 
@@ -9,30 +13,10 @@ from app.service.nanobot.command.router import CommandContext, CommandRouter
 from app.service.nanobot.utils.helpers import build_status_content
 
 
-async def cmd_stop(ctx: CommandContext) -> OutboundMessage:
-    """Cancel all active tasks and subagents for the session."""
-    loop = ctx.loop
-    msg = ctx.msg
-    tasks = loop._active_tasks.pop(msg.session_key, [])
-    cancelled = sum(1 for t in tasks if not t.done() and t.cancel())
-    for t in tasks:
-        try:
-            await t
-        except (asyncio.CancelledError, Exception):
-            pass
-    sub_cancelled = await loop.subagents.cancel_by_session(msg.session_key)
-    total = cancelled + sub_cancelled
-    content = f"Stopped {total} task(s)." if total else "No active task to stop."
-    return OutboundMessage(
-        channel=msg.channel, chat_id=msg.chat_id, content=content,
-        metadata=dict(msg.metadata or {})
-    )
-
-
 async def cmd_status(ctx: CommandContext) -> OutboundMessage:
     """Build an outbound status message for a session."""
     loop = ctx.loop
-    session = ctx.session or loop.sessions.get_or_create(ctx.key)
+    session = ctx.session or await loop._ensure_session(ctx.session_id)
     ctx_est = 0
     try:
         ctx_est, _ = loop.consolidator.estimate_session_prompt_tokens(session)
@@ -54,10 +38,10 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
             search_usage_text = usage.format()
     except Exception:
         pass  # Never let usage fetch break /status
-    active_tasks = loop._active_tasks.get(ctx.key, [])
+    active_tasks = loop._active_tasks.get(ctx.session_id, [])
     task_count = sum(1 for t in active_tasks if not t.done())
     try:
-        task_count += loop.subagents.get_running_count_by_session(ctx.key)
+        task_count += loop.subagents.get_running_count_by_session(ctx.session_id)
     except Exception:
         pass
     return OutboundMessage(
@@ -82,11 +66,11 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
 async def cmd_new(ctx: CommandContext) -> OutboundMessage:
     """Start a fresh session."""
     loop = ctx.loop
-    session = ctx.session or loop.sessions.get_or_create(ctx.key)
+    session = ctx.session or await loop._ensure_session(ctx.session_id)
     snapshot = session.messages[session.last_consolidated:]
     session.clear()
-    loop.sessions.save(session)
-    loop.sessions.invalidate(session.key)
+    await loop.sessions.save(session)
+    await loop.sessions.invalidate(session.id)
     if snapshot:
         loop._schedule_background(loop.consolidator.archive(snapshot))
     return OutboundMessage(
@@ -140,7 +124,6 @@ def build_help_text() -> str:
     lines = [
         "🐈 nanobot commands:",
         "/new — Start a new conversation",
-        "/stop — Stop the current task",
         "/status — Show bot status",
         "/dream — Manually trigger Dream consolidation",
         "/help — Show available commands",
@@ -150,8 +133,6 @@ def build_help_text() -> str:
 
 def register_builtin_commands(router: CommandRouter) -> None:
     """Register the default set of slash commands."""
-    router.priority("/stop", cmd_stop)
-    router.priority("/status", cmd_status)
     router.exact("/new", cmd_new)
     router.exact("/status", cmd_status)
     router.exact("/dream", cmd_dream)

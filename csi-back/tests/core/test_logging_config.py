@@ -22,11 +22,11 @@ def test_intercept_handler_emit_does_not_raise():
 
 
 def test_setup_logging_debug_sets_levels(monkeypatch: pytest.MonkeyPatch) -> None:
-    # DEBUG=True 时根 logger 与 httpx 为 DEBUG，pymongo 仍为 WARNING
+    # DEBUG=True 时根 logger 为 DEBUG；第三方 httpx 在 _NOISY_LOGGERS 中固定为 INFO；pymongo 为 WARNING
     monkeypatch.setattr(logging_config.settings, "DEBUG", True)
     setup_logging()
     assert logging.getLogger("pymongo").level == logging.WARNING
-    assert logging.getLogger("httpx").level == logging.DEBUG
+    assert logging.getLogger("httpx").level == logging.INFO
     assert logging.root.level == logging.DEBUG
 
 
