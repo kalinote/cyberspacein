@@ -69,7 +69,7 @@ class MongoMemoryBackend:
         now = datetime.now()
 
         # 通过 $inc + upsert 原子分配 cursor，返回更新后的 state
-        collection = NanobotHistoryStateModel.get_motor_collection()
+        collection = NanobotHistoryStateModel.get_pymongo_collection()
         updated = await collection.find_one_and_update(
             {"_id": workspace_id},
             {
@@ -138,7 +138,7 @@ class MongoMemoryBackend:
             return 0
 
         cutoff_cursor = oldest[-1].cursor
-        collection = NanobotHistoryModel.get_motor_collection()
+        collection = NanobotHistoryModel.get_pymongo_collection()
         result = await collection.delete_many({
             "workspace_id": workspace_id,
             "cursor": {"$lte": cutoff_cursor},

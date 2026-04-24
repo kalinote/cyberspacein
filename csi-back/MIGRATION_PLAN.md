@@ -838,6 +838,9 @@ async def maybe_force_run(self, session) -> bool:
 
 > 覆盖目标：session 元数据 upsert + message 增量 append + 按 agent 列表。
 
+**已实现单测文件**：`tests/nanobot/storage/test_mongo_session_store.py`  
+说明：该文件为**纯 mock 单元测试**，不连接 MongoDB、不做真实 CURD；通过 monkeypatch 把 `MongoSessionStore` 依赖的 Beanie 调用替换为 `AsyncMock`，只校验 seq 分配、字段映射、upsert 分支与缓存行为。
+
 | 用例                              | 测试点                                                                                                       | 测试目标                                              |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | `test_save_new_session`         | 新 Session：先 `add_message` 写 3 条，再 `save`；`nanobot_sessions` 有 1 条元数据，`nanobot_session_messages` 有 3 条、seq=[1,2,3] | 验证首次 save 同时落元数据 + messages                       |
@@ -857,6 +860,9 @@ async def maybe_force_run(self, session) -> bool:
 ### 12.4 `MongoMemoryBackend`（`storage/mongo_memory.py`）
 
 > 覆盖目标：memory docs upsert + history append 原子性 + cursor 一致性 + workspace 隔离。
+
+**已实现单测文件**：`tests/nanobot/storage/test_mongo_memory_backend.py`  
+说明：该文件为**纯 mock 单元测试**，不连接 MongoDB、不做真实 CURD；通过 monkeypatch 替换 `MongoMemoryBackend` 内部引用的 Beanie 模型与 collection 方法，只验证逻辑分支与查询参数形状。
 
 | 用例                              | 测试点                                                                                                   | 测试目标                                           |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
@@ -878,6 +884,8 @@ async def maybe_force_run(self, session) -> bool:
 
 ### 12.5 `Session` 领域对象（`session/manager.py::Session`）
 
+**已实现单测文件**：`tests/nanobot/session/test_session_domain.py`
+
 | 用例                                         | 测试点                                                                                                       | 测试目标                                              |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | `test_session_init_required_fields`        | 构造 Session 必须提供 `id / agent_id / workspace_id`；缺失会 `TypeError`                                            | 防止字段漂移                                            |
@@ -890,6 +898,8 @@ async def maybe_force_run(self, session) -> bool:
 ---
 
 ### 12.6 `SessionManager`（async 协调层）
+
+**已实现单测文件**：`tests/nanobot/session/test_session_manager.py`（纯 mock，不依赖数据库环境）
 
 | 用例                                 | 测试点                                                                                                        | 测试目标                                                        |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -909,6 +919,8 @@ async def maybe_force_run(self, session) -> bool:
 
 > 覆盖目标：workspace 级长期记忆门面，所有路径都走 MemoryBackend。
 
+**已实现单测文件**：`tests/nanobot/agent/test_memory_store_facade.py`（纯内存 backend，不依赖数据库环境）
+
 | 用例                                  | 测试点                                                                                                          | 测试目标                                               |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
 | `test_memory_roundtrip`             | `write_memory/soul/user(x)` → `read_*` 等于 x                                                                 | 验证三份 doc 映射到正确 doc_type                             |
@@ -926,6 +938,8 @@ async def maybe_force_run(self, session) -> bool:
 ### 12.8 `Consolidator`（`agent/memory.py::Consolidator`）
 
 > 覆盖目标：token 预算触发的滚动归档；锁按 `session.id` 区分；通过 SessionManager/SessionStore 保存。
+
+**已实现单测文件**：`tests/nanobot/agent/test_consolidator_tokens.py`（纯 mock，不依赖数据库环境）
 
 | 用例                                     | 测试点                                                                                                                        | 测试目标                                                 |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -946,21 +960,25 @@ async def maybe_force_run(self, session) -> bool:
 
 > 覆盖目标：阈值触发 + 单次 LLM 全量回写；段落解析稳定。
 
+**已实现单测文件**：`tests/nanobot/agent/test_dream_behaviour.py`（`DreamTestBackend` 纯内存 + provider `AsyncMock`，不依赖数据库环境）
+
 | 用例                                  | 测试点                                                                                                                       | 测试目标                                               |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | `test_should_trigger_disabled`      | `DreamConfig.enabled=False` 时 `should_trigger()==False`                                                                  | 硬开关有效                                              |
 | `test_should_trigger_below_threshold` | 未处理条目数 < `trigger_unprocessed_count` 返回 False                                                                             | 阈值语义                                               |
 | `test_should_trigger_at_threshold`  | 未处理条目数 == `trigger_unprocessed_count` 返回 True                                                                             | 边界                                                 |
+| `test_run_noop_when_disabled`       | `DreamConfig.enabled=False` 时 `run()==False`，不调用 LLM、不 compact                                                         | 与 `should_trigger` 一致的硬开关                            |
 | `test_run_noop_when_no_entries`     | `read_unprocessed_history` 为空时 `run()==False`，cursor 不变                                                                  | 早退路径                                               |
 | `test_run_llm_failure_returns_false` | provider 抛异常时 `run()==False`，cursor 不前移、memory doc 不被改写                                                                   | 失败不破坏状态                                            |
 | `test_run_no_change_preserves_docs` | LLM 返回三段都是 NO_CHANGE，doc 内容不变；cursor 仍前移到 batch[-1]["cursor"]                                                           | "无更新但已处理"                                           |
 | `test_run_partial_update`           | LLM 返回 MEMORY=新文本 / SOUL=NO_CHANGE / USER=新文本，write_memory/write_user 被调用且内容正确，write_soul 不被调用                          | 单独写回受影响的 doc                                       |
 | `test_run_advances_cursor_and_compacts` | run 成功后 `last_dream_cursor == batch[-1]["cursor"]`；`compact_history` 按 `max_history_entries` 触发                             | 游标前移 + 历史压缩联动                                      |
 | `test_parse_sections_basic`         | 三段都有 → 返回 dict 三键都非 None                                                                                                 | 正则正确                                               |
-| `test_parse_sections_with_no_change` | 段内为 `NO_CHANGE` / 空 → 该键对应 value 为 None                                                                                  | NO_CHANGE 语义                                       |
+| `test_parse_sections_no_change_case_insensitive` | 段内为 `no_change` / `No_Change` 等 → 该键对应 value 为 None（`raw.upper()=="NO_CHANGE"`）                                        | NO_CHANGE 语义                                       |
 | `test_parse_sections_missing_section` | 只输出 MEMORY 段 → SOUL/USER 键值为 None                                                                                        | 缺段兜底                                              |
 | `test_parse_sections_extra_whitespace` | 多行空白 / 含中文 / 含 ```markdown``` 代码块时不截断内容                                                                                 | 解析器鲁棒性                                             |
 | `test_batch_size_honored`           | 未处理条目 50 条、`max_batch_size=20`，`run()` 只处理前 20 条；`last_dream_cursor` 前移到第 20 条                                         | batch 限制                                           |
+| `test_run_llm_error_finish_reason_returns_false` | `finish_reason=="error"` 时 `run()==False`，游标不前移、不写 doc                                                           | 与 `chat_with_retry` 返回错误态一致                          |
 
 ---
 
@@ -968,12 +986,15 @@ async def maybe_force_run(self, session) -> bool:
 
 > 覆盖目标：快照刷新并发性、空快照安全兜底、system prompt 段落可控组装。
 
+**已实现单测文件**：`tests/nanobot/agent/test_context_builder.py`（`FakeMemoryStore` 纯内存 + 可选 `asyncio.gather` 包装，不依赖数据库环境）。实现上 `refresh_memory_snapshot` 对 MEMORY/SOUL/USER/`get_last_dream_cursor` 使用一次 `asyncio.gather(4)`，再单独 `read_unprocessed_history`；`MemorySnapshot` 仅含 `memory` / `soul` / `user` / `recent_history` 四字段（不含 dream_cursor 副本）。
+
 | 用例                                   | 测试点                                                                                                                            | 测试目标                                             |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
 | `test_empty_snapshot_prompt`         | 全空 MemorySnapshot → system prompt 只含 identity + Search & Discovery，不渲染空的 SOUL/USER/Memory/Recent History 段落                      | 防止空字符串污染 prompt                                   |
-| `test_refresh_snapshot_concurrent`   | mock memory 返回 (memory, soul, user, dream_cursor, history)，`refresh_memory_snapshot` 触发一次 `asyncio.gather`，snapshot 四字段均正确填充      | 验证并发预取，4 次 read\* 一次 gather                        |
+| `test_refresh_snapshot_concurrent`   | mock memory 返回各 read + history；`refresh_memory_snapshot` 内对 `asyncio.gather` 传入 4 个协程（四路 read），snapshot 四字段与 history 子集正确      | 验证并发预取与 gather 宽度                                  |
 | `test_refresh_history_capped`        | history 返回 100 条时 snapshot.recent_history 只保留最后 50 条（`_MAX_RECENT_HISTORY`）                                                       | 上下文体积上限                                           |
-| `test_persona_block_soul_only`       | SOUL 有内容、USER 空 → prompt 含 `## SOUL` 不含 `## USER`；只 USER 有内容同理                                                                 | 可选段落逻辑                                           |
+| `test_persona_block_soul_only`       | SOUL 有内容、USER 空（或仅空白）→ prompt 含 `## SOUL`、不出现 persona 形式的 `## USER\n\n`                                                      | 可选段落逻辑                                           |
+| `test_persona_block_user_only`       | USER 有内容、SOUL 空 → prompt 含 `## USER`、不出现 persona 形式的 `## SOUL\n\n`                                                                 | 同上                                                 |
 | `test_memory_section_injection`      | snapshot.memory 非空 → prompt 含 `# Memory\n\n## Long-term Memory\n...`                                                            | Memory 片段挂载点                                      |
 | `test_recent_history_render`         | snapshot.recent_history 条目渲染为 `- [YYYY-MM-DD HH:MM] content`，接受 datetime / ISO 字符串 / 缺失                                          | 时间格式归一化                                          |
 | `test_build_messages_single_user_turn` | 末条是 user 时 `build_messages(..., current_role='user')` 会合并到末条 content，不追加新条                                                      | 与旧实现行为一致（防多轮 user）                                 |
@@ -986,6 +1007,10 @@ async def maybe_force_run(self, session) -> bool:
 ### 12.11 `WorkspaceService`（`app/service/analyst/workspace.py`）
 
 > 覆盖目标：CRUD 基本 contract + 资源存在性校验 + 白名单收窄级联一致性 + 删除保护。
+
+**已实现单测文件**：  
+- `tests/analyst/test_workspace_service.py`（通过 patch `NanobotWorkspaceModel`/`NanobotAgentModel`/`AgentPromptTemplateModel`/`AgentModelConfigModel` 为纯内存桩，覆盖 create/get/list/update/delete 与收窄冲突载荷）。  
+- `tests/api/test_agent_workspaces_endpoints.py`（路由层契约：成功路径走 HTTP；冲突 payload 因 `response_model=ApiResponseSchema[NanobotWorkspaceSchema]` 与 error data 泛型不一致，按现有惯例直接测协程返回体）。  
 
 | 用例                                           | 测试点                                                                                                                          | 测试目标                                           |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
@@ -1017,6 +1042,10 @@ async def maybe_force_run(self, session) -> bool:
 ### 12.12 `AgentService`（`app/service/analyst/agent.py`）
 
 > 覆盖目标：CRUD 基本 contract + 资源子集校验 + 运行时写保护 + workspace_id 过滤隔离。
+
+**已实现单测文件**：  
+- `tests/analyst/test_agent_service.py`（纯内存桩：patch `NanobotAgentModel`/`NanobotWorkspaceModel`，覆盖 create/get/list/update/delete、子集校验、运行态保护、重校验与同名规则）。  
+- `tests/api/test_agent_agents_endpoints.py`（路由层契约：成功/not found/list 走 HTTP；subset 违规载荷按惯例直接测协程返回的 `ApiResponseSchema`）。  
 
 | 用例                                           | 测试点                                                                                                         | 测试目标                                             |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -1058,6 +1087,11 @@ async def maybe_force_run(self, session) -> bool:
 - 路由升级：`POST /agent/start` → `AnalystService.start_agent` / `GET /agent/status?agent_id=...` → SSE / `POST /agent/approve` → `submit_approval`
 - Schema 升级：`StartAgentRequestSchema` 改为 `agent_id + user_prompt + extra_context`；`ApproveRequestSchema` 改为 `agent_id + decisions`；新增 `StartAgentResponseSchema`
 
+**已实现单测文件**：  
+- `tests/analyst/test_analyst_service_core.py`（覆盖 `ContextVar`、SSE 订阅/广播、审批队列、`run_analysis` 成功与 CancelledError(pause) 路径；patch `NanobotAgentModel` 为纯内存桩，`Nanobot` 用 `AsyncMock`）。  
+- `tests/api/test_agent_start_approve_endpoints.py`（覆盖 `/agent/start` 与 `/agent/approve` 的路由成功路径与错误码透传（含 unknown agent），不连 DB）。  
+- `tests/api/test_agent_status_sse_endpoints.py`（覆盖 `/agent/status` 的 SSE 输出格式、keep-alive 与断线 unsubscribe 清理，不连 DB）。  
+
 | 用例                                              | 测试点                                                                                                                                          | 测试目标                                                               |
 | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `test_context_set_reset`                        | `current_agent_id.set()` / `current_session_id.set()` 后 `get_current_*` 返回正确值，`reset(token)` 后恢复 None                                     | ContextVar 正确性                                                    |
@@ -1098,6 +1132,8 @@ async def maybe_force_run(self, session) -> bool:
 - `StatusHook` / `TodosHook` / `ApprovalHook` / `ResultHook` 继承 `AgentHook`，通过 `ContextVar` 读取 `agent_id` / `session_id`
 - `default_analyst_hooks()` 按固定顺序返回 4 个 Hook，注入点位于 `AnalystService.build_bot` → `Nanobot.from_components(..., hooks=...)`
 
+**已实现单测文件**：`tests/analyst/test_analyst_hooks.py`（纯 mock：patch `NanobotAgentModel` 为内存桩、SSE 广播用 stub；覆盖顺序、step 追加与广播、todos 触发/非触发、approval 兜底复位、result strip）。  
+
 | 用例                                         | 测试点                                                                                                                              | 测试目标                                                    |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | `test_default_hooks_order`                 | `default_analyst_hooks()` 返回顺序固定为 `[StatusHook, TodosHook, ApprovalHook, ResultHook]`                                        | Hook 固定顺序保证 `finalize_content` pipeline 可预测        |
@@ -1115,6 +1151,10 @@ async def maybe_force_run(self, session) -> bool:
 ### 12.15 业务工具（`app/service/analyst/tools.py`）
 
 对应改动（TODO #20）：5 个工具 + `build_business_tools(enabled_names)` 白名单过滤。
+
+**已实现单测文件**：  
+- `tests/analyst/test_analyst_tools.py`（覆盖工具 schema、白名单过滤、get_entity 的 ES 分支、write_todos/notify_user/modify_entity 的 ContextVar + DB/SSE/HITL 行为，纯 mock）。  
+- `tests/analyst/test_analyst_service_build_bot.py`（覆盖 `AnalystService.build_bot` 装配：注入 4 个 hooks、按 agent.tools 注册业务工具、system suffix 叠加模板与 `RESULT_FORMAT_INSTRUCTION`，纯 mock）。  
 
 | 用例                                              | 测试点                                                                                                                                                                                     | 测试目标                                                       |
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -1147,6 +1187,11 @@ async def maybe_force_run(self, session) -> bool:
   - 用 `build_response_format_schema()` 构造 provider 的 `response_format`
   - `ContextBuilder.extra_system_suffix` 叠加 `AgentPromptTemplateModel.system_prompt` + `RESULT_FORMAT_INSTRUCTION`
 - `AnalystService.run_analysis` 成功路径改为 `parse_run_result(run_result.content)`，落库字段扩展为 `{**parsed.model_dump(), parsed, raw_content, tools_used}`
+
+**已实现单测文件**：  
+- `tests/schemas/agent/test_result_schema.py`（覆盖 schema roundtrip、`build_response_format_schema` 形状、`parse_run_result` 的 strict/围栏/前后缀/失败兜底/截断等）。  
+- `tests/nanobot/providers/test_openai_compat_response_format.py`（覆盖 `OpenAICompatProvider._build_kwargs` 对 `response_format` 的透传与与 tools 共存）。  
+- `tests/analyst/test_run_analysis_structured_result.py`（覆盖 `AnalystService.run_analysis`：可解析结果 parsed=True、不可解析 parsed=False 但仍 COMPLETED、异常路径 FAILED 且 `result={"error":...}`；同时校验 SSE `event=result` 载荷结构）。  
 
 | 用例                                              | 测试点                                                                                                                                                                 | 测试目标                                                 |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
@@ -1183,6 +1228,11 @@ async def maybe_force_run(self, session) -> bool:
 
 共 26 条 `/agent/**` 路由，涵盖：/start、/status（SSE）、/approve、/cancel、Workspace CRUD×6、Agent CRUD×6、configs/models×3、configs/prompt-templates×5、configs/tools×2、configs/statistics×1。
 
+**已实现单测文件**：  
+- `tests/api/test_agent_router_registration.py`（路由注册回归：/agent/** 总数为 26）。  
+- `tests/api/test_agent_misc_endpoints.py`（覆盖 `/agent/cancel`、`/agent/configs/tools`、`/agent/configs/tools-list`、`/agent/configs/statistics`）。  
+- `tests/api/test_agent_placeholder_removed.py`（确认 `app/api/v1/endpoints/agent.py` 不再引用 `PLACEHOLDER_MESSAGE`）。  
+
 | 用例                                           | 测试点                                                                                                                                       | 测试目标                                   |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `test_router_registers_all_26_endpoints`     | `include_router` 后 `app.routes` 中 `/agent/**` 数量 == 26，必备 `(method, path)` 全部命中                                                     | 路由注册回归                             |
@@ -1211,6 +1261,8 @@ async def maybe_force_run(self, session) -> bool:
 - `app/**` 源码中对 `from langchain` / `from langgraph` / `CheckpointModel` / `motor_checkpinter` / `agent_checkpointer` / `app.service.agent` 的引用全部为 0
 - `pyproject.toml` 仅保留 `langchain-openai`（被 `app/utils/embedding.py` 业务模块使用，不属于 agent 栈），`langfuse` 被 `openai_compat_provider.py` 使用
 
+**已实现单测文件**：`tests/cleanup/test_cleanup_regression.py`（静态扫描 + 导入链校验：旧路径缺失、app/tests 无禁用引用、`import app.main` 不加载 langgraph/旧 agent 链路、langchain 仅通过 embedding 允许的子集）。  
+
 | 用例                                          | 测试点                                                                                                                                                  | 测试目标                         |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | `test_legacy_agent_paths_absent`            | `Path('app/service/agent').exists()` → False；`Path('app/models/agent/agent.py').exists()` → False；`Path('app/models/agent/checkpoint.py').exists()` → False | 目录/文件已移除                 |
@@ -1225,6 +1277,8 @@ async def maybe_force_run(self, session) -> bool:
 对应改动（纯数据运维，无源码改动）：
 - 使用 `.env` 配置连接 `csi_db`，`db.listCollectionNames()` 结果中**不包含** `agent_checkpointer` / `agent_checkpointer_writes`（也不含 `agent_analysis_sessions`）；全部 23 个集合中 7 个 `nanobot_*` 新集合齐全。
 - 结论：本环境 drop 为 NOOP；记录命令以供其它环境（例如从旧快照恢复后）使用：
+
+> **本仓库单测默认跳过本节**：该核查需要真实 MongoDB 环境与权限，不符合“无 DB 环境也能跑（mock/纯内存）”的测试约束。本节作为**手动运维检查清单**保留。
 
 ```js
 // 需先通过 .env 的 MONGODB_USERNAME/PASSWORD 以 admin 身份认证
