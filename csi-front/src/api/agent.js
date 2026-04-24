@@ -40,6 +40,15 @@ export const agentApi = {
   createAgent(data) {
     return request.post('/agent/agents', data)
   },
+  getAgentDetail(agentId) {
+    return request.get(`/agent/agents/${agentId}`)
+  },
+  updateAgent(agentId, data) {
+    return request.put(`/agent/agents/${agentId}`, data)
+  },
+  deleteAgent(agentId) {
+    return request.delete(`/agent/agents/${agentId}`)
+  },
   startAgent(data) {
     return request.post('/agent/start', data)
   },
@@ -49,5 +58,21 @@ export const agentApi = {
   },
   approveAgent(data) {
     return request.post('/agent/approve', data)
+  },
+
+  getWorkspaceList(params = { page: 1, page_size: 10 }) {
+    return request.get('/agent/workspaces', params)
+  },
+  createWorkspace(data) {
+    return request.post('/agent/workspaces', data)
+  },
+  getWorkspaceDetail(workspaceId) {
+    return request.get(`/agent/workspaces/${workspaceId}`)
+  },
+  updateWorkspace(workspaceId, data) {
+    return request.put(`/agent/workspaces/${workspaceId}`, data)
+  },
+  deleteWorkspace(workspaceId) {
+    return request.delete(`/agent/workspaces/${workspaceId}`)
   }
 }

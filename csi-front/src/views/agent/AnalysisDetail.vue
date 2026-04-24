@@ -4,14 +4,14 @@
 
         <div v-if="loading" class="flex items-center justify-center h-96">
             <div class="text-center">
-                <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin mb-2" />
+                <Icon icon="mdi:loading" class="block mx-auto text-4xl text-blue-500 animate-spin mb-2" />
                 <p class="text-gray-600">正在连接分析会话...</p>
             </div>
         </div>
 
         <div v-else-if="error" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div class="bg-white rounded-xl shadow-sm border border-red-200 p-8 text-center">
-                <Icon icon="mdi:alert-circle" class="text-red-500 text-5xl mb-4" />
+                <Icon icon="mdi:alert-circle" class="block mx-auto text-red-500 text-5xl mb-4" />
                 <h2 class="text-xl font-bold text-gray-900 mb-2">连接失败</h2>
                 <p class="text-gray-600 mb-4">{{ error }}</p>
                 <button @click="connectSSE" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
