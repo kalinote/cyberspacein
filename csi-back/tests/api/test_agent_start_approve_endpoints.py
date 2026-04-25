@@ -38,6 +38,45 @@ def test_route_start_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert body["data"]["session_id"] == "s1"
 
 
+def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _app()
+
+    class _FakeAgent:
+        prompt_template_id = "tpl1"
+
+    class _FakeTemplate:
+        user_prompt = "你好 {{ k }} {{ missing }}"
+
+    async def _agent_find_one(query: dict):
+        assert query == {"_id": "a1"}
+        return _FakeAgent()
+
+    async def _tpl_find_one(query: dict):
+        assert query == {"_id": "tpl1"}
+        return _FakeTemplate()
+
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict):
+        assert agent_id == "a1"
+        assert context["k"] == "v"
+        assert user_prompt == "你好 v !字段丢失或不存在!"
+        return "s2"
+
+    monkeypatch.setattr(agent_ep.NanobotAgentModel, "find_one", _agent_find_one)
+    monkeypatch.setattr(agent_ep.AgentPromptTemplateModel, "find_one", _tpl_find_one)
+    monkeypatch.setattr(agent_ep.AnalystService, "start_agent", _start_agent)
+    r = client.post(
+        "/api/v1/agent/start",
+        json={"agent_id": "a1", "user_prompt": "   ", "extra_context": {"k": "v"}},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == 0
+    assert body["data"]["agent_id"] == "a1"
+    assert body["data"]["session_id"] == "s2"
+
+
 def test_route_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 

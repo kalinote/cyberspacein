@@ -73,6 +73,7 @@ def _patch_deps(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     # provider/format
     monkeypatch.setattr(service_module, "build_response_format_schema", lambda: {"x": 1})
     monkeypatch.setattr(service_module, "OpenAICompatProvider", lambda **kw: SimpleNamespace(**kw))
+    monkeypatch.setattr(service_module, "DeepSeekProvider", lambda **kw: SimpleNamespace(**kw))
 
     # memory/session singletons
     monkeypatch.setattr(service_module.AnalystService, "_get_memory_backend", classmethod(lambda cls: object()))

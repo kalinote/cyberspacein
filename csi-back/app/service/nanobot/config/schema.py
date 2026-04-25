@@ -106,15 +106,6 @@ class WebToolsConfig(Base):
     search: WebSearchConfig = Field(default_factory=WebSearchConfig)
 
 
-class ExecToolConfig(Base):
-    """Shell exec tool configuration."""
-
-    enable: bool = True
-    timeout: int = 60
-    path_append: str = ""
-    sandbox: str = ""  # sandbox backend: "" (none) or "bwrap"
-    allowed_env_keys: list[str] = Field(default_factory=list)  # Env var names to pass through to subprocess (e.g. ["GOPATH", "JAVA_HOME"])
-
 class MCPServerConfig(Base):
     """MCP server connection configuration (stdio or HTTP)."""
 
@@ -138,7 +129,6 @@ class ToolsConfig(Base):
     """Tools configuration."""
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
-    exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     my: MyToolConfig = Field(default_factory=MyToolConfig)
     restrict_to_workspace: bool = False  # restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)

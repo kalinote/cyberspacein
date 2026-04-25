@@ -49,7 +49,6 @@ class MyTool(Tool):
     READ_ONLY = frozenset({
         "subagents",  # observable but replacing it would break the system
         "_current_iteration",  # updated by runner only
-        "exec_config",  # inspect allowed (e.g. check sandbox), modify blocked
         "web_config",  # inspect allowed (e.g. check enable), modify blocked
     })
 
@@ -118,7 +117,7 @@ class MyTool(Tool):
             "Scratchpad keys persist across turns but not restarts.\n"
             "Key values: _current_iteration (current progress), "
             "max_iterations - _current_iteration = remaining iterations.\n"
-            "Note: web_config and exec_config are readable but read-only.\n"
+            "Note: web_config 可读取但不可修改。\n"
             "\n"
             "When to use:\n"
             "- User asks about your model, settings, or token usage → check that key.\n"
@@ -331,7 +330,7 @@ class MyTool(Tool):
         for k in self.RESTRICTED:
             parts.append(self._format_value(getattr(loop, k, None), k))
         # Other useful top-level keys shown in description
-        for k in ("workspace", "provider_retry_mode", "max_tool_result_chars", "_current_iteration", "web_config", "exec_config", "subagents"):
+        for k in ("workspace", "provider_retry_mode", "max_tool_result_chars", "_current_iteration", "web_config", "subagents"):
             if _has_real_attr(loop, k):
                 parts.append(self._format_value(getattr(loop, k, None), k))
         # Token usage

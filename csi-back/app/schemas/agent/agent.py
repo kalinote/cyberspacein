@@ -81,7 +81,10 @@ class AgentCreateRequestSchema(BaseModel):
 
 class StartAgentRequestSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
-    user_prompt: str = Field(description="用户本轮输入的 prompt", min_length=1)
+    user_prompt: str | None = Field(
+        default=None,
+        description="用户本轮输入的 prompt",
+    )
     entity_uuid: str | None = Field(default=None, description="实体UUID（可选业务上下文）")
     entity_type: EntityType | None = Field(default=None, description="实体类型（可选业务上下文）")
     extra_context: dict[str, Any] = Field(

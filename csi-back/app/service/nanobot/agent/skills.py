@@ -112,8 +112,8 @@ class SkillsLoader:
         """
         Build a summary of all skills (name, description, path, availability).
 
-        This is used for progressive loading - the agent can read the full
-        skill content using read_file when needed.
+        This is used for progressive loading - the agent can load skill content
+        on demand when needed.
 
         Args:
             exclude: Set of skill names to omit from the summary.

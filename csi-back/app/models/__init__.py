@@ -19,6 +19,10 @@ from app.models.agent.nanobot import (
     NanobotSessionModel,
     NanobotWorkspaceModel,
 )
+from app.models.agent.sse_event import (
+    NanobotAgentSseEventModel,
+    NanobotAgentSseEventStateModel,
+)
 from app.models.annotation import AnnotationModel
 from app.models.search_template import SearchTemplateModel
 from app.models.auth.group import GroupModel
@@ -46,6 +50,8 @@ def get_all_models() -> List[Type[Document]]:
         NanobotMemoryDocsModel,
         NanobotHistoryModel,
         NanobotHistoryStateModel,
+        NanobotAgentSseEventModel,
+        NanobotAgentSseEventStateModel,
         AnnotationModel,
         SearchTemplateModel,
         GroupModel,

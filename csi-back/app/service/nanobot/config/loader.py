@@ -112,11 +112,15 @@ def _env_replace(match: re.Match[str]) -> str:
 
 def _migrate_config(data: dict) -> dict:
     """Migrate old config formats to current."""
-    # Move tools.exec.restrictToWorkspace → tools.restrictToWorkspace
     tools = data.get("tools", {})
-    exec_cfg = tools.get("exec", {})
-    if "restrictToWorkspace" in exec_cfg and "restrictToWorkspace" not in tools:
-        tools["restrictToWorkspace"] = exec_cfg.pop("restrictToWorkspace")
+    # tools.exec 已移除；旧配置中的 tools.exec.restrictToWorkspace 迁移到 tools.restrictToWorkspace
+    exec_cfg = tools.get("exec", {}) if isinstance(tools, dict) else {}
+    if isinstance(exec_cfg, dict):
+        if "restrictToWorkspace" in exec_cfg and "restrictToWorkspace" not in tools:
+            tools["restrictToWorkspace"] = exec_cfg.pop("restrictToWorkspace")
+        # 清理旧的 tools.exec，避免 schema 校验失败
+        if "exec" in tools:
+            tools.pop("exec", None)
 
     # Move tools.myEnabled / tools.mySet → tools.my.{enable, allowSet}.
     # The old flat keys shipped in the initial MyTool landing; wrapping them in a

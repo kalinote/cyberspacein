@@ -37,23 +37,23 @@ def _tool_names(definitions: list[dict[str, Any]]) -> list[str]:
 def test_get_definitions_orders_builtins_then_mcp_tools() -> None:
     registry = ToolRegistry()
     registry.register(_FakeTool("mcp_git_status"))
-    registry.register(_FakeTool("write_file"))
+    registry.register(_FakeTool("builtin_b"))
     registry.register(_FakeTool("mcp_fs_list"))
-    registry.register(_FakeTool("read_file"))
+    registry.register(_FakeTool("builtin_a"))
 
     assert _tool_names(registry.get_definitions()) == [
-        "read_file",
-        "write_file",
+        "builtin_a",
+        "builtin_b",
         "mcp_fs_list",
         "mcp_git_status",
     ]
 
 
-def test_prepare_call_read_file_rejects_non_object_params_with_actionable_hint() -> None:
+def test_prepare_call_rejects_non_object_params_with_actionable_hint() -> None:
     registry = ToolRegistry()
-    registry.register(_FakeTool("read_file"))
+    registry.register(_FakeTool("builtin_a"))
 
-    tool, params, error = registry.prepare_call("read_file", ["foo.txt"])
+    tool, params, error = registry.prepare_call("builtin_a", ["foo.txt"])
 
     assert tool is None
     assert params == ["foo.txt"]
@@ -62,20 +62,9 @@ def test_prepare_call_read_file_rejects_non_object_params_with_actionable_hint()
     assert "Use named parameters" in error
 
 
-def test_prepare_call_other_tools_keep_generic_object_validation() -> None:
-    registry = ToolRegistry()
-    registry.register(_FakeTool("grep"))
-
-    tool, params, error = registry.prepare_call("grep", ["TODO"])
-
-    assert tool is not None
-    assert params == ["TODO"]
-    assert error == "Error: Invalid parameters for tool 'grep': parameters must be an object, got list"
-
-
 def test_get_definitions_returns_cached_result() -> None:
     registry = ToolRegistry()
-    registry.register(_FakeTool("read_file"))
+    registry.register(_FakeTool("builtin_a"))
     first = registry.get_definitions()
     assert registry._cached_definitions is not None
     second = registry.get_definitions()
@@ -84,9 +73,9 @@ def test_get_definitions_returns_cached_result() -> None:
 
 def test_register_invalidates_cache() -> None:
     registry = ToolRegistry()
-    registry.register(_FakeTool("read_file"))
+    registry.register(_FakeTool("builtin_a"))
     first = registry.get_definitions()
-    registry.register(_FakeTool("write_file"))
+    registry.register(_FakeTool("builtin_b"))
     second = registry.get_definitions()
     assert first is not second
     assert len(second) == 2
@@ -94,10 +83,10 @@ def test_register_invalidates_cache() -> None:
 
 def test_unregister_invalidates_cache() -> None:
     registry = ToolRegistry()
-    registry.register(_FakeTool("read_file"))
-    registry.register(_FakeTool("write_file"))
+    registry.register(_FakeTool("builtin_a"))
+    registry.register(_FakeTool("builtin_b"))
     first = registry.get_definitions()
-    registry.unregister("write_file")
+    registry.unregister("builtin_b")
     second = registry.get_definitions()
     assert first is not second
     assert len(second) == 1

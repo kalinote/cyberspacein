@@ -18,11 +18,7 @@ from app.service.nanobot.agent.memory import Consolidator, Dream, MemoryStore
 from app.service.nanobot.agent.runner import AgentRunner, AgentRunSpec
 from app.service.nanobot.agent.skills import BUILTIN_SKILLS_DIR, SkillsLoader
 from app.service.nanobot.agent.subagent import SubagentManager
-from app.service.nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
-from app.service.nanobot.agent.tools.notebook import NotebookEditTool
 from app.service.nanobot.agent.tools.registry import ToolRegistry
-from app.service.nanobot.agent.tools.search import GlobTool, GrepTool
-from app.service.nanobot.agent.tools.shell import ExecTool
 from app.service.nanobot.agent.tools.self import MyTool
 from app.service.nanobot.agent.tools.spawn import SpawnTool
 from app.service.nanobot.agent.tools.web import WebFetchTool, WebSearchTool
@@ -38,7 +34,7 @@ from app.service.nanobot.utils.helpers import truncate_text as truncate_text_fn
 from app.service.nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
-    from app.service.nanobot.config.schema import ExecToolConfig, ToolsConfig, WebToolsConfig
+    from app.service.nanobot.config.schema import ToolsConfig, WebToolsConfig
 
 
 class _LoopHook(AgentHook):
@@ -142,7 +138,6 @@ class AgentLoop:
         max_tool_result_chars: int | None = None,
         provider_retry_mode: str = "standard",
         web_config: WebToolsConfig | None = None,
-        exec_config: ExecToolConfig | None = None,
         restrict_to_workspace: bool = False,
         mcp_servers: dict | None = None,
         send_progress: bool = True,
@@ -162,11 +157,11 @@ class AgentLoop:
           AgentLoop 不再自行构造 SessionManager。
         - `agent_id`：AgentLoop 所属的 Agent 唯一标识。同一 AgentLoop 实例
           绑定到单个 agent，所有 session 都在该 agent 下创建。
-        - `workspace`：仅作为 **文件系统沙箱根目录**（供 ReadFile/ExecTool 等工具使用），
+        - `workspace`：仅作为 Agent 的工作目录标识。
           与长期记忆、session、配置等持久化完全无关。
         - `dream_config`：Dream 触发阈值等配置，未传入时使用默认 `DreamConfig()`。
         """
-        from app.service.nanobot.config.schema import ExecToolConfig, ToolsConfig, WebToolsConfig
+        from app.service.nanobot.config.schema import ToolsConfig, WebToolsConfig
 
         _tc = tools_config or ToolsConfig()
         defaults = AgentDefaults()
@@ -193,7 +188,6 @@ class AgentLoop:
         )
         self.provider_retry_mode = provider_retry_mode
         self.web_config = web_config or WebToolsConfig()
-        self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
@@ -223,7 +217,6 @@ class AgentLoop:
             model=self.model,
             web_config=self.web_config,
             max_tool_result_chars=self.max_tool_result_chars,
-            exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
             disabled_skills=disabled_skills,
         )
@@ -259,31 +252,6 @@ class AgentLoop:
 
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
-        allowed_dir = (
-            self.workspace if (self.restrict_to_workspace or self.exec_config.sandbox) else None
-        )
-        extra_read = [BUILTIN_SKILLS_DIR] if allowed_dir else None
-        self.tools.register(
-            ReadFileTool(
-                workspace=self.workspace, allowed_dir=allowed_dir, extra_allowed_dirs=extra_read
-            )
-        )
-        for cls in (WriteFileTool, EditFileTool, ListDirTool):
-            self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
-        for cls in (GlobTool, GrepTool):
-            self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
-        self.tools.register(NotebookEditTool(workspace=self.workspace, allowed_dir=allowed_dir))
-        if self.exec_config.enable:
-            self.tools.register(
-                ExecTool(
-                    working_dir=str(self.workspace),
-                    timeout=self.exec_config.timeout,
-                    restrict_to_workspace=self.restrict_to_workspace,
-                    sandbox=self.exec_config.sandbox,
-                    path_append=self.exec_config.path_append,
-                    allowed_env_keys=self.exec_config.allowed_env_keys,
-                )
-            )
         if self.web_config.enable:
             self.tools.register(
                 WebSearchTool(config=self.web_config.search, proxy=self.web_config.proxy)

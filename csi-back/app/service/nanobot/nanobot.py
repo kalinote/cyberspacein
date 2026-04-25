@@ -30,7 +30,6 @@ from app.service.nanobot.session.manager import SessionManager
 if TYPE_CHECKING:
     from app.service.nanobot.config.schema import (
         DreamConfig,
-        ExecToolConfig,
         ToolsConfig,
         WebToolsConfig,
     )
@@ -87,7 +86,6 @@ class Nanobot:
         dream_config: DreamConfig | None = None,
         tools_config: ToolsConfig | None = None,
         web_config: WebToolsConfig | None = None,
-        exec_config: ExecToolConfig | None = None,
         mcp_servers: dict | None = None,
         max_iterations: int | None = None,
         context_window_tokens: int | None = None,
@@ -107,7 +105,7 @@ class Nanobot:
         - `provider`：外部已构建好的 LLMProvider 实例。
         - `memory_backend`：workspace 级长期记忆后端（通常是 `MongoMemoryBackend`）。
         - `session_store`：会话存储后端（通常是 `MongoSessionStore`）。
-        - `workspace`：per-agent 文件系统沙箱目录（`ReadFileTool` / `ExecTool` 等工具的根）。
+        - `workspace`：per-agent 工作目录标识（不再用于文件系统/命令执行类工具）。
           与 Mongo 持久化互相独立，删除/重建不影响记忆与会话。
         """
         memory = MemoryStore(backend=memory_backend, workspace_id=workspace_id)
@@ -130,7 +128,6 @@ class Nanobot:
             max_tool_result_chars=max_tool_result_chars,
             provider_retry_mode=provider_retry_mode,
             web_config=web_config,
-            exec_config=exec_config,
             restrict_to_workspace=restrict_to_workspace,
             mcp_servers=mcp_servers,
             send_progress=send_progress,

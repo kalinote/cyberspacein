@@ -1017,12 +1017,17 @@ const handleAnalyzeOption = async (option) => {
         const response = await agentApi.startAgent({
             entity_uuid: forumData.value.uuid,
             entity_type: forumData.value.entity_type,
-            agent_id: option.value
+            agent_id: option.value,
+            debug: true
         })
         
-        if (response.code === 0 && response.data?.thread_id) {
+        if (response.code === 0 && response.data?.agent_id) {
             ElMessage.success('分析任务已启动')
-            router.push(`/agent/analysis/${response.data.thread_id}`)
+            const sid = response.data.session_id
+            router.push({
+                path: `/agent/analysis/${response.data.agent_id}`,
+                query: sid ? { session_id: sid } : undefined
+            })
         } else {
             ElMessage.error(response.message || '启动分析任务失败')
         }

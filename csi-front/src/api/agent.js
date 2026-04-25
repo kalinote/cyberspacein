@@ -32,7 +32,7 @@ export const agentApi = {
     return request.get('/agent/agents', params)
   },
   getAgentsConfigList() {
-    return request.get('/agent/configs/agents-list')
+    return request.get('/agent/agents-list')
   },
   getConfigStatistics() {
     return request.get('/agent/configs/statistics')
@@ -52,9 +52,12 @@ export const agentApi = {
   startAgent(data) {
     return request.post('/agent/start', data)
   },
-  getAgentStatusUrl(threadId) {
+  cancelAgent(data) {
+    return request.post('/agent/cancel', data)
+  },
+  getAgentStatusUrl(agentId) {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-    return `${baseUrl}/agent/status?thread_id=${threadId}`
+    return `${baseUrl}/agent/status?agent_id=${encodeURIComponent(agentId)}&debug=true`
   },
   approveAgent(data) {
     return request.post('/agent/approve', data)

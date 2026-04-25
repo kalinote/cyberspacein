@@ -28,9 +28,14 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from pymongo import ReturnDocument
 
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 from app.models.agent.nanobot import NanobotAgentModel, NanobotWorkspaceModel
+from app.models.agent.sse_event import (
+    NanobotAgentSseEventModel,
+    NanobotAgentSseEventStateModel,
+)
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.agent.result import (
     RESULT_FORMAT_INSTRUCTION,
@@ -43,6 +48,7 @@ from app.service.analyst.hooks import default_analyst_hooks
 from app.service.analyst.tools import build_business_tools
 from app.service.nanobot import Nanobot
 from app.service.nanobot.config.schema import DreamConfig
+from app.service.nanobot.providers.deepseek_provider import DeepSeekProvider
 from app.service.nanobot.providers.openai_compat_provider import OpenAICompatProvider
 from app.service.nanobot.storage import MongoMemoryBackend, MongoSessionStore
 from app.utils.id_lib import generate_id
@@ -76,6 +82,11 @@ class AnalystService:
     _sse_subscribers: dict[str, list[asyncio.Queue]] = {}
     _sse_lock: asyncio.Lock = asyncio.Lock()
 
+    # SSE 历史持久化：stream 合并缓冲（用于回放，避免逐字 delta 落库）
+    # key=(agent_id, session_id) -> {"delta": str, "last_flush_at": datetime, "created_at": datetime}
+    _sse_stream_buffers: dict[tuple[str, str], dict[str, Any]] = {}
+    _sse_persist_lock: asyncio.Lock = asyncio.Lock()
+
     # 后台 run_analysis 任务，key=agent_id；用于 cancel / 状态查询。
     _running_tasks: dict[str, asyncio.Task] = {}
     _task_lock: asyncio.Lock = asyncio.Lock()
@@ -93,9 +104,119 @@ class AnalystService:
     _memory_backend: MongoMemoryBackend | None = None
     _session_store: MongoSessionStore | None = None
 
+    # stream 合并阈值（用于回放落库；实时 SSE 仍按原样逐条广播）
+    _SSE_STREAM_FLUSH_MAX_CHARS: int = 2048
+    _SSE_STREAM_FLUSH_MAX_MS: int = 200
+
     # ------------------------------------------------------------------
     # 基础组件获取（懒加载 + 进程级单例）
     # ------------------------------------------------------------------
+
+    @classmethod
+    def _build_sse_state_id(cls, agent_id: str, session_id: str) -> str:
+        return f"{agent_id}:{session_id}"
+
+    @classmethod
+    async def _alloc_sse_seq(cls, agent_id: str, session_id: str) -> int:
+        """为 (agent_id, session_id) 原子分配递增 seq。"""
+        now = datetime.now()
+        collection = NanobotAgentSseEventStateModel.get_pymongo_collection()
+        updated = await collection.find_one_and_update(
+            {"_id": cls._build_sse_state_id(agent_id, session_id)},
+            {
+                "$inc": {"last_seq": 1},
+                "$set": {"updated_at": now},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return int(updated["last_seq"])
+
+    @classmethod
+    async def _persist_sse_event(
+        cls,
+        *,
+        agent_id: str,
+        session_id: str,
+        event: str,
+        data: Any,
+        is_debug: bool = False,
+        compressed: bool = False,
+    ) -> None:
+        """将 SSE 事件写入事件日志（用于回放）。写失败不应影响主流程。"""
+        try:
+            seq = await cls._alloc_sse_seq(agent_id, session_id)
+            await NanobotAgentSseEventModel(
+                agent_id=agent_id,
+                session_id=session_id,
+                seq=seq,
+                event=event,
+                data=data,
+                is_debug=bool(is_debug),
+                compressed=bool(compressed),
+                created_at=datetime.now(),
+            ).insert()
+        except Exception:
+            logger.exception(
+                f"持久化 SSE 事件失败（已忽略）: agent_id={agent_id} session_id={session_id} event={event}"
+            )
+
+    @classmethod
+    async def _maybe_persist_stream_delta(cls, agent_id: str, data: Any) -> None:
+        """合并 stream delta 后再持久化，避免逐字落库。"""
+        if not isinstance(data, dict):
+            return
+        session_id = str(data.get("session_id") or "").strip()
+        delta = data.get("delta")
+        if not session_id or not isinstance(delta, str) or delta == "":
+            return
+
+        now = datetime.now()
+        key = (agent_id, session_id)
+        async with cls._sse_persist_lock:
+            buf = cls._sse_stream_buffers.get(key)
+            if buf is None:
+                buf = {"delta": "", "created_at": now, "last_flush_at": now}
+                cls._sse_stream_buffers[key] = buf
+            buf["delta"] = str(buf.get("delta") or "") + delta
+
+            elapsed_ms = int((now - buf["last_flush_at"]).total_seconds() * 1000)
+            if len(buf["delta"]) < cls._SSE_STREAM_FLUSH_MAX_CHARS and elapsed_ms < cls._SSE_STREAM_FLUSH_MAX_MS:
+                return
+
+            merged = str(buf.get("delta") or "")
+            buf["delta"] = ""
+            buf["last_flush_at"] = now
+
+        if merged:
+            await cls._persist_sse_event(
+                agent_id=agent_id,
+                session_id=session_id,
+                event="stream",
+                data={**data, "delta": merged},
+                is_debug=False,
+                compressed=True,
+            )
+
+    @classmethod
+    async def _flush_stream_buffer(cls, agent_id: str, session_id: str) -> None:
+        key = (agent_id, session_id)
+        async with cls._sse_persist_lock:
+            buf = cls._sse_stream_buffers.get(key)
+            if not buf:
+                return
+            merged = str(buf.get("delta") or "")
+            buf["delta"] = ""
+            buf["last_flush_at"] = datetime.now()
+        if merged:
+            await cls._persist_sse_event(
+                agent_id=agent_id,
+                session_id=session_id,
+                event="stream",
+                data={"agent_id": agent_id, "session_id": session_id, "delta": merged},
+                is_debug=False,
+                compressed=True,
+            )
 
     @classmethod
     def _get_memory_backend(cls) -> MongoMemoryBackend:
@@ -114,9 +235,35 @@ class AnalystService:
     # ------------------------------------------------------------------
 
     @classmethod
-    async def subscribe(cls, agent_id: str) -> asyncio.Queue:
-        """前端订阅 agent 的事件流；返回一个 per-subscriber 的 Queue。"""
+    async def subscribe(cls, agent_id: str, *, debug: bool = False) -> asyncio.Queue:
+        """前端订阅 agent 的事件流；返回一个 per-subscriber 的 Queue。
+
+        debug=True 时，该订阅者会额外收到更详细的调试事件（仍通过同一 SSE 连接输出）。
+        """
         queue: asyncio.Queue = asyncio.Queue()
+        # 给 queue 打标记：仅 debug 订阅者会收到 debug_* 事件
+        setattr(queue, "_csi_debug", bool(debug))
+        # 回放当前 session 的历史事件（先回放，再进入实时）
+        try:
+            doc = await NanobotAgentModel.find_one({"_id": agent_id})
+            session_id = (doc.current_session_id if doc else None) or ""
+            session_id = str(session_id or "").strip()
+            if session_id:
+                # stream 合并缓冲可能还有尾巴，回放前先冲刷一次
+                await cls._flush_stream_buffer(agent_id, session_id)
+                events = (
+                    await NanobotAgentSseEventModel.find(
+                        {"agent_id": agent_id, "session_id": session_id}
+                    )
+                    .sort("+seq")
+                    .to_list()
+                )
+                for ev in events:
+                    if ev.is_debug and not bool(debug):
+                        continue
+                    queue.put_nowait({"event": ev.event, "data": ev.data, "id": ev.seq})
+        except Exception:
+            logger.exception(f"回放 SSE 历史失败（已忽略）: agent_id={agent_id}")
         async with cls._sse_lock:
             cls._sse_subscribers.setdefault(agent_id, []).append(queue)
         return queue
@@ -138,6 +285,19 @@ class AnalystService:
     async def broadcast_sse(cls, agent_id: str, event: str, data: Any) -> None:
         """把一条事件广播给所有订阅了该 agent 的 SSE 队列。"""
         payload = {"event": event, "data": data}
+        # 事件落库（用于回放）；stream 走合并缓冲，避免逐字 delta 写入
+        if event == "stream":
+            await cls._maybe_persist_stream_delta(agent_id, data)
+        else:
+            if isinstance(data, dict) and data.get("session_id"):
+                await cls._persist_sse_event(
+                    agent_id=agent_id,
+                    session_id=str(data.get("session_id")),
+                    event=event,
+                    data=data,
+                    is_debug=False,
+                    compressed=False,
+                )
         async with cls._sse_lock:
             subs = list(cls._sse_subscribers.get(agent_id, []))
         for queue in subs:
@@ -146,6 +306,32 @@ class AnalystService:
             except asyncio.QueueFull:
                 logger.warning(
                     f"SSE 队列已满丢弃事件: agent={agent_id} event={event}"
+                )
+
+    @classmethod
+    async def broadcast_debug_sse(cls, agent_id: str, event: str, data: Any) -> None:
+        """只给 debug 订阅者广播调试事件。"""
+        payload = {"event": event, "data": data}
+        # debug 事件落库（用于回放）
+        if isinstance(data, dict) and data.get("session_id"):
+            await cls._persist_sse_event(
+                agent_id=agent_id,
+                session_id=str(data.get("session_id")),
+                event=event,
+                data=data,
+                is_debug=True,
+                compressed=False,
+            )
+        async with cls._sse_lock:
+            subs = list(cls._sse_subscribers.get(agent_id, []))
+        for queue in subs:
+            if not bool(getattr(queue, "_csi_debug", False)):
+                continue
+            try:
+                queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                logger.warning(
+                    f"SSE debug 队列已满丢弃事件: agent={agent_id} event={event}"
                 )
 
     # ------------------------------------------------------------------
@@ -226,12 +412,23 @@ class AnalystService:
                 f"Agent 绑定的提示词模板不存在: {agent.prompt_template_id}",
             )
 
-        provider = OpenAICompatProvider(
-            api_key=model_cfg.api_key,
-            api_base=model_cfg.base_url,
-            default_model=model_cfg.model,
-            response_format=build_response_format_schema(),
-        )
+        base = (model_cfg.base_url or "").strip().lower().rstrip("/")
+        model_name = (model_cfg.model or "").strip().lower()
+        # 后续在model表里面绑定一个字段，根据字段来选择供应商
+        is_deepseek = ("api.deepseek.com" in base) or model_name.startswith("deepseek-") or (model_name == "deepseek-chat")
+        if is_deepseek:
+            provider = DeepSeekProvider(
+                api_key=model_cfg.api_key,
+                api_base=model_cfg.base_url,
+                default_model=model_cfg.model,
+            )
+        else:
+            provider = OpenAICompatProvider(
+                api_key=model_cfg.api_key,
+                api_base=model_cfg.base_url,
+                default_model=model_cfg.model,
+                response_format=build_response_format_schema(),
+            )
 
         # 按 agent.mcp_servers 从 workspace.enabled_mcp_servers 里挑子集作为本次可用的 MCP
         mcp_subset: dict[str, dict] = {}
@@ -382,13 +579,98 @@ class AnalystService:
         result_payload: dict | None = None
         error_message: str | None = None
         try:
-            run_result = await bot.run(user_prompt, session_id=session_id)
-            parsed_result, parsed_ok = parse_run_result(run_result.content)
+            # debug：把本轮 prompt 相关信息提前广播（仅 debug 订阅者可见）
+            try:
+                await bot.loop.context.refresh_memory_snapshot()
+                system_prompt = bot.loop.context.build_system_prompt(channel="cli")
+                await cls.broadcast_debug_sse(
+                    agent_id,
+                    "debug_prompt",
+                    {
+                        "agent_id": agent_id,
+                        "session_id": session_id,
+                        "model": getattr(bot.loop, "model", None),
+                        "system_prompt": system_prompt,
+                        "extra_system_suffix": getattr(
+                            bot.loop.context, "extra_system_suffix", ""
+                        ),
+                        "user_prompt": user_prompt,
+                        "memory_snapshot": {
+                            "memory": bot.loop.context.snapshot.memory,
+                            "soul": bot.loop.context.snapshot.soul,
+                            "user": bot.loop.context.snapshot.user,
+                            "recent_history_count": len(
+                                bot.loop.context.snapshot.recent_history or []
+                            ),
+                        },
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    f"构造 debug_prompt 失败（已忽略）: agent_id={agent_id} session_id={session_id}"
+                )
+
+            # SSE 优化：优先走 loop.process_direct（可开启流式回调）；不支持时回退到 bot.run
+            content: str = ""
+            tools_used: list[str] = []
+
+            loop = getattr(bot, "loop", None)
+            process_direct = getattr(loop, "process_direct", None) if loop is not None else None
+
+            if asyncio.iscoroutinefunction(process_direct):
+                async def _on_stream(delta: str) -> None:
+                    await cls.broadcast_sse(
+                        agent_id,
+                        "stream",
+                        {"agent_id": agent_id, "session_id": session_id, "delta": delta},
+                    )
+
+                async def _on_stream_end(*, resuming: bool = False, **_kw: Any) -> None:
+                    # stream_end 到来时把当前缓冲的 stream 合并块先落库（用于回放）
+                    await cls._flush_stream_buffer(agent_id, session_id)
+                    await cls.broadcast_sse(
+                        agent_id,
+                        "stream_end",
+                        {
+                            "agent_id": agent_id,
+                            "session_id": session_id,
+                            "resuming": bool(resuming),
+                        },
+                    )
+
+                async def _on_progress(content_: str, *, tool_hint: bool = False) -> None:
+                    await cls.broadcast_sse(
+                        agent_id,
+                        "progress",
+                        {
+                            "agent_id": agent_id,
+                            "session_id": session_id,
+                            "content": content_,
+                            "tool_hint": bool(tool_hint),
+                        },
+                    )
+
+                response = await process_direct(
+                    user_prompt,
+                    session_id=session_id,
+                    channel="cli",
+                    chat_id="direct",
+                    on_progress=_on_progress,
+                    on_stream=_on_stream,
+                    on_stream_end=_on_stream_end,
+                )
+                content = (getattr(response, "content", None) if response else None) or ""
+            else:
+                run_result = await bot.run(user_prompt, session_id=session_id)
+                content = (getattr(run_result, "content", None) if run_result else None) or ""
+                tools_used = list(getattr(run_result, "tools_used", []) or [])
+
+            parsed_result, parsed_ok = parse_run_result(content)
             result_payload = {
                 **parsed_result.model_dump(),
                 "parsed": parsed_ok,
-                "raw_content": run_result.content,
-                "tools_used": list(run_result.tools_used),
+                "raw_content": content,
+                "tools_used": tools_used,
             }
             if not parsed_ok:
                 logger.warning(
@@ -420,6 +702,8 @@ class AnalystService:
                     doc.pending_approval = None
                     doc.updated_at = datetime.now()
                     await doc.save()
+                # run 结束前冲刷一次 stream 缓冲，保证回放不缺尾巴
+                await cls._flush_stream_buffer(agent_id, session_id)
                 await cls.broadcast_sse(
                     agent_id,
                     "result",

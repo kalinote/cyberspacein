@@ -11,7 +11,7 @@
 
         <div v-else-if="error" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div class="bg-white rounded-xl shadow-sm border border-red-200 p-8 text-center">
-                <Icon icon="mdi:alert-circle" class="text-red-500 text-5xl mb-4" />
+                <Icon icon="mdi:alert-circle" class="block mx-auto text-red-500 text-5xl mb-4" />
                 <h2 class="text-xl font-bold text-gray-900 mb-2">加载失败</h2>
                 <p class="text-gray-600 mb-4">{{ error }}</p>
                 <el-button type="primary" @click="$router.back()">返回</el-button>
@@ -694,12 +694,17 @@ const handleAnalyzeOption = async (option) => {
         const response = await agentApi.startAgent({
             entity_uuid: articleData.value.uuid,
             entity_type: articleData.value.entity_type,
-            agent_id: option.value
+            agent_id: option.value,
+            debug: true
         })
         
-        if (response.code === 0 && response.data?.thread_id) {
+        if (response.code === 0 && response.data?.agent_id) {
             ElMessage.success('分析任务已启动')
-            router.push(`/agent/analysis/${response.data.thread_id}`)
+            const sid = response.data.session_id
+            router.push({
+                path: `/agent/analysis/${response.data.agent_id}`,
+                query: sid ? { session_id: sid } : undefined
+            })
         } else {
             ElMessage.error(response.message || '启动分析任务失败')
         }

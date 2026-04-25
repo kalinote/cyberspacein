@@ -25,7 +25,6 @@ def _make_mock_loop(**overrides):
     loop.workspace = Path("/tmp/workspace")
     loop.restrict_to_workspace = False
     loop._start_time = 1000.0
-    loop.exec_config = MagicMock()
     loop.send_progress = True
     loop.send_tool_hints = False
     loop._last_usage = {"prompt_tokens": 100, "completion_tokens": 50}
@@ -45,7 +44,7 @@ def _make_mock_loop(**overrides):
 
     # Tools registry mock
     loop.tools = MagicMock()
-    loop.tools.tool_names = ["read_file", "write_file", "exec", "web_search", "self"]
+    loop.tools.tool_names = ["web_search", "web_fetch", "my", "spawn"]
     loop.tools.has.side_effect = lambda n: n in loop.tools.tool_names
     loop.tools.get.return_value = None
 
@@ -627,9 +626,8 @@ class TestSubagentStatusFormatting:
             phase="awaiting_tools",
             iteration=3,
             tool_events=[
-                {"name": "read_file", "status": "ok", "detail": "read app.log"},
-                {"name": "grep", "status": "ok", "detail": "searched ERROR"},
-                {"name": "exec", "status": "error", "detail": "timeout"},
+                {"name": "web_fetch", "status": "ok", "detail": "fetch https://example.com/log"},
+                {"name": "web_search", "status": "ok", "detail": "search ERROR"},
             ],
             usage={"prompt_tokens": 4500, "completion_tokens": 1200},
         )
@@ -638,8 +636,7 @@ class TestSubagentStatusFormatting:
         assert "read logs and summarize" in result
         assert "awaiting_tools" in result
         assert "iteration: 3" in result
-        assert "read_file(ok)" in result
-        assert "exec(error)" in result
+        assert "web_fetch(ok)" in result
         assert "4500" in result
 
     def test_format_status_dict(self):
@@ -704,14 +701,14 @@ class TestSubagentHookStatus:
         context = AgentHookContext(
             iteration=5,
             messages=[],
-            tool_events=[{"name": "read_file", "status": "ok", "detail": "ok"}],
+            tool_events=[{"name": "web_fetch", "status": "ok", "detail": "ok"}],
             usage={"prompt_tokens": 100, "completion_tokens": 50},
         )
         await hook.after_iteration(context)
 
         assert status.iteration == 5
         assert len(status.tool_events) == 1
-        assert status.tool_events[0]["name"] == "read_file"
+        assert status.tool_events[0]["name"] == "web_fetch"
         assert status.usage == {"prompt_tokens": 100, "completion_tokens": 50}
 
     @pytest.mark.asyncio
@@ -824,7 +821,7 @@ class TestInspectTaskStatuses:
                 started_at=time.monotonic() - 8.0,
                 phase="awaiting_tools",
                 iteration=2,
-                tool_events=[{"name": "read_file", "status": "ok", "detail": "ok"}],
+                tool_events=[{"name": "web_fetch", "status": "ok", "detail": "ok"}],
                 usage={"prompt_tokens": 500, "completion_tokens": 100},
             ),
         }
@@ -1009,13 +1006,6 @@ class TestSecurityAttributeProtection:
         assert "protected" in result
 
     @pytest.mark.asyncio
-    async def test_modify_exec_config_blocked(self):
-        """exec_config is READ_ONLY — cannot be modified."""
-        tool = _make_tool()
-        result = await tool.execute(action="set", key="exec_config", value=MagicMock())
-        assert "read-only" in result
-
-    @pytest.mark.asyncio
     async def test_modify_web_config_blocked(self):
         """web_config is READ_ONLY — cannot be modified."""
         tool = _make_tool()
@@ -1037,25 +1027,11 @@ class TestSecurityAttributeProtection:
         assert "not accessible" in result
 
     @pytest.mark.asyncio
-    async def test_inspect_exec_config_allowed(self):
-        """exec_config is READ_ONLY — check should work."""
-        tool = _make_tool()
-        result = await tool.execute(action="check", key="exec_config")
-        assert "Error" not in result
-
-    @pytest.mark.asyncio
     async def test_inspect_web_config_allowed(self):
         """web_config is READ_ONLY — check should work."""
         tool = _make_tool()
         result = await tool.execute(action="check", key="web_config")
         assert "Error" not in result
-
-    @pytest.mark.asyncio
-    async def test_modify_exec_config_dotpath_blocked(self):
-        """exec_config.enable = False should be blocked because exec_config is READ_ONLY."""
-        tool = _make_tool()
-        result = await tool.execute(action="set", key="exec_config.enable", value=False)
-        assert "read-only" in result
 
     @pytest.mark.asyncio
     async def test_modify_web_config_dotpath_blocked(self):

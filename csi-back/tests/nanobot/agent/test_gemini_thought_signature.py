@@ -20,22 +20,22 @@ GEMINI_EXTRA = {"google": {"thought_signature": "sig-abc-123"}}
 def test_tool_call_request_serializes_extra_content() -> None:
     tc = ToolCallRequest(
         id="abc123xyz",
-        name="read_file",
-        arguments={"path": "todo.md"},
+        name="web_fetch",
+        arguments={"url": "https://example.com"},
         extra_content=GEMINI_EXTRA,
     )
 
     payload = tc.to_openai_tool_call()
 
     assert payload["extra_content"] == GEMINI_EXTRA
-    assert payload["function"]["arguments"] == '{"path": "todo.md"}'
+    assert payload["function"]["arguments"] == '{"url": "https://example.com"}'
 
 
 def test_tool_call_request_serializes_provider_fields() -> None:
     tc = ToolCallRequest(
         id="abc123xyz",
-        name="read_file",
-        arguments={"path": "todo.md"},
+        name="web_fetch",
+        arguments={"url": "https://example.com"},
         provider_specific_fields={"custom_key": "custom_val"},
         function_provider_specific_fields={"inner": "value"},
     )

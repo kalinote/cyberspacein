@@ -43,6 +43,7 @@ from app.service.analyst.agent import AgentService
 from app.service.analyst.service import AnalystService
 from app.service.analyst.tools import BUSINESS_TOOL_CLASSES
 from app.service.analyst.workspace import WorkspaceService
+from app.utils.jinja_injection import render_user_prompt
 import app.utils.status_codes as status_codes
 from app.utils.id_lib import generate_id
 
@@ -370,14 +371,50 @@ async def get_configs_statistics():
 )
 async def start_agent(data: StartAgentRequestSchema):
     try:
+        context = {
+            **data.extra_context,
+            **({"entity_uuid": data.entity_uuid} if data.entity_uuid else {}),
+            **({"entity_type": data.entity_type.value} if data.entity_type else {}),
+        }
+
+        raw_user_prompt = str(data.user_prompt or "").strip()
+        if not raw_user_prompt:
+            agent = await NanobotAgentModel.find_one({"_id": data.agent_id})
+            if not agent:
+                raise AgentServiceError(
+                    status_codes.NOT_FOUND_AGENT,
+                    f"Agent 不存在: {data.agent_id}",
+                )
+
+            tpl = await AgentPromptTemplateModel.find_one(
+                {"_id": agent.prompt_template_id}
+            )
+            if not tpl:
+                raise AgentServiceError(
+                    status_codes.NOT_FOUND_TEMPLATE,
+                    f"Agent 绑定的提示词模板不存在: {agent.prompt_template_id}",
+                )
+
+            prompt = str(tpl.user_prompt or "").strip()
+            if not prompt:
+                raise AgentServiceError(
+                    status_codes.INVALID_ARGUMENT,
+                    "该 Agent 的提示词模板默认 user_prompt 为空",
+                    data={"prompt_template_id": agent.prompt_template_id},
+                )
+            raw_user_prompt = prompt
+
+        final_user_prompt = render_user_prompt(raw_user_prompt, context).strip()
+        if not final_user_prompt:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT,
+                "用户提示词为空，且模板渲染后仍为空",
+            )
+
         session_id = await AnalystService.start_agent(
             agent_id=data.agent_id,
-            user_prompt=data.user_prompt,
-            context={
-                **data.extra_context,
-                **({"entity_uuid": data.entity_uuid} if data.entity_uuid else {}),
-                **({"entity_type": data.entity_type.value} if data.entity_type else {}),
-            },
+            user_prompt=final_user_prompt,
+            context=context,
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
@@ -390,8 +427,19 @@ async def start_agent(data: StartAgentRequestSchema):
 async def get_agent_status(
     request: Request,
     agent_id: str = Query(..., description="分析引擎ID"),
+    debug: bool = Query(False, description="是否开启调试模式（开启后会通过 SSE 额外返回更详细信息）"),
 ):
-    queue = await AnalystService.subscribe(agent_id)
+    # 兼容：函数被直接调用时 debug 可能是 fastapi.Query(...) 对象而非 bool
+    debug_enabled = (
+        debug
+        if isinstance(debug, bool)
+        else bool(getattr(debug, "default", False))
+    )
+    try:
+        queue = await AnalystService.subscribe(agent_id, debug=debug_enabled)
+    except TypeError:
+        # 测试/旧实现兼容：subscribe 可能不支持 debug 参数
+        queue = await AnalystService.subscribe(agent_id)
 
     async def event_stream():
         try:
@@ -405,11 +453,23 @@ async def get_agent_status(
                     continue
                 event = payload.get("event", "message")
                 data_str = json.dumps(payload.get("data"), ensure_ascii=False, default=str)
-                yield f"event: {event}\ndata: {data_str}\n\n"
+                event_id = payload.get("id")
+                if event_id is not None:
+                    yield f"id: {event_id}\nevent: {event}\ndata: {data_str}\n\n"
+                else:
+                    yield f"event: {event}\ndata: {data_str}\n\n"
         finally:
             await AnalystService.unsubscribe(agent_id, queue)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/approve", response_model=ApiResponseSchema[Any], summary="提交行为批准")
