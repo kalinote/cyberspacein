@@ -8,6 +8,7 @@ from starlette.testclient import TestClient
 
 import app.utils.status_codes as status_codes
 from app.api.v1.endpoints import agent as agent_ep
+import app.api.v1.endpoints.agent.runtime as runtime_ep
 from app.schemas.agent.nanobot_agent import AgentServiceError
 
 
@@ -26,7 +27,7 @@ def test_route_start_success(monkeypatch: pytest.MonkeyPatch) -> None:
         assert context["k"] == "v"
         return "s1"
 
-    monkeypatch.setattr(agent_ep.AnalystService, "start_agent", _start_agent)
+    monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
     r = client.post(
         "/api/v1/agent/start",
         json={"agent_id": "a1", "user_prompt": "hi", "extra_context": {"k": "v"}},
@@ -63,9 +64,9 @@ def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
         assert user_prompt == "你好 v !字段丢失或不存在!"
         return "s2"
 
-    monkeypatch.setattr(agent_ep.NanobotAgentModel, "find_one", _agent_find_one)
-    monkeypatch.setattr(agent_ep.AgentPromptTemplateModel, "find_one", _tpl_find_one)
-    monkeypatch.setattr(agent_ep.AnalystService, "start_agent", _start_agent)
+    monkeypatch.setattr(runtime_ep.NanobotAgentModel, "find_one", _agent_find_one)
+    monkeypatch.setattr(runtime_ep.AgentPromptTemplateModel, "find_one", _tpl_find_one)
+    monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
     r = client.post(
         "/api/v1/agent/start",
         json={"agent_id": "a1", "user_prompt": "   ", "extra_context": {"k": "v"}},
@@ -84,7 +85,7 @@ def test_route_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
         assert agent_id == "a1"
         assert decisions == [{"id": "x", "approve": True}]
 
-    monkeypatch.setattr(agent_ep.AnalystService, "submit_approval", _submit)
+    monkeypatch.setattr(runtime_ep.AnalystService, "submit_approval", _submit)
     r = client.post(
         "/api/v1/agent/approve",
         json={"agent_id": "a1", "decisions": [{"id": "x", "approve": True}]},
@@ -100,7 +101,7 @@ def test_route_start_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _start_agent(*, agent_id: str, user_prompt: str, context: dict):
         raise AgentServiceError(status_codes.NOT_FOUND_AGENT, "Agent 不存在")
 
-    monkeypatch.setattr(agent_ep.AnalystService, "start_agent", _start_agent)
+    monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
     r = client.post(
         "/api/v1/agent/start",
         json={"agent_id": "missing", "user_prompt": "hi", "extra_context": {}},
@@ -116,7 +117,7 @@ def test_route_approve_unknown_agent_404(monkeypatch: pytest.MonkeyPatch) -> Non
     async def _submit(agent_id: str, decisions: list[dict]):
         raise AgentServiceError(status_codes.NOT_FOUND_AGENT, "Agent 不存在")
 
-    monkeypatch.setattr(agent_ep.AnalystService, "submit_approval", _submit)
+    monkeypatch.setattr(runtime_ep.AnalystService, "submit_approval", _submit)
     r = client.post(
         "/api/v1/agent/approve",
         json={"agent_id": "missing", "decisions": []},

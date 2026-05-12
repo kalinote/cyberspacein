@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from app.api.v1.endpoints import agent as agent_ep
+import app.api.v1.endpoints.agent.runtime as runtime_ep
 
 
 class _FakeRequest:
@@ -30,12 +30,12 @@ async def test_route_status_sse_event_stream_format(monkeypatch: pytest.MonkeyPa
     async def _unsubscribe(_agent_id: str, _queue: asyncio.Queue) -> None:
         return None
 
-    monkeypatch.setattr(agent_ep.AnalystService, "subscribe", _subscribe)
-    monkeypatch.setattr(agent_ep.AnalystService, "unsubscribe", _unsubscribe)
+    monkeypatch.setattr(runtime_ep.AnalystService, "subscribe", _subscribe)
+    monkeypatch.setattr(runtime_ep.AnalystService, "unsubscribe", _unsubscribe)
 
     await queue.put({"event": "status", "data": {"x": 1}})
     req = _FakeRequest(disconnect_after=2)  # 第一轮不断开，第二轮断开
-    resp = await agent_ep.get_agent_status(req, agent_id="a1")
+    resp = await runtime_ep.get_agent_status(req, agent_id="a1")
 
     chunks: list[str] = []
     async for b in resp.body_iterator:
@@ -58,8 +58,8 @@ async def test_route_status_sse_keepalive_on_idle(monkeypatch: pytest.MonkeyPatc
     async def _unsubscribe(_agent_id: str, _queue: asyncio.Queue) -> None:
         return None
 
-    monkeypatch.setattr(agent_ep.AnalystService, "subscribe", _subscribe)
-    monkeypatch.setattr(agent_ep.AnalystService, "unsubscribe", _unsubscribe)
+    monkeypatch.setattr(runtime_ep.AnalystService, "subscribe", _subscribe)
+    monkeypatch.setattr(runtime_ep.AnalystService, "unsubscribe", _unsubscribe)
 
     # 让 wait_for 立刻超时一次，触发 keep-alive，然后下一轮断开退出
     called = {"n": 0}
@@ -74,10 +74,10 @@ async def test_route_status_sse_keepalive_on_idle(monkeypatch: pytest.MonkeyPatc
             raise asyncio.TimeoutError()
         return await orig_wait_for(awaitable, timeout=0.01)
 
-    monkeypatch.setattr(agent_ep.asyncio, "wait_for", _wait_for)
+    monkeypatch.setattr(runtime_ep.asyncio, "wait_for", _wait_for)
 
     req = _FakeRequest(disconnect_after=2)
-    resp = await agent_ep.get_agent_status(req, agent_id="a1")
+    resp = await runtime_ep.get_agent_status(req, agent_id="a1")
     chunk = await anext(resp.body_iterator)
     text = chunk.decode() if isinstance(chunk, (bytes, bytearray)) else str(chunk)
     assert text.strip() == ": keep-alive"
@@ -94,11 +94,11 @@ async def test_route_status_unsubscribes_on_disconnect(monkeypatch: pytest.Monke
     async def _unsubscribe(agent_id: str, q: asyncio.Queue) -> None:
         calls.append((agent_id, q))
 
-    monkeypatch.setattr(agent_ep.AnalystService, "subscribe", _subscribe)
-    monkeypatch.setattr(agent_ep.AnalystService, "unsubscribe", _unsubscribe)
+    monkeypatch.setattr(runtime_ep.AnalystService, "subscribe", _subscribe)
+    monkeypatch.setattr(runtime_ep.AnalystService, "unsubscribe", _unsubscribe)
 
     req = _FakeRequest(disconnect_after=1)  # 立刻断开，走 finally
-    resp = await agent_ep.get_agent_status(req, agent_id="a1")
+    resp = await runtime_ep.get_agent_status(req, agent_id="a1")
 
     # 消费完 body_iterator 才会触发 finally（unsubscribe）
     async for _ in resp.body_iterator:

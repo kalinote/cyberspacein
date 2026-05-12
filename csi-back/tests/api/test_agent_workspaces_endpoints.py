@@ -10,6 +10,7 @@ from starlette.testclient import TestClient
 
 import app.utils.status_codes as status_codes
 from app.api.v1.endpoints import agent as agent_ep
+import app.api.v1.endpoints.agent.workspaces as workspaces_ep
 from app.schemas.agent.workspace import (
     MCPServerConfigSchema,
     NanobotWorkspaceUpdateRequestSchema,
@@ -45,7 +46,7 @@ def test_route_create_201(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _create(_data):
         return FakeWorkspaceDoc(id="w1", name="A")
 
-    monkeypatch.setattr(agent_ep.WorkspaceService, "create", _create)
+    monkeypatch.setattr(workspaces_ep.WorkspaceService, "create", _create)
     r = client.post("/api/v1/agent/workspaces", json={"name": "A"})
     assert r.status_code == 200
     body = r.json()
@@ -60,7 +61,7 @@ def test_route_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _get(_workspace_id: str):
         raise WorkspaceServiceError(status_codes.NOT_FOUND_WORKSPACE, "工作区不存在")
 
-    monkeypatch.setattr(agent_ep.WorkspaceService, "get", _get)
+    monkeypatch.setattr(workspaces_ep.WorkspaceService, "get", _get)
     r = client.get("/api/v1/agent/workspaces/missing")
     assert r.status_code == 200
     body = r.json()
@@ -78,11 +79,11 @@ async def test_route_narrowing_conflict_payload(monkeypatch: pytest.MonkeyPatch)
             data={"conflicts": conflicts},
         )
 
-    monkeypatch.setattr(agent_ep.WorkspaceService, "update", _update)
+    monkeypatch.setattr(workspaces_ep.WorkspaceService, "update", _update)
     # 与 tests/api/test_overview_endpoints.py 的做法一致：
     # 当 error payload 与 response_model 泛型不一致时，走 HTTP 会触发 FastAPI 响应校验失败，
     # 因此直接测试协程返回的 ApiResponseSchema。
-    out = await agent_ep.update_workspace("w1", NanobotWorkspaceUpdateRequestSchema(name="A"))
+    out = await workspaces_ep.update_workspace("w1", NanobotWorkspaceUpdateRequestSchema(name="A"))
     assert out.code == status_codes.CONFLICT_STATE
     assert out.data["conflicts"] == conflicts
 

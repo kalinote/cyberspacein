@@ -10,6 +10,7 @@ from starlette.testclient import TestClient
 
 import app.utils.status_codes as status_codes
 from app.api.v1.endpoints import agent as agent_ep
+import app.api.v1.endpoints.agent.agents as agents_ep
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.constants import NanobotAgentStatusEnum
 
@@ -48,7 +49,7 @@ def test_route_create_201(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _create(_data):
         return FakeAgentDoc(id="a1", workspace_id="w1", name="A")
 
-    monkeypatch.setattr(agent_ep.AgentService, "create", _create)
+    monkeypatch.setattr(agents_ep.AgentService, "create", _create)
     r = client.post(
         "/api/v1/agent/agents",
         json={
@@ -71,7 +72,7 @@ def test_route_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _get(_agent_id: str):
         raise AgentServiceError(status_codes.NOT_FOUND_AGENT, "Agent 不存在")
 
-    monkeypatch.setattr(agent_ep.AgentService, "get", _get)
+    monkeypatch.setattr(agents_ep.AgentService, "get", _get)
     r = client.get("/api/v1/agent/agents/missing")
     assert r.status_code == 200
     body = r.json()
@@ -89,9 +90,9 @@ async def test_route_subset_violation_payload(monkeypatch: pytest.MonkeyPatch) -
             data={"violations": violations},
         )
 
-    monkeypatch.setattr(agent_ep.AgentService, "create", _create)
-    out = await agent_ep.create_agent(
-        agent_ep.NanobotAgentCreateRequestSchema(
+    monkeypatch.setattr(agents_ep.AgentService, "create", _create)
+    out = await agents_ep.create_agent(
+        agents_ep.NanobotAgentCreateRequestSchema(
             workspace_id="w1",
             name="A",
             prompt_template_id="p1",
@@ -112,7 +113,7 @@ def test_route_list_filter_query(monkeypatch: pytest.MonkeyPatch) -> None:
         assert search == "foo"
         return ([FakeAgentDoc(id="a1", workspace_id="w1", name="foo")], 1)
 
-    monkeypatch.setattr(agent_ep.AgentService, "list_page", _list_page)
+    monkeypatch.setattr(agents_ep.AgentService, "list_page", _list_page)
     r = client.get("/api/v1/agent/agents?page=2&page_size=3&workspace_id=w1&search=foo")
     assert r.status_code == 200
     body = r.json()
