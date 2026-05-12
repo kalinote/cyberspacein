@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from app.api.v1.endpoints import agent as agent_ep
 
 
-def test_router_registers_all_26_endpoints() -> None:
+def test_router_registers_all_31_endpoints() -> None:
     app = FastAPI()
     app.include_router(agent_ep.router, prefix="/api/v1")
     paths = []
@@ -20,5 +20,5 @@ def test_router_registers_all_26_endpoints() -> None:
             if m in {"HEAD", "OPTIONS"}:
                 continue
             paths.append((m, path))
-    assert len(paths) == 26
+    assert len(paths) == 31
 

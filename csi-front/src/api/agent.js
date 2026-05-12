@@ -19,6 +19,21 @@ export const agentApi = {
   updatePromptTemplate(promptTemplateId, data) {
     return request.put(`/agent/configs/prompt-template/${promptTemplateId}`, data)
   },
+  getSystemPromptList(params = { page: 1, page_size: 10 }) {
+    return request.get('/agent/configs/system-prompts', params)
+  },
+  getSystemPromptDetail(systemPromptId) {
+    return request.get(`/agent/configs/system-prompts/${systemPromptId}`)
+  },
+  createSystemPrompt(data) {
+    return request.post('/agent/configs/system-prompts', data)
+  },
+  updateSystemPrompt(systemPromptId, data) {
+    return request.put(`/agent/configs/system-prompts/${systemPromptId}`, data)
+  },
+  deleteSystemPrompt(systemPromptId) {
+    return request.delete(`/agent/configs/system-prompts/${systemPromptId}`)
+  },
   getToolsList() {
     return request.get('/agent/configs/tools')
   },

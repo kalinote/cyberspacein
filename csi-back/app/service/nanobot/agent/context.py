@@ -76,6 +76,7 @@ class ContextBuilder:
 
     async def refresh_memory_snapshot(self) -> MemorySnapshot:
         """并发预取 MEMORY / SOUL / USER + 最近 history，写入内部缓存后返回"""
+        # 文档存到 nanobot_memory_docs 数据库中，不再从文件中读取
         memory_doc, soul_doc, user_doc, dream_cursor = await asyncio.gather(
             self.memory.read_memory(),
             self.memory.read_soul(),
@@ -170,24 +171,34 @@ class ContextBuilder:
     @staticmethod
     def _get_channel_format_hint(channel: str | None) -> str:
         """特定渠道的格式提示"""
-        if channel == "telegram":
-            return "\n".join([
-                "## 格式提示",
-                "",
-                "- 当前渠道为**即时通讯**（Telegram）。",
-                "- 回复尽量短、分段清晰，避免过长大段文字；必要时用要点列表。",
-            ])
-        if channel == "whatsapp":
-            return "\n".join([
-                "## 格式提示",
-                "",
-                "- 当前渠道偏好**纯文本**（WhatsApp）。",
-                "- 避免复杂排版与过多分隔线；优先使用简短段落与列表。",
-            ])
-        return ""
+        # if channel == "telegram":
+        #     return "\n".join([
+        #         "## 格式提示",
+        #         "",
+        #         "- 当前渠道为**即时通讯**（Telegram）。",
+        #         "- 回复尽量短、分段清晰，避免过长大段文字；必要时用要点列表。",
+        #     ])
+        # if channel == "whatsapp":
+        #     return "\n".join([
+        #         "## 格式提示",
+        #         "",
+        #         "- 当前渠道偏好**纯文本**（WhatsApp）。",
+        #         "- 避免复杂排版与过多分隔线；优先使用简短段落与列表。",
+        #     ])
+        # return ""
+        
+        # 现在"暂时"不分channel，统一返回Markdown格式
+        # TODO: 确认是否需要简化或优化
+        return "\n".join([
+            "## 格式提示",
+            "",
+            # "- 当前渠道为**即时通讯**（Telegram）。",
+            "- 回复尽量短、分段清晰，避免过长大段文字；必要时用要点列表。",
+        ])
 
     def _get_identity(self, channel: str | None = None) -> str:
         """渲染 identity.md：在新架构下不再需要 workspace_path"""
+        # TODO: 后续将这些运行时相关信息合并到AIO沙盒系统工具中
         system = platform.system()
         runtime = (
             f"{'macOS' if system == 'Darwin' else system} "
@@ -196,7 +207,6 @@ class ContextBuilder:
         return render_template(
             "agent/identity.md",
             runtime=runtime,
-            platform_policy=render_template("agent/platform_policy.md", system=system),
             channel=channel or "",
         )
 

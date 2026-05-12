@@ -39,16 +39,16 @@
             :placeholder="'搜索' + currentTabLabel + '...'"
             clearable
             class="w-64"
-            @keyup.enter="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : activeTab === 'promptTemplates' ? handlePromptTemplateSearch() : activeTab === 'workspaces' ? handleWorkspaceSearch() : null"
+            @keyup.enter="handleCurrentTabSearch"
           >
             <template #prefix>
               <Icon icon="mdi:magnify" class="text-gray-400" />
             </template>
           </el-input>
           <el-button
-            v-if="activeTab === 'analysisEngines' || activeTab === 'modelResources' || activeTab === 'promptTemplates' || activeTab === 'workspaces'"
+            v-if="activeTab !== 'tools'"
             type="default"
-            @click="activeTab === 'analysisEngines' ? handleAgentSearch() : activeTab === 'modelResources' ? handleModelSearch() : activeTab === 'promptTemplates' ? handlePromptTemplateSearch() : handleWorkspaceSearch()"
+            @click="handleCurrentTabSearch"
           >
             <template #icon><Icon icon="mdi:magnify" /></template>
             搜索
@@ -261,6 +261,72 @@
                 layout="total, sizes, prev, pager, next, jumper"
                 @current-change="handlePromptTemplatePageChange"
                 @size-change="handlePromptTemplatePageSizeChange"
+              />
+            </div>
+          </div>
+
+          <div v-else-if="activeTab === 'systemPrompts'" class="space-y-4">
+            <div v-loading="systemPromptListLoading" element-loading-text="加载中..." class="min-h-50">
+              <div
+                v-for="item in systemPromptList"
+                :key="item.id"
+                class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex items-start gap-4 flex-1">
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-cyan-100">
+                      <Icon icon="mdi:file-cog-outline" class="text-2xl text-cyan-600" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-lg font-bold text-gray-900">{{ getSystemPromptTypeLabel(item.type) }}</h3>
+                        <el-tag size="small" class="border-0" type="info">{{ item.type }}</el-tag>
+                      </div>
+                      <p class="text-sm text-gray-600 mb-3 line-clamp-2">{{ getSystemPromptPreview(item) }}</p>
+                      <div class="flex items-center gap-6 text-sm flex-wrap">
+                        <div class="flex items-center gap-2">
+                          <Icon icon="mdi:view-dashboard-variant" class="text-indigo-500" />
+                          <span class="text-gray-600">工作区:</span>
+                          <span class="font-mono text-xs text-gray-900">{{ item.workspace_id || '-' }}</span>
+                        </div>
+                        <div v-if="item.updated_at" class="flex items-center gap-2">
+                          <Icon icon="mdi:clock-outline" class="text-gray-500" />
+                          <span class="text-gray-600">更新时间:</span>
+                          <span class="text-gray-700">{{ formatModelDate(item.updated_at) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 ml-4">
+                    <el-button type="primary" link @click="openSystemPromptDetail(item)">
+                      <template #icon><Icon icon="mdi:eye" /></template>
+                      查看
+                    </el-button>
+                    <el-button type="primary" link @click="openSystemPromptEdit(item)">
+                      <template #icon><Icon icon="mdi:pencil" /></template>
+                      编辑
+                    </el-button>
+                    <el-button type="danger" link @click="handleDeleteSystemPrompt(item)">
+                      <template #icon><Icon icon="mdi:delete" /></template>
+                      删除
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="!systemPromptListLoading && systemPromptList.length === 0" class="flex flex-col items-center justify-center py-16">
+                <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
+                <p class="text-gray-500">暂无数据</p>
+              </div>
+            </div>
+            <div v-if="!systemPromptListLoading && systemPromptList.length > 0" class="flex justify-center pt-4">
+              <el-pagination
+                v-model:current-page="systemPromptPagination.page"
+                v-model:page-size="systemPromptPagination.pageSize"
+                :page-sizes="[10, 20, 50]"
+                :total="systemPromptPagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="handleSystemPromptPageChange"
+                @size-change="handleSystemPromptPageSizeChange"
               />
             </div>
           </div>
@@ -524,6 +590,98 @@
       </div>
       <template #footer>
         <el-button @click="promptTemplateDetailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="systemPromptDialogVisible"
+      :title="editingSystemPromptId ? '编辑系统指令' : '新增系统指令'"
+      width="960px"
+      :close-on-click-modal="false"
+      @close="handleSystemPromptDialogClose"
+      @opened="loadSystemPromptDialogOptions"
+    >
+      <el-form
+        ref="systemPromptFormRef"
+        :model="systemPromptFormData"
+        :rules="systemPromptFormRules"
+        label-width="100px"
+      >
+        <el-form-item label="工作区" prop="workspace_id">
+          <el-select
+            v-model="systemPromptFormData.workspace_id"
+            placeholder="请选择工作区"
+            class="w-full"
+            filterable
+            clearable
+            :loading="systemPromptWorkspaceOptionsLoading"
+          >
+            <el-option
+              v-for="item in systemPromptWorkspaceOptions"
+              :key="item.id"
+              :label="item.name || item.id"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型" prop="type">
+          <el-select v-model="systemPromptFormData.type" placeholder="请选择系统指令类型" class="w-full">
+            <el-option
+              v-for="item in systemPromptTypeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="提示词内容" prop="content">
+          <MonacoEditor
+            v-model="systemPromptFormData.content"
+            language="markdown"
+            :read-only="false"
+            :min-height="560"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="handleSystemPromptDialogClose">取消</el-button>
+        <el-button type="primary" :loading="systemPromptSubmitLoading" @click="handleSystemPromptSubmit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="systemPromptDetailVisible"
+      title="系统指令详情"
+      width="960px"
+      :close-on-click-modal="true"
+    >
+      <div v-loading="systemPromptDetailLoading" element-loading-text="加载中..." class="min-h-50">
+        <template v-if="systemPromptDetail">
+          <div class="space-y-4">
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="系统指令ID">{{ systemPromptDetail.id }}</el-descriptions-item>
+              <el-descriptions-item label="工作区ID">{{ systemPromptDetail.workspace_id || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="类型">
+                {{ getSystemPromptTypeLabel(systemPromptDetail.type) }}
+                <span class="text-gray-500">({{ systemPromptDetail.type || '-' }})</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="创建时间">{{ systemPromptDetail.created_at ? formatModelDate(systemPromptDetail.created_at) : '-' }}</el-descriptions-item>
+              <el-descriptions-item label="更新时间">{{ systemPromptDetail.updated_at ? formatModelDate(systemPromptDetail.updated_at) : '-' }}</el-descriptions-item>
+            </el-descriptions>
+            <div>
+              <div class="text-sm text-gray-500 mb-1">提示词内容</div>
+              <MonacoEditor
+                :model-value="systemPromptDetail.content || ''"
+                language="markdown"
+                :read-only="true"
+                :min-height="420"
+              />
+            </div>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="systemPromptDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -813,6 +971,7 @@ const engineTabs = [
   { key: 'analysisEngines', label: '分析引擎', icon: 'mdi:brain' },
   { key: 'modelResources', label: '模型资源', icon: 'mdi:server' },
   { key: 'promptTemplates', label: '提示词模板', icon: 'mdi:file-document-edit' },
+  { key: 'systemPrompts', label: '系统指令', icon: 'mdi:file-cog-outline' },
   { key: 'tools', label: '工具', icon: 'mdi:tools' }
 ]
 
@@ -890,6 +1049,29 @@ const fetchPromptTemplateList = async () => {
   }
 }
 
+const systemPromptList = ref([])
+const systemPromptListLoading = ref(false)
+const systemPromptPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+const systemPromptLoadedOnce = ref(false)
+
+const fetchSystemPromptList = async () => {
+  systemPromptListLoading.value = true
+  try {
+    const result = await getPaginatedData(agentApi.getSystemPromptList, {
+      search: searchKeyword.value.trim() || undefined,
+      page: systemPromptPagination.value.page,
+      page_size: systemPromptPagination.value.pageSize
+    })
+    systemPromptList.value = result.items
+    systemPromptPagination.value = { ...systemPromptPagination.value, ...result.pagination }
+    systemPromptLoadedOnce.value = true
+  } catch (e) {
+    systemPromptList.value = []
+  } finally {
+    systemPromptListLoading.value = false
+  }
+}
+
 const toolsList = ref([])
 const toolsListLoading = ref(false)
 const toolsLoadedOnce = ref(false)
@@ -957,6 +1139,7 @@ watch(activeTab, (tab) => {
   if (tab === 'analysisEngines' && !agentLoadedOnce.value) fetchAgentList()
   if (tab === 'modelResources' && !modelLoadedOnce.value) fetchModelList()
   if (tab === 'promptTemplates' && !promptTemplateLoadedOnce.value) fetchPromptTemplateList()
+  if (tab === 'systemPrompts' && !systemPromptLoadedOnce.value) fetchSystemPromptList()
   if (tab === 'workspaces' && !workspaceLoadedOnce.value) fetchWorkspaceList()
   if (tab === 'tools' && !toolsLoadedOnce.value) fetchToolsList()
 }, { immediate: true })
@@ -978,6 +1161,7 @@ const statistics = computed(() => ({
   analysisOptions: statisticsData.value.agent_count,
   modelResources: statisticsData.value.model_count,
   promptTemplates: statisticsData.value.prompt_template_count,
+  systemPrompts: systemPromptPagination.value.total ?? 0,
   workspaces: workspacePagination.value.total ?? 0,
   tools: statisticsData.value.tools_count
 }))
@@ -988,6 +1172,21 @@ const getPromptTemplatePreview = (item) => {
   if (item.description) return item.description
   const text = (item.system_prompt || item.user_prompt || '').trim()
   return text.length > 80 ? text.slice(0, 80) + '...' : text || '-'
+}
+
+const systemPromptTypeOptions = [
+  { value: 'memory', label: '长期记忆文档' },
+  { value: 'soul', label: 'Agent 风格/报告类指令' },
+  { value: 'user', label: '用户长期文档' }
+]
+
+const getSystemPromptTypeLabel = (type) => {
+  return systemPromptTypeOptions.find((item) => item.value === type)?.label || type || '-'
+}
+
+const getSystemPromptPreview = (item) => {
+  const text = (item?.content || '').trim()
+  return text.length > 120 ? text.slice(0, 120) + '...' : text || '-'
 }
 
 const handleModelPageChange = (page) => {
@@ -1018,6 +1217,20 @@ const handlePromptTemplateSearch = () => {
   fetchPromptTemplateList()
 }
 
+const handleSystemPromptPageChange = (page) => {
+  systemPromptPagination.value.page = page
+  fetchSystemPromptList()
+}
+const handleSystemPromptPageSizeChange = (pageSize) => {
+  systemPromptPagination.value.pageSize = pageSize
+  systemPromptPagination.value.page = 1
+  fetchSystemPromptList()
+}
+const handleSystemPromptSearch = () => {
+  systemPromptPagination.value.page = 1
+  fetchSystemPromptList()
+}
+
 const handleAgentPageChange = (page) => {
   agentPagination.value.page = page
   fetchAgentList()
@@ -1044,6 +1257,20 @@ const handleWorkspacePageSizeChange = (pageSize) => {
 const handleWorkspaceSearch = () => {
   workspacePagination.value.page = 1
   fetchWorkspaceList()
+}
+
+const handleCurrentTabSearch = () => {
+  if (activeTab.value === 'analysisEngines') {
+    handleAgentSearch()
+  } else if (activeTab.value === 'modelResources') {
+    handleModelSearch()
+  } else if (activeTab.value === 'promptTemplates') {
+    handlePromptTemplateSearch()
+  } else if (activeTab.value === 'systemPrompts') {
+    handleSystemPromptSearch()
+  } else if (activeTab.value === 'workspaces') {
+    handleWorkspaceSearch()
+  }
 }
 
 const modelDialogVisible = ref(false)
@@ -1548,6 +1775,8 @@ const handleAdd = () => {
     promptTemplateFormData.value = { name: '', description: '', system_prompt: DEFAULT_SYSTEM_PROMPT_TEMPLATE, user_prompt: DEFAULT_USER_PROMPT_TEMPLATE }
     promptTemplateActiveTab.value = 'system_prompt'
     promptTemplateDialogVisible.value = true
+  } else if (activeTab.value === 'systemPrompts') {
+    openSystemPromptCreate()
   } else if (activeTab.value === 'workspaces') {
     openWorkspaceCreate()
   } else {
@@ -1583,6 +1812,156 @@ const handleModelSubmit = async () => {
   } finally {
     modelSubmitLoading.value = false
   }
+}
+
+const createSystemPromptFormData = () => ({
+  workspace_id: '',
+  type: 'memory',
+  content: ''
+})
+
+const systemPromptDialogVisible = ref(false)
+const editingSystemPromptId = ref(null)
+const systemPromptFormRef = ref(null)
+const systemPromptSubmitLoading = ref(false)
+const systemPromptFormData = ref(createSystemPromptFormData())
+const systemPromptFormRules = {
+  workspace_id: [{ required: true, message: '请选择工作区', trigger: 'change' }],
+  type: [{ required: true, message: '请选择系统指令类型', trigger: 'change' }],
+  content: [{ required: true, message: '请输入提示词内容', trigger: 'blur' }]
+}
+const systemPromptWorkspaceOptions = ref([])
+const systemPromptWorkspaceOptionsLoading = ref(false)
+
+const systemPromptDetailVisible = ref(false)
+const systemPromptDetail = ref(null)
+const systemPromptDetailLoading = ref(false)
+
+const loadSystemPromptDialogOptions = async () => {
+  if (systemPromptWorkspaceOptions.value.length > 0) return
+
+  systemPromptWorkspaceOptionsLoading.value = true
+  try {
+    const result = await getPaginatedData(agentApi.getWorkspaceList, { page: 1, page_size: 100 })
+    systemPromptWorkspaceOptions.value = Array.isArray(result?.items) ? result.items : []
+  } catch {
+    systemPromptWorkspaceOptions.value = []
+  } finally {
+    systemPromptWorkspaceOptionsLoading.value = false
+  }
+}
+
+const resetSystemPromptForm = () => {
+  systemPromptFormData.value = createSystemPromptFormData()
+  systemPromptFormRef.value?.resetFields()
+}
+
+const openSystemPromptCreate = () => {
+  editingSystemPromptId.value = null
+  resetSystemPromptForm()
+  systemPromptDialogVisible.value = true
+}
+
+const openSystemPromptDetail = async (item) => {
+  if (!item?.id) return
+  systemPromptDetailVisible.value = true
+  systemPromptDetail.value = null
+  systemPromptDetailLoading.value = true
+  try {
+    const res = await agentApi.getSystemPromptDetail(item.id)
+    systemPromptDetail.value = res?.data ?? null
+  } catch (e) {
+    ElMessage.error('获取系统指令详情失败')
+    systemPromptDetailVisible.value = false
+  } finally {
+    systemPromptDetailLoading.value = false
+  }
+}
+
+const openSystemPromptEdit = async (item) => {
+  if (!item?.id) return
+  editingSystemPromptId.value = item.id
+  systemPromptDialogVisible.value = true
+  resetSystemPromptForm()
+  systemPromptSubmitLoading.value = true
+  try {
+    await loadSystemPromptDialogOptions()
+    const res = await agentApi.getSystemPromptDetail(item.id)
+    const d = res?.data
+    if (!d) throw new Error('empty system prompt detail')
+    systemPromptFormData.value = {
+      workspace_id: d.workspace_id ?? '',
+      type: d.type ?? 'memory',
+      content: d.content ?? ''
+    }
+  } catch (e) {
+    ElMessage.error('获取系统指令详情失败')
+    systemPromptDialogVisible.value = false
+    editingSystemPromptId.value = null
+  } finally {
+    systemPromptSubmitLoading.value = false
+  }
+}
+
+const handleSystemPromptDialogClose = () => {
+  systemPromptDialogVisible.value = false
+  editingSystemPromptId.value = null
+  resetSystemPromptForm()
+}
+
+const handleSystemPromptSubmit = async () => {
+  if (!systemPromptFormRef.value) return
+  try {
+    await systemPromptFormRef.value.validate()
+    systemPromptSubmitLoading.value = true
+    const payload = {
+      workspace_id: systemPromptFormData.value.workspace_id,
+      type: systemPromptFormData.value.type,
+      content: systemPromptFormData.value.content
+    }
+
+    if (editingSystemPromptId.value) {
+      await agentApi.updateSystemPrompt(editingSystemPromptId.value, payload)
+      ElMessage.success('修改成功')
+    } else {
+      await agentApi.createSystemPrompt(payload)
+      ElMessage.success('新增成功')
+    }
+    handleSystemPromptDialogClose()
+    systemPromptPagination.value.page = 1
+    fetchSystemPromptList()
+    fetchStatistics()
+  } catch (e) {
+    if (e !== false) console.error(editingSystemPromptId.value ? '修改系统指令失败:' : '新增系统指令失败:', e)
+  } finally {
+    systemPromptSubmitLoading.value = false
+  }
+}
+
+const handleDeleteSystemPrompt = (item) => {
+  const id = item?.id
+  const name = `${getSystemPromptTypeLabel(item?.type)} / ${item?.workspace_id || id}`
+  if (!id) return
+
+  ElMessageBox.confirm(
+    `确定要删除系统指令“${name}”吗？`,
+    '确认删除',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+    .then(async () => {
+      await agentApi.deleteSystemPrompt(id)
+      ElMessage.success('删除成功')
+      if (systemPromptList.value.length === 1 && systemPromptPagination.value.page > 1) {
+        systemPromptPagination.value.page -= 1
+      }
+      fetchSystemPromptList()
+      fetchStatistics()
+    })
+    .catch(() => {})
 }
 
 const DEFAULT_SYSTEM_PROMPT_TEMPLATE = `---

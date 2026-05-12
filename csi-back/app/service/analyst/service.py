@@ -415,7 +415,7 @@ class AnalystService:
         base = (model_cfg.base_url or "").strip().lower().rstrip("/")
         model_name = (model_cfg.model or "").strip().lower()
         # 后续在model表里面绑定一个字段，根据字段来选择供应商
-        is_deepseek = ("api.deepseek.com" in base) or model_name.startswith("deepseek-") or (model_name == "deepseek-chat")
+        is_deepseek = ("api.deepseek.com" in base) or model_name.startswith("deepseek-")
         if is_deepseek:
             provider = DeepSeekProvider(
                 api_key=model_cfg.api_key,

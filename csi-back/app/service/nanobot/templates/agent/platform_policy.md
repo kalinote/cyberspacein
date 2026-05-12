@@ -1,3 +1,7 @@
+{% comment %}
+后续集成到AIO沙盒工具中
+{% endcomment %}
+
 {% if system == 'Windows' %}
 ## 平台策略（Windows）
 - 你正在 Windows 上运行。不要假定存在 GNU 工具（如 `grep`、`sed` 或 `awk`）。

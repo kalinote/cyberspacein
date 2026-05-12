@@ -7,6 +7,7 @@ from pathlib import Path
 
 def test_placeholder_removed() -> None:
     root = Path(__file__).resolve().parents[2]
-    text = (root / "app" / "api" / "v1" / "endpoints" / "agent.py").read_text(encoding="utf-8")
+    agent_dir = root / "app" / "api" / "v1" / "endpoints" / "agent"
+    text = "\n".join(path.read_text(encoding="utf-8") for path in agent_dir.glob("*.py"))
     assert "PLACEHOLDER_MESSAGE" not in text
 

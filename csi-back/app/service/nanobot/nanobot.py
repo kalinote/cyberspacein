@@ -81,6 +81,7 @@ class Nanobot:
         provider: LLMProvider,
         memory_backend: MemoryBackend,
         session_store: SessionStore,
+        # TODO: 完全去除 workspace
         workspace: Path,
         model: str | None = None,
         dream_config: DreamConfig | None = None,

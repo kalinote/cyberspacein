@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from app.api.v1.endpoints import agent as agent_ep
+import app.api.v1.endpoints.agent.configs_tools as configs_tools_ep
 
 
 def _app() -> TestClient:
@@ -28,7 +29,7 @@ class _CountQuery:
 
 def test_get_tools_list_returns_business_names(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
-    monkeypatch.setattr(agent_ep, "BUSINESS_TOOL_CLASSES", {"a": object(), "b": object()})
+    monkeypatch.setattr(configs_tools_ep, "BUSINESS_TOOL_CLASSES", {"a": object(), "b": object()})
     r = client.get("/api/v1/agent/configs/tools-list")
     assert r.status_code == 200
     body = r.json()
@@ -47,7 +48,7 @@ def test_get_tools_returns_descriptors(monkeypatch: pytest.MonkeyPatch) -> None:
             self.exclusive = exclusive
 
     monkeypatch.setattr(
-        agent_ep,
+        configs_tools_ep,
         "BUSINESS_TOOL_CLASSES",
         {
             "get_current_time": lambda: _T(name="get_current_time", desc="d1", read_only=True, exclusive=False),
@@ -77,7 +78,7 @@ def test_get_tools_instance_failure_skipped(monkeypatch: pytest.MonkeyPatch) -> 
             self.exclusive = False
 
     monkeypatch.setattr(
-        agent_ep,
+        configs_tools_ep,
         "BUSINESS_TOOL_CLASSES",
         {"bad": _bad, "good": _Good},
     )
@@ -90,11 +91,12 @@ def test_get_tools_instance_failure_skipped(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_get_statistics_aggregates_counts(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
-    monkeypatch.setattr(agent_ep, "BUSINESS_TOOL_CLASSES", {"a": object(), "b": object(), "c": object()})
-    monkeypatch.setattr(agent_ep.AgentModelConfigModel, "find", lambda *_a, **_k: _CountQuery(1))
-    monkeypatch.setattr(agent_ep.AgentPromptTemplateModel, "find", lambda *_a, **_k: _CountQuery(2))
-    monkeypatch.setattr(agent_ep.NanobotWorkspaceModel, "find", lambda *_a, **_k: _CountQuery(3))
-    monkeypatch.setattr(agent_ep.NanobotAgentModel, "find", lambda *_a, **_k: _CountQuery(4))
+    monkeypatch.setattr(configs_tools_ep, "BUSINESS_TOOL_CLASSES", {"a": object(), "b": object(), "c": object()})
+    monkeypatch.setattr(configs_tools_ep.AgentModelConfigModel, "find", lambda *_a, **_k: _CountQuery(1))
+    monkeypatch.setattr(configs_tools_ep.AgentPromptTemplateModel, "find", lambda *_a, **_k: _CountQuery(2))
+    monkeypatch.setattr(configs_tools_ep.NanobotMemoryDocsModel, "find", lambda *_a, **_k: _CountQuery(5))
+    monkeypatch.setattr(configs_tools_ep.NanobotWorkspaceModel, "find", lambda *_a, **_k: _CountQuery(3))
+    monkeypatch.setattr(configs_tools_ep.NanobotAgentModel, "find", lambda *_a, **_k: _CountQuery(4))
 
     r = client.get("/api/v1/agent/configs/statistics")
     assert r.status_code == 200
@@ -103,6 +105,7 @@ def test_get_statistics_aggregates_counts(monkeypatch: pytest.MonkeyPatch) -> No
     assert body["data"] == {
         "model_configs": 1,
         "prompt_templates": 2,
+        "system_prompts": 5,
         "workspaces": 3,
         "agents": 4,
         "business_tools": 3,
