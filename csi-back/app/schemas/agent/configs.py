@@ -17,12 +17,16 @@ class ModelConfigListItemSchema(BaseModel):
 class SystemPromptCreateRequestSchema(BaseModel):
     workspace_id: str = Field(description="工作区ID", min_length=1)
     type: NanobotMemoryDocTypeEnum = Field(description="系统指令模板类型")
+    name: str = Field(description="系统指令模板名称", min_length=1)
+    description: str | None = Field(default=None, description="系统指令模板描述")
     content: str = Field(description="系统指令模板内容")
 
 
 class SystemPromptUpdateRequestSchema(BaseModel):
     workspace_id: str = Field(description="工作区ID", min_length=1)
     type: NanobotMemoryDocTypeEnum = Field(description="系统指令模板类型")
+    name: str = Field(description="系统指令模板名称", min_length=1)
+    description: str | None = Field(default=None, description="系统指令模板描述")
     content: str = Field(description="系统指令模板内容")
 
 
@@ -30,6 +34,8 @@ class SystemPromptSchema(BaseModel):
     id: str = Field(description="系统指令模板ID")
     workspace_id: str = Field(description="工作区ID")
     type: NanobotMemoryDocTypeEnum = Field(description="系统指令模板类型")
+    name: str = Field(description="系统指令模板名称")
+    description: str | None = Field(default=None, description="系统指令模板描述")
     content: str = Field(description="系统指令模板内容")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
@@ -40,6 +46,8 @@ class SystemPromptSchema(BaseModel):
             id=str(doc.id),
             workspace_id=doc.workspace_id,
             type=doc.type,
+            name=doc.name,
+            description=doc.description,
             content=doc.content,
             created_at=doc.created_at,
             updated_at=doc.updated_at,

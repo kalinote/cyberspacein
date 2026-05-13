@@ -658,6 +658,7 @@ async function loadPlatformDetail() {
     function applyTrendChartOption(labels, values, unit) {
         if (!trendChart.value) return;
         const hasData = labels.length > 0;
+        const showEndpointTrendLine = labels.length > 1 && values.length > 1;
         const manyDayLabels = unit === "day" && labels.length > 20;
         const option = {
             grid: {
@@ -705,7 +706,28 @@ async function loadPlatformDetail() {
                             { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
                             { offset: 1, color: "rgba(59, 130, 246, 0.05)" }
                         ])
-                    }
+                    },
+                    ...(showEndpointTrendLine
+                        ? {
+                            markLine: {
+                                silent: true,
+                                symbol: ["none", "none"],
+                                label: { show: false },
+                                lineStyle: {
+                                    color: "#f59e0b",
+                                    width: 2,
+                                    type: "dashed",
+                                    opacity: 0.9
+                                },
+                                data: [
+                                    [
+                                        { xAxis: labels[0], yAxis: values[0] },
+                                        { xAxis: labels[labels.length - 1], yAxis: values[values.length - 1] }
+                                    ]
+                                ]
+                            }
+                        }
+                        : {})
                 }
             ],
             tooltip: {

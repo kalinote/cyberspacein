@@ -138,6 +138,8 @@ class NanobotMemoryDocsModel(Document):
     """长期记忆文档 对应原 memory/MEMORY.md / SOUL.md / USER.md"""
     workspace_id: str = Field(description="工作区ID")
     type: NanobotMemoryDocTypeEnum = Field(description="记忆类型（USER 可能后续下线；SOUL 语义可能调整为报告风格）")
+    name: str = Field(description="记忆名称")
+    description: str | None = Field(default=None, description="记忆描述")
     content: str = Field(description="记忆内容")
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
@@ -145,7 +147,7 @@ class NanobotMemoryDocsModel(Document):
     class Settings:
         name = "nanobot_memory_docs"
         indexes = [
-            IndexModel([("workspace_id", ASCENDING), ("type", ASCENDING)], unique=True),
+            IndexModel([("workspace_id", ASCENDING), ("type", ASCENDING)]),
             "created_at",
             "updated_at",
         ]

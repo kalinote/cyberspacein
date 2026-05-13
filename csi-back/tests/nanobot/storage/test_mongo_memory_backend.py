@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.schemas.constants import NanobotMemoryDocTypeEnum
 from app.service.nanobot.storage.mongo_memory import MongoMemoryBackend
 
 
@@ -23,7 +22,7 @@ def backend_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     # -------------------------
     # NanobotMemoryDocsModel
     # -------------------------
-    memory_find_one = AsyncMock(return_value=None)
+    memory_snapshot: dict[str, list[Any]] = {"docs": []}
     memory_insert = AsyncMock()
 
     class _FakeMemoryDoc:
@@ -35,6 +34,19 @@ def backend_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         async def insert(self) -> None:
             await memory_insert()
 
+    class _MemoryDocsQuery:
+        def __init__(self, docs: list[Any]) -> None:
+            self._docs = docs
+
+        def sort(self, *_args: Any, **_kwargs: Any) -> "_MemoryDocsQuery":
+            return self
+
+        def limit(self, *_args: Any, **_kwargs: Any) -> "_MemoryDocsQuery":
+            return self
+
+        async def to_list(self) -> list[Any]:
+            return list(self._docs)
+
     class _FakeNanobotMemoryDocsModel:
         def __init__(self, **kwargs: Any) -> None:
             self._doc = _FakeMemoryDoc(**kwargs)
@@ -43,8 +55,8 @@ def backend_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             await self._doc.insert()
 
         @staticmethod
-        async def find_one(query: dict[str, Any]) -> Any:
-            return await memory_find_one(query)
+        def find(query: dict[str, Any]) -> _MemoryDocsQuery:
+            return _MemoryDocsQuery(list(memory_snapshot["docs"]))
 
     # -------------------------
     # NanobotHistoryStateModel
@@ -138,7 +150,7 @@ def backend_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(mongo_memory_mod, "NanobotHistoryModel", _FakeNanobotHistoryModel)
 
     return {
-        "memory_find_one": memory_find_one,
+        "memory_snapshot": memory_snapshot,
         "memory_insert": memory_insert,
         "state_find_one": state_find_one,
         "state_insert": state_insert,
@@ -154,7 +166,7 @@ def backend_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 @pytest.mark.asyncio
 async def test_read_doc_default_empty(backend_mocks: dict[str, Any]) -> None:
     backend = MongoMemoryBackend()
-    backend_mocks["memory_find_one"].return_value = None
+    backend_mocks["memory_snapshot"]["docs"] = []
     got = await backend.read_doc("ws1", "memory")
     assert got == ""
 
@@ -164,7 +176,7 @@ async def test_write_doc_upsert_insert_then_update(backend_mocks: dict[str, Any]
     backend = MongoMemoryBackend()
 
     # insert 分支
-    backend_mocks["memory_find_one"].return_value = None
+    backend_mocks["memory_snapshot"]["docs"] = []
     await backend.write_doc("ws1", "memory", "v1")
     assert backend_mocks["memory_insert"].await_count == 1
 
@@ -173,7 +185,7 @@ async def test_write_doc_upsert_insert_then_update(backend_mocks: dict[str, Any]
     existing.content = "old"
     existing.updated_at = datetime(2026, 1, 1)
     existing.save = AsyncMock()
-    backend_mocks["memory_find_one"].return_value = existing
+    backend_mocks["memory_snapshot"]["docs"] = [existing]
     await backend.write_doc("ws1", "memory", "v2")
     assert existing.content == "v2"
     assert existing.save.await_count == 1

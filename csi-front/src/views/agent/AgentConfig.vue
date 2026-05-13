@@ -278,9 +278,10 @@
                       <Icon icon="mdi:file-cog-outline" class="text-2xl text-cyan-600" />
                     </div>
                     <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-3 mb-2">
-                        <h3 class="text-lg font-bold text-gray-900">{{ getSystemPromptTypeLabel(item.type) }}</h3>
-                        <el-tag size="small" class="border-0" type="info">{{ item.type }}</el-tag>
+                      <div class="flex items-center gap-3 mb-2 flex-wrap">
+                        <h3 class="text-lg font-bold text-gray-900">{{ item.name || '-' }}</h3>
+                        <el-tag size="small" class="border-0" type="info">{{ getSystemPromptTypeLabel(item.type) }}</el-tag>
+                        <el-tag size="small" class="border-0">{{ item.type }}</el-tag>
                       </div>
                       <p class="text-sm text-gray-600 mb-3 line-clamp-2">{{ getSystemPromptPreview(item) }}</p>
                       <div class="flex items-center gap-6 text-sm flex-wrap">
@@ -629,12 +630,24 @@
             <el-option
               v-for="item in systemPromptTypeOptions"
               :key="item.value"
-              :label="item.label"
+              :label="`${item.label} (${item.value})`"
               :value="item.value"
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="提示词内容" prop="content">
+        <el-form-item label="模板名称" prop="name">
+          <el-input v-model="systemPromptFormData.name" placeholder="请输入模板名称" clearable />
+        </el-form-item>
+        <el-form-item label="模板描述" prop="description">
+          <el-input
+            v-model="systemPromptFormData.description"
+            type="textarea"
+            :rows="3"
+            placeholder="选填，简要说明用途"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="模板内容" prop="content">
           <MonacoEditor
             v-model="systemPromptFormData.content"
             language="markdown"
@@ -661,6 +674,8 @@
             <el-descriptions :column="1" border>
               <el-descriptions-item label="系统指令ID">{{ systemPromptDetail.id }}</el-descriptions-item>
               <el-descriptions-item label="工作区ID">{{ systemPromptDetail.workspace_id || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="模板名称">{{ systemPromptDetail.name || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="模板描述">{{ systemPromptDetail.description || '-' }}</el-descriptions-item>
               <el-descriptions-item label="类型">
                 {{ getSystemPromptTypeLabel(systemPromptDetail.type) }}
                 <span class="text-gray-500">({{ systemPromptDetail.type || '-' }})</span>
@@ -669,7 +684,7 @@
               <el-descriptions-item label="更新时间">{{ systemPromptDetail.updated_at ? formatModelDate(systemPromptDetail.updated_at) : '-' }}</el-descriptions-item>
             </el-descriptions>
             <div>
-              <div class="text-sm text-gray-500 mb-1">提示词内容</div>
+              <div class="text-sm text-gray-500 mb-1">模板内容</div>
               <MonacoEditor
                 :model-value="systemPromptDetail.content || ''"
                 language="markdown"
@@ -1176,8 +1191,9 @@ const getPromptTemplatePreview = (item) => {
 
 const systemPromptTypeOptions = [
   { value: 'memory', label: '长期记忆文档' },
-  { value: 'soul', label: 'Agent 风格/报告类指令' },
-  { value: 'user', label: '用户长期文档' }
+  { value: 'soul', label: 'Agent 风格/报告类系统指令' },
+  { value: 'user', label: '用户相关长期文档' },
+  { value: 'agent', label: 'Agent 类系统指令模板' }
 ]
 
 const getSystemPromptTypeLabel = (type) => {
@@ -1185,6 +1201,10 @@ const getSystemPromptTypeLabel = (type) => {
 }
 
 const getSystemPromptPreview = (item) => {
+  if (item?.description && String(item.description).trim()) {
+    const d = String(item.description).trim()
+    return d.length > 120 ? d.slice(0, 120) + '...' : d
+  }
   const text = (item?.content || '').trim()
   return text.length > 120 ? text.slice(0, 120) + '...' : text || '-'
 }
@@ -1817,6 +1837,8 @@ const handleModelSubmit = async () => {
 const createSystemPromptFormData = () => ({
   workspace_id: '',
   type: 'memory',
+  name: '',
+  description: '',
   content: ''
 })
 
@@ -1828,7 +1850,8 @@ const systemPromptFormData = ref(createSystemPromptFormData())
 const systemPromptFormRules = {
   workspace_id: [{ required: true, message: '请选择工作区', trigger: 'change' }],
   type: [{ required: true, message: '请选择系统指令类型', trigger: 'change' }],
-  content: [{ required: true, message: '请输入提示词内容', trigger: 'blur' }]
+  name: [{ required: true, message: '请输入模板名称', trigger: 'blur' }],
+  content: [{ required: true, message: '请输入模板内容', trigger: 'blur' }]
 }
 const systemPromptWorkspaceOptions = ref([])
 const systemPromptWorkspaceOptionsLoading = ref(false)
@@ -1892,6 +1915,8 @@ const openSystemPromptEdit = async (item) => {
     systemPromptFormData.value = {
       workspace_id: d.workspace_id ?? '',
       type: d.type ?? 'memory',
+      name: d.name ?? '',
+      description: d.description ?? '',
       content: d.content ?? ''
     }
   } catch (e) {
@@ -1914,9 +1939,12 @@ const handleSystemPromptSubmit = async () => {
   try {
     await systemPromptFormRef.value.validate()
     systemPromptSubmitLoading.value = true
+    const descTrim = (systemPromptFormData.value.description || '').trim()
     const payload = {
       workspace_id: systemPromptFormData.value.workspace_id,
       type: systemPromptFormData.value.type,
+      name: systemPromptFormData.value.name.trim(),
+      description: descTrim || null,
       content: systemPromptFormData.value.content
     }
 
@@ -1940,11 +1968,11 @@ const handleSystemPromptSubmit = async () => {
 
 const handleDeleteSystemPrompt = (item) => {
   const id = item?.id
-  const name = `${getSystemPromptTypeLabel(item?.type)} / ${item?.workspace_id || id}`
+  const displayName = item?.name?.trim() || `${getSystemPromptTypeLabel(item?.type)} / ${item?.workspace_id || id}`
   if (!id) return
 
   ElMessageBox.confirm(
-    `确定要删除系统指令“${name}”吗？`,
+    `确定要删除系统指令模板「${displayName}」吗？`,
     '确认删除',
     {
       confirmButtonText: '确定删除',

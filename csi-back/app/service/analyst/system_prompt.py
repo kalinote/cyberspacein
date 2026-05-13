@@ -33,20 +33,14 @@ class SystemPromptService:
         cls,
         data: SystemPromptCreateRequestSchema,
     ) -> NanobotMemoryDocsModel:
-        existing = await cls._find_by_workspace_type(data.workspace_id, data.type)
-        if existing is not None:
-            raise SystemPromptServiceError(
-                status_codes.CONFLICT_EXISTS,
-                f"系统指令模板已存在: workspace={data.workspace_id} type={data.type.value}",
-            )
-
         doc = NanobotMemoryDocsModel(
             workspace_id=data.workspace_id,
             type=data.type,
+            name=data.name,
+            description=data.description,
             content=data.content,
         )
         await doc.insert()
-        logger.info(f"创建系统指令模板成功: id={doc.id} workspace={data.workspace_id} type={data.type.value}")
         return doc
 
     @classmethod
@@ -75,7 +69,12 @@ class SystemPromptService:
         if type is not None:
             query_filters["type"] = type
         if search:
-            query_filters["content"] = {"$regex": re.compile(re.escape(search), re.IGNORECASE)}
+            pattern = re.compile(re.escape(search), re.IGNORECASE)
+            query_filters["$or"] = [
+                {"content": {"$regex": pattern}},
+                {"name": {"$regex": pattern}},
+                {"description": {"$regex": pattern}},
+            ]
 
         query = NanobotMemoryDocsModel.find(query_filters)
         total = await query.count()
@@ -90,19 +89,13 @@ class SystemPromptService:
         data: SystemPromptUpdateRequestSchema,
     ) -> NanobotMemoryDocsModel:
         doc = await cls.get(system_prompt_id)
-        existing = await cls._find_by_workspace_type(data.workspace_id, data.type)
-        if existing is not None and str(existing.id) != str(doc.id):
-            raise SystemPromptServiceError(
-                status_codes.CONFLICT_EXISTS,
-                f"系统指令模板已存在: workspace={data.workspace_id} type={data.type.value}",
-            )
-
         doc.workspace_id = data.workspace_id
         doc.type = data.type
+        doc.name = data.name
+        doc.description = data.description
         doc.content = data.content
         doc.updated_at = datetime.now()
         await doc.save()
-        logger.info(f"更新系统指令模板成功: id={doc.id} workspace={data.workspace_id} type={data.type.value}")
         return doc
 
     @classmethod
@@ -110,18 +103,6 @@ class SystemPromptService:
         doc = await cls.get(system_prompt_id)
         await doc.delete()
         logger.info(f"删除系统指令模板成功: id={system_prompt_id}")
-
-    @staticmethod
-    async def _find_by_workspace_type(
-        workspace_id: str,
-        prompt_type: NanobotMemoryDocTypeEnum,
-    ) -> NanobotMemoryDocsModel | None:
-        return await NanobotMemoryDocsModel.find_one(
-            {
-                "workspace_id": workspace_id,
-                "type": prompt_type,
-            }
-        )
 
     @staticmethod
     def _id_query(system_prompt_id: str) -> dict[str, Any]:

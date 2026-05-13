@@ -1,7 +1,7 @@
 """MemoryBackend 的 MongoDB 实现
 
 集合对应关系：
-  - nanobot_memory_docs     ↔ NanobotMemoryDocsModel（MEMORY / SOUL / USER）
+  - nanobot_memory_docs     ↔ NanobotMemoryDocsModel（MEMORY / SOUL / USER / AGENT 等）
   - nanobot_history         ↔ NanobotHistoryModel（append-only 摘要条目）
   - nanobot_history_state   ↔ NanobotHistoryStateModel（last_cursor / last_dream_cursor）
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from beanie.odm.enums import SortDirection
 from loguru import logger
 from pymongo import ReturnDocument
 
@@ -31,26 +32,38 @@ class MongoMemoryBackend:
     """MemoryBackend 的 MongoDB 实现"""
 
     # ------------------------------------------------------------------
-    # memory docs（MEMORY / SOUL / USER）
+    # memory docs（按 type 区分；同 workspace 同 type 可多份，读写取 updated_at 最新一条）
+    # TODO: 后续改成每一类可以读取多条，全部读取并拼接到一起
     # ------------------------------------------------------------------
 
     async def read_doc(self, workspace_id: str, doc_type: str) -> str:
-        doc = await NanobotMemoryDocsModel.find_one({
-            "workspace_id": workspace_id,
-            "type": doc_type,
-        })
-        return doc.content if doc else ""
+        docs = await (
+            NanobotMemoryDocsModel.find(
+                {"workspace_id": workspace_id, "type": doc_type},
+            )
+            .sort(("updated_at", SortDirection.DESCENDING))
+            .limit(1)
+            .to_list()
+        )
+        return docs[0].content if docs else ""
 
     async def write_doc(self, workspace_id: str, doc_type: str, content: str) -> None:
         now = datetime.now()
-        doc = await NanobotMemoryDocsModel.find_one({
-            "workspace_id": workspace_id,
-            "type": doc_type,
-        })
+        docs = await (
+            NanobotMemoryDocsModel.find(
+                {"workspace_id": workspace_id, "type": doc_type},
+            )
+            .sort(("updated_at", SortDirection.DESCENDING))
+            .limit(1)
+            .to_list()
+        )
+        doc = docs[0] if docs else None
         if doc is None:
             await NanobotMemoryDocsModel(
                 workspace_id=workspace_id,
                 type=NanobotMemoryDocTypeEnum(doc_type),
+                name=doc_type,
+                description=None,
                 content=content,
                 created_at=now,
                 updated_at=now,

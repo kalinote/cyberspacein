@@ -25,7 +25,9 @@ class FakeSystemPromptDoc:
     id: str
     workspace_id: str
     type: NanobotMemoryDocTypeEnum
+    name: str
     content: str
+    description: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -72,7 +74,9 @@ class FakeNanobotMemoryDocsModel:
             id=doc_id,
             workspace_id=kwargs["workspace_id"],
             type=kwargs["type"],
+            name=kwargs["name"],
             content=kwargs["content"],
+            description=kwargs.get("description"),
             created_at=kwargs.get("created_at", datetime.now()),
             updated_at=kwargs.get("updated_at", datetime.now()),
         )
@@ -99,11 +103,6 @@ class FakeNanobotMemoryDocsModel:
     async def find_one(cls, query: dict[str, Any]) -> FakeSystemPromptDoc | None:
         if "_id" in query:
             return cls._docs.get(str(query["_id"]))
-        if "workspace_id" in query and "type" in query:
-            for doc in cls._docs.values():
-                if doc.workspace_id == query["workspace_id"] and doc.type == query["type"]:
-                    return doc
-            return None
         raise AssertionError(f"不支持的查询: {query}")
 
     @classmethod
@@ -113,7 +112,30 @@ class FakeNanobotMemoryDocsModel:
             items = [doc for doc in items if doc.workspace_id == query_filters["workspace_id"]]
         if "type" in query_filters:
             items = [doc for doc in items if doc.type == query_filters["type"]]
-        if "content" in query_filters:
+        if "$or" in query_filters:
+            branches = query_filters["$or"]
+            patterns: list[re.Pattern[str]] = []
+            for branch in branches:
+                for _field, spec in branch.items():
+                    if isinstance(spec, dict) and "$regex" in spec:
+                        p = spec["$regex"]
+                        if isinstance(p, re.Pattern):
+                            patterns.append(p)
+            if not patterns:
+                raise AssertionError("测试桩期望 $or 分支含 re.Pattern")
+            pat = patterns[0]
+
+            def _matches(doc: FakeSystemPromptDoc) -> bool:
+                if pat.search(doc.content):
+                    return True
+                if pat.search(doc.name):
+                    return True
+                if doc.description and pat.search(doc.description):
+                    return True
+                return False
+
+            items = [doc for doc in items if _matches(doc)]
+        elif "content" in query_filters:
             pattern = query_filters["content"].get("$regex")
             if not isinstance(pattern, re.Pattern):
                 raise AssertionError("测试桩期望 $regex 为 re.Pattern")
@@ -137,14 +159,18 @@ async def _seed(
     id: str,
     workspace_id: str,
     type: NanobotMemoryDocTypeEnum,
+    name: str,
     content: str,
+    description: str | None = None,
     updated_at: datetime | None = None,
 ) -> FakeSystemPromptDoc:
     doc = FakeSystemPromptDoc(
         id=id,
         workspace_id=workspace_id,
         type=type,
+        name=name,
         content=content,
+        description=description,
         created_at=_dt(0),
         updated_at=updated_at or _dt(0),
     )
@@ -157,6 +183,7 @@ async def test_create_success() -> None:
     data = SystemPromptCreateRequestSchema(
         workspace_id="w1",
         type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="默认记忆",
         content="规则",
     )
     doc = await system_prompt_module.SystemPromptService.create(data)
@@ -166,28 +193,48 @@ async def test_create_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_conflict_workspace_type() -> None:
+async def test_create_multiple_same_workspace_type_allowed() -> None:
     await _seed(
         id="sp0",
         workspace_id="w1",
         type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="已有",
         content="旧规则",
     )
     data = SystemPromptCreateRequestSchema(
         workspace_id="w1",
         type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="另一条",
         content="新规则",
     )
-    with pytest.raises(system_prompt_module.SystemPromptServiceError) as e:
-        await system_prompt_module.SystemPromptService.create(data)
-    assert e.value.code == status_codes.CONFLICT_EXISTS
+    doc = await system_prompt_module.SystemPromptService.create(data)
+    assert doc.id == "sp2"
+    assert len(FakeNanobotMemoryDocsModel._docs) == 2
 
 
 @pytest.mark.asyncio
 async def test_list_page_filters() -> None:
-    await _seed(id="sp1", workspace_id="w1", type=NanobotMemoryDocTypeEnum.MEMORY, content="alpha")
-    await _seed(id="sp2", workspace_id="w1", type=NanobotMemoryDocTypeEnum.SOUL, content="alpha")
-    await _seed(id="sp3", workspace_id="w2", type=NanobotMemoryDocTypeEnum.MEMORY, content="alpha")
+    await _seed(
+        id="sp1",
+        workspace_id="w1",
+        type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="m1",
+        content="alpha",
+    )
+    await _seed(
+        id="sp2",
+        workspace_id="w1",
+        type=NanobotMemoryDocTypeEnum.SOUL,
+        name="s1",
+        content="alpha",
+    )
+    await _seed(
+        id="sp3",
+        workspace_id="w2",
+        type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="m2",
+        content="alpha",
+    )
     items, total = await system_prompt_module.SystemPromptService.list_page(
         page=1,
         page_size=10,
@@ -205,32 +252,49 @@ async def test_update_success() -> None:
         id="sp1",
         workspace_id="w1",
         type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="旧名",
         content="旧规则",
         updated_at=_dt(1),
     )
     data = SystemPromptUpdateRequestSchema(
         workspace_id="w1",
         type=NanobotMemoryDocTypeEnum.SOUL,
+        name="新名",
         content="新规则",
     )
     doc = await system_prompt_module.SystemPromptService.update("sp1", data)
     assert doc.type is NanobotMemoryDocTypeEnum.SOUL
+    assert doc.name == "新名"
     assert doc.content == "新规则"
     assert doc.updated_at > _dt(1)
 
 
 @pytest.mark.asyncio
-async def test_update_conflict_workspace_type() -> None:
-    await _seed(id="sp1", workspace_id="w1", type=NanobotMemoryDocTypeEnum.MEMORY, content="a")
-    await _seed(id="sp2", workspace_id="w1", type=NanobotMemoryDocTypeEnum.SOUL, content="b")
+async def test_update_no_conflict_when_another_doc_shares_type() -> None:
+    await _seed(
+        id="sp1",
+        workspace_id="w1",
+        type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="a",
+        content="a",
+    )
+    await _seed(
+        id="sp2",
+        workspace_id="w1",
+        type=NanobotMemoryDocTypeEnum.SOUL,
+        name="b",
+        content="b",
+    )
     data = SystemPromptUpdateRequestSchema(
         workspace_id="w1",
         type=NanobotMemoryDocTypeEnum.SOUL,
+        name="a",
         content="c",
     )
-    with pytest.raises(system_prompt_module.SystemPromptServiceError) as e:
-        await system_prompt_module.SystemPromptService.update("sp1", data)
-    assert e.value.code == status_codes.CONFLICT_EXISTS
+    doc = await system_prompt_module.SystemPromptService.update("sp1", data)
+    assert doc.type is NanobotMemoryDocTypeEnum.SOUL
+    assert doc.content == "c"
+    assert FakeNanobotMemoryDocsModel._docs["sp2"].content == "b"
 
 
 @pytest.mark.asyncio

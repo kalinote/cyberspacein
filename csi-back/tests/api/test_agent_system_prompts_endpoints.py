@@ -21,12 +21,16 @@ class FakeSystemPromptDoc:
         id: str,
         workspace_id: str,
         type: NanobotMemoryDocTypeEnum,
+        name: str,
         content: str,
+        description: str | None = None,
     ) -> None:
         self.id = id
         self.workspace_id = workspace_id
         self.type = type
+        self.name = name
         self.content = content
+        self.description = description
         self.created_at = datetime(2026, 1, 1, 0, 0, 0)
         self.updated_at = datetime(2026, 1, 1, 0, 0, 0)
 
@@ -43,23 +47,32 @@ def test_create_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _create(data: SystemPromptCreateRequestSchema) -> FakeSystemPromptDoc:
         assert data.workspace_id == "w1"
         assert data.type is NanobotMemoryDocTypeEnum.MEMORY
+        assert data.name == "默认"
         return FakeSystemPromptDoc(
             id="sp1",
             workspace_id=data.workspace_id,
             type=data.type,
+            name=data.name,
             content=data.content,
+            description=data.description,
         )
 
     monkeypatch.setattr(templates_ep.SystemPromptService, "create", _create)
     r = client.post(
         "/api/v1/agent/configs/system-prompts",
-        json={"workspace_id": "w1", "type": "memory", "content": "规则"},
+        json={
+            "workspace_id": "w1",
+            "type": "memory",
+            "name": "默认",
+            "content": "规则",
+        },
     )
     assert r.status_code == 200
     body = r.json()
     assert body["code"] == 0
     assert body["data"]["id"] == "sp1"
     assert body["data"]["type"] == "memory"
+    assert body["data"]["name"] == "默认"
 
 
 def test_create_system_prompt_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,7 +87,12 @@ def test_create_system_prompt_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(templates_ep.SystemPromptService, "create", _create)
     r = client.post(
         "/api/v1/agent/configs/system-prompts",
-        json={"workspace_id": "w1", "type": "memory", "content": "规则"},
+        json={
+            "workspace_id": "w1",
+            "type": "memory",
+            "name": "默认",
+            "content": "规则",
+        },
     )
     assert r.status_code == 200
     assert r.json()["code"] == status_codes.CONFLICT_EXISTS
@@ -101,6 +119,7 @@ def test_get_system_prompt_list_filters(monkeypatch: pytest.MonkeyPatch) -> None
                     id="sp1",
                     workspace_id="w1",
                     type=NanobotMemoryDocTypeEnum.SOUL,
+                    name="人格",
                     content="报告风格",
                 )
             ],

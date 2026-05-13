@@ -46,7 +46,10 @@ async def get_system_prompt_list(
         NanobotMemoryDocTypeEnum | None,
         Query(alias="type", description="按系统指令模板类型过滤"),
     ] = None,
-    search: Annotated[str | None, Query(description="搜索关键词，模糊匹配内容")] = None,
+    search: Annotated[
+        str | None,
+        Query(description="搜索关键词，模糊匹配名称、描述或内容"),
+    ] = None,
 ):
     items, total = await SystemPromptService.list_page(
         page=params.page,

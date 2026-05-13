@@ -234,6 +234,7 @@ class NanobotMemoryDocTypeEnum(str, Enum):
     MEMORY = "memory"
     SOUL = "soul"
     USER = "user"
+    AGENT = "agent"
 
 
 class NanobotAgentStatusEnum(str, Enum):

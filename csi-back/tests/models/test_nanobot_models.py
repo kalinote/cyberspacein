@@ -117,6 +117,7 @@ async def test_models_registered_collections_exist_after_insert(nanobot_db: Any)
     mem = NanobotMemoryDocsModel(
         workspace_id=ws_id,
         type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="测试记忆",
         content="记忆",
     )
     await mem.insert()
@@ -166,8 +167,8 @@ async def test_indexes_created(nanobot_db: Any) -> None:
 
     mem_specs = await keys_and_uniques(NanobotMemoryDocsModel)
     assert any(
-        _match(k, {"workspace_id": 1, "type": 1}) and u for k, u in mem_specs
-    ), "缺少 (workspace_id, type) 唯一复合索引"
+        _match(k, {"workspace_id": 1, "type": 1}) and not u for k, u in mem_specs
+    ), "缺少 (workspace_id, type) 非唯一复合索引"
 
     hist_specs = await keys_and_uniques(NanobotHistoryModel)
     assert any(
@@ -255,6 +256,7 @@ async def test_enum_roundtrip_stored_as_string(nanobot_db: Any) -> None:
     mem = NanobotMemoryDocsModel(
         workspace_id=ws_id,
         type=NanobotMemoryDocTypeEnum.SOUL,
+        name="soul-doc",
         content="soul",
     )
     await mem.insert()
@@ -362,20 +364,25 @@ async def test_unique_conflict_history_workspace_cursor(nanobot_db: Any) -> None
 
 
 @pytest.mark.asyncio
-async def test_unique_conflict_memory_workspace_type(nanobot_db: Any) -> None:
+async def test_memory_allows_multiple_same_workspace_type(nanobot_db: Any) -> None:
     _ = nanobot_db
     ws_id, _, _ = await _seed_minimal_workspace_agent_session()
     await NanobotMemoryDocsModel(
         workspace_id=ws_id,
         type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="模板一",
         content="m1",
     ).insert()
-    with pytest.raises(DuplicateKeyError):
-        await NanobotMemoryDocsModel(
-            workspace_id=ws_id,
-            type=NanobotMemoryDocTypeEnum.MEMORY,
-            content="m2",
-        ).insert()
+    await NanobotMemoryDocsModel(
+        workspace_id=ws_id,
+        type=NanobotMemoryDocTypeEnum.MEMORY,
+        name="模板二",
+        content="m2",
+    ).insert()
+    count = await NanobotMemoryDocsModel.find(
+        {"workspace_id": ws_id, "type": NanobotMemoryDocTypeEnum.MEMORY},
+    ).count()
+    assert count == 2
 
 
 @pytest.mark.asyncio
