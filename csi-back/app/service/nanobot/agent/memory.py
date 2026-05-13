@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from app.schemas.constants import NanobotMemoryDocTypeEnum
 from app.service.nanobot.utils.helpers import (
     estimate_message_tokens,
     estimate_prompt_tokens_chain,
@@ -32,13 +33,6 @@ if TYPE_CHECKING:
     from app.service.nanobot.providers.base import LLMProvider
     from app.service.nanobot.session.manager import Session, SessionManager
     from app.service.nanobot.storage.base import MemoryBackend
-
-
-# 固定的三种长期记忆文档类型，与 NanobotMemoryDocTypeEnum 值保持一致
-_DOC_MEMORY = "memory"
-_DOC_SOUL = "soul"
-_DOC_USER = "user"
-
 
 # ---------------------------------------------------------------------------
 # MemoryStore —— workspace 级 async 记忆门面
@@ -63,22 +57,22 @@ class MemoryStore:
     # -- 长期记忆文档：MEMORY / SOUL / USER -----------------------------------
 
     async def read_memory(self) -> str:
-        return await self.backend.read_doc(self.workspace_id, _DOC_MEMORY)
+        return await self.backend.read_doc(self.workspace_id, NanobotMemoryDocTypeEnum.MEMORY.value)
 
     async def write_memory(self, content: str) -> None:
-        await self.backend.write_doc(self.workspace_id, _DOC_MEMORY, content)
+        await self.backend.write_doc(self.workspace_id, NanobotMemoryDocTypeEnum.MEMORY.value, content)
 
     async def read_soul(self) -> str:
-        return await self.backend.read_doc(self.workspace_id, _DOC_SOUL)
+        return await self.backend.read_doc(self.workspace_id, NanobotMemoryDocTypeEnum.SOUL.value)
 
     async def write_soul(self, content: str) -> None:
-        await self.backend.write_doc(self.workspace_id, _DOC_SOUL, content)
+        await self.backend.write_doc(self.workspace_id, NanobotMemoryDocTypeEnum.SOUL.value, content)
 
     async def read_user(self) -> str:
-        return await self.backend.read_doc(self.workspace_id, _DOC_USER)
+        return await self.backend.read_doc(self.workspace_id, NanobotMemoryDocTypeEnum.USER.value)
 
     async def write_user(self, content: str) -> None:
-        await self.backend.write_doc(self.workspace_id, _DOC_USER, content)
+        await self.backend.write_doc(self.workspace_id, NanobotMemoryDocTypeEnum.USER.value, content)
 
     async def get_memory_context(self) -> str:
         """用于 ContextBuilder 注入 prompt 的长期记忆片段"""
@@ -515,9 +509,9 @@ class Dream:
             if new_content is None:
                 continue
             writer = {
-                _DOC_MEMORY: self.store.write_memory,
-                _DOC_SOUL: self.store.write_soul,
-                _DOC_USER: self.store.write_user,
+                NanobotMemoryDocTypeEnum.MEMORY.value: self.store.write_memory,
+                NanobotMemoryDocTypeEnum.SOUL.value: self.store.write_soul,
+                NanobotMemoryDocTypeEnum.USER.value: self.store.write_user,
             }[doc_type]
             await writer(new_content)
             applied.append(doc_type)
@@ -581,9 +575,9 @@ class Dream:
     def _parse_sections(cls, text: str) -> dict[str, str | None]:
         """把 LLM 输出拆成 {memory, soul, user}；段落是 NO_CHANGE 则值为 None"""
         result: dict[str, str | None] = {
-            _DOC_MEMORY: None,
-            _DOC_SOUL: None,
-            _DOC_USER: None,
+            NanobotMemoryDocTypeEnum.MEMORY.value: None,
+            NanobotMemoryDocTypeEnum.SOUL.value: None,
+            NanobotMemoryDocTypeEnum.USER.value: None,
         }
         for match in cls._SECTION_RE.finditer(text):
             key = match.group(1).lower()
