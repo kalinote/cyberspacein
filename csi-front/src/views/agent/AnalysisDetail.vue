@@ -114,23 +114,16 @@
                             </h2>
                             <div ref="eventsScrollEl" class="overflow-y-auto px-4 pb-4 border-t border-gray-100"
                                 style="height: 70vh" @scroll="onEventsScroll">
-                                <div v-if="!events.length"
+                                <div v-if="!timelineItems.length"
                                     class="flex flex-col items-center justify-center h-full min-h-70 text-gray-400">
                                     <Icon icon="mdi:access-point" class="text-2xl text-blue-500 mb-2" />
                                     <p class="text-sm font-medium text-gray-500">等待事件推送</p>
                                 </div>
 
                                 <div v-else class="space-y-3 pt-4">
-                                    <div v-for="(ev, index) in events" :key="index"
-                                        class="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                                        <div class="flex items-center gap-2 flex-wrap">
-                                            <span class="font-mono text-xs font-semibold text-gray-800">{{ ev.type
-                                                }}</span>
-                                            <span class="text-xs text-gray-500">{{ formatDateTime(ev.ts, {
-                                                includeSecond: true })
-                                                }}</span>
-                                        </div>
-                                        <pre class="mt-2 text-xs bg-white p-2 rounded whitespace-pre-wrap wrap-break-word overflow-x-hidden">{{ typeof ev.data === 'string' ? ev.data : JSON.stringify(ev.data, null, 2) }}</pre>
+                                    <div v-for="ev in timelineItems" :key="ev.id"
+                                        class="rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+                                        <AgentSseTimelineItem :item="ev" />
                                     </div>
                                 </div>
                             </div>
@@ -196,7 +189,14 @@ import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
+import AgentSseTimelineItem from '@/components/agent/AgentSseTimelineItem.vue'
 import { agentApi } from '@/api/agent'
+import {
+    appendStreamDelta,
+    closeStreamInTimeline,
+    parseAgentSseData,
+    stringifyJsonSafe,
+} from '@/utils/agentSse'
 import { formatDateTime, TODO_ITEM_STATUS } from '@/utils/action'
 
 const route = useRoute()
@@ -221,7 +221,13 @@ const startLoading = ref(false)
 const cancelLoading = ref(false)
 
 const todos = ref([])
-const events = ref([])
+const timelineItems = ref([])
+
+let timelineSeq = 0
+function nextTimelineId() {
+    timelineSeq += 1
+    return timelineSeq
+}
 
 let eventSource = null
 let retryCount = 0
@@ -241,12 +247,73 @@ const approvalLoading = ref(false)
 const eventsScrollEl = ref(null)
 const isEventsScrollAtBottom = ref(true)
 
-function pushEvent(type, data) {
-    events.value.push({
-        type,
-        ts: new Date().toISOString(),
-        data
+function pushSystemTimeline(systemSubtype, message, payload = null) {
+    const ts = new Date().toISOString()
+    let metaJson = null
+    if (payload != null && typeof payload === 'object') {
+        try {
+            metaJson = stringifyJsonSafe(payload, 2)
+        } catch {
+            metaJson = null
+        }
+    } else if (payload != null) {
+        metaJson = String(payload)
+    }
+    timelineItems.value.push({
+        id: nextTimelineId(),
+        sseType: 'system',
+        kind: 'system',
+        ts,
+        systemSubtype,
+        message,
+        metaJson,
     })
+}
+
+function pushParseErrorTimeline(sseType, raw, error, ts) {
+    timelineItems.value.push({
+        id: nextTimelineId(),
+        sseType,
+        kind: 'parse_error',
+        ts,
+        error: error || 'parse',
+        rawSnippet: String(raw ?? '').slice(0, 4000),
+    })
+}
+
+function pushParsedTimeline(sseType, ts, payload) {
+    timelineItems.value.push({
+        id: nextTimelineId(),
+        sseType,
+        kind: sseType,
+        ts,
+        payload,
+    })
+}
+
+function ingestSseNamedEvent(sseType, raw) {
+    const ts = new Date().toISOString()
+    if (sseType === 'stream') {
+        const p = parseAgentSseData(raw)
+        if (!p.ok) {
+            pushParseErrorTimeline('stream', raw, p.error, ts)
+            return
+        }
+        appendStreamDelta(timelineItems.value, p.value?.delta ?? '', ts, nextTimelineId)
+        return
+    }
+    if (sseType === 'stream_end') {
+        const p = parseAgentSseData(raw)
+        const payload = p.ok && p.value && typeof p.value === 'object' ? p.value : {}
+        closeStreamInTimeline(timelineItems.value, payload, ts, nextTimelineId)
+        return
+    }
+    const p = parseAgentSseData(raw)
+    if (!p.ok) {
+        pushParseErrorTimeline(sseType, raw, p.error, ts)
+        return
+    }
+    pushParsedTimeline(sseType, ts, p.value)
 }
 
 function mergeAgent(partial) {
@@ -271,15 +338,15 @@ function onEventsScroll() {
 }
 
 watch(
-    () => events.value.length,
-    (newLen, oldLen) => {
-        const prevLen = oldLen ?? 0
-        if (newLen <= prevLen || !isEventsScrollAtBottom.value || !eventsScrollEl.value) return
+    () => timelineItems.value,
+    () => {
+        if (!isEventsScrollAtBottom.value || !eventsScrollEl.value) return
         nextTick(() => {
             const el = eventsScrollEl.value
             if (el) el.scrollTop = el.scrollHeight
         })
-    }
+    },
+    { deep: true }
 )
 
 const agentTitle = computed(() => agent.value?.name || '分析详情')
@@ -287,6 +354,7 @@ const statusRaw = computed(() => String(sessionRuntimeStatus.value || 'unknown')
 
 const statusLabelMap = {
     unknown: '未知',
+    idle: '空闲',
     running: '运行中',
     awaiting_approval: '等待审批',
     completed: '已完成',
@@ -297,6 +365,7 @@ const statusLabelMap = {
 
 const statusTagMap = {
     unknown: 'info',
+    idle: 'info',
     running: 'primary',
     awaiting_approval: 'warning',
     completed: 'success',
@@ -344,6 +413,26 @@ function applyStatusFromSsePayload(raw) {
     } catch {
         sessionRuntimeStatus.value = text
     }
+}
+
+function onTodosSse(raw) {
+    const ts = new Date().toISOString()
+    applyTodosFromSsePayload(raw)
+    const p = parseAgentSseData(raw)
+    if (!p.ok) {
+        pushParseErrorTimeline('todos', raw, p.error, ts)
+        return
+    }
+    const list = todos.value
+    timelineItems.value.push({
+        id: nextTimelineId(),
+        sseType: 'todos',
+        kind: 'todos',
+        ts,
+        payload: p.value,
+        todoCount: list.length,
+        todoPreview: list[0]?.content ?? '',
+    })
 }
 
 function applyTodosFromSsePayload(raw) {
@@ -394,7 +483,7 @@ function connectSSE() {
             sseConnected.value = true
             sseError.value = ''
             retryCount = 0
-            pushEvent('sse_open', '')
+            pushSystemTimeline('sse_open', '实时通道已建立')
         }
 
         eventSource.onerror = () => {
@@ -407,37 +496,45 @@ function connectSSE() {
             if (retryCount < maxRetries) {
                 retryCount++
                 const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000)
-                pushEvent('sse_retry', `第 ${retryCount} 次重连，${delay}ms 后执行`)
+                pushSystemTimeline('sse_retry', `第 ${retryCount} 次重连，${delay}ms 后执行`)
                 setTimeout(() => {
                     if (retryCount <= maxRetries && sessionId.value && agentId.value) connectSSE()
                 }, delay)
             } else {
                 sseError.value = 'SSE 连接失败，请刷新页面重试'
-                pushEvent('sse_error', sseError.value)
+                pushSystemTimeline('sse_error', sseError.value)
                 ElMessage.error('实时连接中断，请稍后重试')
             }
         }
 
         eventSource.addEventListener('status', (event) => {
             const raw = event.data ?? ''
-            pushEvent('status', raw)
+            ingestSseNamedEvent('status', raw)
             applyStatusFromSsePayload(raw)
         })
         eventSource.addEventListener('todos', (event) => {
             const raw = event.data ?? ''
-            pushEvent('todos', raw)
-            applyTodosFromSsePayload(raw)
+            onTodosSse(raw)
         })
 
-        const sseNamedEvents = ['notification', 'result', 'debug_prompt', 'progress']
+        const sseNamedEvents = [
+            'notification',
+            'result',
+            'debug_prompt',
+            'progress',
+            'step',
+            'task_submitted',
+            'stream',
+            'stream_end',
+        ]
         for (const name of sseNamedEvents) {
             eventSource.addEventListener(name, (event) => {
-                pushEvent(name, event.data ?? '')
+                ingestSseNamedEvent(name, event.data ?? '')
             })
         }
         eventSource.addEventListener('approval_required', (event) => {
             const raw = event.data ?? ''
-            pushEvent('approval_required', raw)
+            ingestSseNamedEvent('approval_required', raw)
             let p = null
             try {
                 const x = JSON.parse(raw)
@@ -452,12 +549,12 @@ function connectSSE() {
             showApprovalDialog.value = true
         })
         eventSource.onmessage = (event) => {
-            pushEvent('message', event.data ?? '')
+            ingestSseNamedEvent('message', event.data ?? '')
         }
     } catch (e) {
         sseConnected.value = false
         sseError.value = e?.message || '创建 SSE 连接失败'
-        pushEvent('sse_error', sseError.value)
+        pushSystemTimeline('sse_error', sseError.value)
     }
 }
 
@@ -504,7 +601,7 @@ async function start() {
             return
         }
         ElMessage.success('已提交启动请求')
-        pushEvent('start', res?.data || {})
+        pushSystemTimeline('client_start', '已提交启动分析', res?.data || {})
         await router.replace({
             path: route.path,
             query: { ...route.query, session_id: String(sid) }
@@ -530,7 +627,7 @@ async function cancel() {
             return
         }
         ElMessage.success(res?.message || '已提交取消请求')
-        pushEvent('cancel', res?.data || {})
+        pushSystemTimeline('client_cancel', '已提交取消请求', res?.data || {})
     } catch (e) {
         ElMessage.error(e?.message || '取消失败，请稍后重试')
     } finally {
@@ -560,7 +657,7 @@ async function submitApproval(approved) {
             return
         }
         ElMessage.success(res?.message || '审批已提交')
-        pushEvent('approve', { decision })
+        pushSystemTimeline('client_approve', '审批已提交', { decision })
         showApprovalDialog.value = false
         pendingApproval.value = null
         approvalReason.value = ''
@@ -575,7 +672,8 @@ async function reload() {
     disconnectSSE()
     pageLoading.value = true
     pageError.value = ''
-    events.value = []
+    timelineItems.value = []
+    timelineSeq = 0
     todos.value = []
     sessionRuntimeStatus.value = 'unknown'
     pendingApproval.value = null
@@ -599,6 +697,8 @@ watch(sessionId, (sid, oldSid) => {
     disconnectSSE()
     sessionRuntimeStatus.value = 'unknown'
     todos.value = []
+    timelineItems.value = []
+    timelineSeq = 0
     if (!sid || !agentId.value) return
     if (pageLoading.value) return
     connectSSE()
