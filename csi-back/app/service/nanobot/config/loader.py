@@ -50,15 +50,7 @@ def load_config(config_path: Path | None = None) -> Config:
             logger.warning(f"Failed to load config from {path}: {e}")
             logger.warning("Using default configuration.")
 
-    _apply_ssrf_whitelist(config)
     return config
-
-
-def _apply_ssrf_whitelist(config: Config) -> None:
-    """Apply SSRF whitelist from config to the network security module."""
-    from app.service.nanobot.security.network import configure_ssrf_whitelist
-
-    configure_ssrf_whitelist(config.tools.ssrf_whitelist)
 
 
 def save_config(config: Config, config_path: Path | None = None) -> None:
@@ -124,7 +116,7 @@ def _migrate_config(data: dict) -> dict:
 
     # Move tools.myEnabled / tools.mySet → tools.my.{enable, allowSet}.
     # The old flat keys shipped in the initial MyTool landing; wrapping them in a
-    # sub-config keeps `web` / `exec` / `my` symmetric and gives room to grow.
+    # sub-config keeps `exec` / `my` symmetric and gives room to grow.
     if "myEnabled" in tools or "mySet" in tools:
         my_cfg = tools.setdefault("my", {})
         if "myEnabled" in tools and "enable" not in my_cfg:

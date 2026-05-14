@@ -38,11 +38,10 @@ class SpawnTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Spawn a subagent to handle a task in the background. "
-            "Use this for complex or time-consuming tasks that can run independently. "
-            "The subagent will complete the task and report back when done. "
-            "For deliverables or existing projects, inspect the workspace first "
-            "and use a dedicated subdirectory when helpful."
+            "在后台派生子代理以处理任务。"
+            "仅适用于可独立、并行运行的复杂或耗时任务，如果任务只能串行执行或只需要单步骤完成，则不要使用 spawn。"
+            "子代理会完成任务并在结束后汇报。"
+            "不要过度依赖于子代理，除非使用子代理能带来明显效率或能力提升。"
         )
 
     async def execute(self, task: str, label: str | None = None, **kwargs: Any) -> str:

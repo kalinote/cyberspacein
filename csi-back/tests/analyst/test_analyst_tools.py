@@ -97,13 +97,36 @@ async def test_get_entity_es_not_initialized(monkeypatch: pytest.MonkeyPatch) ->
 @pytest.mark.asyncio
 async def test_get_entity_success(monkeypatch: pytest.MonkeyPatch) -> None:
     class _ES:
-        async def get(self, *, index: str, id: str):
-            assert index == "article" and id == "1"
+        async def get(self, **kw):
+            assert kw["index"] == "article" and kw["id"] == "1"
+            assert "_source_includes" not in kw
             return {"_source": {"k": "v"}}
 
     monkeypatch.setattr("app.db.elasticsearch.get_es", lambda: _ES())
     out = await tools_module.GetEntityTool().execute(entity_type=EntityType.ARTICLE.value, entity_uuid="1")
-    assert "{'k': 'v'}" in out
+    assert json.loads(out) == {"k": "v"}
+
+
+@pytest.mark.asyncio
+async def test_get_entity_with_fields_passes_source_includes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class _ES:
+        async def get(self, **kw):
+            captured.clear()
+            captured.update(kw)
+            return {"_source": {"clean_content": "正文"}}
+
+    monkeypatch.setattr("app.db.elasticsearch.get_es", lambda: _ES())
+    out = await tools_module.GetEntityTool().execute(
+        entity_type=EntityType.ARTICLE.value,
+        entity_uuid="1",
+        fields=["clean_content", "title"],
+    )
+    assert captured["_source_includes"] == ["clean_content", "title"]
+    assert json.loads(out) == {"clean_content": "正文"}
 
 
 @pytest.mark.asyncio

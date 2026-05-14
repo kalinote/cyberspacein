@@ -748,7 +748,7 @@
         <el-form-item label="提示词模板" prop="prompt_template_id">
           <el-select
             v-model="agentFormData.prompt_template_id"
-            placeholder="请选择提示词模板（仅白名单）"
+            placeholder="请选择提示词模板"
             class="w-full"
             filterable
             :loading="agentWorkspaceDetailLoading || agentPromptOptionsLoading"
@@ -765,7 +765,7 @@
         <el-form-item label="模型" prop="model_config_id">
           <el-select
             v-model="agentFormData.model_config_id"
-            placeholder="请选择模型（仅白名单）"
+            placeholder="请选择模型"
             class="w-full"
             filterable
             :loading="agentWorkspaceDetailLoading || agentModelOptionsLoading"

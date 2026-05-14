@@ -49,7 +49,6 @@ class MyTool(Tool):
     READ_ONLY = frozenset({
         "subagents",  # observable but replacing it would break the system
         "_current_iteration",  # updated by runner only
-        "web_config",  # inspect allowed (e.g. check enable), modify blocked
     })
 
     _DENIED_ATTRS = frozenset({
@@ -112,12 +111,11 @@ class MyTool(Tool):
             "Actions: check, set.\n"
             "- check (no key): full config overview — start here.\n"
             "- check (key): drill into a value. Dot-paths allowed "
-            "(e.g. '_last_usage.prompt_tokens', 'web_config.enable').\n"
+            "(e.g. '_last_usage.prompt_tokens', 'max_iterations').\n"
             "- set (key, value): change config or store notes in your scratchpad. "
             "Scratchpad keys persist across turns but not restarts.\n"
             "Key values: _current_iteration (current progress), "
             "max_iterations - _current_iteration = remaining iterations.\n"
-            "Note: web_config 可读取但不可修改。\n"
             "\n"
             "When to use:\n"
             "- User asks about your model, settings, or token usage → check that key.\n"
@@ -330,7 +328,7 @@ class MyTool(Tool):
         for k in self.RESTRICTED:
             parts.append(self._format_value(getattr(loop, k, None), k))
         # Other useful top-level keys shown in description
-        for k in ("workspace", "provider_retry_mode", "max_tool_result_chars", "_current_iteration", "web_config", "subagents"):
+        for k in ("workspace", "provider_retry_mode", "max_tool_result_chars", "_current_iteration", "subagents"):
             if _has_real_attr(loop, k):
                 parts.append(self._format_value(getattr(loop, k, None), k))
         # Token usage

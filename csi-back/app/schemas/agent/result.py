@@ -1,31 +1,62 @@
-"""Agent 最终运行结果的结构化 Schema（MIGRATION_PLAN §3.5）
+"""Agent 运行结果相关 Schema。
 
-- `ResultPayloadSchema`：所有 Agent 本轮 `/start → bot.run` 最终产出的结构化载荷。
-- `RESULT_FORMAT_INSTRUCTION`：需要追加到 system prompt 末尾，告诉 LLM 按此结构返回。
-- `parse_run_result(...)`：把 `RunResult.content` 尽力解析成 `ResultPayloadSchema`，解析失败时
-  返回一个 `success=False` 的兜底实例，保证上层总能拿到结构化结果。
-
-解析策略优先级：
-1. 若 `response_format: json_schema` 严格模式可用（取决于 provider），`content` 本身应该已是合法 JSON。
-2. 不严格模式或输出偶有 markdown/前后缀时，用 `json_repair.loads` 做宽松修复。
-3. 完全无法解析时，`summary=raw, success=False, failure_reason="格式异常"`。
+- `SubmitTaskResultParams`：`submit_task_result` 工具参数（机读权威结果）。
+- `TASK_COMPLETION_INSTRUCTION`：追加到 system prompt，约束「工具收口 + 最后一轮 Markdown」流程。
+- `ResultPayloadSchema` / `parse_run_result`：历史兼容与测试保留（不再作为 `/start` 终局解析路径）。
 """
 from __future__ import annotations
 
 from typing import Any
 
 import json_repair
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+SUBMIT_TASK_RESULT_TOOL_NAME = "submit_task_result"
+
+
+class SubmitTaskResultParams(BaseModel):
+    """通过 `submit_task_result` 提交的机读结果（权威业务态）。"""
+
+    success: bool = Field(description="是否达成任务目标")
+    failure_reason: str | None = Field(
+        default=None,
+        description="未达成时必填原因；success=True 时留空",
+    )
+    short_summary: str = Field(description="简短摘要，供日志与 SSE 提示")
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        description="完整结构化业务结果",
+    )
+
+    @model_validator(mode="after")
+    def _failure_requires_reason(self) -> SubmitTaskResultParams:
+        if not self.success:
+            if self.failure_reason is None or not str(self.failure_reason).strip():
+                raise ValueError("success 为 false 时必须提供非空 failure_reason")
+        return self
+
+
+TASK_COMPLETION_INSTRUCTION: str = (
+    "# 任务结束流程（强制）\n\n"
+    "1. 在正常工作阶段可自由调用可用工具完成分析与修改。\n"
+    "2. 当你认为机读结果已齐备时，**必须调用工具** `"
+    + SUBMIT_TASK_RESULT_TOOL_NAME
+    + "`，并在参数中传入：\n"
+    "   - `success`：是否达成目标；\n"
+    "   - `failure_reason`：失败时必填，成功时为 null；\n"
+    "   - `short_summary`：一句话摘要；\n"
+    "   - `payload`：完整结构化业务结果（对象）。\n"
+    "3. 在收到该工具返回的提示后，**下一轮回复**必须仅为面向用户的 **Markdown 纯文本**总结，"
+    "不要再调用任何工具，也不要输出 JSON。\n"
+    "4. **仅允许调用当前请求里已列出的工具**；禁止编造或调用未列出的工具名，若未出现在工具列表中则一律不得调用。\n"
+    "5. **禁止滥用 spawn**：仅在需要进行任务分解或任务可以并行执行时使用 spawn，如果任务只能串行执行或只需要单步骤完成，则不要使用 spawn."
+    "等方式轮询其他子任务；子任务完成时结果会通过系统消息注入会话，请直接基于上下文与"
+    "已返回的工具结果继续推理，避免链式 spawn。\n"
+)
 
 
 class ResultPayloadSchema(BaseModel):
-    """Agent 最终结果载荷。
-
-    设计目标：
-    - 字段尽量少、必填项明确，便于 `response_format=json_schema strict=True` 使用。
-    - `details` 作为弱结构容器，允许不同业务场景按需扩展，不破坏核心 schema。
-    - `todos_snapshot` 记录最终 todos 状态；前端可不依赖，仅用于调试 / 回溯。
-    """
+    """历史：曾用于助手终局 JSON；现由工具 `submit_task_result` 承担机读结果。"""
 
     summary: str = Field(description="本次运行的核心结论/摘要，必填")
     success: bool = Field(description="是否达成预期目标（False 时 failure_reason 必填）")
@@ -42,27 +73,14 @@ class ResultPayloadSchema(BaseModel):
 
 
 RESULT_FORMAT_INSTRUCTION: str = (
-    "# 输出格式（强制）\n\n"
-    "你在本次对话结束时，必须以**纯 JSON 对象**形式输出最终结论，结构如下：\n\n"
-    "```json\n"
-    "{\n"
-    '  "summary": "<一段中文结论摘要>",\n'
-    '  "success": true,\n'
-    '  "failure_reason": null,\n'
-    '  "details": {},\n'
-    '  "todos_snapshot": []\n'
-    "}\n"
-    "```\n\n"
-    "规则：\n"
-    "- `summary` 必填，简洁描述本次执行的关键结论。\n"
-    "- `success=false` 时必须在 `failure_reason` 中说明原因。\n"
-    "- `details` 与 `todos_snapshot` 可留空；需要时按业务场景补充。\n"
-    "- 禁止在 JSON 外输出任何其它文本（不要 Markdown 代码块围栏、不要解释）。"
+    "已弃用：请改用 `TASK_COMPLETION_INSTRUCTION` 与工具 `"
+    + SUBMIT_TASK_RESULT_TOOL_NAME
+    + "`。"
 )
 
 
 def build_response_format_schema() -> dict[str, Any]:
-    """返回 OpenAI 兼容的 `response_format=json_schema` 载荷。"""
+    """历史兼容：返回 OpenAI 兼容的 `response_format=json_schema` 载荷（业务层已不再使用）。"""
     return {
         "type": "json_schema",
         "json_schema": {
@@ -74,12 +92,7 @@ def build_response_format_schema() -> dict[str, Any]:
 
 
 def parse_run_result(raw: str | None) -> tuple[ResultPayloadSchema, bool]:
-    """解析 RunResult.content 为 ResultPayloadSchema。
-
-    返回 `(schema, parsed_ok)`：
-    - parsed_ok=True：严格/宽松 JSON 解析成功并通过 Pydantic 校验。
-    - parsed_ok=False：解析失败，返回一个 summary=raw / success=False 的兜底实例。
-    """
+    """解析字符串为 ResultPayloadSchema（兼容旧测试/脚本；`run_analysis` 不再依赖此路径）。"""
     if raw is None or not raw.strip():
         return (
             ResultPayloadSchema(
@@ -111,6 +124,9 @@ def parse_run_result(raw: str | None) -> tuple[ResultPayloadSchema, bool]:
 
 
 __all__ = [
+    "SUBMIT_TASK_RESULT_TOOL_NAME",
+    "SubmitTaskResultParams",
+    "TASK_COMPLETION_INSTRUCTION",
     "ResultPayloadSchema",
     "RESULT_FORMAT_INSTRUCTION",
     "build_response_format_schema",

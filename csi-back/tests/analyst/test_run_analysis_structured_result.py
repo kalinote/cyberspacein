@@ -1,4 +1,4 @@
-"""MIGRATION_PLAN §12.16：AnalystService.run_analysis 结构化 result 落库与 SSE 载荷（纯 mock）。"""
+"""AnalystService.run_analysis 结果落库与 SSE 载荷（纯 mock）。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import app.service.analyst.context as actx
 import app.service.analyst.service as service_module
 from app.schemas.constants import NanobotAgentStatusEnum
 
@@ -37,17 +38,32 @@ class FakeNanobotAgentModel:
 def _patch_model(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     FakeNanobotAgentModel._docs = {"a1": FakeAgentDoc(id="a1")}
     monkeypatch.setattr(service_module, "NanobotAgentModel", FakeNanobotAgentModel)
-    # isolate locks/queues for each test
     service_module.AnalystService._sse_subscribers = {}
     service_module.AnalystService._sse_lock = asyncio.Lock()
     yield
 
 
 @pytest.mark.asyncio
-async def test_run_analysis_success_structured_result(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_analysis_success_with_submit_tool_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     bot = MagicMock()
-    bot.run = AsyncMock(return_value=SimpleNamespace(content='{"summary":"x","success":true}', tools_used={"t"}))
     bot.close = AsyncMock()
+
+    async def _run(*_a: Any, **_kw: Any) -> Any:
+        actx.current_task_completion.set(
+            {
+                "success": True,
+                "failure_reason": None,
+                "short_summary": "x",
+                "payload": {"k": 1},
+            }
+        )
+        return SimpleNamespace(
+            content="## 用户可见",
+            tools_used=["submit_task_result"],
+            stop_reason="completed",
+        )
+
+    bot.run = AsyncMock(side_effect=_run)
     events: list[dict[str, Any]] = []
 
     async def _broadcast(agent_id: str, event: str, data: Any) -> None:
@@ -64,25 +80,35 @@ async def test_run_analysis_success_structured_result(monkeypatch: pytest.Monkey
     )
     doc = FakeNanobotAgentModel._docs["a1"]
     assert doc.status == NanobotAgentStatusEnum.COMPLETED
-    assert doc.result and doc.result["parsed"] is True
-    assert doc.result["summary"] == "x"
-    # SSE result 事件里也应带 parsed=True
+    assert doc.result and doc.result["completion_received"] is True
+    assert doc.result["success"] is True
+    assert doc.result["user_markdown"] == "## 用户可见"
+    assert doc.result["payload"] == {"k": 1}
     result_events = [e for e in events if e["event"] == "result"]
     assert result_events
-    assert result_events[-1]["data"]["result"]["parsed"] is True
+    assert result_events[-1]["data"]["result"]["completion_received"] is True
 
 
 @pytest.mark.asyncio
-async def test_run_analysis_unparseable_result(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_analysis_user_markdown_not_json_still_ok_when_submit_ok(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bot = MagicMock()
-    bot.run = AsyncMock(return_value=SimpleNamespace(content="not json", tools_used=set()))
     bot.close = AsyncMock()
-    events: list[dict[str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
-        events.append({"agent_id": agent_id, "event": event, "data": data})
+    async def _run(*_a: Any, **_kw: Any) -> Any:
+        actx.current_task_completion.set(
+            {
+                "success": True,
+                "failure_reason": None,
+                "short_summary": "y",
+                "payload": {},
+            }
+        )
+        return SimpleNamespace(content="plain text 不是 json", tools_used=[], stop_reason="completed")
 
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
+    bot.run = AsyncMock(side_effect=_run)
+    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", AsyncMock())
 
     await service_module.AnalystService.run_analysis(
         agent_id="a1",
@@ -93,8 +119,8 @@ async def test_run_analysis_unparseable_result(monkeypatch: pytest.MonkeyPatch) 
     )
     doc = FakeNanobotAgentModel._docs["a1"]
     assert doc.status == NanobotAgentStatusEnum.COMPLETED
-    assert doc.result and doc.result["parsed"] is False
-    assert doc.result["success"] is False
+    assert doc.result and doc.result["success"] is True
+    assert doc.result["user_markdown"] == "plain text 不是 json"
 
 
 @pytest.mark.asyncio
@@ -126,4 +152,3 @@ async def test_run_analysis_exception_result_shape(monkeypatch: pytest.MonkeyPat
     result_events = [e for e in events if e["event"] == "result"]
     assert result_events
     assert result_events[-1]["data"]["error"]
-

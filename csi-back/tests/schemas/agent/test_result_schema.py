@@ -8,7 +8,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.agent.result import (
-    RESULT_FORMAT_INSTRUCTION,
+    SUBMIT_TASK_RESULT_TOOL_NAME,
+    SubmitTaskResultParams,
+    TASK_COMPLETION_INSTRUCTION,
     ResultPayloadSchema,
     build_response_format_schema,
     parse_run_result,
@@ -100,10 +102,27 @@ def test_parse_long_content_truncates_to_2000() -> None:
     assert len(schema.summary) == 2000
 
 
-def test_result_format_instruction_contains_keys() -> None:
-    text = RESULT_FORMAT_INSTRUCTION
-    for key in ["summary", "success", "failure_reason", "details", "todos_snapshot", "输出格式"]:
-        assert key in text
-    # 提示词里应包含 json 围栏示例
-    assert "```json" in text
+def test_task_completion_instruction_contains_flow() -> None:
+    text = TASK_COMPLETION_INSTRUCTION
+    assert SUBMIT_TASK_RESULT_TOOL_NAME in text
+    assert "Markdown" in text
+    assert "submit_task_result" in text
+    assert "spawn" in text
+    assert "禁止" in text
+
+
+def test_submit_task_result_params_ok() -> None:
+    p = SubmitTaskResultParams(
+        success=True,
+        failure_reason=None,
+        short_summary="好",
+        payload={"a": 1},
+    )
+    assert p.success is True
+    assert p.payload["a"] == 1
+
+
+def test_submit_task_result_params_failure_requires_reason() -> None:
+    with pytest.raises(ValidationError):
+        SubmitTaskResultParams(success=False, failure_reason=None, short_summary="x")
 

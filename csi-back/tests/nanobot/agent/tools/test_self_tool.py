@@ -36,12 +36,6 @@ def _make_mock_loop(**overrides):
     loop._unified_session = False
     loop._extra_hooks = []
 
-    # web_config mock — needed for check tests
-    loop.web_config = MagicMock()
-    loop.web_config.enable = True
-    loop.web_config.search = MagicMock()
-    loop.web_config.search.api_key = "sk-secret-key-12345"
-
     # Tools registry mock
     loop.tools = MagicMock()
     loop.tools.tool_names = ["web_search", "web_fetch", "my", "spawn"]
@@ -140,13 +134,20 @@ class TestInspectSingleKey:
 class TestInspectPathNavigation:
 
     @pytest.mark.asyncio
-    async def test_inspect_config_subfield(self):
+    async def test_inspect_subagents_nested_field(self):
         loop = _make_mock_loop()
-        loop.web_config = MagicMock()
-        loop.web_config.enable = True
+
+        class _RunningCount:
+            def __get__(self, obj: object, owner: type | None = None) -> int:
+                return 3
+
+        class _SubagentsStub:
+            get_running_count = _RunningCount()
+
+        loop.subagents = _SubagentsStub()
         tool = _make_tool(loop)
-        result = await tool.execute(action="check", key="web_config.enable")
-        assert "True" in result
+        result = await tool.execute(action="check", key="subagents.get_running_count")
+        assert "3" in result
 
     @pytest.mark.asyncio
     async def test_inspect_dict_key_via_dotpath(self):
@@ -170,21 +171,19 @@ class TestInspectPathNavigation:
         assert "not accessible" in result
 
     @pytest.mark.asyncio
-    async def test_inspect_nested_config_redacts_sensitive_scalar_fields(self):
-        class SearchConfig(BaseModel):
-            provider: str = "tavily"
+    async def test_inspect_nested_pydantic_redacts_sensitive_scalar_fields(self):
+        class ProviderCfg(BaseModel):
+            name: str = "acme"
             api_key: str = "sk-test-secret"
             base_url: str = ""
-            max_results: int = 5
 
         loop = _make_mock_loop()
-        loop.web_config = MagicMock()
-        loop.web_config.search = SearchConfig()
+        loop.provider_cfg = ProviderCfg()
         tool = _make_tool(loop)
 
-        result = await tool.execute(action="check", key="web_config.search")
+        result = await tool.execute(action="check", key="provider_cfg")
 
-        assert "provider='tavily'" in result
+        assert "name='acme'" in result or "acme" in result
         assert "sk-test-secret" not in result
         assert "api_key" not in result.lower()
 
@@ -928,9 +927,11 @@ class TestSensitiveSubFieldBlocking:
 
     @pytest.mark.asyncio
     async def test_inspect_api_key_blocked(self):
-        """web_config.search.api_key must not be accessible."""
-        tool = _make_tool()
-        result = await tool.execute(action="check", key="web_config.search.api_key")
+        loop = _make_mock_loop()
+        loop.some_config = MagicMock()
+        loop.some_config.api_key = "secret"
+        tool = _make_tool(loop)
+        result = await tool.execute(action="check", key="some_config.api_key")
         assert "not accessible" in result
 
     @pytest.mark.asyncio
@@ -963,11 +964,11 @@ class TestSensitiveSubFieldBlocking:
 
     @pytest.mark.asyncio
     async def test_modify_api_key_blocked(self):
-        """web_config is READ_ONLY, so any set under it is blocked."""
-        tool = _make_tool()
-        result = await tool.execute(action="set", key="web_config.search.api_key", value="evil")
-        # Blocked either by READ_ONLY (web_config) or sensitive name (api_key)
-        assert "read-only" in result or "not accessible" in result
+        loop = _make_mock_loop()
+        loop.some_config = MagicMock()
+        tool = _make_tool(loop)
+        result = await tool.execute(action="set", key="some_config.api_key", value="evil")
+        assert "not accessible" in result
 
     @pytest.mark.asyncio
     async def test_modify_password_blocked(self):
@@ -979,9 +980,11 @@ class TestSensitiveSubFieldBlocking:
 
     @pytest.mark.asyncio
     async def test_inspect_non_sensitive_subfield_allowed(self):
-        """web_config.enable should still be inspectable."""
-        tool = _make_tool()
-        result = await tool.execute(action="check", key="web_config.enable")
+        loop = _make_mock_loop()
+        loop.demo_cfg = MagicMock()
+        loop.demo_cfg.enabled = True
+        tool = _make_tool(loop)
+        result = await tool.execute(action="check", key="demo_cfg.enabled")
         assert "True" in result
 
     @pytest.mark.asyncio
@@ -1006,10 +1009,9 @@ class TestSecurityAttributeProtection:
         assert "protected" in result
 
     @pytest.mark.asyncio
-    async def test_modify_web_config_blocked(self):
-        """web_config is READ_ONLY — cannot be modified."""
+    async def test_modify_subagents_blocked(self):
         tool = _make_tool()
-        result = await tool.execute(action="set", key="web_config", value=MagicMock())
+        result = await tool.execute(action="set", key="subagents", value=MagicMock())
         assert "read-only" in result
 
     @pytest.mark.asyncio
@@ -1027,17 +1029,15 @@ class TestSecurityAttributeProtection:
         assert "not accessible" in result
 
     @pytest.mark.asyncio
-    async def test_inspect_web_config_allowed(self):
-        """web_config is READ_ONLY — check should work."""
+    async def test_inspect_subagents_allowed(self):
         tool = _make_tool()
-        result = await tool.execute(action="check", key="web_config")
+        result = await tool.execute(action="check", key="subagents")
         assert "Error" not in result
 
     @pytest.mark.asyncio
-    async def test_modify_web_config_dotpath_blocked(self):
-        """web_config.enable = False should be blocked because web_config is READ_ONLY."""
+    async def test_modify_subagents_dotpath_blocked(self):
         tool = _make_tool()
-        result = await tool.execute(action="set", key="web_config.enable", value=False)
+        result = await tool.execute(action="set", key="subagents.foo", value="x")
         assert "read-only" in result
 
 

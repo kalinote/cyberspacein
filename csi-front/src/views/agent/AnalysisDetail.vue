@@ -129,12 +129,8 @@
                                             <span class="text-xs text-gray-500">{{ formatDateTime(ev.ts, {
                                                 includeSecond: true })
                                                 }}</span>
-                                            <el-tag v-if="ev.type === 'status'" :type="statusTagType" size="small">{{
-                                                statusLabel
-                                                }}</el-tag>
                                         </div>
-                                        <pre class="mt-2 text-xs bg-white p-2 rounded whitespace-pre-wrap wrap-break-word overflow-x-hidden">{{ JSON.stringify(ev.data,
-                                null, 2) }}</pre>
+                                        <pre class="mt-2 text-xs bg-white p-2 rounded whitespace-pre-wrap wrap-break-word overflow-x-hidden">{{ typeof ev.data === 'string' ? ev.data : JSON.stringify(ev.data, null, 2) }}</pre>
                                     </div>
                                 </div>
                             </div>
@@ -228,6 +224,32 @@ let eventSource = null
 let retryCount = 0
 const maxRetries = 3
 
+const APPROVAL_SSE_QUIET_MS = 300
+let approvalSseQuietTimer = null
+let lastSseEventName = ''
+let lastApprovalRequiredPayload = null
+
+function resetApprovalSseGate() {
+    if (approvalSseQuietTimer) {
+        clearTimeout(approvalSseQuietTimer)
+        approvalSseQuietTimer = null
+    }
+    lastSseEventName = ''
+    lastApprovalRequiredPayload = null
+}
+
+function bumpSseTail(eventName) {
+    lastSseEventName = eventName
+    if (approvalSseQuietTimer) clearTimeout(approvalSseQuietTimer)
+    approvalSseQuietTimer = setTimeout(() => {
+        approvalSseQuietTimer = null
+        if (lastSseEventName === 'approval_required' && lastApprovalRequiredPayload) {
+            pendingApproval.value = lastApprovalRequiredPayload
+            showApprovalDialog.value = true
+        }
+    }, APPROVAL_SSE_QUIET_MS)
+}
+
 const showApprovalDialog = ref(false)
 const pendingApproval = ref(null)
 const approvalReason = ref('')
@@ -235,15 +257,6 @@ const approvalLoading = ref(false)
 
 const eventsScrollEl = ref(null)
 const isEventsScrollAtBottom = ref(true)
-
-function parseJsonSafe(text) {
-    if (text == null || text === '') return null
-    try {
-        return JSON.parse(text)
-    } catch {
-        return null
-    }
-}
 
 function pushEvent(type, data) {
     events.value.push({
@@ -356,7 +369,7 @@ function connectSSE() {
             sseConnected.value = true
             sseError.value = ''
             retryCount = 0
-            pushEvent('sse_open', { ok: true })
+            pushEvent('sse_open', '')
         }
 
         eventSource.onerror = () => {
@@ -369,66 +382,57 @@ function connectSSE() {
             if (retryCount < maxRetries) {
                 retryCount++
                 const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000)
-                pushEvent('sse_retry', { retryCount, delay })
+                pushEvent('sse_retry', `第 ${retryCount} 次重连，${delay}ms 后执行`)
                 setTimeout(() => {
                     if (retryCount <= maxRetries) connectSSE()
                 }, delay)
             } else {
                 sseError.value = 'SSE 连接失败，请刷新页面重试'
-                pushEvent('sse_error', { message: sseError.value })
+                pushEvent('sse_error', sseError.value)
                 ElMessage.error('实时连接中断，请稍后重试')
             }
         }
 
-        eventSource.addEventListener('status', (event) => {
-            const payload = parseJsonSafe(event.data)
-            if (!payload) return
-            mergeAgent(payload)
-            pushEvent('status', payload)
-        })
-
-        eventSource.addEventListener('todos', (event) => {
-            const payload = parseJsonSafe(event.data)
-            if (!payload) return
-            const list = normalizeTodosPayload(payload)
-            todos.value = list
-            pushEvent('todos', payload)
-        })
-
-        eventSource.addEventListener('notification', (event) => {
-            const payload = parseJsonSafe(event.data)
-            if (!payload) return
-            pushEvent('notification', payload)
-        })
-
+        const sseNamedEvents = [
+            'status',
+            'todos',
+            'notification',
+            'result',
+            'debug_prompt',
+            'progress'
+        ]
+        for (const name of sseNamedEvents) {
+            eventSource.addEventListener(name, (event) => {
+                pushEvent(name, event.data ?? '')
+                bumpSseTail(name)
+            })
+        }
         eventSource.addEventListener('approval_required', (event) => {
-            const payload = parseJsonSafe(event.data)
-            if (!payload) return
-            pendingApproval.value = payload
-            showApprovalDialog.value = true
-            pushEvent('approval_required', payload)
+            const raw = event.data ?? ''
+            pushEvent('approval_required', raw)
+            let p = null
+            try {
+                const x = JSON.parse(raw)
+                if (x && typeof x === 'object') p = x
+            } catch {
+                p = null
+            }
+            lastApprovalRequiredPayload = p
+            bumpSseTail('approval_required')
         })
-
-        eventSource.addEventListener('result', (event) => {
-            const payload = parseJsonSafe(event.data)
-            if (!payload) return
-            mergeAgent({ result: payload })
-            pushEvent('result', payload)
-        })
-
-        eventSource.addEventListener('debug_prompt', (event) => {
-            const payload = parseJsonSafe(event.data)
-            if (!payload) return
-            pushEvent('debug_prompt', payload)
-        })
+        eventSource.onmessage = (event) => {
+            pushEvent('message', event.data ?? '')
+            bumpSseTail('message')
+        }
     } catch (e) {
         sseConnected.value = false
         sseError.value = e?.message || '创建 SSE 连接失败'
-        pushEvent('sse_error', { message: sseError.value })
+        pushEvent('sse_error', sseError.value)
     }
 }
 
 function disconnectSSE() {
+    resetApprovalSseGate()
     if (eventSource) {
         eventSource.close()
         eventSource = null
@@ -439,8 +443,12 @@ function disconnectSSE() {
 function parseExtraContext() {
     const text = extraContextText.value.trim()
     if (!text) return undefined
-    const obj = parseJsonSafe(text)
-    return obj && typeof obj === 'object' ? obj : undefined
+    try {
+        const obj = JSON.parse(text)
+        return obj && typeof obj === 'object' ? obj : undefined
+    } catch {
+        return undefined
+    }
 }
 
 async function start() {

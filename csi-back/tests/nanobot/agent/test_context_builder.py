@@ -94,7 +94,7 @@ def test_empty_snapshot_prompt() -> None:
     cb = _builder(FakeMemoryStore())
     prompt = cb.build_system_prompt()
 
-    assert "## Search & Discovery" in prompt
+    assert "对话中请直接用文字回复" in prompt
     assert "# Memory\n\n## Long-term Memory" not in prompt
     assert "# Recent History" not in prompt
     assert "## SOUL\n\n" not in prompt

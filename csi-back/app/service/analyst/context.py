@@ -1,6 +1,6 @@
 """ContextVar 绑定：在一次 `run_analysis` 协程内把 `agent_id / session_id` 暴露给业务工具。
 
-业务工具（`modify_entity / notify_user / write_todos` 等，TODO #20）通过这些 ContextVar
+业务工具（`modify_entity / notify_user / write_todos / submit_task_result` 等）通过这些 ContextVar
 读取当前运行的 agent / session，从而：
 - 按 `agent_id` 把状态写回 `NanobotAgentModel`
 - 按 `agent_id` 把事件通过 `AnalystService.broadcast_sse` 推给前端
@@ -19,9 +19,13 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
+from typing import Any
 
 current_agent_id: ContextVar[str | None] = ContextVar("current_agent_id", default=None)
 current_session_id: ContextVar[str | None] = ContextVar("current_session_id", default=None)
+current_task_completion: ContextVar[dict[str, Any] | None] = ContextVar(
+    "current_task_completion", default=None
+)
 
 
 def get_current_agent_id() -> str | None:
@@ -32,3 +36,8 @@ def get_current_agent_id() -> str | None:
 def get_current_session_id() -> str | None:
     """读取当前协程上下文中的 session_id（未绑定时返回 None）。"""
     return current_session_id.get()
+
+
+def get_current_task_completion() -> dict[str, Any] | None:
+    """读取 `submit_task_result` 工具写入的机读结果（未调用时为 None）。"""
+    return current_task_completion.get()

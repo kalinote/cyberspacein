@@ -14,10 +14,8 @@ from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
 from app.service.nanobot.utils.prompt_templates import render_template
 from app.service.nanobot.agent.runner import AgentRunSpec, AgentRunner
 from app.service.nanobot.agent.tools.registry import ToolRegistry
-from app.service.nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from app.service.nanobot.bus.events import InboundMessage
 from app.service.nanobot.bus.queue import MessageBus
-from app.service.nanobot.config.schema import WebToolsConfig
 from app.service.nanobot.providers.base import LLMProvider
 
 
@@ -73,7 +71,6 @@ class SubagentManager:
         bus: MessageBus,
         max_tool_result_chars: int,
         model: str | None = None,
-        web_config: "WebToolsConfig | None" = None,
         restrict_to_workspace: bool = False,
         disabled_skills: list[str] | None = None,
     ):
@@ -81,7 +78,6 @@ class SubagentManager:
         self.workspace = workspace
         self.bus = bus
         self.model = model or provider.get_default_model()
-        self.web_config = web_config or WebToolsConfig()
         self.max_tool_result_chars = max_tool_result_chars
         self.restrict_to_workspace = restrict_to_workspace
         self.disabled_skills = set(disabled_skills or [])
@@ -149,9 +145,6 @@ class SubagentManager:
         try:
             # Build subagent tools (no message tool, no spawn tool)
             tools = ToolRegistry()
-            if self.web_config.enable:
-                tools.register(WebSearchTool(config=self.web_config.search, proxy=self.web_config.proxy))
-                tools.register(WebFetchTool(proxy=self.web_config.proxy))
             system_prompt = self._build_subagent_prompt()
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": system_prompt},

@@ -25,19 +25,6 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
     if ctx_est <= 0:
         ctx_est = loop._last_usage.get("prompt_tokens", 0)
     
-    # Fetch web search provider usage (best-effort, never blocks the response)
-    search_usage_text: str | None = None
-    try:
-        from app.service.nanobot.utils.searchusage import fetch_search_usage
-        web_cfg = getattr(loop, "web_config", None)
-        search_cfg = getattr(web_cfg, "search", None) if web_cfg else None
-        if search_cfg is not None:
-            provider = getattr(search_cfg, "provider", "duckduckgo")
-            api_key = getattr(search_cfg, "api_key", "") or None
-            usage = await fetch_search_usage(provider=provider, api_key=api_key)
-            search_usage_text = usage.format()
-    except Exception:
-        pass  # Never let usage fetch break /status
     active_tasks = loop._active_tasks.get(ctx.session_id, [])
     task_count = sum(1 for t in active_tasks if not t.done())
     try:
@@ -53,7 +40,6 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
             context_window_tokens=loop.context_window_tokens,
             session_msg_count=len(session.get_history(max_messages=0)),
             context_tokens_estimate=ctx_est,
-            search_usage_text=search_usage_text,
             active_task_count=task_count,
             max_completion_tokens=getattr(
                 getattr(loop.provider, "generation", None), "max_tokens", 8192

@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from app.service.nanobot.config.schema import (
         DreamConfig,
         ToolsConfig,
-        WebToolsConfig,
     )
     from app.service.nanobot.providers.base import LLMProvider
     from app.service.nanobot.storage.base import MemoryBackend, SessionStore
@@ -44,6 +43,7 @@ class RunResult:
     content: str
     tools_used: list[str]
     messages: list[dict[str, Any]]
+    stop_reason: str | None = None
 
 
 class Nanobot:
@@ -86,7 +86,6 @@ class Nanobot:
         model: str | None = None,
         dream_config: DreamConfig | None = None,
         tools_config: ToolsConfig | None = None,
-        web_config: WebToolsConfig | None = None,
         mcp_servers: dict | None = None,
         max_iterations: int | None = None,
         context_window_tokens: int | None = None,
@@ -128,7 +127,6 @@ class Nanobot:
             context_block_limit=context_block_limit,
             max_tool_result_chars=max_tool_result_chars,
             provider_retry_mode=provider_retry_mode,
-            web_config=web_config,
             restrict_to_workspace=restrict_to_workspace,
             mcp_servers=mcp_servers,
             send_progress=send_progress,
@@ -185,7 +183,11 @@ class Nanobot:
             self._loop._extra_hooks = prev
 
         content = (response.content if response else None) or ""
-        return RunResult(content=content, tools_used=[], messages=[])
+        meta = (response.metadata if response else None) or {}
+        tools_used = list(meta.get("_tools_used") or []) if isinstance(meta, dict) else []
+        stop_reason = meta.get("_stop_reason") if isinstance(meta, dict) else None
+        sr = str(stop_reason) if stop_reason is not None else None
+        return RunResult(content=content, tools_used=tools_used, messages=[], stop_reason=sr)
 
     async def close(self) -> None:
         """清理底层资源：drain 后台任务 + 关闭 MCP 连接"""

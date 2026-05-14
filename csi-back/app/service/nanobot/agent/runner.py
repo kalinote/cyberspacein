@@ -10,6 +10,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.schemas.agent.result import SUBMIT_TASK_RESULT_TOOL_NAME
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
 from app.service.nanobot.utils.prompt_templates import render_template
 from app.service.nanobot.agent.tools.registry import ToolRegistry
@@ -73,6 +74,9 @@ class AgentRunSpec:
     retry_wait_callback: Any | None = None
     checkpoint_callback: Any | None = None
     injection_callback: Any | None = None
+    completion_tool_names: frozenset[str] = field(
+        default_factory=lambda: frozenset({SUBMIT_TASK_RESULT_TOOL_NAME}),
+    )
 
 
 @dataclass(slots=True)
@@ -237,6 +241,7 @@ class AgentRunner:
         length_recovery_count = 0
         had_injections = False
         injection_cycles = 0
+        post_submit_phase = False
 
         for iteration in range(spec.max_iterations):
             try:
@@ -266,14 +271,21 @@ class AgentRunner:
                     messages_for_model = messages
             context = AgentHookContext(iteration=iteration, messages=messages)
             await hook.before_iteration(context)
-            response = await self._request_model(spec, messages_for_model, hook, context)
+            no_tools_request = post_submit_phase
+            response = await self._request_model(
+                spec,
+                messages_for_model,
+                hook,
+                context,
+                disable_tools=no_tools_request,
+            )
             raw_usage = self._usage_dict(response.usage)
             context.response = response
             context.usage = dict(raw_usage)
             context.tool_calls = list(response.tool_calls)
             self._accumulate_usage(usage, raw_usage)
 
-            if response.should_execute_tools:
+            if response.should_execute_tools and not no_tools_request:
                 if hook.wants_streaming():
                     await hook.on_stream_end(context, resuming=True)
 
@@ -359,6 +371,16 @@ class AgentRunner:
                 )
                 if _drained:
                     had_injections = True
+                if any(tc.name in spec.completion_tool_names for tc in response.tool_calls):
+                    n_sub = sum(
+                        1 for tc in response.tool_calls if tc.name in spec.completion_tool_names
+                    )
+                    if n_sub > 1:
+                        logger.warning(
+                            "同一回合多次调用完成工具 {}，以最后一次工具写入为准",
+                            spec.completion_tool_names,
+                        )
+                    post_submit_phase = True
                 await hook.after_iteration(context)
                 continue
 
@@ -549,11 +571,12 @@ class AgentRunner:
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "messages": messages,
-            "tools": tools,
             "model": spec.model,
             "retry_mode": spec.provider_retry_mode,
             "on_retry_wait": spec.retry_wait_callback,
         }
+        if tools:
+            kwargs["tools"] = tools
         if spec.temperature is not None:
             kwargs["temperature"] = spec.temperature
         if spec.max_tokens is not None:
@@ -568,11 +591,14 @@ class AgentRunner:
         messages: list[dict[str, Any]],
         hook: AgentHook,
         context: AgentHookContext,
+        *,
+        disable_tools: bool = False,
     ):
+        tool_defs = None if disable_tools else spec.tools.get_definitions()
         kwargs = self._build_request_kwargs(
             spec,
             messages,
-            tools=spec.tools.get_definitions(),
+            tools=tool_defs,
         )
         if hook.wants_streaming():
             async def _stream(delta: str) -> None:

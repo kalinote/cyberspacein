@@ -21,7 +21,6 @@ from app.service.nanobot.agent.subagent import SubagentManager
 from app.service.nanobot.agent.tools.registry import ToolRegistry
 from app.service.nanobot.agent.tools.self import MyTool
 from app.service.nanobot.agent.tools.spawn import SpawnTool
-from app.service.nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from app.service.nanobot.bus.events import InboundMessage, OutboundMessage
 from app.service.nanobot.bus.queue import MessageBus
 from app.service.nanobot.command import CommandContext, CommandRouter, register_builtin_commands
@@ -34,7 +33,7 @@ from app.service.nanobot.utils.helpers import truncate_text as truncate_text_fn
 from app.service.nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
-    from app.service.nanobot.config.schema import ToolsConfig, WebToolsConfig
+    from app.service.nanobot.config.schema import ToolsConfig
 
 
 class _LoopHook(AgentHook):
@@ -137,7 +136,6 @@ class AgentLoop:
         context_block_limit: int | None = None,
         max_tool_result_chars: int | None = None,
         provider_retry_mode: str = "standard",
-        web_config: WebToolsConfig | None = None,
         restrict_to_workspace: bool = False,
         mcp_servers: dict | None = None,
         send_progress: bool = True,
@@ -161,7 +159,7 @@ class AgentLoop:
           与长期记忆、session、配置等持久化完全无关。
         - `dream_config`：Dream 触发阈值等配置，未传入时使用默认 `DreamConfig()`。
         """
-        from app.service.nanobot.config.schema import ToolsConfig, WebToolsConfig
+        from app.service.nanobot.config.schema import ToolsConfig
 
         _tc = tools_config or ToolsConfig()
         defaults = AgentDefaults()
@@ -187,7 +185,6 @@ class AgentLoop:
             else defaults.max_tool_result_chars
         )
         self.provider_retry_mode = provider_retry_mode
-        self.web_config = web_config or WebToolsConfig()
         self.restrict_to_workspace = restrict_to_workspace
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
@@ -215,7 +212,6 @@ class AgentLoop:
             workspace=workspace,
             bus=bus,
             model=self.model,
-            web_config=self.web_config,
             max_tool_result_chars=self.max_tool_result_chars,
             restrict_to_workspace=restrict_to_workspace,
             disabled_skills=disabled_skills,
@@ -252,11 +248,6 @@ class AgentLoop:
 
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
-        if self.web_config.enable:
-            self.tools.register(
-                WebSearchTool(config=self.web_config.search, proxy=self.web_config.proxy)
-            )
-            self.tools.register(WebFetchTool(proxy=self.web_config.proxy))
         self.tools.register(SpawnTool(manager=self.subagents))
 
     async def _connect_mcp(self) -> None:
@@ -556,7 +547,7 @@ class AgentLoop:
             await self.sessions.save(session)
             user_persisted_early = True
 
-        final_content, _, all_msgs, stop_reason, had_injections = await self._run_agent_loop(
+        final_content, tools_used, all_msgs, stop_reason, had_injections = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
             on_stream=on_stream,
@@ -584,6 +575,8 @@ class AgentLoop:
         meta = dict(msg.metadata or {})
         if on_stream is not None and stop_reason != "error":
             meta["_streamed"] = True
+        meta["_tools_used"] = list(tools_used)
+        meta["_stop_reason"] = stop_reason
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,

@@ -1,4 +1,4 @@
-"""AnalystService.build_bot 的 provider 选择策略测试。"""
+"""AnalystService.build_bot 的 provider 装配。"""
 
 from __future__ import annotations
 
@@ -38,11 +38,17 @@ class FakeWorkspace:
 
 
 @pytest.mark.asyncio
-async def test_build_bot_uses_deepseek_provider_when_base_url_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_bot_always_uses_openai_compat_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         service_module.AgentModelConfigModel,
         "find_one",
-        AsyncMock(return_value=SimpleNamespace(api_key="k", base_url="https://api.deepseek.com/", model="deepseek-chat")),
+        AsyncMock(
+            return_value=SimpleNamespace(
+                api_key="k",
+                base_url="https://api.deepseek.com/",
+                model="deepseek-chat",
+            )
+        ),
     )
     monkeypatch.setattr(
         service_module.AgentPromptTemplateModel,
@@ -57,22 +63,29 @@ async def test_build_bot_uses_deepseek_provider_when_base_url_matches(monkeypatc
 
     called: dict[str, dict] = {}
 
-    def _deepseek_provider(**kw: Any) -> Any:
-        called["deepseek"] = kw
-        return SimpleNamespace(**kw)
-
     def _openai_provider(**kw: Any) -> Any:
         called["openai"] = kw
         return SimpleNamespace(**kw)
 
-    monkeypatch.setattr(service_module, "DeepSeekProvider", _deepseek_provider)
     monkeypatch.setattr(service_module, "OpenAICompatProvider", _openai_provider)
-    monkeypatch.setattr(service_module.Nanobot, "from_components", staticmethod(lambda **kw: SimpleNamespace(loop=SimpleNamespace(tools=SimpleNamespace(register=lambda _t: None), context=SimpleNamespace(extra_system_suffix=""), _extra_hooks=[]))))
+    monkeypatch.setattr(
+        service_module.Nanobot,
+        "from_components",
+        staticmethod(
+            lambda **kw: SimpleNamespace(
+                loop=SimpleNamespace(
+                    tools=SimpleNamespace(register=lambda _t: None, has=lambda _n: False),
+                    context=SimpleNamespace(extra_system_suffix=""),
+                    _extra_hooks=[],
+                )
+            )
+        ),
+    )
 
     agent = FakeAgent()
     ws = FakeWorkspace()
     await service_module.AnalystService.build_bot(agent, ws)
 
-    assert "deepseek" in called
-    assert "openai" not in called
-
+    assert "openai" in called
+    assert called["openai"].get("response_format") in (None, {})
+    assert called["openai"].get("api_key") == "k"

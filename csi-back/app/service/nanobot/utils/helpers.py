@@ -78,7 +78,7 @@ def current_time_str(timezone: str | None = None) -> str:
 
 
 _UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*]')
-_TOOL_RESULT_PREVIEW_CHARS = 1200
+_TOOL_RESULT_PREVIEW_CHARS = 8192
 _TOOL_RESULTS_DIR = ".nanobot/tool-results"
 _TOOL_RESULT_RETENTION_SECS = 7 * 24 * 60 * 60
 _TOOL_RESULT_MAX_BUCKETS = 32
@@ -399,17 +399,10 @@ def build_status_content(
     context_window_tokens: int,
     session_msg_count: int,
     context_tokens_estimate: int,
-    search_usage_text: str | None = None,
     active_task_count: int = 0,
     max_completion_tokens: int = 8192,
 ) -> str:
-    """Build a human-readable runtime status snapshot.
-    
-    Args:
-        search_usage_text: Optional pre-formatted web search usage string
-                           (produced by SearchUsageInfo.format()). When provided
-                           it is appended as an extra section.
-    """
+    """Build a human-readable runtime status snapshot."""
     uptime_s = int(time.time() - start_time)
     uptime = (
         f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m"
@@ -437,8 +430,6 @@ def build_status_content(
         f"\u23f1 Uptime: {uptime}",
         f"\u26a1 Tasks: {active_task_count} active",
     ]
-    if search_usage_text:
-        lines.append(search_usage_text)
     return "\n".join(lines)    
 
 

@@ -86,26 +86,6 @@ class ProvidersConfig(Base):
     lm_studio: ProviderConfig = Field(default_factory=ProviderConfig)  # LM Studio local models
 
 
-class WebSearchConfig(Base):
-    """Web search tool configuration."""
-
-    provider: str = "duckduckgo"  # brave, tavily, duckduckgo, searxng, jina, kagi
-    api_key: str = ""
-    base_url: str = ""  # SearXNG base URL
-    max_results: int = 5
-    timeout: int = 30  # Wall-clock timeout (seconds) for search operations
-
-
-class WebToolsConfig(Base):
-    """Web tools configuration."""
-
-    enable: bool = True
-    proxy: str | None = (
-        None  # HTTP/SOCKS5 proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
-    )
-    search: WebSearchConfig = Field(default_factory=WebSearchConfig)
-
-
 class MCPServerConfig(Base):
     """MCP server connection configuration (stdio or HTTP)."""
 
@@ -128,11 +108,9 @@ class MyToolConfig(Base):
 class ToolsConfig(Base):
     """Tools configuration."""
 
-    web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     my: MyToolConfig = Field(default_factory=MyToolConfig)
     restrict_to_workspace: bool = False  # restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
-    ssrf_whitelist: list[str] = Field(default_factory=list)  # CIDR ranges to exempt from SSRF blocking (e.g. ["100.64.0.0/10"] for Tailscale)
 
 
 class Config(BaseSettings):

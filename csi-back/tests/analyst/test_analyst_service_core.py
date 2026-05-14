@@ -164,15 +164,20 @@ async def test_submit_approval_non_awaiting_warns(monkeypatch: pytest.MonkeyPatc
 async def test_run_analysis_success_sets_result_and_resets_context(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
     bot = MagicMock()
-    bot.run = AsyncMock(return_value=SimpleNamespace(content="OK", tools_used=set()))
     bot.close = AsyncMock()
 
-    # 让 parse_run_result 可控
-    class _FakeParsed:
-        def model_dump(self) -> dict:
-            return {"summary": "s"}
+    async def _run_ok(*_a: Any, **_kw: Any) -> Any:
+        ctx.current_task_completion.set(
+            {
+                "success": True,
+                "failure_reason": None,
+                "short_summary": "完成",
+                "payload": {"k": 1},
+            }
+        )
+        return SimpleNamespace(content="用户总结", tools_used=["submit_task_result"], stop_reason="completed")
 
-    monkeypatch.setattr(service_module, "parse_run_result", lambda _s: (_FakeParsed(), True))
+    bot.run = AsyncMock(side_effect=_run_ok)
 
     await service_module.AnalystService.run_analysis(
         agent_id="a1",
@@ -183,10 +188,34 @@ async def test_run_analysis_success_sets_result_and_resets_context(monkeypatch: 
     )
     doc = FakeNanobotAgentModel._docs["a1"]
     assert doc.status == NanobotAgentStatusEnum.COMPLETED
-    assert doc.result and doc.result.get("parsed") is True
+    assert doc.result and doc.result.get("completion_received") is True
+    assert doc.result.get("success") is True
+    assert doc.result.get("user_markdown") == "用户总结"
     assert ctx.get_current_agent_id() is None
     assert ctx.get_current_session_id() is None
+    assert ctx.get_current_task_completion() is None
     bot.close.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_analysis_without_submit_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+    bot = MagicMock()
+    bot.run = AsyncMock(
+        return_value=SimpleNamespace(content="直接回复", tools_used=[], stop_reason="completed")
+    )
+    bot.close = AsyncMock()
+
+    await service_module.AnalystService.run_analysis(
+        agent_id="a1",
+        session_id="s1",
+        bot=bot,
+        user_prompt="hi",
+        context={},
+    )
+    doc = FakeNanobotAgentModel._docs["a1"]
+    assert doc.status == NanobotAgentStatusEnum.FAILED
+    assert doc.result and doc.result.get("completion_received") is False
 
 
 @pytest.mark.asyncio

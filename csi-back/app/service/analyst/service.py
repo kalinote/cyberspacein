@@ -15,9 +15,9 @@
 故意留到后续 TODO 的扩展点：
 - 业务 Hooks（StatusHook / TodosHook / ApprovalHook / ResultHook）→ TODO #20
 - 业务工具（get_entity / modify_entity / notify_user / write_todos）→ TODO #20
-- `ResultPayloadSchema` + `response_format=json_schema` → TODO #21
+- 终局机读结果由工具 `submit_task_result` 写入 ContextVar，`run_analysis` 组装 SSE/DB。
 
-这些点都通过显式注释 `TODO(#20)` / `TODO(#21)` 标注在对应位置。
+这些点都通过显式注释 `TODO(#20)` 等标注在对应位置。
 """
 from __future__ import annotations
 
@@ -37,18 +37,18 @@ from app.models.agent.sse_event import (
     NanobotAgentSseEventStateModel,
 )
 from app.schemas.agent.nanobot_agent import AgentServiceError
-from app.schemas.agent.result import (
-    RESULT_FORMAT_INSTRUCTION,
-    build_response_format_schema,
-    parse_run_result,
-)
+from app.schemas.agent.result import TASK_COMPLETION_INSTRUCTION
 from app.schemas.constants import NanobotAgentStatusEnum
-from app.service.analyst.context import current_agent_id, current_session_id
+from app.service.analyst.context import (
+    current_agent_id,
+    current_session_id,
+    current_task_completion,
+    get_current_task_completion,
+)
 from app.service.analyst.hooks import default_analyst_hooks
-from app.service.analyst.tools import build_business_tools
+from app.service.analyst.tools import SubmitTaskResultTool, build_business_tools
 from app.service.nanobot import Nanobot
 from app.service.nanobot.config.schema import DreamConfig
-from app.service.nanobot.providers.deepseek_provider import DeepSeekProvider
 from app.service.nanobot.providers.openai_compat_provider import OpenAICompatProvider
 from app.service.nanobot.storage import MongoMemoryBackend, MongoSessionStore
 from app.utils.id_lib import generate_id
@@ -412,23 +412,11 @@ class AnalystService:
                 f"Agent 绑定的提示词模板不存在: {agent.prompt_template_id}",
             )
 
-        base = (model_cfg.base_url or "").strip().lower().rstrip("/")
-        model_name = (model_cfg.model or "").strip().lower()
-        # 后续在model表里面绑定一个字段，根据字段来选择供应商
-        is_deepseek = ("api.deepseek.com" in base) or model_name.startswith("deepseek-")
-        if is_deepseek:
-            provider = DeepSeekProvider(
-                api_key=model_cfg.api_key,
-                api_base=model_cfg.base_url,
-                default_model=model_cfg.model,
-            )
-        else:
-            provider = OpenAICompatProvider(
-                api_key=model_cfg.api_key,
-                api_base=model_cfg.base_url,
-                default_model=model_cfg.model,
-                response_format=build_response_format_schema(),
-            )
+        provider = OpenAICompatProvider(
+            api_key=model_cfg.api_key,
+            api_base=model_cfg.base_url,
+            default_model=model_cfg.model,
+        )
 
         # 按 agent.mcp_servers 从 workspace.enabled_mcp_servers 里挑子集作为本次可用的 MCP
         mcp_subset: dict[str, dict] = {}
@@ -458,20 +446,17 @@ class AnalystService:
             dream_config=DreamConfig(),
             mcp_servers=mcp_subset or None,
             hooks=default_analyst_hooks(),
-            # TODO(#21): response_format: json_schema 需要在这里通过 provider 扩展传入
         )
 
         # 业务工具按 agent.tools 白名单注册（未启用任何业务工具时跳过，保留 AgentLoop 的内置工具）
         for tool in build_business_tools(agent.tools):
             bot.loop.tools.register(tool)
+        bot.loop.tools.register(SubmitTaskResultTool())
 
-        # system prompt 末尾 = AgentPromptTemplateModel.system_prompt + 结构化结果格式要求
-        # （即便 provider 支持 response_format: json_schema，也保留 prompt 层约束作为双保险，
-        # 以兼容不支持严格 JSON schema 的兼容 provider。）
         system_suffix_parts: list[str] = []
         if prompt_tpl.system_prompt and prompt_tpl.system_prompt.strip():
             system_suffix_parts.append(prompt_tpl.system_prompt.strip())
-        system_suffix_parts.append(RESULT_FORMAT_INSTRUCTION)
+        system_suffix_parts.append(TASK_COMPLETION_INSTRUCTION)
         bot.loop.context.extra_system_suffix = "\n\n".join(system_suffix_parts)
 
         return bot, session_id
@@ -573,6 +558,7 @@ class AnalystService:
         context: dict[str, Any],
     ) -> None:
         """后台任务：设 ContextVar → bot.run → 解析结果 → 写回 agent → 广播 SSE。"""
+        token_completion = current_task_completion.set(None)
         token_agent = current_agent_id.set(agent_id)
         token_session = current_session_id.set(session_id)
         final_status = NanobotAgentStatusEnum.COMPLETED
@@ -660,23 +646,60 @@ class AnalystService:
                     on_stream_end=_on_stream_end,
                 )
                 content = (getattr(response, "content", None) if response else None) or ""
+                meta = getattr(response, "metadata", None) or {}
+                if isinstance(meta, dict):
+                    tools_used = list(meta.get("_tools_used") or [])
+                    stop_reason_meta = meta.get("_stop_reason")
+                else:
+                    tools_used = []
+                    stop_reason_meta = None
             else:
                 run_result = await bot.run(user_prompt, session_id=session_id)
                 content = (getattr(run_result, "content", None) if run_result else None) or ""
                 tools_used = list(getattr(run_result, "tools_used", []) or [])
+                stop_reason_meta = getattr(run_result, "stop_reason", None)
 
-            parsed_result, parsed_ok = parse_run_result(content)
-            result_payload = {
-                **parsed_result.model_dump(),
-                "parsed": parsed_ok,
-                "raw_content": content,
-                "tools_used": tools_used,
-            }
-            if not parsed_ok:
-                logger.warning(
-                    f"结果无法解析为 ResultPayloadSchema，已使用兜底摘要: "
-                    f"agent_id={agent_id} session_id={session_id}"
+            completion = get_current_task_completion()
+            completion_received = completion is not None
+            if not completion_received:
+                final_status = NanobotAgentStatusEnum.FAILED
+                error_message = error_message or "未调用 submit_task_result 结束任务"
+                result_payload = {
+                    "success": False,
+                    "failure_reason": error_message,
+                    "short_summary": "",
+                    "payload": {},
+                    "user_markdown": content,
+                    "tools_used": tools_used,
+                    "stop_reason": stop_reason_meta,
+                    "completion_received": False,
+                }
+            elif completion.get("success"):
+                result_payload = {
+                    "success": True,
+                    "failure_reason": completion.get("failure_reason"),
+                    "short_summary": completion.get("short_summary") or "",
+                    "payload": completion.get("payload") if isinstance(completion.get("payload"), dict) else {},
+                    "user_markdown": content,
+                    "tools_used": tools_used,
+                    "stop_reason": stop_reason_meta,
+                    "completion_received": True,
+                }
+            else:
+                final_status = NanobotAgentStatusEnum.FAILED
+                error_message = (
+                    str(completion.get("failure_reason") or "").strip() or "任务未成功完成"
                 )
+                result_payload = {
+                    "success": False,
+                    "failure_reason": error_message,
+                    "short_summary": completion.get("short_summary") or "",
+                    "payload": completion.get("payload") if isinstance(completion.get("payload"), dict) else {},
+                    "user_markdown": content,
+                    "tools_used": tools_used,
+                    "stop_reason": stop_reason_meta,
+                    "completion_received": True,
+                }
         except asyncio.CancelledError:
             final_status = NanobotAgentStatusEnum.FAILED
             error_message = cls._cancel_reasons.get(agent_id) or "任务被取消"
@@ -690,6 +713,7 @@ class AnalystService:
         except Exception as exc:  # noqa: BLE001 - 顶层兜底
             final_status = NanobotAgentStatusEnum.FAILED
             error_message = str(exc)
+            result_payload = None
             logger.exception(
                 f"agent 任务执行异常: agent_id={agent_id} session_id={session_id}"
             )
@@ -731,6 +755,7 @@ class AnalystService:
 
                 current_session_id.reset(token_session)
                 current_agent_id.reset(token_agent)
+                current_task_completion.reset(token_completion)
 
     # ------------------------------------------------------------------
     # 取消 / 暂停
