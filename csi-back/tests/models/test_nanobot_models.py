@@ -31,9 +31,9 @@ from app.models.agent.nanobot import (
     NanobotWorkspaceModel,
 )
 from app.schemas.constants import (
-    NanobotAgentStatusEnum,
     NanobotMemoryDocTypeEnum,
     NanobotMessageRoleEnum,
+    NanobotSessionStatusEnum,
 )
 
 NANOBOT_DOCUMENTS: list[type] = [
@@ -170,6 +170,11 @@ async def test_indexes_created(nanobot_db: Any) -> None:
         _match(k, {"workspace_id": 1, "type": 1}) and not u for k, u in mem_specs
     ), "缺少 (workspace_id, type) 非唯一复合索引"
 
+    sess_specs = await keys_and_uniques(NanobotSessionModel)
+    assert any(
+        _match(k, {"agent_id": 1, "status": 1, "updated_at": -1}) and not u for k, u in sess_specs
+    ), "缺少 (agent_id, status, updated_at) 复合索引"
+
     hist_specs = await keys_and_uniques(NanobotHistoryModel)
     assert any(
         _match(k, {"workspace_id": 1, "cursor": 1}) and u for k, u in hist_specs
@@ -241,17 +246,17 @@ async def test_enum_roundtrip_stored_as_string(nanobot_db: Any) -> None:
     assert reloaded is not None
     assert reloaded.role is NanobotMessageRoleEnum.ASSISTANT
 
-    ag = await NanobotAgentModel.find_one()
-    assert ag is not None
-    ag.status = NanobotAgentStatusEnum.RUNNING
-    await ag.save()
+    sess = await NanobotSessionModel.get(ss_id)
+    assert sess is not None
+    sess.status = NanobotSessionStatusEnum.RUNNING
+    await sess.save()
 
-    raw_ag = await NanobotAgentModel.get_pymongo_collection().find_one({"_id": ag.id})
-    assert raw_ag is not None
-    assert raw_ag["status"] == NanobotAgentStatusEnum.RUNNING.value
+    raw_sess = await NanobotSessionModel.get_pymongo_collection().find_one({"_id": ss_id})
+    assert raw_sess is not None
+    assert raw_sess["status"] == NanobotSessionStatusEnum.RUNNING.value
 
-    ag2 = await NanobotAgentModel.get(ag.id)
-    assert ag2 is not None and ag2.status is NanobotAgentStatusEnum.RUNNING
+    sess2 = await NanobotSessionModel.get(ss_id)
+    assert sess2 is not None and sess2.status is NanobotSessionStatusEnum.RUNNING
 
     mem = NanobotMemoryDocsModel(
         workspace_id=ws_id,
@@ -297,18 +302,28 @@ async def test_defaults_not_shared_mutable_lists(nanobot_db: Any) -> None:
     a2_loaded = await NanobotAgentModel.get(a2.id)
     assert a1_loaded is not None and a2_loaded is not None
 
+    ss1 = f"ss_{uuid.uuid4().hex[:8]}"
+    ss2 = f"ss_{uuid.uuid4().hex[:8]}"
+    await NanobotSessionModel(id=ss1, agent_id=a1.id, workspace_id=ws_id).insert()
+    await NanobotSessionModel(id=ss2, agent_id=a2.id, workspace_id=ws_id).insert()
+
+    s1_loaded = await NanobotSessionModel.get(ss1)
+    s2_loaded = await NanobotSessionModel.get(ss2)
+    assert s1_loaded is not None and s2_loaded is not None
+
+    s1_loaded.steps.append({"n": 1})
+    await s1_loaded.save()
+
+    s2_refreshed = await NanobotSessionModel.get(ss2)
+    assert s2_refreshed is not None
+    assert s2_refreshed.steps == []
+
     a1_loaded.tools.append("notify_user")
     await a1_loaded.save()
 
     a2_refreshed = await NanobotAgentModel.get(a2.id)
     assert a2_refreshed is not None
     assert "notify_user" not in a2_refreshed.tools
-
-    a1_loaded.steps.append({"n": 1})
-    await a1_loaded.save()
-    a2_refreshed2 = await NanobotAgentModel.get(a2.id)
-    assert a2_refreshed2 is not None
-    assert a2_refreshed2.steps == []
 
 
 @pytest.mark.asyncio
@@ -386,7 +401,7 @@ async def test_memory_allows_multiple_same_workspace_type(nanobot_db: Any) -> No
 
 
 @pytest.mark.asyncio
-async def test_agent_status_default(nanobot_db: Any) -> None:
+async def test_session_runtime_defaults(nanobot_db: Any) -> None:
     _ = nanobot_db
     ws_id = f"ws_idle_{uuid.uuid4().hex[:8]}"
     await NanobotWorkspaceModel(id=ws_id, name="默认状态").insert()
@@ -403,9 +418,15 @@ async def test_agent_status_default(nanobot_db: Any) -> None:
 
     loaded = await NanobotAgentModel.get(ag_id)
     assert loaded is not None
-    assert loaded.status is NanobotAgentStatusEnum.IDLE
-    assert loaded.current_session_id is None
-    assert loaded.steps == []
-    assert loaded.todos == []
-    assert loaded.pending_approval is None
-    assert loaded.result is None
+    assert loaded.tools == []
+
+    ss_id = f"ss_idle_{uuid.uuid4().hex[:8]}"
+    sess = NanobotSessionModel(id=ss_id, agent_id=ag_id, workspace_id=ws_id)
+    await sess.insert()
+    sloaded = await NanobotSessionModel.get(ss_id)
+    assert sloaded is not None
+    assert sloaded.status is NanobotSessionStatusEnum.IDLE
+    assert sloaded.steps == []
+    assert sloaded.todos == []
+    assert sloaded.pending_approval is None
+    assert sloaded.result is None

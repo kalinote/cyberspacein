@@ -117,30 +117,37 @@ def test_post_cancel_with_running_task(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
     called: dict[str, Any] = {}
 
-    async def _cancel(agent_id: str, *, reason: str = "cancel") -> bool:
+    async def _cancel(agent_id: str, session_id: str, *, reason: str = "cancel") -> bool:
         called["agent_id"] = agent_id
+        called["session_id"] = session_id
         called["reason"] = reason
         return True
 
     monkeypatch.setattr(runtime_ep.AnalystService, "cancel_agent", _cancel)
-    r = client.post("/api/v1/agent/cancel", json={"agent_id": "a1", "reason": "x"})
+    r = client.post(
+        "/api/v1/agent/cancel",
+        json={"agent_id": "a1", "session_id": "s1", "reason": "x"},
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["code"] == 0
     assert body["data"]["agent_id"] == "a1"
     assert body["data"]["cancelled"] is True
     assert "取消请求已发送" in body["message"]
-    assert called == {"agent_id": "a1", "reason": "x"}
+    assert called == {"agent_id": "a1", "session_id": "s1", "reason": "x"}
 
 
 def test_post_cancel_without_running_task(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _cancel(agent_id: str, *, reason: str = "cancel") -> bool:
+    async def _cancel(agent_id: str, session_id: str, *, reason: str = "cancel") -> bool:
         return False
 
     monkeypatch.setattr(runtime_ep.AnalystService, "cancel_agent", _cancel)
-    r = client.post("/api/v1/agent/cancel", json={"agent_id": "a1", "reason": "x"})
+    r = client.post(
+        "/api/v1/agent/cancel",
+        json={"agent_id": "a1", "session_id": "s1", "reason": "x"},
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["code"] == 0
@@ -158,12 +165,12 @@ def test_post_cancel_default_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
     called: dict[str, Any] = {}
 
-    async def _cancel(agent_id: str, *, reason: str = "cancel") -> bool:
+    async def _cancel(agent_id: str, session_id: str, *, reason: str = "cancel") -> bool:
         called["reason"] = reason
         return True
 
     monkeypatch.setattr(runtime_ep.AnalystService, "cancel_agent", _cancel)
-    r = client.post("/api/v1/agent/cancel", json={"agent_id": "a1"})
+    r = client.post("/api/v1/agent/cancel", json={"agent_id": "a1", "session_id": "s1"})
     assert r.status_code == 200
     assert called["reason"] == "user cancel"
 

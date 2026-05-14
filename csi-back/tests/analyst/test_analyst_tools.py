@@ -14,35 +14,34 @@ import pytest
 import app.service.analyst.context as ctx
 import app.service.analyst.service as service_module
 import app.service.analyst.tools as tools_module
-from app.schemas.constants import EntityType, NanobotAgentStatusEnum
+from app.schemas.constants import EntityType, NanobotSessionStatusEnum
 
 
 @dataclass
-class FakeAgentDoc:
+class FakeSessionDoc:
     id: str
-    workspace_id: str = "w1"
-    status: NanobotAgentStatusEnum = NanobotAgentStatusEnum.RUNNING
+    agent_id: str = "a1"
+    status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.RUNNING
     pending_approval: dict | None = None
     todos: list[dict] = field(default_factory=list)
-    current_session_id: str | None = None
     updated_at: datetime = field(default_factory=datetime.now)
 
     async def save(self) -> None:
-        FakeNanobotAgentModel._docs[self.id] = self
+        FakeNanobotSessionModel._docs[self.id] = self
 
 
-class FakeNanobotAgentModel:
-    _docs: dict[str, FakeAgentDoc] = {}
+class FakeNanobotSessionModel:
+    _docs: dict[str, FakeSessionDoc] = {}
 
     @classmethod
-    async def find_one(cls, query: dict[str, Any]) -> FakeAgentDoc | None:
+    async def find_one(cls, query: dict[str, Any]) -> FakeSessionDoc | None:
         return cls._docs.get(query.get("_id"))
 
 
 @pytest.fixture(autouse=True)
-def _patch_agent_model(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
-    FakeNanobotAgentModel._docs = {}
-    monkeypatch.setattr(tools_module, "NanobotAgentModel", FakeNanobotAgentModel)
+def _patch_session_model(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
+    FakeNanobotSessionModel._docs = {}
+    monkeypatch.setattr(tools_module, "NanobotSessionModel", FakeNanobotSessionModel)
     yield
 
 
@@ -148,11 +147,11 @@ async def test_tool_requires_context_var() -> None:
 
 @pytest.mark.asyncio
 async def test_write_todos_updates_db_and_broadcasts(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
     calls: list[tuple[str, str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         calls.append((agent_id, event, data))
 
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
@@ -164,14 +163,14 @@ async def test_write_todos_updates_db_and_broadcasts(monkeypatch: pytest.MonkeyP
         _reset_agent_ctx(tokens)
 
     assert "已更新待办 1 条" in out
-    assert FakeNanobotAgentModel._docs["a1"].todos[0]["content"] == "x"
+    assert FakeNanobotSessionModel._docs["s1"].todos[0]["content"] == "x"
     assert calls and calls[0][1] == "todos"
     assert calls[0][2]["todos"][0]["status"] == "pending"
 
 
 @pytest.mark.asyncio
 async def test_write_todos_normalizes_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", AsyncMock())
     try:
@@ -180,21 +179,21 @@ async def test_write_todos_normalizes_fields(monkeypatch: pytest.MonkeyPatch) ->
         )
     finally:
         _reset_agent_ctx(tokens)
-    todo = FakeNanobotAgentModel._docs["a1"].todos[0]
+    todo = FakeNanobotSessionModel._docs["s1"].todos[0]
     assert set(todo.keys()) == {"id", "content", "status", "updated_at"}
     assert todo["id"] == "1"
     assert todo["content"] == "hello"
 
 
 @pytest.mark.asyncio
-async def test_write_todos_agent_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    tokens = _set_agent_ctx(agent_id="missing")
+async def test_write_todos_session_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    tokens = _set_agent_ctx(agent_id="a1", session_id="missing")
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", AsyncMock())
     try:
         out = await tools_module.WriteTodosTool().execute(todos=[])
     finally:
         _reset_agent_ctx(tokens)
-    assert "当前 agent 不存在" in out
+    assert "当前会话不存在" in out
 
 
 @pytest.mark.asyncio
@@ -202,7 +201,7 @@ async def test_notify_user_broadcasts(monkeypatch: pytest.MonkeyPatch) -> None:
     tokens = _set_agent_ctx()
     calls: list[tuple[str, str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         calls.append((agent_id, event, data))
 
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
@@ -229,14 +228,14 @@ async def test_notify_user_empty_message(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.asyncio
 async def test_modify_entity_handshake_approve(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
     calls: list[tuple[str, str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         calls.append((agent_id, event, data))
 
-    async def _await(_agent_id: str) -> dict:
+    async def _await(_session_id: str) -> dict:
         return {"decisions": [{"action": "approve"}]}
 
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
@@ -252,8 +251,14 @@ async def test_modify_entity_handshake_approve(monkeypatch: pytest.MonkeyPatch) 
         _reset_agent_ctx(tokens)
 
     assert "修改已获批准" in out
-    assert FakeNanobotAgentModel._docs["a1"].status == NanobotAgentStatusEnum.RUNNING
-    assert FakeNanobotAgentModel._docs["a1"].pending_approval is None
+    assert FakeNanobotSessionModel._docs["s1"].status == NanobotSessionStatusEnum.RUNNING
+    assert FakeNanobotSessionModel._docs["s1"].pending_approval is None
+    ar = [c for c in calls if c[1] == "approval_required"]
+    assert len(ar) == 2
+    assert ar[0][2]["resolution"] is None
+    assert ar[0][2]["approval_request_id"] == ar[1][2]["approval_request_id"]
+    assert ar[1][2]["resolution"] == "approved"
+    assert ar[1][2]["reject_reasons"] is None
     events = [c[1] for c in calls]
     assert "approval_required" in events
     assert events.count("status") >= 2
@@ -261,9 +266,14 @@ async def test_modify_entity_handshake_approve(monkeypatch: pytest.MonkeyPatch) 
 
 @pytest.mark.asyncio
 async def test_modify_entity_handshake_reject(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", AsyncMock())
+    calls: list[tuple[str, str, Any]] = []
+
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
+        calls.append((agent_id, event, data))
+
+    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
     monkeypatch.setattr(
         service_module.AnalystService,
         "await_approval",
@@ -279,13 +289,23 @@ async def test_modify_entity_handshake_reject(monkeypatch: pytest.MonkeyPatch) -
     finally:
         _reset_agent_ctx(tokens)
     assert out == "修改被拒绝：bad"
+    ar = [c for c in calls if c[1] == "approval_required"]
+    assert len(ar) == 2
+    assert ar[0][2]["resolution"] is None
+    assert ar[1][2]["resolution"] == "rejected"
+    assert ar[1][2]["reject_reasons"] == ["bad"]
 
 
 @pytest.mark.asyncio
 async def test_modify_entity_empty_decisions(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", AsyncMock())
+    calls: list[tuple[str, str, Any]] = []
+
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
+        calls.append((agent_id, event, data))
+
+    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
     monkeypatch.setattr(service_module.AnalystService, "await_approval", AsyncMock(return_value={"decisions": []}))
     try:
         out = await tools_module.ModifyEntityTool().execute(
@@ -297,6 +317,43 @@ async def test_modify_entity_empty_decisions(monkeypatch: pytest.MonkeyPatch) ->
     finally:
         _reset_agent_ctx(tokens)
     assert out == "修改未获得任何批准，未执行。"
+    ar = [c for c in calls if c[1] == "approval_required"]
+    assert ar[1][2]["resolution"] == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_modify_entity_handshake_mixed_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
+    tokens = _set_agent_ctx()
+    calls: list[tuple[str, str, Any]] = []
+
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
+        calls.append((agent_id, event, data))
+
+    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
+    monkeypatch.setattr(
+        service_module.AnalystService,
+        "await_approval",
+        AsyncMock(
+            return_value={
+                "decisions": [
+                    {"action": "approve"},
+                    {"action": "reject", "reason": "部分不允许"},
+                ]
+            }
+        ),
+    )
+    try:
+        await tools_module.ModifyEntityTool().execute(
+            entity_type=EntityType.ARTICLE.value,
+            entity_uuid="u1",
+            modifications=[{"field": "x", "action": "set"}],
+            reason="r",
+        )
+    finally:
+        _reset_agent_ctx(tokens)
+    ar = [c for c in calls if c[1] == "approval_required"]
+    assert ar[1][2]["resolution"] == "mixed"
 
 
 def test_modify_entity_decision_parser_variants() -> None:
@@ -309,11 +366,11 @@ def test_modify_entity_decision_parser_variants() -> None:
 
 @pytest.mark.asyncio
 async def test_modify_entity_await_exception_returns(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", AsyncMock())
 
-    async def _boom(_agent_id: str) -> dict:
+    async def _boom(_session_id: str) -> dict:
         raise RuntimeError("x")
 
     monkeypatch.setattr(service_module.AnalystService, "await_approval", _boom)

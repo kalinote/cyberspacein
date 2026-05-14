@@ -96,7 +96,9 @@ class MyTool(Tool):
         result._chat_id = self._chat_id
         return result
 
-    def set_context(self, channel: str, chat_id: str) -> None:
+    def set_context(
+        self, channel: str, chat_id: str, *, nanobot_session_id: str | None = None
+    ) -> None:
         self._channel = channel
         self._chat_id = chat_id
 

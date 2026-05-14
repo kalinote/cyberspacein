@@ -9,8 +9,8 @@
    能访问上下文。
 3. 统一管理 SSE 订阅（`subscribe` / `unsubscribe` / `broadcast_sse`）和 HITL 审批队列
    （`submit_approval` / `await_approval`）。
-4. 在 run 开始 / 结束 / 异常时把业务状态写回 `NanobotAgentModel`（`status / current_session_id
-   / steps / todos / pending_approval / result`）。
+4. 在 run 开始 / 结束 / 异常时把业务状态写回 `NanobotSessionModel`（`status / steps / todos /
+   pending_approval / result` 等）。
 
 故意留到后续 TODO 的扩展点：
 - 业务 Hooks（StatusHook / TodosHook / ApprovalHook / ResultHook）→ TODO #20
@@ -30,15 +30,21 @@ from typing import Any
 from loguru import logger
 from pymongo import ReturnDocument
 
+from app.core.config import settings
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
-from app.models.agent.nanobot import NanobotAgentModel, NanobotWorkspaceModel
+from app.models.agent.nanobot import (
+    NanobotAgentModel,
+    NanobotSessionModel,
+    NanobotWorkspaceModel,
+)
 from app.models.agent.sse_event import (
     NanobotAgentSseEventModel,
     NanobotAgentSseEventStateModel,
 )
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.agent.result import TASK_COMPLETION_INSTRUCTION
-from app.schemas.constants import NanobotAgentStatusEnum
+from app.schemas.constants import NanobotSessionStatusEnum
+from app.utils import status_codes
 from app.service.analyst.context import (
     current_agent_id,
     current_session_id,
@@ -52,7 +58,6 @@ from app.service.nanobot.config.schema import DreamConfig
 from app.service.nanobot.providers.openai_compat_provider import OpenAICompatProvider
 from app.service.nanobot.storage import MongoMemoryBackend, MongoSessionStore
 from app.utils.id_lib import generate_id
-import app.utils.status_codes as status_codes
 
 logger = logger.bind(name=__name__)
 
@@ -74,12 +79,12 @@ def _agent_sandbox_dir(workspace_id: str, agent_id: str) -> Path:
 class AnalystService:
     """分析引擎业务编排入口（类级别共享状态，不实例化）。"""
 
-    # 运行期的 Nanobot 实例缓存：key=agent_id。仅在 `run_analysis` 期间存活，结束后 pop。
+    # 运行期的 Nanobot 实例缓存：key=session_id。仅在 `run_analysis` 期间存活，结束后 pop。
     _bots: dict[str, Nanobot] = {}
     _bots_lock: asyncio.Lock = asyncio.Lock()
 
-    # SSE 订阅者队列，key=agent_id；前端订阅时新建 Queue，取消时移除。
-    _sse_subscribers: dict[str, list[asyncio.Queue]] = {}
+    # SSE 订阅者队列，key=(agent_id, session_id)；前端订阅时新建 Queue，取消时移除。
+    _sse_subscribers: dict[tuple[str, str], list[asyncio.Queue]] = {}
     _sse_lock: asyncio.Lock = asyncio.Lock()
 
     # SSE 历史持久化：stream 合并缓冲（用于回放，避免逐字 delta 落库）
@@ -87,15 +92,14 @@ class AnalystService:
     _sse_stream_buffers: dict[tuple[str, str], dict[str, Any]] = {}
     _sse_persist_lock: asyncio.Lock = asyncio.Lock()
 
-    # 后台 run_analysis 任务，key=agent_id；用于 cancel / 状态查询。
+    # 后台 run_analysis 任务，key=session_id；用于 cancel / 状态查询。
     _running_tasks: dict[str, asyncio.Task] = {}
     _task_lock: asyncio.Lock = asyncio.Lock()
 
-    # 取消/暂停原因标注，key=agent_id；业务工具可以据此决定落 paused / failed。
+    # 取消/暂停原因标注，key=session_id；业务工具可以据此决定落 paused / failed。
     _cancel_reasons: dict[str, str] = {}
 
-    # HITL 决策通道，key=agent_id。modify_entity 工具（TODO #20）在 AWAITING_APPROVAL 时
-    # await 该队列，路由层 `/agent/approve` 往该队列 put 决策。
+    # HITL 决策通道，key=session_id。modify_entity 在 AWAITING_APPROVAL 时 await 该队列。
     _pending_resumes: dict[str, asyncio.Queue] = {}
     _resume_lock: asyncio.Lock = asyncio.Lock()
 
@@ -235,43 +239,49 @@ class AnalystService:
     # ------------------------------------------------------------------
 
     @classmethod
-    async def subscribe(cls, agent_id: str, *, debug: bool = False) -> asyncio.Queue:
-        """前端订阅 agent 的事件流；返回一个 per-subscriber 的 Queue。
+    async def subscribe(
+        cls, agent_id: str, session_id: str, *, debug: bool = False
+    ) -> asyncio.Queue:
+        """前端订阅某次会话的事件流；返回一个 per-subscriber 的 Queue。
 
         debug=True 时，该订阅者会额外收到更详细的调试事件（仍通过同一 SSE 连接输出）。
         """
+        session_id = str(session_id or "").strip()
+        if not session_id:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT, "订阅 SSE 必须提供 session_id"
+            )
         queue: asyncio.Queue = asyncio.Queue()
-        # 给 queue 打标记：仅 debug 订阅者会收到 debug_* 事件
         setattr(queue, "_csi_debug", bool(debug))
-        # 回放当前 session 的历史事件（先回放，再进入实时）
         try:
-            doc = await NanobotAgentModel.find_one({"_id": agent_id})
-            session_id = (doc.current_session_id if doc else None) or ""
-            session_id = str(session_id or "").strip()
-            if session_id:
-                # stream 合并缓冲可能还有尾巴，回放前先冲刷一次
-                await cls._flush_stream_buffer(agent_id, session_id)
-                events = (
-                    await NanobotAgentSseEventModel.find(
-                        {"agent_id": agent_id, "session_id": session_id}
-                    )
-                    .sort("+seq")
-                    .to_list()
+            await cls._flush_stream_buffer(agent_id, session_id)
+            events = (
+                await NanobotAgentSseEventModel.find(
+                    {"agent_id": agent_id, "session_id": session_id}
                 )
-                for ev in events:
-                    if ev.is_debug and not bool(debug):
-                        continue
-                    queue.put_nowait({"event": ev.event, "data": ev.data, "id": ev.seq})
+                .sort("+seq")
+                .to_list()
+            )
+            for ev in events:
+                if ev.is_debug and not bool(debug):
+                    continue
+                queue.put_nowait({"event": ev.event, "data": ev.data, "id": ev.seq})
         except Exception:
-            logger.exception(f"回放 SSE 历史失败（已忽略）: agent_id={agent_id}")
+            logger.exception(
+                f"回放 SSE 历史失败（已忽略）: agent_id={agent_id} session_id={session_id}"
+            )
         async with cls._sse_lock:
-            cls._sse_subscribers.setdefault(agent_id, []).append(queue)
+            cls._sse_subscribers.setdefault((agent_id, session_id), []).append(queue)
         return queue
 
     @classmethod
-    async def unsubscribe(cls, agent_id: str, queue: asyncio.Queue) -> None:
+    async def unsubscribe(
+        cls, agent_id: str, session_id: str, queue: asyncio.Queue
+    ) -> None:
+        session_id = str(session_id or "").strip()
+        key = (agent_id, session_id)
         async with cls._sse_lock:
-            subs = cls._sse_subscribers.get(agent_id)
+            subs = cls._sse_subscribers.get(key)
             if not subs:
                 return
             try:
@@ -279,40 +289,122 @@ class AnalystService:
             except ValueError:
                 pass
             if not subs:
-                cls._sse_subscribers.pop(agent_id, None)
+                cls._sse_subscribers.pop(key, None)
 
     @classmethod
-    async def broadcast_sse(cls, agent_id: str, event: str, data: Any) -> None:
-        """把一条事件广播给所有订阅了该 agent 的 SSE 队列。"""
+    async def broadcast_sse(
+        cls, agent_id: str, event: str, data: Any, *, persist: bool = True
+    ) -> None:
+        """把一条事件广播给订阅了该 (agent_id, session_id) 的 SSE 队列。
+
+        persist=False 时仅推送给当前在线订阅者，不写 `nanobot_agent_sse_events`（用于审批
+        已决等对「首条已持久化事件」的就地补丁后的实时刷新）。
+        """
         payload = {"event": event, "data": data}
-        # 事件落库（用于回放）；stream 走合并缓冲，避免逐字 delta 写入
-        if event == "stream":
-            await cls._maybe_persist_stream_delta(agent_id, data)
-        else:
-            if isinstance(data, dict) and data.get("session_id"):
-                await cls._persist_sse_event(
-                    agent_id=agent_id,
-                    session_id=str(data.get("session_id")),
-                    event=event,
-                    data=data,
-                    is_debug=False,
-                    compressed=False,
-                )
+        session_key: str | None = None
+        if isinstance(data, dict):
+            sid = str(data.get("session_id") or "").strip()
+            if sid:
+                session_key = sid
+        if persist:
+            if event == "stream":
+                await cls._maybe_persist_stream_delta(agent_id, data)
+            else:
+                if isinstance(data, dict) and data.get("session_id"):
+                    await cls._persist_sse_event(
+                        agent_id=agent_id,
+                        session_id=str(data.get("session_id")),
+                        event=event,
+                        data=data,
+                        is_debug=False,
+                        compressed=False,
+                    )
+        if not session_key:
+            logger.warning(
+                f"SSE 广播缺少 session_id，已跳过实时推送: agent={agent_id} event={event}"
+            )
+            return
         async with cls._sse_lock:
-            subs = list(cls._sse_subscribers.get(agent_id, []))
+            subs = list(cls._sse_subscribers.get((agent_id, session_key), []))
         for queue in subs:
             try:
                 queue.put_nowait(payload)
             except asyncio.QueueFull:
                 logger.warning(
-                    f"SSE 队列已满丢弃事件: agent={agent_id} event={event}"
+                    f"SSE 队列已满丢弃事件: agent={agent_id} session={session_key} event={event}"
                 )
+
+    @classmethod
+    async def patch_persisted_approval_required(
+        cls,
+        agent_id: str,
+        session_id: str,
+        approval_request_id: str,
+        *,
+        resolution: str,
+        reject_reasons: list[str] | None,
+    ) -> None:
+        """将已持久化且仍待决的 `approval_required` 单条事件的 data 合并 resolution（回放仅一条）。"""
+        session_id = str(session_id or "").strip()
+        if not session_id or not approval_request_id:
+            return
+        try:
+            rows = (
+                await NanobotAgentSseEventModel.find(
+                    {
+                        "agent_id": agent_id,
+                        "session_id": session_id,
+                        "event": "approval_required",
+                        "data.approval_request_id": approval_request_id,
+                    }
+                )
+                .sort("-seq")
+                .limit(1)
+                .to_list()
+            )
+        except Exception:
+            logger.exception(
+                "补丁 approval_required SSE 失败（查询）: agent_id={} session_id={} req={}",
+                agent_id,
+                session_id,
+                approval_request_id,
+            )
+            return
+        if not rows:
+            logger.warning(
+                "未找到可补丁的 approval_required 事件: agent_id={} session_id={} req={}",
+                agent_id,
+                session_id,
+                approval_request_id,
+            )
+            return
+        doc = rows[0]
+        raw = doc.data
+        data = dict(raw) if isinstance(raw, dict) else {}
+        if data.get("resolution") is not None:
+            return
+        data["resolution"] = resolution
+        data["reject_reasons"] = reject_reasons
+        doc.data = data
+        try:
+            await doc.save()
+        except Exception:
+            logger.exception(
+                "补丁 approval_required SSE 失败（保存）: agent_id={} session_id={} req={}",
+                agent_id,
+                session_id,
+                approval_request_id,
+            )
 
     @classmethod
     async def broadcast_debug_sse(cls, agent_id: str, event: str, data: Any) -> None:
         """只给 debug 订阅者广播调试事件。"""
         payload = {"event": event, "data": data}
-        # debug 事件落库（用于回放）
+        session_key: str | None = None
+        if isinstance(data, dict):
+            sid = str(data.get("session_id") or "").strip()
+            if sid:
+                session_key = sid
         if isinstance(data, dict) and data.get("session_id"):
             await cls._persist_sse_event(
                 agent_id=agent_id,
@@ -322,8 +414,13 @@ class AnalystService:
                 is_debug=True,
                 compressed=False,
             )
+        if not session_key:
+            logger.warning(
+                f"SSE debug 广播缺少 session_id，已跳过: agent={agent_id} event={event}"
+            )
+            return
         async with cls._sse_lock:
-            subs = list(cls._sse_subscribers.get(agent_id, []))
+            subs = list(cls._sse_subscribers.get((agent_id, session_key), []))
         for queue in subs:
             if not bool(getattr(queue, "_csi_debug", False)):
                 continue
@@ -331,7 +428,7 @@ class AnalystService:
                 queue.put_nowait(payload)
             except asyncio.QueueFull:
                 logger.warning(
-                    f"SSE debug 队列已满丢弃事件: agent={agent_id} event={event}"
+                    f"SSE debug 队列已满丢弃事件: agent={agent_id} session={session_key} event={event}"
                 )
 
     # ------------------------------------------------------------------
@@ -339,38 +436,45 @@ class AnalystService:
     # ------------------------------------------------------------------
 
     @classmethod
-    async def _get_or_create_resume_queue(cls, agent_id: str) -> asyncio.Queue:
+    async def _get_or_create_resume_queue(cls, session_id: str) -> asyncio.Queue:
         async with cls._resume_lock:
-            queue = cls._pending_resumes.get(agent_id)
+            queue = cls._pending_resumes.get(session_id)
             if queue is None:
                 queue = asyncio.Queue()
-                cls._pending_resumes[agent_id] = queue
+                cls._pending_resumes[session_id] = queue
             return queue
 
     @classmethod
-    async def submit_approval(cls, agent_id: str, decisions: list[dict]) -> None:
-        """路由层 `/agent/approve` 调用：把 decisions 放进 agent 的决策队列。
-
-        如果 agent 当前不在 AWAITING_APPROVAL 状态，依然接受写入（幂等），但会 log 告警，
-        避免因为 agent 已经推进到下一步而丢失决策。业务工具消费 queue 时会自行校验。
-        """
-        doc = await NanobotAgentModel.find_one({"_id": agent_id})
-        if doc is None:
+    async def submit_approval(
+        cls, agent_id: str, session_id: str, decisions: list[dict]
+    ) -> None:
+        """路由层 `/agent/approve` 调用：把 decisions 放进该会话的决策队列。"""
+        session_id = str(session_id or "").strip()
+        if not session_id:
             raise AgentServiceError(
-                status_codes.NOT_FOUND_AGENT, f"Agent 不存在: {agent_id}"
+                status_codes.INVALID_ARGUMENT, "session_id 不能为空"
             )
-        if doc.status != NanobotAgentStatusEnum.AWAITING_APPROVAL:
+        doc = await NanobotSessionModel.find_one({"_id": session_id})
+        if doc is None or doc.agent_id != agent_id:
+            raise AgentServiceError(
+                status_codes.NOT_FOUND_AGENT,
+                f"会话不存在或不属于该 Agent: session_id={session_id}",
+            )
+        if doc.status != NanobotSessionStatusEnum.AWAITING_APPROVAL:
             logger.warning(
-                f"/approve 写入时 agent 非 AWAITING_APPROVAL 状态: "
-                f"agent_id={agent_id} status={doc.status}"
+                f"/approve 写入时会话非 AWAITING_APPROVAL 状态: "
+                f"session_id={session_id} status={doc.status}"
             )
-        queue = await cls._get_or_create_resume_queue(agent_id)
+        queue = await cls._get_or_create_resume_queue(session_id)
         await queue.put({"decisions": decisions, "submitted_at": datetime.now()})
 
     @classmethod
-    async def await_approval(cls, agent_id: str) -> dict:
-        """业务工具（TODO #20 的 modify_entity）调用：阻塞等待决策到达。"""
-        queue = await cls._get_or_create_resume_queue(agent_id)
+    async def await_approval(cls, session_id: str) -> dict:
+        """业务工具 modify_entity 调用：阻塞等待决策到达。"""
+        session_id = str(session_id or "").strip()
+        if not session_id:
+            raise RuntimeError("await_approval 需要非空 session_id")
+        queue = await cls._get_or_create_resume_queue(session_id)
         return await queue.get()
 
     # ------------------------------------------------------------------
@@ -388,11 +492,11 @@ class AnalystService:
         步骤：
         1) 按 `agent.model_config_id` / `agent.prompt_template_id` 拉模型配置与提示词模板；
         2) 构造 provider（`OpenAICompatProvider`，后续支持 anthropic 时再按 spec 派发）；
-        3) 生成新 session_id，重置 agent 运行时状态到「准备运行」快照；
+        3) 生成新 session_id，写入 `NanobotSessionModel` 初始运行态；
         4) `Nanobot.from_components(...)` 装配出 bot。
 
         注意：
-        - 本方法不写入 `status=RUNNING`，留给 `start_agent` 把 task 正式拉起后统一写。
+        - 本方法不写入会话 `status=RUNNING`，留给 `start_agent` 把 task 正式拉起后统一写。
         - Hooks / 业务工具在 TODO #20 中通过 `bot.loop.tools.register(...)` / `bot.loop._extra_hooks`
           注入；本方法只预留 `bot` 给调用方。
         """
@@ -425,15 +529,25 @@ class AnalystService:
                 mcp_subset[server_name] = workspace.enabled_mcp_servers[server_name]
 
         session_id = generate_id(f"session:{agent.id}:{datetime.now().isoformat()}")
-
-        # 重置 agent 运行时状态：/start 是一次全新回合，清掉旧 steps/todos/pending/result。
-        agent.current_session_id = session_id
-        agent.steps = []
-        agent.todos = []
-        agent.pending_approval = None
-        agent.result = None
-        agent.updated_at = datetime.now()
-        await agent.save()
+        now = datetime.now()
+        await NanobotSessionModel(
+            id=session_id,
+            agent_id=agent.id,
+            workspace_id=agent.workspace_id,
+            metadata={},
+            last_consolidated_seq=0,
+            status=NanobotSessionStatusEnum.IDLE,
+            steps=[],
+            todos=[],
+            pending_approval=None,
+            result=None,
+            user_prompt=None,
+            error_message=None,
+            started_at=None,
+            finished_at=None,
+            created_at=now,
+            updated_at=now,
+        ).insert()
 
         bot = Nanobot.from_components(
             agent_id=agent.id,
@@ -485,36 +599,43 @@ class AnalystService:
                 f"Agent 所属工作区不存在: {agent.workspace_id}",
             )
 
-        # 并发控制：一个 agent 同时只能跑一个 session
-        if agent.status in {
-            NanobotAgentStatusEnum.RUNNING,
-            NanobotAgentStatusEnum.AWAITING_APPROVAL,
-        }:
-            raise AgentServiceError(
-                status_codes.CONFLICT_STATE,
-                f"Agent 当前处于 {agent.status.value} 状态，请先等待当前任务结束",
-            )
-        async with cls._task_lock:
-            if agent_id in cls._running_tasks and not cls._running_tasks[agent_id].done():
+        max_parallel = settings.NANOBOT_AGENT_MAX_PARALLEL_SESSIONS
+        if max_parallel > 0:
+            running_n = await NanobotSessionModel.find(
+                {
+                    "agent_id": agent_id,
+                    "status": NanobotSessionStatusEnum.RUNNING.value,
+                }
+            ).count()
+            if running_n >= max_parallel:
+                logger.info(
+                    "拒绝启动: agent_id={} 已达并行上限 running={} max={}",
+                    agent_id,
+                    running_n,
+                    max_parallel,
+                )
                 raise AgentServiceError(
                     status_codes.CONFLICT_STATE,
-                    f"Agent 已有运行中的后台任务，无法重复启动: {agent_id}",
+                    f"该 Agent 已有 {running_n} 个运行中的会话，达到并行上限 {max_parallel}，请稍后再试",
                 )
 
         bot, session_id = await cls.build_bot(agent, workspace)
 
-        # 写入 RUNNING 状态（build_bot 已重置 steps/todos/pending/result）
-        agent.status = NanobotAgentStatusEnum.RUNNING
-        agent.updated_at = datetime.now()
-        await agent.save()
+        sess = await NanobotSessionModel.find_one({"_id": session_id})
+        if sess is not None:
+            now = datetime.now()
+            sess.status = NanobotSessionStatusEnum.RUNNING
+            sess.user_prompt = user_prompt
+            sess.started_at = now
+            sess.updated_at = now
+            await sess.save()
 
-        # 清理 agent 维度的残留审批队列（避免上一轮未消费的决策污染）
         async with cls._resume_lock:
-            cls._pending_resumes.pop(agent_id, None)
-        cls._cancel_reasons.pop(agent_id, None)
+            cls._pending_resumes.pop(session_id, None)
+        cls._cancel_reasons.pop(session_id, None)
 
         async with cls._bots_lock:
-            cls._bots[agent_id] = bot
+            cls._bots[session_id] = bot
 
         task = asyncio.create_task(
             cls.run_analysis(
@@ -527,7 +648,7 @@ class AnalystService:
             name=f"analyst-run:{agent_id}:{session_id}",
         )
         async with cls._task_lock:
-            cls._running_tasks[agent_id] = task
+            cls._running_tasks[session_id] = task
 
         await cls.broadcast_sse(
             agent_id,
@@ -535,7 +656,7 @@ class AnalystService:
             {
                 "agent_id": agent_id,
                 "session_id": session_id,
-                "status": NanobotAgentStatusEnum.RUNNING.value,
+                "status": NanobotSessionStatusEnum.RUNNING.value,
             },
         )
 
@@ -557,11 +678,11 @@ class AnalystService:
         user_prompt: str,
         context: dict[str, Any],
     ) -> None:
-        """后台任务：设 ContextVar → bot.run → 解析结果 → 写回 agent → 广播 SSE。"""
+        """后台任务：设 ContextVar → bot.run → 解析结果 → 写回会话 → 广播 SSE。"""
         token_completion = current_task_completion.set(None)
         token_agent = current_agent_id.set(agent_id)
         token_session = current_session_id.set(session_id)
-        final_status = NanobotAgentStatusEnum.COMPLETED
+        final_session_status = NanobotSessionStatusEnum.COMPLETED
         result_payload: dict | None = None
         error_message: str | None = None
         try:
@@ -662,7 +783,7 @@ class AnalystService:
             completion = get_current_task_completion()
             completion_received = completion is not None
             if not completion_received:
-                final_status = NanobotAgentStatusEnum.FAILED
+                final_session_status = NanobotSessionStatusEnum.FAILED
                 error_message = error_message or "未调用 submit_task_result 结束任务"
                 result_payload = {
                     "success": False,
@@ -686,7 +807,7 @@ class AnalystService:
                     "completion_received": True,
                 }
             else:
-                final_status = NanobotAgentStatusEnum.FAILED
+                final_session_status = NanobotSessionStatusEnum.FAILED
                 error_message = (
                     str(completion.get("failure_reason") or "").strip() or "任务未成功完成"
                 )
@@ -701,17 +822,17 @@ class AnalystService:
                     "completion_received": True,
                 }
         except asyncio.CancelledError:
-            final_status = NanobotAgentStatusEnum.FAILED
-            error_message = cls._cancel_reasons.get(agent_id) or "任务被取消"
-            if cls._cancel_reasons.get(agent_id) == "pause":
-                final_status = NanobotAgentStatusEnum.PAUSED
+            final_session_status = NanobotSessionStatusEnum.CANCELLED
+            error_message = cls._cancel_reasons.get(session_id) or "任务被取消"
+            if cls._cancel_reasons.get(session_id) == "pause":
+                final_session_status = NanobotSessionStatusEnum.PAUSED
             logger.info(
                 f"agent 任务取消: agent_id={agent_id} session_id={session_id} "
                 f"reason={error_message}"
             )
             raise
         except Exception as exc:  # noqa: BLE001 - 顶层兜底
-            final_status = NanobotAgentStatusEnum.FAILED
+            final_session_status = NanobotSessionStatusEnum.FAILED
             error_message = str(exc)
             result_payload = None
             logger.exception(
@@ -719,13 +840,15 @@ class AnalystService:
             )
         finally:
             try:
-                doc = await NanobotAgentModel.find_one({"_id": agent_id})
-                if doc is not None:
-                    doc.status = final_status
-                    doc.result = result_payload or {"error": error_message}
-                    doc.pending_approval = None
-                    doc.updated_at = datetime.now()
-                    await doc.save()
+                sess = await NanobotSessionModel.find_one({"_id": session_id})
+                if sess is not None:
+                    sess.status = final_session_status
+                    sess.result = result_payload or {"error": error_message}
+                    sess.pending_approval = None
+                    sess.error_message = error_message
+                    sess.finished_at = datetime.now()
+                    sess.updated_at = datetime.now()
+                    await sess.save()
                 # run 结束前冲刷一次 stream 缓冲，保证回放不缺尾巴
                 await cls._flush_stream_buffer(agent_id, session_id)
                 await cls.broadcast_sse(
@@ -734,7 +857,7 @@ class AnalystService:
                     {
                         "agent_id": agent_id,
                         "session_id": session_id,
-                        "status": final_status.value,
+                        "status": final_session_status.value,
                         "result": result_payload,
                         "error": error_message,
                     },
@@ -746,12 +869,12 @@ class AnalystService:
                     logger.exception(f"关闭 bot 资源异常: agent_id={agent_id}")
 
                 async with cls._bots_lock:
-                    cls._bots.pop(agent_id, None)
+                    cls._bots.pop(session_id, None)
                 async with cls._task_lock:
-                    cls._running_tasks.pop(agent_id, None)
+                    cls._running_tasks.pop(session_id, None)
                 async with cls._resume_lock:
-                    cls._pending_resumes.pop(agent_id, None)
-                cls._cancel_reasons.pop(agent_id, None)
+                    cls._pending_resumes.pop(session_id, None)
+                cls._cancel_reasons.pop(session_id, None)
 
                 current_session_id.reset(token_session)
                 current_agent_id.reset(token_agent)
@@ -762,12 +885,31 @@ class AnalystService:
     # ------------------------------------------------------------------
 
     @classmethod
-    async def cancel_agent(cls, agent_id: str, *, reason: str = "cancel") -> bool:
-        """请求取消后台任务；真正的状态落地由 `run_analysis.finally` 完成。"""
+    async def cancel_agent(
+        cls, agent_id: str, session_id: str, *, reason: str = "cancel"
+    ) -> bool:
+        """请求取消指定会话的后台任务；真正的状态落地由 `run_analysis.finally` 完成。"""
+        session_id = str(session_id or "").strip()
+        if not session_id:
+            return False
+        sess = await NanobotSessionModel.find_one({"_id": session_id})
+        if sess is None or sess.agent_id != agent_id:
+            return False
         async with cls._task_lock:
-            task = cls._running_tasks.get(agent_id)
+            task = cls._running_tasks.get(session_id)
         if task is None or task.done():
             return False
-        cls._cancel_reasons[agent_id] = reason
+        async with cls._bots_lock:
+            bot = cls._bots.get(session_id)
+        if bot is not None:
+            try:
+                await bot.loop.subagents.cancel_by_session(session_id)
+            except Exception as exc:
+                logger.warning(
+                    "取消会话时清理子代理失败: session_id={} err={}",
+                    session_id,
+                    exc,
+                )
+        cls._cancel_reasons[session_id] = reason
         task.cancel()
         return True

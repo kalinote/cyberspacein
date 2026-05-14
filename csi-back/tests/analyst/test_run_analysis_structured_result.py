@@ -12,32 +12,34 @@ import pytest
 
 import app.service.analyst.context as actx
 import app.service.analyst.service as service_module
-from app.schemas.constants import NanobotAgentStatusEnum
+from app.schemas.constants import NanobotSessionStatusEnum
 
 
 @dataclass
-class FakeAgentDoc:
+class FakeSessionDoc:
     id: str
-    status: NanobotAgentStatusEnum = NanobotAgentStatusEnum.RUNNING
+    status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.RUNNING
     result: dict | None = None
     pending_approval: dict | None = None
+    error_message: str | None = None
+    finished_at: Any = None
 
     async def save(self) -> None:
-        FakeNanobotAgentModel._docs[self.id] = self
+        FakeNanobotSessionModel._docs[self.id] = self
 
 
-class FakeNanobotAgentModel:
-    _docs: dict[str, FakeAgentDoc] = {}
+class FakeNanobotSessionModel:
+    _docs: dict[str, FakeSessionDoc] = {}
 
     @classmethod
-    async def find_one(cls, query: dict[str, Any]) -> FakeAgentDoc | None:
+    async def find_one(cls, query: dict[str, Any]) -> FakeSessionDoc | None:
         return cls._docs.get(query.get("_id"))
 
 
 @pytest.fixture(autouse=True)
 def _patch_model(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
-    FakeNanobotAgentModel._docs = {"a1": FakeAgentDoc(id="a1")}
-    monkeypatch.setattr(service_module, "NanobotAgentModel", FakeNanobotAgentModel)
+    FakeNanobotSessionModel._docs = {"s1": FakeSessionDoc(id="s1")}
+    monkeypatch.setattr(service_module, "NanobotSessionModel", FakeNanobotSessionModel)
     service_module.AnalystService._sse_subscribers = {}
     service_module.AnalystService._sse_lock = asyncio.Lock()
     yield
@@ -66,7 +68,7 @@ async def test_run_analysis_success_with_submit_tool_payload(monkeypatch: pytest
     bot.run = AsyncMock(side_effect=_run)
     events: list[dict[str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         events.append({"agent_id": agent_id, "event": event, "data": data})
 
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
@@ -78,8 +80,8 @@ async def test_run_analysis_success_with_submit_tool_payload(monkeypatch: pytest
         user_prompt="hi",
         context={},
     )
-    doc = FakeNanobotAgentModel._docs["a1"]
-    assert doc.status == NanobotAgentStatusEnum.COMPLETED
+    doc = FakeNanobotSessionModel._docs["s1"]
+    assert doc.status == NanobotSessionStatusEnum.COMPLETED
     assert doc.result and doc.result["completion_received"] is True
     assert doc.result["success"] is True
     assert doc.result["user_markdown"] == "## 用户可见"
@@ -117,8 +119,8 @@ async def test_run_analysis_user_markdown_not_json_still_ok_when_submit_ok(
         user_prompt="hi",
         context={},
     )
-    doc = FakeNanobotAgentModel._docs["a1"]
-    assert doc.status == NanobotAgentStatusEnum.COMPLETED
+    doc = FakeNanobotSessionModel._docs["s1"]
+    assert doc.status == NanobotSessionStatusEnum.COMPLETED
     assert doc.result and doc.result["success"] is True
     assert doc.result["user_markdown"] == "plain text 不是 json"
 
@@ -134,7 +136,7 @@ async def test_run_analysis_exception_result_shape(monkeypatch: pytest.MonkeyPat
     bot.close = AsyncMock()
     events: list[dict[str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         events.append({"agent_id": agent_id, "event": event, "data": data})
 
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
@@ -146,8 +148,8 @@ async def test_run_analysis_exception_result_shape(monkeypatch: pytest.MonkeyPat
         user_prompt="hi",
         context={},
     )
-    doc = FakeNanobotAgentModel._docs["a1"]
-    assert doc.status == NanobotAgentStatusEnum.FAILED
+    doc = FakeNanobotSessionModel._docs["s1"]
+    assert doc.status == NanobotSessionStatusEnum.FAILED
     assert doc.result and "error" in doc.result
     result_events = [e for e in events if e["event"] == "result"]
     assert result_events

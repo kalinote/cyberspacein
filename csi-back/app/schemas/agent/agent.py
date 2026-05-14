@@ -99,11 +99,13 @@ class StartAgentResponseSchema(BaseModel):
 
 class ApproveRequestSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="会话ID", min_length=1)
     decisions: list[dict] = Field(description="审批决策列表")
 
 
 class CancelAgentRequestSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="会话ID", min_length=1)
     reason: str = Field(default="user cancel", description="取消原因，用于审计与 SSE 日志")
 
 

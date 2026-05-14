@@ -6,9 +6,9 @@ from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 from app.schemas.constants import (
-    NanobotAgentStatusEnum,
     NanobotMemoryDocTypeEnum,
     NanobotMessageRoleEnum,
+    NanobotSessionStatusEnum,
 )
 
 
@@ -40,11 +40,7 @@ class NanobotWorkspaceModel(Document):
 
 
 class NanobotAgentModel(Document):
-    """Agent：归属于 Workspace，支持并行运行，每个 Agent 同时只跑 1 个 Session
-
-    运行时业务状态（status / steps / todos / pending_approval / result）直接内嵌在
-    该模型上，不再单独建 AgentAnalysisSessionModel。
-    """
+    """Agent：归属于 Workspace；仅持久化配置，运行时状态在 nanobot_sessions。"""
     id: str = Field(alias="_id", description="AgentID")
     workspace_id: str = Field(description="所属工作区ID")
 
@@ -59,14 +55,6 @@ class NanobotAgentModel(Document):
     mcp_servers: list[str] = Field(default_factory=list, description="启用的MCP服务名列表，元素 ∈ workspace.enabled_mcp_servers.keys()")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数（temperature / max_tokens / reasoning_effort 等）")
 
-    # 运行时业务状态（由 AnalystService 内部更新，不开放对外编辑）
-    status: NanobotAgentStatusEnum = Field(default=NanobotAgentStatusEnum.IDLE, description="Agent 运行状态")
-    current_session_id: str | None = Field(default=None, description="最近一次 /start 的 session_id，指向 nanobot_sessions 一条记录")
-    steps: list[dict] = Field(default_factory=list, description="当前运行的步骤流水")
-    todos: list[dict] = Field(default_factory=list, description="write_todos 工具产生的待办列表")
-    pending_approval: dict | None = Field(default=None, description="待审批载荷（HITL）")
-    result: dict | None = Field(default=None, description="最近一次 ResultPayloadSchema dump")
-
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
 
@@ -75,20 +63,33 @@ class NanobotAgentModel(Document):
         indexes = [
             "workspace_id",
             IndexModel([("workspace_id", ASCENDING), ("name", ASCENDING)], unique=True),
-            "status",
             "created_at",
             "updated_at",
         ]
 
 
 class NanobotSessionModel(Document):
-    """会话元数据，每次 /agent/start 新建一条，对应原 session/* 目录"""
+    """会话：每次 /agent/start 一条；承载本轮运行时状态与元数据。"""
     id: str = Field(alias="_id", description="会话ID")
     agent_id: str = Field(description="所属 AgentID")
     workspace_id: str = Field(description="冗余的工作区ID，便于按 workspace 聚合查询")
 
     metadata: dict = Field(default_factory=dict, description="会话元数据（runtime_checkpoint / pending_user_turn / _last_summary 等）")
     last_consolidated_seq: int = Field(default=0, description="已合并到 history 的消息 seq 上限")
+
+    status: NanobotSessionStatusEnum = Field(
+        default=NanobotSessionStatusEnum.IDLE,
+        description="本会话运行状态",
+    )
+    steps: list[dict] = Field(default_factory=list, description="当前运行的步骤流水")
+    todos: list[dict] = Field(default_factory=list, description="write_todos 工具产生的待办列表")
+    pending_approval: dict | None = Field(default=None, description="待审批载荷（HITL）")
+    result: dict | None = Field(default=None, description="最近一次 ResultPayloadSchema dump")
+
+    user_prompt: str | None = Field(default=None, description="本轮用户提示词（渲染后）")
+    error_message: str | None = Field(default=None, description="失败或取消时的错误说明")
+    started_at: datetime | None = Field(default=None, description="进入运行态的时间")
+    finished_at: datetime | None = Field(default=None, description="结束时间")
 
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
@@ -97,6 +98,9 @@ class NanobotSessionModel(Document):
         name = "nanobot_sessions"
         indexes = [
             IndexModel([("agent_id", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel(
+                [("agent_id", ASCENDING), ("status", ASCENDING), ("updated_at", DESCENDING)],
+            ),
             "workspace_id",
             "updated_at",
         ]

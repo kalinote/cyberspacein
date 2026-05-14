@@ -20,11 +20,6 @@ class FakeAgent:
     prompt_template_id: str = "p1"
     tools: list[str] = field(default_factory=lambda: ["notify_user", "write_todos"])
     mcp_servers: list[str] = field(default_factory=lambda: ["srv1"])
-    current_session_id: str | None = None
-    steps: list[dict] = field(default_factory=list)
-    todos: list[dict] = field(default_factory=list)
-    pending_approval: dict | None = None
-    result: dict | None = None
     updated_at: Any = None
 
     async def save(self) -> None:
@@ -69,6 +64,15 @@ def _patch_deps(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
         AsyncMock(return_value=SimpleNamespace(system_prompt="SYS")),
     )
     monkeypatch.setattr(service_module, "generate_id", lambda _s: "sess1")
+
+    class _StubSession:
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        async def insert(self) -> None:
+            return None
+
+    monkeypatch.setattr(service_module, "NanobotSessionModel", lambda **kw: _StubSession(**kw))
 
     monkeypatch.setattr(service_module, "OpenAICompatProvider", lambda **kw: SimpleNamespace(**kw))
 

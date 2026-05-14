@@ -11,35 +11,36 @@ import pytest
 
 import app.service.analyst.hooks as hooks_module
 import app.service.analyst.context as ctx
-from app.schemas.constants import NanobotAgentStatusEnum
+from app.schemas.constants import NanobotSessionStatusEnum
 from app.service.nanobot.agent.hook import AgentHookContext
 
 
 @dataclass
-class FakeAgentDoc:
+class FakeSessionDoc:
     id: str
-    status: NanobotAgentStatusEnum = NanobotAgentStatusEnum.RUNNING
+    agent_id: str = "a1"
+    status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.RUNNING
     steps: list[dict] = field(default_factory=list)
     todos: list[dict] = field(default_factory=list)
     pending_approval: dict | None = None
     updated_at: datetime = field(default_factory=datetime.now)
 
     async def save(self) -> None:
-        FakeNanobotAgentModel._docs[self.id] = self
+        FakeNanobotSessionModel._docs[self.id] = self
 
 
-class FakeNanobotAgentModel:
-    _docs: dict[str, FakeAgentDoc] = {}
+class FakeNanobotSessionModel:
+    _docs: dict[str, FakeSessionDoc] = {}
 
     @classmethod
-    async def find_one(cls, query: dict[str, Any]) -> FakeAgentDoc | None:
+    async def find_one(cls, query: dict[str, Any]) -> FakeSessionDoc | None:
         return cls._docs.get(query.get("_id"))
 
 
 @pytest.fixture(autouse=True)
 def _patch_models(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
-    FakeNanobotAgentModel._docs = {}
-    monkeypatch.setattr(hooks_module, "NanobotAgentModel", FakeNanobotAgentModel)
+    FakeNanobotSessionModel._docs = {}
+    monkeypatch.setattr(hooks_module, "NanobotSessionModel", FakeNanobotSessionModel)
     yield
 
 
@@ -47,10 +48,9 @@ def _patch_models(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
 async def test_status_hook_before_execute_tools_broadcasts(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         calls.append((agent_id, event, data))
 
-    monkeypatch.setattr(hooks_module, "_load_current_agent", AsyncMock(return_value=None))
     monkeypatch.setattr(
         "app.service.analyst.service.AnalystService.broadcast_sse",
         _broadcast,
@@ -59,7 +59,6 @@ async def test_status_hook_before_execute_tools_broadcasts(monkeypatch: pytest.M
     tok_a = ctx.current_agent_id.set("a1")
     tok_s = ctx.current_session_id.set("s1")
     try:
-        # ToolCallRequest 只用到 name/arguments，直接用简单对象代替
         tool_calls = [
             type("TC", (), {"name": "t1", "arguments": {"x": 1}})(),
             type("TC", (), {"name": "t2", "arguments": {}})(),
@@ -79,11 +78,13 @@ async def test_status_hook_before_execute_tools_broadcasts(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
-async def test_status_hook_after_iteration_appends_step_and_broadcasts(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1")
+async def test_status_hook_after_iteration_appends_step_and_broadcasts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     calls: list[tuple[str, str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         calls.append((agent_id, event, data))
 
     monkeypatch.setattr(
@@ -109,7 +110,7 @@ async def test_status_hook_after_iteration_appends_step_and_broadcasts(monkeypat
         ctx.current_session_id.reset(tok_s)
         ctx.current_agent_id.reset(tok_a)
 
-    doc = FakeNanobotAgentModel._docs["a1"]
+    doc = FakeNanobotSessionModel._docs["s1"]
     assert len(doc.steps) == 1
     assert doc.steps[0]["iteration"] == 2
     assert calls and calls[0][1] == "step"
@@ -141,14 +142,14 @@ async def test_todos_hook_noop_without_write_todos(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.asyncio
 async def test_todos_hook_broadcasts_when_touched() -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1", todos=[{"id": "t"}])
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1", todos=[{"id": "t"}])
     calls: list[tuple[str, str, Any]] = []
 
-    async def _broadcast(agent_id: str, event: str, data: Any) -> None:
+    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
         calls.append((agent_id, event, data))
 
-    # patch 目标方法（hooks.py 内部 import）
     import app.service.analyst.service as service_module
+
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
 
@@ -170,22 +171,25 @@ async def test_todos_hook_broadcasts_when_touched() -> None:
 
 @pytest.mark.asyncio
 async def test_approval_hook_resets_pending_when_advanced() -> None:
-    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(
-        id="a1",
-        status=NanobotAgentStatusEnum.AWAITING_APPROVAL,
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(
+        id="s1",
+        agent_id="a1",
+        status=NanobotSessionStatusEnum.AWAITING_APPROVAL,
         pending_approval={"x": 1},
     )
     tok_a = ctx.current_agent_id.set("a1")
+    tok_s = ctx.current_session_id.set("s1")
     try:
         hook = hooks_module.ApprovalHook()
         await hook.after_iteration(
             AgentHookContext(iteration=1, messages=[], stop_reason="stop")
         )
     finally:
+        ctx.current_session_id.reset(tok_s)
         ctx.current_agent_id.reset(tok_a)
 
-    doc = FakeNanobotAgentModel._docs["a1"]
-    assert doc.status == NanobotAgentStatusEnum.RUNNING
+    doc = FakeNanobotSessionModel._docs["s1"]
+    assert doc.status == NanobotSessionStatusEnum.RUNNING
     assert doc.pending_approval is None
 
 
@@ -203,4 +207,3 @@ def test_default_analyst_hooks_shape() -> None:
         "ApprovalHook",
         "ResultHook",
     ]
-

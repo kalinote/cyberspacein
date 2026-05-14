@@ -247,3 +247,15 @@ class NanobotAgentStatusEnum(str, Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class NanobotSessionStatusEnum(str, Enum):
+    """单次分析会话（nanobot_sessions）的运行时状态。"""
+
+    IDLE = "idle"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"

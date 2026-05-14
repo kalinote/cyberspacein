@@ -24,12 +24,16 @@ class SpawnTool(Tool):
         self._origin_channel = "cli"
         self._origin_chat_id = "direct"
         self._session_key = "cli:direct"
+        self._nanobot_session_id: str | None = None
 
-    def set_context(self, channel: str, chat_id: str) -> None:
-        """Set the origin context for subagent announcements."""
+    def set_context(
+        self, channel: str, chat_id: str, *, nanobot_session_id: str | None = None
+    ) -> None:
+        """设置子代理汇报路由；可选传入 Nanobot 会话 id 以与多会话并行对齐。"""
         self._origin_channel = channel
         self._origin_chat_id = chat_id
         self._session_key = f"{channel}:{chat_id}"
+        self._nanobot_session_id = nanobot_session_id
 
     @property
     def name(self) -> str:
@@ -51,5 +55,5 @@ class SpawnTool(Tool):
             label=label,
             origin_channel=self._origin_channel,
             origin_chat_id=self._origin_chat_id,
-            session_key=self._session_key,
+            session_key=self._nanobot_session_id or self._session_key,
         )

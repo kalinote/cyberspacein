@@ -5,7 +5,7 @@
    `(workspace_id, name)` 联合唯一约束。
 2. **资源子集校验**：Agent 选定的 `prompt_template_id / model_config_id / tools / skills /
    mcp_servers` 必须均是所属 Workspace 对应白名单的子集；非法组合在入库前直接拒绝。
-3. **运行时保护**：Agent 处于 `RUNNING / AWAITING_APPROVAL` 时拒绝更新 / 删除（防止线上状态被改掉）。
+3. **运行时保护**：存在处于 `RUNNING / AWAITING_APPROVAL` 的会话时拒绝更新 / 删除该 Agent。
 """
 from __future__ import annotations
 
@@ -16,23 +16,26 @@ from typing import Any
 from loguru import logger
 
 import app.utils.status_codes as status_codes
-from app.models.agent.nanobot import NanobotAgentModel, NanobotWorkspaceModel
+from app.models.agent.nanobot import (
+    NanobotAgentModel,
+    NanobotSessionModel,
+    NanobotWorkspaceModel,
+)
 from app.schemas.agent.nanobot_agent import (
     AgentServiceError,
     NanobotAgentCreateRequestSchema,
     NanobotAgentUpdateRequestSchema,
 )
-from app.schemas.constants import NanobotAgentStatusEnum
+from app.schemas.constants import NanobotSessionStatusEnum
 from app.utils.id_lib import generate_id
 
 logger = logger.bind(name=__name__)
 
 
-# Agent 处于这些状态时拒绝一切结构性修改（update / delete），避免改坏正在跑的会话。
-_RUNNING_STATUSES: set[NanobotAgentStatusEnum] = {
-    NanobotAgentStatusEnum.RUNNING,
-    NanobotAgentStatusEnum.AWAITING_APPROVAL,
-}
+_ACTIVE_SESSION_STATUSES: frozenset[NanobotSessionStatusEnum] = frozenset({
+    NanobotSessionStatusEnum.RUNNING,
+    NanobotSessionStatusEnum.AWAITING_APPROVAL,
+})
 
 
 class AgentService:
@@ -84,11 +87,21 @@ class AgentService:
     async def list_brief(
         cls, *, workspace_id: str | None = None
     ) -> list[NanobotAgentModel]:
-        """返回 Agent 简表（id / name / workspace_id / status），供下拉使用，按创建时间降序。"""
+        """返回 Agent 简表（id / name / workspace_id），供下拉使用，按创建时间降序。"""
         query_filters: dict[str, Any] = {}
         if workspace_id:
             query_filters["workspace_id"] = workspace_id
         return await NanobotAgentModel.find(query_filters).sort("-created_at").to_list()
+
+    @classmethod
+    async def _has_active_session(cls, agent_id: str) -> bool:
+        n = await NanobotSessionModel.find(
+            {
+                "agent_id": agent_id,
+                "status": {"$in": [s.value for s in _ACTIVE_SESSION_STATUSES]},
+            }
+        ).count()
+        return n > 0
 
     # ------------------------- 创建 -------------------------
 
@@ -146,10 +159,10 @@ class AgentService:
         """更新 Agent：校验非运行时 + 重新做资源子集校验。"""
         doc = await cls.get(agent_id)
 
-        if doc.status in _RUNNING_STATUSES:
+        if await cls._has_active_session(agent_id):
             raise AgentServiceError(
                 status_codes.CONFLICT_STATE,
-                f"Agent 当前处于 {doc.status.value} 状态，无法修改配置",
+                "Agent 存在运行中或待审批的会话，无法修改配置",
             )
 
         if data.name != doc.name:
@@ -191,10 +204,10 @@ class AgentService:
     async def delete(cls, agent_id: str) -> None:
         """删除 Agent：处于运行态时拒绝。"""
         doc = await cls.get(agent_id)
-        if doc.status in _RUNNING_STATUSES:
+        if await cls._has_active_session(agent_id):
             raise AgentServiceError(
                 status_codes.CONFLICT_STATE,
-                f"Agent 当前处于 {doc.status.value} 状态，无法删除，请先终止或等待完成",
+                "Agent 存在运行中或待审批的会话，无法删除，请先终止或等待完成",
             )
         await doc.delete()
         logger.info(f"删除 Agent 成功: id={agent_id}")

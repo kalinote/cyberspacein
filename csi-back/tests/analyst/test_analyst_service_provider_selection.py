@@ -20,11 +20,6 @@ class FakeAgent:
     prompt_template_id: str = "p1"
     tools: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
-    current_session_id: str | None = None
-    steps: list[dict] = field(default_factory=list)
-    todos: list[dict] = field(default_factory=list)
-    pending_approval: dict | None = None
-    result: dict | None = None
     updated_at: Any = None
 
     async def save(self) -> None:
@@ -56,6 +51,16 @@ async def test_build_bot_always_uses_openai_compat_provider(monkeypatch: pytest.
         AsyncMock(return_value=SimpleNamespace(system_prompt="SYS")),
     )
     monkeypatch.setattr(service_module, "generate_id", lambda _s: "sess1")
+
+    class _StubSession:
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        async def insert(self) -> None:
+            return None
+
+    monkeypatch.setattr(service_module, "NanobotSessionModel", lambda **kw: _StubSession(**kw))
+
     monkeypatch.setattr(service_module, "default_analyst_hooks", lambda: [])
     monkeypatch.setattr(service_module, "build_business_tools", lambda _enabled: [])
     monkeypatch.setattr(service_module.AnalystService, "_get_memory_backend", classmethod(lambda cls: object()))

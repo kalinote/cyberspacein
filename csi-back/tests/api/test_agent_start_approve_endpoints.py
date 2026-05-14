@@ -81,14 +81,19 @@ def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
 def test_route_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _submit(agent_id: str, decisions: list[dict]):
+    async def _submit(agent_id: str, session_id: str, decisions: list[dict]):
         assert agent_id == "a1"
+        assert session_id == "s1"
         assert decisions == [{"id": "x", "approve": True}]
 
     monkeypatch.setattr(runtime_ep.AnalystService, "submit_approval", _submit)
     r = client.post(
         "/api/v1/agent/approve",
-        json={"agent_id": "a1", "decisions": [{"id": "x", "approve": True}]},
+        json={
+            "agent_id": "a1",
+            "session_id": "s1",
+            "decisions": [{"id": "x", "approve": True}],
+        },
     )
     assert r.status_code == 200
     body = r.json()
@@ -114,13 +119,13 @@ def test_route_start_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_route_approve_unknown_agent_404(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _submit(agent_id: str, decisions: list[dict]):
+    async def _submit(agent_id: str, session_id: str, decisions: list[dict]):
         raise AgentServiceError(status_codes.NOT_FOUND_AGENT, "Agent 不存在")
 
     monkeypatch.setattr(runtime_ep.AnalystService, "submit_approval", _submit)
     r = client.post(
         "/api/v1/agent/approve",
-        json={"agent_id": "missing", "decisions": []},
+        json={"agent_id": "missing", "session_id": "s0", "decisions": []},
     )
     assert r.status_code == 200
     body = r.json()

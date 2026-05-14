@@ -108,7 +108,7 @@ class SubagentManager:
         self._task_statuses[task_id] = status
 
         bg_task = asyncio.create_task(
-            self._run_subagent(task_id, task, display_label, origin, status)
+            self._run_subagent(task_id, task, display_label, origin, status, session_key)
         )
         self._running_tasks[task_id] = bg_task
         if session_key:
@@ -134,9 +134,15 @@ class SubagentManager:
         label: str,
         origin: dict[str, str],
         status: SubagentStatus,
+        parent_session_key: str | None = None,
     ) -> None:
         """Execute the subagent task and announce the result."""
         logger.info("Subagent [{}] starting task: {}", task_id, label)
+
+        if parent_session_key:
+            runner_session_key = f"sub:{parent_session_key}:{task_id}"
+        else:
+            runner_session_key = f"sub:none:{task_id}"
 
         async def _on_checkpoint(payload: dict) -> None:
             status.phase = payload.get("phase", status.phase)
@@ -162,6 +168,8 @@ class SubagentManager:
                 error_message=None,
                 fail_on_tool_error=True,
                 checkpoint_callback=_on_checkpoint,
+                workspace=self.workspace,
+                session_key=runner_session_key,
             ))
             status.phase = "done"
             status.stop_reason = result.stop_reason

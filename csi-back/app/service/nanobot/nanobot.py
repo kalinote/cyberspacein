@@ -47,8 +47,7 @@ class RunResult:
 
 
 class Nanobot:
-    """Nanobot 的业务 façade。
-
+    """
     典型使用（由 AnalystService 内部完成）::
 
         bot = Nanobot.from_components(

@@ -54,9 +54,7 @@ async def get_agent_brief_list(
 ):
     items = await AgentService.list_brief(workspace_id=workspace_id)
     results = [
-        NanobotAgentListItemSchema(
-            id=m.id, name=m.name, workspace_id=m.workspace_id, status=m.status
-        )
+        NanobotAgentListItemSchema(id=m.id, name=m.name, workspace_id=m.workspace_id)
         for m in items
     ]
     return ApiResponseSchema.success(data=results)

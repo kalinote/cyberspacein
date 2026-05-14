@@ -1,7 +1,7 @@
-"""业务 Hooks：在 `AgentLoop` 迭代的关键节点把运行状态写入 `NanobotAgentModel` 并通过 SSE 广播。
+"""业务 Hooks：在 `AgentLoop` 迭代的关键节点把运行状态写入 `NanobotSessionModel` 并通过 SSE 广播。
 
 所有 Hook 共享 `_base_update_agent` 辅助：按 `current_agent_id` ContextVar 拉 agent → 更新字段 → save。
-任一 Hook 抛出异常默认会被 `CompositeHook._for_each_hook_safe` 吞掉（`reraise=False`），从而
+任一 Hook 抛出异常默认会被 `CompositeHook._for_each_hook_safe` 吞掉（reraise=False），从而
 不阻断主 agent loop；业务侧对数据一致性的强依赖在工具自身（而非 Hook）中完成。
 
 Hook 分工（MIGRATION_PLAN §3.2）：
@@ -18,26 +18,26 @@ from typing import Any
 
 from loguru import logger
 
-from app.models.agent.nanobot import NanobotAgentModel
-from app.schemas.constants import NanobotAgentStatusEnum
+from app.models.agent.nanobot import NanobotSessionModel
+from app.schemas.constants import NanobotSessionStatusEnum
 from app.service.analyst.context import get_current_agent_id, get_current_session_id
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
 
 logger = logger.bind(name=__name__)
 
 
-async def _load_current_agent() -> NanobotAgentModel | None:
-    """按 ContextVar 拿 agent_id 并查库；未绑定时返回 None。"""
-    agent_id = get_current_agent_id()
-    if not agent_id:
+async def _load_current_session() -> NanobotSessionModel | None:
+    """按 ContextVar 拿 session_id 并查库；未绑定时返回 None。"""
+    session_id = get_current_session_id()
+    if not session_id:
         return None
-    return await NanobotAgentModel.find_one({"_id": agent_id})
+    return await NanobotSessionModel.find_one({"_id": session_id})
 
 
 class StatusHook(AgentHook):
     """记录迭代步骤流水并通过 SSE 推送给前端。
 
-    每次 `after_iteration` 追加一条 step 到 `NanobotAgentModel.steps`；
+    每次 `after_iteration` 追加一条 step 到 `NanobotSessionModel.steps`；
     `before_execute_tools` 时把即将发起的 tool calls 作为预告广播出去，便于前端尽早渲染。
     """
 
@@ -68,8 +68,8 @@ class StatusHook(AgentHook):
     async def after_iteration(self, context: AgentHookContext) -> None:
         from app.service.analyst.service import AnalystService
 
-        agent = await _load_current_agent()
-        if agent is None:
+        session = await _load_current_session()
+        if session is None:
             return
 
         step_entry = {
@@ -85,16 +85,16 @@ class StatusHook(AgentHook):
             "error": context.error,
             "created_at": datetime.now().isoformat(),
         }
-        agent.steps = list(agent.steps) + [step_entry]
-        agent.updated_at = datetime.now()
+        session.steps = list(session.steps) + [step_entry]
+        session.updated_at = datetime.now()
         try:
-            await agent.save()
+            await session.save()
         except Exception:
-            logger.exception(f"StatusHook 保存步骤失败: agent_id={agent.id}")
+            logger.exception(f"StatusHook 保存步骤失败: session_id={session.id}")
             return
 
         await AnalystService.broadcast_sse(
-            agent.id,
+            session.agent_id,
             "step",
             {
                 "phase": "after_iteration",
@@ -126,7 +126,7 @@ class TodosHook(AgentHook):
         if not touched:
             return
 
-        doc = await NanobotAgentModel.find_one({"_id": agent_id})
+        doc = await _load_current_session()
         if doc is None:
             return
         await AnalystService.broadcast_sse(
@@ -141,32 +141,32 @@ class TodosHook(AgentHook):
 
 
 class ApprovalHook(AgentHook):
-    """兜底：`after_iteration` 时如果 agent 仍卡在 `AWAITING_APPROVAL` 但本轮已推进，则清掉 pending_approval。
+    """兜底：`after_iteration` 时如果会话仍卡在 `AWAITING_APPROVAL` 但本轮已推进，则清掉 pending_approval。
 
     正常路径下 `ModifyEntityTool.execute` 在收到 `submit_approval` 之后会把 status 复位；
-    本 Hook 仅用于防御性兜底，避免因异常退出导致 agent 永远停在待审批状态。
+    本 Hook 仅用于防御性兜底，避免因异常退出导致会话永远停在待审批状态。
     """
 
     def __init__(self) -> None:
         super().__init__(reraise=False)
 
     async def after_iteration(self, context: AgentHookContext) -> None:
-        agent = await _load_current_agent()
-        if agent is None:
+        session = await _load_current_session()
+        if session is None:
             return
         if (
-            agent.status == NanobotAgentStatusEnum.AWAITING_APPROVAL
+            session.status == NanobotSessionStatusEnum.AWAITING_APPROVAL
             and context.stop_reason
             and context.stop_reason != "awaiting_approval"
         ):
-            agent.status = NanobotAgentStatusEnum.RUNNING
-            agent.pending_approval = None
-            agent.updated_at = datetime.now()
+            session.status = NanobotSessionStatusEnum.RUNNING
+            session.pending_approval = None
+            session.updated_at = datetime.now()
             try:
-                await agent.save()
+                await session.save()
             except Exception:
                 logger.exception(
-                    f"ApprovalHook 复位 pending_approval 失败: agent_id={agent.id}"
+                    f"ApprovalHook 复位 pending_approval 失败: session_id={session.id}"
                 )
 
 

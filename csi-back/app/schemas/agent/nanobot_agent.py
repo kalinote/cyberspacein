@@ -3,8 +3,6 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from app.schemas.constants import NanobotAgentStatusEnum
-
 if TYPE_CHECKING:
     from app.models.agent.nanobot import NanobotAgentModel
 
@@ -49,7 +47,7 @@ class NanobotAgentUpdateRequestSchema(BaseModel):
 
 
 class NanobotAgentSchema(BaseModel):
-    """Agent 响应体（含运行时业务状态）。"""
+    """Agent 响应体（仅配置维度；运行时状态见 nanobot_sessions）。"""
 
     id: str = Field(description="Agent ID")
     workspace_id: str = Field(description="所属工作区ID")
@@ -61,12 +59,6 @@ class NanobotAgentSchema(BaseModel):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的 MCP 服务名列表")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数")
-    status: NanobotAgentStatusEnum = Field(description="运行时状态")
-    current_session_id: str | None = Field(default=None, description="最近一次 /start 的 session_id")
-    steps: list[dict] = Field(default_factory=list, description="运行步骤流水")
-    todos: list[dict] = Field(default_factory=list, description="write_todos 工具产生的待办列表")
-    pending_approval: dict | None = Field(default=None, description="待审批载荷（HITL）")
-    result: dict | None = Field(default=None, description="最近一次 ResultPayloadSchema dump")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
 
@@ -83,12 +75,6 @@ class NanobotAgentSchema(BaseModel):
             skills=list(doc.skills),
             mcp_servers=list(doc.mcp_servers),
             llm_config=dict(doc.llm_config or {}),
-            status=doc.status,
-            current_session_id=doc.current_session_id,
-            steps=list(doc.steps or []),
-            todos=list(doc.todos or []),
-            pending_approval=doc.pending_approval,
-            result=doc.result,
             created_at=doc.created_at,
             updated_at=doc.updated_at,
         )
@@ -100,7 +86,6 @@ class NanobotAgentListItemSchema(BaseModel):
     id: str = Field(description="Agent ID")
     name: str = Field(description="Agent 名称")
     workspace_id: str = Field(description="所属工作区ID")
-    status: NanobotAgentStatusEnum = Field(description="运行时状态")
 
 
 class AgentServiceError(Exception):

@@ -12,7 +12,6 @@ import app.utils.status_codes as status_codes
 from app.api.v1.endpoints import agent as agent_ep
 import app.api.v1.endpoints.agent.agents as agents_ep
 from app.schemas.agent.nanobot_agent import AgentServiceError
-from app.schemas.constants import NanobotAgentStatusEnum
 
 
 class FakeAgentDoc:
@@ -27,12 +26,6 @@ class FakeAgentDoc:
         self.skills: list[str] = []
         self.mcp_servers: list[str] = []
         self.llm_config: dict = {}
-        self.status = NanobotAgentStatusEnum.IDLE
-        self.current_session_id = None
-        self.steps: list[dict] = []
-        self.todos: list[dict] = []
-        self.pending_approval = None
-        self.result = None
         self.created_at = datetime(2026, 1, 1, 0, 0, 0)
         self.updated_at = datetime(2026, 1, 1, 0, 0, 0)
 

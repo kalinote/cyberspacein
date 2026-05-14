@@ -6,12 +6,12 @@
 工具清单（MIGRATION_PLAN §3.3）：
 - `get_current_time` ：返回当前时间字符串，无状态。
 - `get_entity`       ：按 `(entity_type, entity_uuid)` 去 Elasticsearch 拉实体。
-- `modify_entity`    ：HITL 握手 —— 写 `pending_approval` → SSE `approval_required` →
-                        `await AnalystService.await_approval()` → 按决策返回 approve/reject 文本。
+- `modify_entity`    ：HITL 握手 —— 写会话 `pending_approval` → SSE `approval_required` →
+                        `await AnalystService.await_approval(session_id)` → 按决策返回 approve/reject 文本。
                         实际的实体写回业务（ES / DB）可以在审批通过分支中按需扩展；当前版本
                         仅作握手骨架，落地逻辑留 TODO 注释。
 - `notify_user`      ：SSE `notification` 广播一条消息，不改 DB。
-- `write_todos`      ：写 `NanobotAgentModel.todos` + SSE `todos`；供 LLM 自行拆解任务。
+- `write_todos`      ：写 `NanobotSessionModel.todos` + SSE `todos`；供 LLM 自行拆解任务。
 - `web_search` / `web_fetch` ：联网搜索与页面抓取（实现见 `web_tools.py`，运行参数见 `WEB_RUNTIME`）。
 
 工具注册时用 `ToolRegistry.register(tool)`；`AnalystService.build_bot` 会按 agent.tools
@@ -21,17 +21,18 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime
 from typing import Any
 
 from loguru import logger
 
-from app.models.agent.nanobot import NanobotAgentModel
+from app.models.agent.nanobot import NanobotSessionModel
 from app.schemas.agent.result import SUBMIT_TASK_RESULT_TOOL_NAME, SubmitTaskResultParams
 from app.schemas.constants import (
     ENTITY_TYPE_INDEX_MAP,
     EntityType,
-    NanobotAgentStatusEnum,
+    NanobotSessionStatusEnum,
 )
 from app.service.analyst.context import (
     current_task_completion,
@@ -211,13 +212,18 @@ class ModifyEntityTool(Tool):
     """对实体发起修改 —— 工具内部完成 HITL 审批握手。
 
     执行流程：
-    1) 写 `NanobotAgentModel.status=AWAITING_APPROVAL` + `pending_approval=payload`，
-       `AnalystService.broadcast_sse("approval_required", payload)`；
-    2) `await AnalystService.await_approval(agent_id)` 阻塞等待 `/agent/approve` 写入决策；
+    1) 写 `NanobotSessionModel.status=AWAITING_APPROVAL` + `pending_approval=payload`，
+       `AnalystService.broadcast_sse("approval_required", …)`，其中 `resolution=null`（待审批）、
+       `approval_request_id` 标识本次请求；审批结束后在同一条已持久化记录上写入 `resolution`（见步骤 4），
+       回放不重增 seq；
+    2) `await AnalystService.await_approval(session_id)` 阻塞等待 `/agent/approve` 写入决策；
     3) 解析 decisions：
        - 全 `approve`  → （TODO: 实际写回 ES / DB；当前仅日志）
        - 存在 `reject` → 返回被拒说明
-    4) 复位 `status=RUNNING` + `pending_approval=None` + SSE `status=running`。
+    4) 调用 `AnalystService.patch_persisted_approval_required` 将首条已持久化 `approval_required` 的 `data`
+       合并 `resolution` / `reject_reasons`（回放仍为单条）；再对在线订阅者
+       `broadcast_sse(..., persist=False)` 推送同结构数据以便 UI 立即更新；最后
+       复位 `status=RUNNING` + `pending_approval=None` + SSE `status=running`。
     """
 
     @property
@@ -237,8 +243,12 @@ class ModifyEntityTool(Tool):
 
         agent_id = _require_agent_id()
         session_id = get_current_session_id()
+        if not session_id:
+            return "[错误] 缺少 session 上下文"
 
+        approval_request_id = str(uuid.uuid4())
         payload = {
+            "approval_request_id": approval_request_id,
             "entity_type": kwargs.get("entity_type"),
             "entity_uuid": kwargs.get("entity_uuid"),
             "modifications": kwargs.get("modifications") or [],
@@ -247,30 +257,36 @@ class ModifyEntityTool(Tool):
             "session_id": session_id,
         }
 
-        agent = await NanobotAgentModel.find_one({"_id": agent_id})
-        if agent is None:
-            return f"[错误] 当前 agent 不存在: {agent_id}"
-        agent.status = NanobotAgentStatusEnum.AWAITING_APPROVAL
-        agent.pending_approval = payload
-        agent.updated_at = datetime.now()
-        await agent.save()
+        session = await NanobotSessionModel.find_one({"_id": session_id})
+        if session is None:
+            return f"[错误] 当前会话不存在: {session_id}"
+        session.status = NanobotSessionStatusEnum.AWAITING_APPROVAL
+        session.pending_approval = payload
+        session.updated_at = datetime.now()
+        await session.save()
         await AnalystService.broadcast_sse(
             agent_id,
             "approval_required",
             {
                 "agent_id": agent_id,
                 "session_id": session_id,
+                "approval_request_id": approval_request_id,
+                "resolution": None,
                 "payload": payload,
             },
         )
         await AnalystService.broadcast_sse(
             agent_id,
             "status",
-            {"agent_id": agent_id, "status": NanobotAgentStatusEnum.AWAITING_APPROVAL.value},
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "status": NanobotSessionStatusEnum.AWAITING_APPROVAL.value,
+            },
         )
 
         try:
-            decision_msg = await AnalystService.await_approval(agent_id)
+            decision_msg = await AnalystService.await_approval(session_id)
         except Exception as exc:
             logger.exception(
                 f"modify_entity 等待审批异常: agent_id={agent_id} session_id={session_id}"
@@ -279,18 +295,43 @@ class ModifyEntityTool(Tool):
 
         decisions = decision_msg.get("decisions") or []
         approved, rejections = _parse_approval_decisions(decisions)
+        resolution = _approval_resolution_label(approved, rejections)
 
-        # 复位 agent 状态
-        agent = await NanobotAgentModel.find_one({"_id": agent_id})
-        if agent is not None:
-            agent.status = NanobotAgentStatusEnum.RUNNING
-            agent.pending_approval = None
-            agent.updated_at = datetime.now()
-            await agent.save()
+        # 复位会话状态
+        session = await NanobotSessionModel.find_one({"_id": session_id})
+        if session is not None:
+            session.status = NanobotSessionStatusEnum.RUNNING
+            session.pending_approval = None
+            session.updated_at = datetime.now()
+            await session.save()
+        await AnalystService.patch_persisted_approval_required(
+            agent_id,
+            session_id,
+            approval_request_id,
+            resolution=resolution,
+            reject_reasons=rejections or None,
+        )
+        await AnalystService.broadcast_sse(
+            agent_id,
+            "approval_required",
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "approval_request_id": approval_request_id,
+                "resolution": resolution,
+                "payload": payload,
+                "reject_reasons": rejections or None,
+            },
+            persist=False,
+        )
         await AnalystService.broadcast_sse(
             agent_id,
             "status",
-            {"agent_id": agent_id, "status": NanobotAgentStatusEnum.RUNNING.value},
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "status": NanobotSessionStatusEnum.RUNNING.value,
+            },
         )
 
         if rejections:
@@ -332,6 +373,19 @@ def _parse_approval_decisions(
         else:
             rejections.append(str(item.get("reason") or ""))
     return approved, rejections
+
+
+def _approval_resolution_label(
+    approved: list[dict[str, Any]], rejections: list[str]
+) -> str:
+    """与 SSE `approval_required` 的 `resolution` 字段一致：已决时的终态标签。"""
+    if rejections and approved:
+        return "mixed"
+    if rejections:
+        return "rejected"
+    if approved:
+        return "approved"
+    return "rejected"
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +453,7 @@ class NotifyUserTool(Tool):
     "properties": {
         "todos": {
             "type": "array",
-            "description": "任务项列表，完整覆盖 agent.todos",
+            "description": "任务项列表，完整覆盖当前会话 todos",
             "items": {
                 "type": "object",
                 "properties": {
@@ -420,7 +474,7 @@ class NotifyUserTool(Tool):
     "additionalProperties": False,
 })
 class WriteTodosTool(Tool):
-    """写入当前 agent 的 todos 列表（完整覆盖），并 SSE 广播给前端。"""
+    """写入当前会话的 todos 列表（完整覆盖），并 SSE 广播给前端。"""
 
     @property
     def name(self) -> str:
@@ -428,7 +482,7 @@ class WriteTodosTool(Tool):
 
     @property
     def description(self) -> str:
-        return "更新当前 Agent 的待办事项列表（会完全覆盖旧列表）。"
+        return "更新当前会话的待办事项列表（会完全覆盖旧列表）。"
 
     @property
     def exclusive(self) -> bool:
@@ -438,22 +492,25 @@ class WriteTodosTool(Tool):
         from app.service.analyst.service import AnalystService
 
         agent_id = _require_agent_id()
+        sid = get_current_session_id()
+        if not sid:
+            return "[错误] 缺少 session 上下文"
         todos = kwargs.get("todos") or []
         normalized = [_normalize_todo(item) for item in todos]
 
-        agent = await NanobotAgentModel.find_one({"_id": agent_id})
-        if agent is None:
-            return f"[错误] 当前 agent 不存在: {agent_id}"
-        agent.todos = normalized
-        agent.updated_at = datetime.now()
-        await agent.save()
+        session = await NanobotSessionModel.find_one({"_id": sid})
+        if session is None:
+            return f"[错误] 当前会话不存在: {sid}"
+        session.todos = normalized
+        session.updated_at = datetime.now()
+        await session.save()
 
         await AnalystService.broadcast_sse(
             agent_id,
             "todos",
             {
                 "agent_id": agent_id,
-                "session_id": get_current_session_id(),
+                "session_id": sid,
                 "todos": normalized,
             },
         )

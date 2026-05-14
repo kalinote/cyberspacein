@@ -48,6 +48,7 @@ class _LoopHook(AgentHook):
         *,
         channel: str = "cli",
         chat_id: str = "direct",
+        session: Session | None = None,
     ) -> None:
         super().__init__(reraise=True)
         self._loop = agent_loop
@@ -56,6 +57,7 @@ class _LoopHook(AgentHook):
         self._on_stream_end = on_stream_end
         self._channel = channel
         self._chat_id = chat_id
+        self._session = session
         self._stream_buf = ""
 
     def wants_streaming(self) -> bool:
@@ -92,7 +94,7 @@ class _LoopHook(AgentHook):
         for tc in context.tool_calls:
             args_str = json.dumps(tc.arguments, ensure_ascii=False)
             logger.info("Tool call: {}({})", tc.name, args_str[:200])
-        self._loop._set_tool_context(self._channel, self._chat_id)
+        self._loop._set_tool_context(self._channel, self._chat_id, session=self._session)
 
     async def after_iteration(self, context: AgentHookContext) -> None:
         u = context.usage or {}
@@ -272,12 +274,15 @@ class AgentLoop:
         finally:
             self._mcp_connecting = False
 
-    def _set_tool_context(self, channel: str, chat_id: str) -> None:
+    def _set_tool_context(
+        self, channel: str, chat_id: str, *, session: Session | None = None
+    ) -> None:
         """Update context for all tools that need routing info."""
+        nsid = session.id if session else None
         for name in ("spawn", "my"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
-                    tool.set_context(channel, chat_id)
+                    tool.set_context(channel, chat_id, nanobot_session_id=nsid)
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -334,6 +339,7 @@ class AgentLoop:
             on_stream_end=on_stream_end,
             channel=channel,
             chat_id=chat_id,
+            session=session,
         )
         hook: AgentHook = (
             CompositeHook([loop_hook] + self._extra_hooks) if self._extra_hooks else loop_hook
@@ -438,7 +444,7 @@ class AgentLoop:
             is_subagent = msg.sender_id == "subagent"
             if is_subagent and self._persist_subagent_followup(session, msg):
                 await self.sessions.save(session)
-            self._set_tool_context(channel, chat_id)
+            self._set_tool_context(channel, chat_id, session=session)
             history = session.get_history(max_messages=0)
             current_role = "assistant" if is_subagent else "user"
 
@@ -496,7 +502,7 @@ class AgentLoop:
             session_summary=pending,
         )
 
-        self._set_tool_context(msg.channel, msg.chat_id)
+        self._set_tool_context(msg.channel, msg.chat_id, session=session)
 
         history = session.get_history(max_messages=0)
 

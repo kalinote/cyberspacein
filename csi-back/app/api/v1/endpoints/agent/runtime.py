@@ -30,6 +30,11 @@ router = APIRouter()
     "/start",
     response_model=ApiResponseSchema[StartAgentResponseSchema],
     summary="启动分析引擎",
+    description=(
+        "成功时返回 `data.session_id`。后续 SSE `/agent/status`、取消与审批接口均须携带同一 `session_id`。"
+        "当环境变量 `NANOBOT_AGENT_MAX_PARALLEL_SESSIONS` 大于 0 且该 Agent 在库中 `running` 会话数已达上限时，"
+        "返回 HTTP 200 且业务码为冲突态（`CONFLICT_STATE`），不会在库中新建本会话。"
+    ),
 )
 async def start_agent(data: StartAgentRequestSchema):
     try:
@@ -85,10 +90,11 @@ async def start_agent(data: StartAgentRequestSchema):
     )
 
 
-@router.get("/status", summary="订阅 Agent 状态事件流（SSE）")
+@router.get("/status", summary="订阅指定会话的状态事件流（SSE）")
 async def get_agent_status(
     request: Request,
     agent_id: str = Query(..., description="分析引擎ID"),
+    session_id: str = Query(..., description="会话ID"),
     debug: bool = Query(False, description="是否开启调试模式（开启后会通过 SSE 额外返回更详细信息）"),
 ):
     debug_enabled = (
@@ -96,10 +102,7 @@ async def get_agent_status(
         if isinstance(debug, bool)
         else bool(getattr(debug, "default", False))
     )
-    try:
-        queue = await AnalystService.subscribe(agent_id, debug=debug_enabled)
-    except TypeError:
-        queue = await AnalystService.subscribe(agent_id)
+    queue = await AnalystService.subscribe(agent_id, session_id, debug=debug_enabled)
 
     async def event_stream():
         try:
@@ -119,7 +122,7 @@ async def get_agent_status(
                 else:
                     yield f"event: {event}\ndata: {data_str}\n\n"
         finally:
-            await AnalystService.unsubscribe(agent_id, queue)
+            await AnalystService.unsubscribe(agent_id, session_id, queue)
 
     return StreamingResponse(
         event_stream(),
@@ -135,7 +138,7 @@ async def get_agent_status(
 @router.post("/approve", response_model=ApiResponseSchema[Any], summary="提交行为批准")
 async def approve_agent(data: ApproveRequestSchema):
     try:
-        await AnalystService.submit_approval(data.agent_id, data.decisions)
+        await AnalystService.submit_approval(data.agent_id, data.session_id, data.decisions)
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
     return ApiResponseSchema.success(data=None, message="批准决策已提交")
@@ -147,7 +150,9 @@ async def approve_agent(data: ApproveRequestSchema):
     summary="取消正在运行的分析引擎",
 )
 async def cancel_agent(data: CancelAgentRequestSchema):
-    cancelled = await AnalystService.cancel_agent(data.agent_id, reason=data.reason)
+    cancelled = await AnalystService.cancel_agent(
+        data.agent_id, data.session_id, reason=data.reason
+    )
     return ApiResponseSchema.success(
         data=CancelAgentResponseSchema(agent_id=data.agent_id, cancelled=cancelled),
         message="取消请求已发送" if cancelled else "该 Agent 当前没有正在运行的任务",

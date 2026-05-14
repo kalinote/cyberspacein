@@ -10,7 +10,11 @@ import pytest_asyncio
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from app.models.agent.nanobot import NanobotAgentModel, NanobotWorkspaceModel
+from app.models.agent.nanobot import (
+    NanobotAgentModel,
+    NanobotSessionModel,
+    NanobotWorkspaceModel,
+)
 from app.models.agent.sse_event import NanobotAgentSseEventModel, NanobotAgentSseEventStateModel
 from app.service.analyst.service import AnalystService
 
@@ -41,6 +45,7 @@ async def sse_replay_db() -> Any:
         document_models=[
             NanobotWorkspaceModel,
             NanobotAgentModel,
+            NanobotSessionModel,
             NanobotAgentSseEventModel,
             NanobotAgentSseEventStateModel,
         ],
@@ -63,8 +68,8 @@ async def _seed_agent_with_session() -> tuple[str, str]:
         name="测试Agent",
         prompt_template_id="pt1",
         model_config_id="mc1",
-        current_session_id=ss_id,
     ).insert()
+    await NanobotSessionModel(id=ss_id, agent_id=ag_id, workspace_id=ws_id).insert()
     return ag_id, ss_id
 
 
@@ -92,8 +97,8 @@ async def test_subscribe_replays_history_and_filters_debug(sse_replay_db: Any) -
         {"agent_id": agent_id, "session_id": session_id, "user_prompt": "hi"},
     )
 
-    q_normal = await AnalystService.subscribe(agent_id, debug=False)
-    q_debug = await AnalystService.subscribe(agent_id, debug=True)
+    q_normal = await AnalystService.subscribe(agent_id, session_id, debug=False)
+    q_debug = await AnalystService.subscribe(agent_id, session_id, debug=True)
     try:
         p1 = await q_normal.get()
         assert p1["event"] == "status"
@@ -113,6 +118,56 @@ async def test_subscribe_replays_history_and_filters_debug(sse_replay_db: Any) -
         d3 = await q_debug.get()
         assert d3["event"] == "debug_prompt"
     finally:
-        await AnalystService.unsubscribe(agent_id, q_normal)
-        await AnalystService.unsubscribe(agent_id, q_debug)
+        await AnalystService.unsubscribe(agent_id, session_id, q_normal)
+        await AnalystService.unsubscribe(agent_id, session_id, q_debug)
+
+
+@pytest.mark.asyncio
+async def test_approval_required_patch_updates_single_persisted_row(sse_replay_db: Any) -> None:
+    _ = sse_replay_db
+    agent_id, session_id = await _seed_agent_with_session()
+    req_id = "test-approval-req-1"
+
+    await AnalystService.broadcast_sse(
+        agent_id,
+        "approval_required",
+        {
+            "agent_id": agent_id,
+            "session_id": session_id,
+            "approval_request_id": req_id,
+            "resolution": None,
+            "payload": {"approval_request_id": req_id, "reason": "x"},
+        },
+    )
+    n1 = await NanobotAgentSseEventModel.find(
+        {"agent_id": agent_id, "session_id": session_id, "event": "approval_required"}
+    ).count()
+    assert n1 == 1
+
+    await AnalystService.patch_persisted_approval_required(
+        agent_id,
+        session_id,
+        req_id,
+        resolution="approved",
+        reject_reasons=None,
+    )
+    n2 = await NanobotAgentSseEventModel.find(
+        {"agent_id": agent_id, "session_id": session_id, "event": "approval_required"}
+    ).count()
+    assert n2 == 1
+
+    row = await NanobotAgentSseEventModel.find_one(
+        {"agent_id": agent_id, "session_id": session_id, "event": "approval_required"}
+    )
+    assert row is not None
+    assert isinstance(row.data, dict)
+    assert row.data.get("resolution") == "approved"
+
+    q = await AnalystService.subscribe(agent_id, session_id, debug=False)
+    try:
+        msg = await q.get()
+        assert msg["event"] == "approval_required"
+        assert (msg.get("data") or {}).get("resolution") == "approved"
+    finally:
+        await AnalystService.unsubscribe(agent_id, session_id, q)
 

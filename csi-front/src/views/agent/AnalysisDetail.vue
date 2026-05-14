@@ -60,7 +60,8 @@
                                 </div>
                                 <div class="mt-4">
                                     <el-input v-model="userPrompt" type="textarea"
-                                        :autosize="{ minRows: 3, maxRows: 8 }" placeholder="请输入本次分析的用户提示词（user_prompt）"
+                                        :autosize="{ minRows: 3, maxRows: 8 }"
+                                        placeholder="用户提示词（user_prompt），留空则使用服务端模板默认"
                                         resize="none" />
                                     <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
                                         <span v-if="entityType">entity_type: <span class="font-mono">{{ entityType
@@ -85,10 +86,9 @@
                                         <span class="text-gray-500">状态</span>
                                         <span class="font-medium text-gray-900">{{ statusLabel }}</span>
                                     </div>
-                                    <div class="flex justify-between gap-3" v-if="agent?.current_session_id">
-                                        <span class="text-gray-500">current_session_id</span>
-                                        <span class="font-mono text-gray-900 truncate">{{ agent.current_session_id
-                                            }}</span>
+                                    <div class="flex justify-between gap-3" v-if="sessionId">
+                                        <span class="text-gray-500">session_id</span>
+                                        <span class="font-mono text-gray-900 truncate">{{ sessionId }}</span>
                                     </div>
                                     <div class="flex justify-between gap-3" v-if="agent?.updated_at">
                                         <span class="text-gray-500">更新时间</span>
@@ -191,7 +191,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -200,7 +200,9 @@ import { agentApi } from '@/api/agent'
 import { formatDateTime, TODO_ITEM_STATUS } from '@/utils/action'
 
 const route = useRoute()
+const router = useRouter()
 const agentId = computed(() => String(route.params.threadId || ''))
+const sessionId = computed(() => (route.query.session_id ? String(route.query.session_id) : ''))
 
 const entityUuid = computed(() => (route.query.entity_uuid ? String(route.query.entity_uuid) : ''))
 const entityType = computed(() => (route.query.entity_type ? String(route.query.entity_type) : ''))
@@ -210,6 +212,7 @@ const pageLoading = ref(true)
 const pageError = ref('')
 
 const agent = ref(null)
+const sessionRuntimeStatus = ref('unknown')
 const sseConnected = ref(false)
 const sseError = ref('')
 
@@ -224,30 +227,10 @@ let eventSource = null
 let retryCount = 0
 const maxRetries = 3
 
-const APPROVAL_SSE_QUIET_MS = 300
-let approvalSseQuietTimer = null
-let lastSseEventName = ''
-let lastApprovalRequiredPayload = null
-
-function resetApprovalSseGate() {
-    if (approvalSseQuietTimer) {
-        clearTimeout(approvalSseQuietTimer)
-        approvalSseQuietTimer = null
-    }
-    lastSseEventName = ''
-    lastApprovalRequiredPayload = null
-}
-
-function bumpSseTail(eventName) {
-    lastSseEventName = eventName
-    if (approvalSseQuietTimer) clearTimeout(approvalSseQuietTimer)
-    approvalSseQuietTimer = setTimeout(() => {
-        approvalSseQuietTimer = null
-        if (lastSseEventName === 'approval_required' && lastApprovalRequiredPayload) {
-            pendingApproval.value = lastApprovalRequiredPayload
-            showApprovalDialog.value = true
-        }
-    }, APPROVAL_SSE_QUIET_MS)
+function isApprovalAwaitingUserAction(p) {
+    if (!p || typeof p !== 'object') return false
+    if (!('resolution' in p)) return true
+    return p.resolution == null
 }
 
 const showApprovalDialog = ref(false)
@@ -300,9 +283,10 @@ watch(
 )
 
 const agentTitle = computed(() => agent.value?.name || '分析详情')
-const statusRaw = computed(() => String(agent.value?.status || 'unknown'))
+const statusRaw = computed(() => String(sessionRuntimeStatus.value || 'unknown'))
 
 const statusLabelMap = {
+    unknown: '未知',
     running: '运行中',
     awaiting_approval: '等待审批',
     completed: '已完成',
@@ -312,6 +296,7 @@ const statusLabelMap = {
 }
 
 const statusTagMap = {
+    unknown: 'info',
     running: 'primary',
     awaiting_approval: 'warning',
     completed: 'success',
@@ -323,8 +308,14 @@ const statusTagMap = {
 const statusLabel = computed(() => statusLabelMap[statusRaw.value] || statusRaw.value)
 const statusTagType = computed(() => statusTagMap[statusRaw.value] || 'info')
 
-const canStart = computed(() => Boolean(agentId.value) && userPrompt.value.trim().length > 0 && !startLoading.value)
-const canCancel = computed(() => Boolean(agentId.value) && (statusRaw.value === 'running' || statusRaw.value === 'awaiting_approval') && !cancelLoading.value)
+const canStart = computed(() => Boolean(agentId.value) && !startLoading.value)
+const canCancel = computed(
+    () =>
+        Boolean(agentId.value) &&
+        Boolean(sessionId.value) &&
+        (statusRaw.value === 'running' || statusRaw.value === 'awaiting_approval') &&
+        !cancelLoading.value
+)
 
 function todoStatusIcon(s) {
     if (s === TODO_ITEM_STATUS.PENDING || s === 'pending') return 'mdi:circle-outline'
@@ -340,17 +331,47 @@ function todoStatusIconColor(s) {
     return 'text-gray-400'
 }
 
+function applyStatusFromSsePayload(raw) {
+    const text = String(raw ?? '').trim()
+    if (!text) return
+    try {
+        const x = JSON.parse(text)
+        if (typeof x === 'string') {
+            sessionRuntimeStatus.value = x
+        } else if (x && typeof x === 'object' && x.status != null) {
+            sessionRuntimeStatus.value = String(x.status)
+        }
+    } catch {
+        sessionRuntimeStatus.value = text
+    }
+}
+
+function applyTodosFromSsePayload(raw) {
+    const text = String(raw ?? '').trim()
+    if (!text) {
+        todos.value = []
+        return
+    }
+    try {
+        const x = JSON.parse(text)
+        todos.value = normalizeTodosPayload(x)
+    } catch {
+        todos.value = []
+    }
+}
+
 async function loadAgentDetail() {
     if (!agentId.value) throw new Error('缺少 agent_id 参数')
     const res = await agentApi.getAgentDetail(agentId.value)
     if (res?.code !== 0) {
         throw new Error(res?.message || '获取 Agent 详情失败')
     }
-    mergeAgent(res?.data || {})
-    todos.value = normalizeTodosPayload(res?.data?.todos)
-    if (res?.data?.pending_approval) {
-        pendingApproval.value = res.data.pending_approval
-    }
+    const raw = res?.data && typeof res.data === 'object' ? { ...res.data } : {}
+    delete raw.status
+    delete raw.todos
+    delete raw.pending_approval
+    delete raw.current_session_id
+    mergeAgent(raw)
 }
 
 function connectSSE() {
@@ -358,11 +379,15 @@ function connectSSE() {
         sseError.value = '缺少 agent_id 参数'
         return
     }
+    if (!sessionId.value) {
+        sseError.value = ''
+        return
+    }
 
     disconnectSSE()
 
     try {
-        const url = agentApi.getAgentStatusUrl(agentId.value)
+        const url = agentApi.getAgentStatusUrl(agentId.value, sessionId.value)
         eventSource = new EventSource(url)
 
         eventSource.onopen = () => {
@@ -384,7 +409,7 @@ function connectSSE() {
                 const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000)
                 pushEvent('sse_retry', `第 ${retryCount} 次重连，${delay}ms 后执行`)
                 setTimeout(() => {
-                    if (retryCount <= maxRetries) connectSSE()
+                    if (retryCount <= maxRetries && sessionId.value && agentId.value) connectSSE()
                 }, delay)
             } else {
                 sseError.value = 'SSE 连接失败，请刷新页面重试'
@@ -393,18 +418,21 @@ function connectSSE() {
             }
         }
 
-        const sseNamedEvents = [
-            'status',
-            'todos',
-            'notification',
-            'result',
-            'debug_prompt',
-            'progress'
-        ]
+        eventSource.addEventListener('status', (event) => {
+            const raw = event.data ?? ''
+            pushEvent('status', raw)
+            applyStatusFromSsePayload(raw)
+        })
+        eventSource.addEventListener('todos', (event) => {
+            const raw = event.data ?? ''
+            pushEvent('todos', raw)
+            applyTodosFromSsePayload(raw)
+        })
+
+        const sseNamedEvents = ['notification', 'result', 'debug_prompt', 'progress']
         for (const name of sseNamedEvents) {
             eventSource.addEventListener(name, (event) => {
                 pushEvent(name, event.data ?? '')
-                bumpSseTail(name)
             })
         }
         eventSource.addEventListener('approval_required', (event) => {
@@ -417,12 +445,14 @@ function connectSSE() {
             } catch {
                 p = null
             }
-            lastApprovalRequiredPayload = p
-            bumpSseTail('approval_required')
+            if (!isApprovalAwaitingUserAction(p)) {
+                return
+            }
+            pendingApproval.value = p
+            showApprovalDialog.value = true
         })
         eventSource.onmessage = (event) => {
             pushEvent('message', event.data ?? '')
-            bumpSseTail('message')
         }
     } catch (e) {
         sseConnected.value = false
@@ -432,7 +462,6 @@ function connectSSE() {
 }
 
 function disconnectSSE() {
-    resetApprovalSseGate()
     if (eventSource) {
         eventSource.close()
         eventSource = null
@@ -455,21 +484,31 @@ async function start() {
     if (!canStart.value) return
     try {
         startLoading.value = true
+        const trimmedPrompt = userPrompt.value.trim()
         const payload = {
             agent_id: agentId.value,
-            user_prompt: userPrompt.value.trim(),
+            user_prompt: trimmedPrompt.length > 0 ? trimmedPrompt : null,
             entity_uuid: entityUuid.value || null,
             entity_type: entityType.value || null,
-            extra_context: parseExtraContext()
+            extra_context: parseExtraContext(),
+            debug: true
         }
         const res = await agentApi.startAgent(payload)
         if (res?.code !== 0) {
             ElMessage.error(res?.message || '启动失败')
             return
         }
+        const sid = res?.data?.session_id
+        if (!sid) {
+            ElMessage.error('未返回 session_id，无法订阅进度')
+            return
+        }
         ElMessage.success('已提交启动请求')
         pushEvent('start', res?.data || {})
-        connectSSE()
+        await router.replace({
+            path: route.path,
+            query: { ...route.query, session_id: String(sid) }
+        })
     } catch (e) {
         ElMessage.error(e?.message || '启动失败，请稍后重试')
     } finally {
@@ -481,7 +520,11 @@ async function cancel() {
     if (!canCancel.value) return
     try {
         cancelLoading.value = true
-        const res = await agentApi.cancelAgent({ agent_id: agentId.value, reason: '用户取消' })
+        const res = await agentApi.cancelAgent({
+            agent_id: agentId.value,
+            session_id: sessionId.value,
+            reason: '用户取消'
+        })
         if (res?.code !== 0) {
             ElMessage.error(res?.message || '取消失败')
             return
@@ -496,6 +539,10 @@ async function cancel() {
 }
 
 async function submitApproval(approved) {
+    if (!sessionId.value) {
+        ElMessage.warning('缺少 session_id，无法提交审批')
+        return
+    }
     try {
         approvalLoading.value = true
         const decision = {
@@ -505,6 +552,7 @@ async function submitApproval(approved) {
         }
         const res = await agentApi.approveAgent({
             agent_id: agentId.value,
+            session_id: sessionId.value,
             decisions: [decision]
         })
         if (res?.code !== 0) {
@@ -524,21 +572,49 @@ async function submitApproval(approved) {
 }
 
 async function reload() {
+    disconnectSSE()
     pageLoading.value = true
     pageError.value = ''
     events.value = []
     todos.value = []
+    sessionRuntimeStatus.value = 'unknown'
     pendingApproval.value = null
+    showApprovalDialog.value = false
     approvalReason.value = ''
     try {
         await loadAgentDetail()
-        connectSSE()
     } catch (e) {
         pageError.value = e?.message || '加载失败'
     } finally {
         pageLoading.value = false
+        if (sessionId.value && agentId.value) {
+            await nextTick()
+            connectSSE()
+        }
     }
 }
+
+watch(sessionId, (sid, oldSid) => {
+    if (sid === oldSid) return
+    disconnectSSE()
+    sessionRuntimeStatus.value = 'unknown'
+    todos.value = []
+    if (!sid || !agentId.value) return
+    if (pageLoading.value) return
+    connectSSE()
+})
+
+watch(agentId, async (id, oldId) => {
+    if (!id) return
+    if (oldId && id !== oldId) {
+        const { session_id: _removed, ...restQuery } = route.query
+        await router.replace({
+            path: `/agent/analysis/${id}`,
+            query: restQuery
+        })
+        reload()
+    }
+})
 
 onMounted(() => {
     reload()

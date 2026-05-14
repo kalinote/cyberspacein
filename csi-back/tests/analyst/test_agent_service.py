@@ -16,7 +16,7 @@ from app.schemas.agent.nanobot_agent import (
     NanobotAgentCreateRequestSchema,
     NanobotAgentUpdateRequestSchema,
 )
-from app.schemas.constants import NanobotAgentStatusEnum
+from app.schemas.constants import NanobotSessionStatusEnum
 
 
 def _dt(n: int) -> datetime:
@@ -46,14 +46,6 @@ class FakeAgentDoc:
     skills: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     llm_config: dict[str, Any] = field(default_factory=dict)
-
-    # 运行时字段（update 不应污染）
-    status: NanobotAgentStatusEnum = NanobotAgentStatusEnum.IDLE
-    current_session_id: str | None = None
-    steps: list[dict] = field(default_factory=list)
-    todos: list[dict] = field(default_factory=list)
-    pending_approval: dict | None = None
-    result: dict | None = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -174,12 +166,37 @@ class FakeNanobotAgentModel:
         return _FakeQuery(items)
 
 
+@dataclass
+class FakeSessionDoc:
+    id: str
+    agent_id: str
+    workspace_id: str = "w1"
+    status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.IDLE
+
+
+class FakeNanobotSessionModel:
+    _docs: dict[str, FakeSessionDoc] = {}
+
+    @classmethod
+    def find(cls, query_filters: dict[str, Any]) -> _FakeQuery:
+        items = list(cls._docs.values())
+        if "agent_id" in query_filters:
+            items = [d for d in items if d.agent_id == query_filters["agent_id"]]
+        st = query_filters.get("status")
+        if isinstance(st, dict) and "$in" in st:
+            allowed = set(st["$in"])
+            items = [d for d in items if d.status.value in allowed]
+        return _FakeQuery(items)
+
+
 @pytest.fixture(autouse=True)
 def _patch_models(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     FakeNanobotAgentModel._docs = {}
     FakeNanobotWorkspaceModel._docs = {}
+    FakeNanobotSessionModel._docs = {}
     monkeypatch.setattr(agent_module, "NanobotAgentModel", FakeNanobotAgentModel)
     monkeypatch.setattr(agent_module, "NanobotWorkspaceModel", FakeNanobotWorkspaceModel)
+    monkeypatch.setattr(agent_module, "NanobotSessionModel", FakeNanobotSessionModel)
     monkeypatch.setattr(agent_module, "generate_id", lambda _: "agent_fixed")
     yield
 
@@ -211,7 +228,6 @@ async def test_create_success() -> None:
     )
     doc = await agent_module.AgentService.create(data)
     assert doc.id == "agent_fixed"
-    assert doc.status == NanobotAgentStatusEnum.IDLE
     assert await FakeNanobotAgentModel.find_one({"_id": "agent_fixed"}) is not None
 
 
@@ -376,8 +392,8 @@ async def test_list_page_search() -> None:
 
 @pytest.mark.asyncio
 async def test_list_brief() -> None:
-    await FakeAgentDoc(id="a1", workspace_id="w1", name="n1", status=NanobotAgentStatusEnum.IDLE, created_at=_dt(1)).insert()
-    await FakeAgentDoc(id="a2", workspace_id="w1", name="n2", status=NanobotAgentStatusEnum.RUNNING, created_at=_dt(2)).insert()
+    await FakeAgentDoc(id="a1", workspace_id="w1", name="n1", created_at=_dt(1)).insert()
+    await FakeAgentDoc(id="a2", workspace_id="w1", name="n2", created_at=_dt(2)).insert()
     items = await agent_module.AgentService.list_brief(workspace_id="w1")
     assert [i.id for i in items] == ["a2", "a1"]
 
@@ -399,10 +415,6 @@ async def test_update_success() -> None:
         prompt_template_id="p1",
         model_config_id="m1",
         tools=["t1"],
-        status=NanobotAgentStatusEnum.COMPLETED,
-        steps=[{"x": 1}],
-        todos=[{"y": 2}],
-        current_session_id="sess",
         updated_at=_dt(1),
     ).insert()
     data = NanobotAgentUpdateRequestSchema(
@@ -419,10 +431,6 @@ async def test_update_success() -> None:
     assert doc.name == "new"
     assert doc.tools == ["t2"]
     assert doc.updated_at > _dt(1)
-    # 运行时字段不被污染
-    assert doc.steps == [{"x": 1}]
-    assert doc.todos == [{"y": 2}]
-    assert doc.current_session_id == "sess"
 
 
 @pytest.mark.asyncio
@@ -434,8 +442,10 @@ async def test_update_blocked_running() -> None:
         name="A",
         prompt_template_id="p1",
         model_config_id="m1",
-        status=NanobotAgentStatusEnum.RUNNING,
     ).insert()
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(
+        id="s1", agent_id="a1", status=NanobotSessionStatusEnum.RUNNING
+    )
     data = NanobotAgentUpdateRequestSchema(
         name="A",
         prompt_template_id="p1",
@@ -455,8 +465,10 @@ async def test_update_blocked_awaiting_approval() -> None:
         name="A",
         prompt_template_id="p1",
         model_config_id="m1",
-        status=NanobotAgentStatusEnum.AWAITING_APPROVAL,
     ).insert()
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(
+        id="s1", agent_id="a1", status=NanobotSessionStatusEnum.AWAITING_APPROVAL
+    )
     data = NanobotAgentUpdateRequestSchema(name="A", prompt_template_id="p1", model_config_id="m1")
     with pytest.raises(AgentServiceError) as e:
         await agent_module.AgentService.update("a1", data)
@@ -466,16 +478,21 @@ async def test_update_blocked_awaiting_approval() -> None:
 @pytest.mark.asyncio
 async def test_update_allowed_after_completed() -> None:
     _seed_workspace("w1", prompt_template_ids=["p1"], model_config_ids=["m1"])
-    for st in [NanobotAgentStatusEnum.COMPLETED, NanobotAgentStatusEnum.FAILED, NanobotAgentStatusEnum.PAUSED]:
+    for st in [
+        NanobotSessionStatusEnum.COMPLETED,
+        NanobotSessionStatusEnum.FAILED,
+        NanobotSessionStatusEnum.PAUSED,
+    ]:
         FakeNanobotAgentModel._docs = {}
+        FakeNanobotSessionModel._docs = {}
         await FakeAgentDoc(
             id="a1",
             workspace_id="w1",
             name="A",
             prompt_template_id="p1",
             model_config_id="m1",
-            status=st,
         ).insert()
+        FakeNanobotSessionModel._docs["sx"] = FakeSessionDoc(id="sx", agent_id="a1", status=st)
         data = NanobotAgentUpdateRequestSchema(name="A2", prompt_template_id="p1", model_config_id="m1")
         doc = await agent_module.AgentService.update("a1", data)
         assert doc.name == "A2"
@@ -536,16 +553,17 @@ async def test_delete_success() -> None:
 @pytest.mark.asyncio
 async def test_delete_blocked_running() -> None:
     _seed_workspace("w1", prompt_template_ids=["p1"], model_config_ids=["m1"])
-    for st in [NanobotAgentStatusEnum.RUNNING, NanobotAgentStatusEnum.AWAITING_APPROVAL]:
+    for st in [NanobotSessionStatusEnum.RUNNING, NanobotSessionStatusEnum.AWAITING_APPROVAL]:
         FakeNanobotAgentModel._docs = {}
+        FakeNanobotSessionModel._docs = {}
         await FakeAgentDoc(
             id="a1",
             workspace_id="w1",
             name="A",
             prompt_template_id="p1",
             model_config_id="m1",
-            status=st,
         ).insert()
+        FakeNanobotSessionModel._docs["sx"] = FakeSessionDoc(id="sx", agent_id="a1", status=st)
         with pytest.raises(AgentServiceError) as e:
             await agent_module.AgentService.delete("a1")
         assert e.value.code == status_codes.CONFLICT_STATE
