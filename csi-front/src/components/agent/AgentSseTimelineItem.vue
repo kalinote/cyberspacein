@@ -11,8 +11,13 @@
                         class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">输出中</span>
                     <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">已结束</span>
                 </div>
-                <div class="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap wrap-break-word">
-                    <span>{{ item.text ?? '' }}</span>
+                <div class="min-w-0">
+                    <MarkdownViewer
+                        v-if="item.text"
+                        :content="item.text"
+                        :breaks="true"
+                        custom-class="min-w-0"
+                    />
                     <span v-if="item.streaming" class="ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-sm bg-blue-500 align-middle animate-pulse" aria-hidden="true" />
                 </div>
                 <p v-if="item.resuming" class="mt-2 text-xs text-amber-700">继续生成中…</p>
@@ -61,7 +66,12 @@
                 </ul>
             </template>
             <template v-else-if="item.payload?.phase === 'after_iteration'">
-                <p v-if="afterStepContent" class="mt-2 text-sm text-gray-800 whitespace-pre-wrap wrap-break-word">{{ afterStepContent }}</p>
+                <MarkdownViewer
+                    v-if="afterStepContent"
+                    :content="afterStepContent"
+                    :breaks="true"
+                    custom-class="mt-2 rounded-lg border border-gray-100 bg-white/90 p-3"
+                />
                 <p v-if="afterToolNames.length" class="mt-2 text-xs text-gray-600">工具：{{ afterToolNames.join('、') }}</p>
                 <el-collapse v-if="afterArgsJson" v-model="stepCollapse" class="mt-2 border-0">
                     <el-collapse-item title="参数（JSON）" name="args">
@@ -139,9 +149,11 @@
                 <span>{{ formatTime(item.ts) }}</span>
             </div>
             <p v-if="resultSummary" class="mt-2 text-sm font-medium text-gray-900">{{ resultSummary }}</p>
-            <div v-if="resultUserMarkdown" class="mt-2 rounded-lg border border-gray-100 bg-white/90 p-3 text-sm text-gray-800 whitespace-pre-wrap wrap-break-word">
-                {{ resultUserMarkdown }}
-            </div>
+            <MarkdownViewer
+                v-if="resultUserMarkdown"
+                :content="resultUserMarkdown"
+                custom-class="mt-2 rounded-lg border border-gray-100 bg-white/90 p-3"
+            />
             <el-collapse v-model="resultCollapse" class="mt-2 border-0">
                 <el-collapse-item v-if="resultToolsLine" title="使用工具" name="tools">
                     <p class="text-sm text-gray-800">{{ resultToolsLine }}</p>
@@ -220,6 +232,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
+import MarkdownViewer from '@/components/common/MarkdownViewer.vue'
 import { formatDateTime } from '@/utils/action'
 import { stringifyJsonSafe } from '@/utils/agentSse'
 import {
