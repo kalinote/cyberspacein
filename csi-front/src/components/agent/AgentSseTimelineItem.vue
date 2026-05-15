@@ -90,20 +90,21 @@
             <div class="flex flex-wrap items-center gap-2 text-xs">
                 <Icon icon="mdi:shield-check" class="text-base shrink-0" :class="approvalIconClass" />
                 <span class="font-semibold text-gray-900">审批</span>
+                <span class="rounded bg-white/80 px-1.5 py-0.5 text-[11px] text-gray-700">{{ approvalSourceLabel }}</span>
                 <span v-if="approvalResolutionLabel" class="rounded-md px-2 py-0.5 text-[11px] font-medium"
                     :class="approvalBadgeClass">{{ approvalResolutionLabel }}</span>
                 <span class="text-gray-500">{{ formatTime(item.ts) }}</span>
             </div>
-            <template v-if="approvalPending">
-                <p v-if="approvalEntityType" class="mt-2 text-sm text-gray-800">实体类型：<span class="font-mono">{{ approvalEntityType }}</span></p>
-                <p v-if="approvalReasonText" class="mt-1 text-sm text-gray-700 whitespace-pre-wrap wrap-break-word">原因：{{ approvalReasonText }}</p>
-                <p class="mt-2 text-xs text-blue-700">已弹出审批对话框，请在对话框中操作。</p>
-            </template>
-            <template v-else>
-                <ul v-if="rejectReasons.length" class="mt-2 list-disc pl-4 text-sm text-gray-800">
-                    <li v-for="(r, i) in rejectReasons" :key="i">{{ r }}</li>
-                </ul>
-            </template>
+            <p v-if="approvalEntityTypeLabel" class="mt-2 text-sm text-gray-800">
+                实体：<span class="font-medium">{{ approvalEntityTypeLabel }}</span>
+                <span v-if="approvalEntityUuidShort" class="ml-1 font-mono text-xs text-gray-500">{{ approvalEntityUuidShort }}</span>
+            </p>
+            <p v-if="approvalModificationCount" class="mt-1 text-xs text-gray-600">修改项 {{ approvalModificationCount }} 个</p>
+            <p v-if="approvalReasonText" class="mt-1 text-sm text-gray-700 whitespace-pre-wrap wrap-break-word line-clamp-3">说明：{{ approvalReasonText }}</p>
+            <p v-if="approvalPending" class="mt-2 text-xs text-blue-700">已弹出审批对话框，请在对话框中操作。</p>
+            <ul v-else-if="rejectReasons.length" class="mt-2 list-disc pl-4 text-sm text-gray-800">
+                <li v-for="(r, i) in rejectReasons" :key="i">{{ r }}</li>
+            </ul>
         </div>
 
         <div v-else-if="item.kind === 'notification'" class="rounded-lg border-l-4 bg-white px-3 py-2.5 shadow-sm ring-1 ring-gray-100"
@@ -221,6 +222,13 @@ import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { formatDateTime } from '@/utils/action'
 import { stringifyJsonSafe } from '@/utils/agentSse'
+import {
+    getApprovalSourceLabel,
+    getEntityTypeLabel,
+    getModifyEntityPayload,
+    isApprovalAwaitingUserAction,
+    truncateUuid,
+} from '@/utils/agentApproval'
 
 const props = defineProps({
     item: {
@@ -288,14 +296,28 @@ const afterArgsJson = computed(() => {
 
 const stepFallbackJson = computed(() => stringifyJsonSafe(props.item.payload, 2))
 
-const approvalPending = computed(() => {
-    const p = props.item.payload
-    if (!p || typeof p !== 'object') return false
-    return p.resolution == null
+const approvalPending = computed(() => isApprovalAwaitingUserAction(props.item.payload))
+
+const approvalSourceLabel = computed(() => getApprovalSourceLabel(props.item.payload?.source))
+
+const modifyEntityPayload = computed(() => getModifyEntityPayload(props.item.payload))
+
+const approvalEntityTypeLabel = computed(() => {
+    const type = modifyEntityPayload.value?.entity_type
+    return type ? getEntityTypeLabel(type) : ''
 })
 
-const approvalEntityType = computed(() => props.item.payload?.payload?.entity_type ?? '')
-const approvalReasonText = computed(() => props.item.payload?.payload?.reason ?? '')
+const approvalEntityUuidShort = computed(() => {
+    const uuid = modifyEntityPayload.value?.entity_uuid
+    return uuid ? truncateUuid(uuid) : ''
+})
+
+const approvalModificationCount = computed(() => {
+    const list = modifyEntityPayload.value?.modifications
+    return Array.isArray(list) ? list.length : 0
+})
+
+const approvalReasonText = computed(() => modifyEntityPayload.value?.reason ?? '')
 
 const rejectReasons = computed(() => {
     const r = props.item.payload?.reject_reasons

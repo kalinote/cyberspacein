@@ -12,9 +12,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 import app.service.analyst.context as ctx
+import app.service.analyst.hitl as hitl_module
 import app.service.analyst.service as service_module
 import app.service.analyst.tools as tools_module
+from app.schemas.agent.hitl import HitlSource
 from app.schemas.constants import EntityType, NanobotSessionStatusEnum
+from app.service.analyst.hitl import HitlOutcome
 
 
 @dataclass
@@ -226,20 +229,45 @@ async def test_notify_user_empty_message(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "message 不能为空" in out
 
 
+def _hitl_outcome(
+    *,
+    approved: list[dict] | None = None,
+    rejections: list[str] | None = None,
+    resolution: str = "approved",
+) -> HitlOutcome:
+    approved = approved if approved is not None else [{"action": "approve"}]
+    rejections = rejections if rejections is not None else []
+    return HitlOutcome(
+        approved=approved,
+        rejections=rejections,
+        resolution=resolution,
+        approval_request_id="req-1",
+        raw={"decisions": approved + [{"reason": r} for r in rejections]},
+    )
+
+
 @pytest.mark.asyncio
-async def test_modify_entity_handshake_approve(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
+async def test_modify_entity_calls_hitl_with_source_and_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     tokens = _set_agent_ctx()
-    calls: list[tuple[str, str, Any]] = []
+    captured: dict[str, Any] = {}
 
-    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
-        calls.append((agent_id, event, data))
+    async def _request(
+        agent_id: str,
+        session_id: str,
+        source: str,
+        payload: dict[str, Any],
+    ) -> HitlOutcome:
+        captured.update(
+            agent_id=agent_id,
+            session_id=session_id,
+            source=source,
+            payload=payload,
+        )
+        return _hitl_outcome()
 
-    async def _await(_session_id: str) -> dict:
-        return {"decisions": [{"action": "approve"}]}
-
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
-    monkeypatch.setattr(service_module.AnalystService, "await_approval", _await)
+    monkeypatch.setattr(hitl_module.HitlService, "request_approval", _request)
     try:
         out = await tools_module.ModifyEntityTool().execute(
             entity_type=EntityType.ARTICLE.value,
@@ -251,33 +279,25 @@ async def test_modify_entity_handshake_approve(monkeypatch: pytest.MonkeyPatch) 
         _reset_agent_ctx(tokens)
 
     assert "修改已获批准" in out
-    assert FakeNanobotSessionModel._docs["s1"].status == NanobotSessionStatusEnum.RUNNING
-    assert FakeNanobotSessionModel._docs["s1"].pending_approval is None
-    ar = [c for c in calls if c[1] == "approval_required"]
-    assert len(ar) == 2
-    assert ar[0][2]["resolution"] is None
-    assert ar[0][2]["approval_request_id"] == ar[1][2]["approval_request_id"]
-    assert ar[1][2]["resolution"] == "approved"
-    assert ar[1][2]["reject_reasons"] is None
-    events = [c[1] for c in calls]
-    assert "approval_required" in events
-    assert events.count("status") >= 2
+    assert captured["source"] == HitlSource.TOOL_MODIFY_ENTITY
+    assert captured["payload"]["entity_uuid"] == "u1"
+    assert captured["payload"]["reason"] == "r"
+    assert "approval_request_id" not in captured["payload"]
 
 
 @pytest.mark.asyncio
 async def test_modify_entity_handshake_reject(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
-    calls: list[tuple[str, str, Any]] = []
-
-    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
-        calls.append((agent_id, event, data))
-
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
     monkeypatch.setattr(
-        service_module.AnalystService,
-        "await_approval",
-        AsyncMock(return_value={"decisions": [{"action": "reject", "reason": "bad"}]}),
+        hitl_module.HitlService,
+        "request_approval",
+        AsyncMock(
+            return_value=_hitl_outcome(
+                approved=[],
+                rejections=["bad"],
+                resolution="rejected",
+            )
+        ),
     )
     try:
         out = await tools_module.ModifyEntityTool().execute(
@@ -289,24 +309,18 @@ async def test_modify_entity_handshake_reject(monkeypatch: pytest.MonkeyPatch) -
     finally:
         _reset_agent_ctx(tokens)
     assert out == "修改被拒绝：bad"
-    ar = [c for c in calls if c[1] == "approval_required"]
-    assert len(ar) == 2
-    assert ar[0][2]["resolution"] is None
-    assert ar[1][2]["resolution"] == "rejected"
-    assert ar[1][2]["reject_reasons"] == ["bad"]
 
 
 @pytest.mark.asyncio
 async def test_modify_entity_empty_decisions(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
-    calls: list[tuple[str, str, Any]] = []
-
-    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
-        calls.append((agent_id, event, data))
-
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
-    monkeypatch.setattr(service_module.AnalystService, "await_approval", AsyncMock(return_value={"decisions": []}))
+    monkeypatch.setattr(
+        hitl_module.HitlService,
+        "request_approval",
+        AsyncMock(
+            return_value=_hitl_outcome(approved=[], rejections=[], resolution="rejected")
+        ),
+    )
     try:
         out = await tools_module.ModifyEntityTool().execute(
             entity_type=EntityType.ARTICLE.value,
@@ -317,63 +331,16 @@ async def test_modify_entity_empty_decisions(monkeypatch: pytest.MonkeyPatch) ->
     finally:
         _reset_agent_ctx(tokens)
     assert out == "修改未获得任何批准，未执行。"
-    ar = [c for c in calls if c[1] == "approval_required"]
-    assert ar[1][2]["resolution"] == "rejected"
-
-
-@pytest.mark.asyncio
-async def test_modify_entity_handshake_mixed_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
-    tokens = _set_agent_ctx()
-    calls: list[tuple[str, str, Any]] = []
-
-    async def _broadcast(agent_id: str, event: str, data: Any, *, persist: bool = True) -> None:
-        calls.append((agent_id, event, data))
-
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
-    monkeypatch.setattr(
-        service_module.AnalystService,
-        "await_approval",
-        AsyncMock(
-            return_value={
-                "decisions": [
-                    {"action": "approve"},
-                    {"action": "reject", "reason": "部分不允许"},
-                ]
-            }
-        ),
-    )
-    try:
-        await tools_module.ModifyEntityTool().execute(
-            entity_type=EntityType.ARTICLE.value,
-            entity_uuid="u1",
-            modifications=[{"field": "x", "action": "set"}],
-            reason="r",
-        )
-    finally:
-        _reset_agent_ctx(tokens)
-    ar = [c for c in calls if c[1] == "approval_required"]
-    assert ar[1][2]["resolution"] == "mixed"
-
-
-def test_modify_entity_decision_parser_variants() -> None:
-    approved, rejections = tools_module._parse_approval_decisions(
-        [{"action": "approve"}, {"approved": True}, {"action": "reject", "reason": "bad"}]
-    )
-    assert len(approved) == 2
-    assert rejections == ["bad"]
 
 
 @pytest.mark.asyncio
 async def test_modify_entity_await_exception_returns(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     tokens = _set_agent_ctx()
-    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", AsyncMock())
 
-    async def _boom(_session_id: str) -> dict:
+    async def _boom(*_a: Any, **_k: Any) -> HitlOutcome:
         raise RuntimeError("x")
 
-    monkeypatch.setattr(service_module.AnalystService, "await_approval", _boom)
+    monkeypatch.setattr(hitl_module.HitlService, "request_approval", _boom)
     try:
         out = await tools_module.ModifyEntityTool().execute(
             entity_type=EntityType.ARTICLE.value,
@@ -383,5 +350,5 @@ async def test_modify_entity_await_exception_returns(monkeypatch: pytest.MonkeyP
         )
     finally:
         _reset_agent_ctx(tokens)
-    assert out.startswith("[错误] 等待审批异常:")
+    assert out == "[错误] x"
 

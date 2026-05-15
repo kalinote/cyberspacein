@@ -8,7 +8,7 @@ Hook 分工（MIGRATION_PLAN §3.2）：
 - StatusHook  ：`before_execute_tools` / `after_iteration` → 写 step，SSE `status`。
 - TodosHook   ：`after_iteration` 扫描 tool_events 里的 `write_todos` 事件 → SSE `todos`
                 （DB 写由 `WriteTodosTool.execute` 完成，Hook 只做广播兜底）。
-- ApprovalHook：`after_iteration` 清理残留 `pending_approval`（兜底，正常路径由 `ModifyEntityTool` 清理）。
+- ApprovalHook：`after_iteration` 清理残留 `pending_approval`（兜底，正常路径由 `HitlService` 清理）。
 - ResultHook  ：`finalize_content` → 对助手正文做 strip；终局机读结果由 `submit_task_result` 工具写入。
 """
 from __future__ import annotations
@@ -143,7 +143,7 @@ class TodosHook(AgentHook):
 class ApprovalHook(AgentHook):
     """兜底：`after_iteration` 时如果会话仍卡在 `AWAITING_APPROVAL` 但本轮已推进，则清掉 pending_approval。
 
-    正常路径下 `ModifyEntityTool.execute` 在收到 `submit_approval` 之后会把 status 复位；
+    正常路径下 `HitlService.request_approval` 在收到决策之后会把 status 复位；
     本 Hook 仅用于防御性兜底，避免因异常退出导致会话永远停在待审批状态。
     """
 

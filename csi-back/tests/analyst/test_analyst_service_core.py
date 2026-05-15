@@ -13,6 +13,7 @@ import pytest
 
 import app.utils.status_codes as status_codes
 import app.service.analyst.context as ctx
+import app.service.analyst.hitl as hitl_module
 import app.service.analyst.service as service_module
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.constants import NanobotSessionStatusEnum
@@ -49,15 +50,16 @@ def _reset_singletons(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     service_module.AnalystService._sse_subscribers = {}
     service_module.AnalystService._running_tasks = {}
     service_module.AnalystService._cancel_reasons = {}
-    service_module.AnalystService._pending_resumes = {}
     service_module.AnalystService._memory_backend = None
     service_module.AnalystService._session_store = None
     service_module.AnalystService._bots_lock = asyncio.Lock()
     service_module.AnalystService._sse_lock = asyncio.Lock()
     service_module.AnalystService._task_lock = asyncio.Lock()
-    service_module.AnalystService._resume_lock = asyncio.Lock()
+    hitl_module.HitlService._pending_resumes = {}
+    hitl_module.HitlService._resume_lock = asyncio.Lock()
 
     FakeNanobotSessionModel._docs = {}
+    monkeypatch.setattr(hitl_module, "NanobotSessionModel", FakeNanobotSessionModel)
     monkeypatch.setattr(service_module, "NanobotSessionModel", FakeNanobotSessionModel)
     monkeypatch.setattr(service_module.AnalystService, "_persist_sse_event", AsyncMock())
     yield
@@ -133,6 +135,9 @@ async def test_sse_unsubscribe_cleans_subs_map() -> None:
 
 @pytest.mark.asyncio
 async def test_submit_approval_puts_queue() -> None:
+    from app.service.analyst.hitl import HitlService
+
+    await HitlService.clear_session("s1")
     FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(
         id="s1",
         agent_id="a1",
@@ -140,7 +145,7 @@ async def test_submit_approval_puts_queue() -> None:
     )
     decisions = [{"id": "x", "approve": True}]
     await service_module.AnalystService.submit_approval("a1", "s1", decisions)
-    payload = await service_module.AnalystService.await_approval("s1")
+    payload = await HitlService._await_decisions("s1")
     assert payload["decisions"] == decisions
     assert "submitted_at" in payload
 
@@ -162,9 +167,9 @@ async def test_submit_approval_non_awaiting_warns(monkeypatch: pytest.MonkeyPatc
     warnings: list[str] = []
 
     monkeypatch.setattr(
-        service_module.logger,
+        hitl_module.logger,
         "warning",
-        lambda msg: warnings.append(str(msg)),
+        lambda msg, *_a, **_k: warnings.append(str(msg)),
     )
     await service_module.AnalystService.submit_approval("a1", "s1", [{"id": "x"}])
     assert warnings and "非 AWAITING_APPROVAL" in warnings[0]
@@ -176,6 +181,7 @@ async def test_run_analysis_success_sets_result_and_resets_context(
 ) -> None:
     FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     bot = MagicMock()
+    bot.loop.process_direct = None
     bot.close = AsyncMock()
 
     async def _run_ok(*_a: Any, **_kw: Any) -> Any:
@@ -217,6 +223,7 @@ async def test_run_analysis_success_sets_result_and_resets_context(
 async def test_run_analysis_without_submit_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     bot = MagicMock()
+    bot.loop.process_direct = None
     bot.run = AsyncMock(
         return_value=SimpleNamespace(content="直接回复", tools_used=[], stop_reason="completed")
     )
@@ -238,6 +245,7 @@ async def test_run_analysis_without_submit_marks_failed(monkeypatch: pytest.Monk
 async def test_run_analysis_closes_bot_on_any_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     bot = MagicMock()
+    bot.loop.process_direct = None
     bot.close = AsyncMock()
 
     async def _boom(*_a: Any, **_kw: Any) -> Any:
@@ -259,6 +267,7 @@ async def test_run_analysis_closes_bot_on_any_exit(monkeypatch: pytest.MonkeyPat
 async def test_run_analysis_cancelled_pause_sets_paused(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     bot = MagicMock()
+    bot.loop.process_direct = None
 
     async def _raise_cancel(*_a: Any, **_kw: Any) -> Any:
         raise asyncio.CancelledError()

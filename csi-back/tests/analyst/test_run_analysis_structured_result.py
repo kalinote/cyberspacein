@@ -48,6 +48,7 @@ def _patch_model(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
 @pytest.mark.asyncio
 async def test_run_analysis_success_with_submit_tool_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     bot = MagicMock()
+    bot.loop.process_direct = None
     bot.close = AsyncMock()
 
     async def _run(*_a: Any, **_kw: Any) -> Any:
@@ -96,6 +97,7 @@ async def test_run_analysis_user_markdown_not_json_still_ok_when_submit_ok(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bot = MagicMock()
+    bot.loop.process_direct = None
     bot.close = AsyncMock()
 
     async def _run(*_a: Any, **_kw: Any) -> Any:
@@ -128,6 +130,7 @@ async def test_run_analysis_user_markdown_not_json_still_ok_when_submit_ok(
 @pytest.mark.asyncio
 async def test_run_analysis_exception_result_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     bot = MagicMock()
+    bot.loop.process_direct = None
 
     async def _boom(*_a: Any, **_kw: Any) -> Any:
         raise RuntimeError("boom")

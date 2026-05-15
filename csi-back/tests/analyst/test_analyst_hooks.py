@@ -175,7 +175,12 @@ async def test_approval_hook_resets_pending_when_advanced() -> None:
         id="s1",
         agent_id="a1",
         status=NanobotSessionStatusEnum.AWAITING_APPROVAL,
-        pending_approval={"x": 1},
+        pending_approval={
+            "approval_request_id": "req-1",
+            "source": "tool:modify_entity",
+            "requested_at": "2026-01-01T00:00:00",
+            "payload": {},
+        },
     )
     tok_a = ctx.current_agent_id.set("a1")
     tok_s = ctx.current_session_id.set("s1")

@@ -7,8 +7,8 @@
 2. 在后台 `asyncio.Task` 中执行 `bot.run(user_prompt, session_id=...)`（`run_analysis`）；
    通过 `ContextVar(current_agent_id / current_session_id)` 让业务工具和 hooks（TODO #20）
    能访问上下文。
-3. 统一管理 SSE 订阅（`subscribe` / `unsubscribe` / `broadcast_sse`）和 HITL 审批队列
-   （`submit_approval` / `await_approval`）。
+3. 统一管理 SSE 订阅（`subscribe` / `unsubscribe` / `broadcast_sse`）；HITL 见 `hitl.py`
+   （`submit_approval` 为 API 薄委托）。
 4. 在 run 开始 / 结束 / 异常时把业务状态写回 `NanobotSessionModel`（`status / steps / todos /
    pending_approval / result` 等）。
 
@@ -98,10 +98,6 @@ class AnalystService:
 
     # 取消/暂停原因标注，key=session_id；业务工具可以据此决定落 paused / failed。
     _cancel_reasons: dict[str, str] = {}
-
-    # HITL 决策通道，key=session_id。modify_entity 在 AWAITING_APPROVAL 时 await 该队列。
-    _pending_resumes: dict[str, asyncio.Queue] = {}
-    _resume_lock: asyncio.Lock = asyncio.Lock()
 
     # 进程级单例：Mongo backend 本身无状态（in-process cache 在 MongoSessionStore
     # 内部），共享后可以跨多个 AnalystService 调用复用 session 缓存。
@@ -335,68 +331,6 @@ class AnalystService:
                 )
 
     @classmethod
-    async def patch_persisted_approval_required(
-        cls,
-        agent_id: str,
-        session_id: str,
-        approval_request_id: str,
-        *,
-        resolution: str,
-        reject_reasons: list[str] | None,
-    ) -> None:
-        """将已持久化且仍待决的 `approval_required` 单条事件的 data 合并 resolution（回放仅一条）。"""
-        session_id = str(session_id or "").strip()
-        if not session_id or not approval_request_id:
-            return
-        try:
-            rows = (
-                await NanobotAgentSseEventModel.find(
-                    {
-                        "agent_id": agent_id,
-                        "session_id": session_id,
-                        "event": "approval_required",
-                        "data.approval_request_id": approval_request_id,
-                    }
-                )
-                .sort("-seq")
-                .limit(1)
-                .to_list()
-            )
-        except Exception:
-            logger.exception(
-                "补丁 approval_required SSE 失败（查询）: agent_id={} session_id={} req={}",
-                agent_id,
-                session_id,
-                approval_request_id,
-            )
-            return
-        if not rows:
-            logger.warning(
-                "未找到可补丁的 approval_required 事件: agent_id={} session_id={} req={}",
-                agent_id,
-                session_id,
-                approval_request_id,
-            )
-            return
-        doc = rows[0]
-        raw = doc.data
-        data = dict(raw) if isinstance(raw, dict) else {}
-        if data.get("resolution") is not None:
-            return
-        data["resolution"] = resolution
-        data["reject_reasons"] = reject_reasons
-        doc.data = data
-        try:
-            await doc.save()
-        except Exception:
-            logger.exception(
-                "补丁 approval_required SSE 失败（保存）: agent_id={} session_id={} req={}",
-                agent_id,
-                session_id,
-                approval_request_id,
-            )
-
-    @classmethod
     async def broadcast_debug_sse(cls, agent_id: str, event: str, data: Any) -> None:
         """只给 debug 订阅者广播调试事件。"""
         payload = {"event": event, "data": data}
@@ -431,51 +365,14 @@ class AnalystService:
                     f"SSE debug 队列已满丢弃事件: agent={agent_id} session={session_key} event={event}"
                 )
 
-    # ------------------------------------------------------------------
-    # HITL 审批：决策队列
-    # ------------------------------------------------------------------
-
-    @classmethod
-    async def _get_or_create_resume_queue(cls, session_id: str) -> asyncio.Queue:
-        async with cls._resume_lock:
-            queue = cls._pending_resumes.get(session_id)
-            if queue is None:
-                queue = asyncio.Queue()
-                cls._pending_resumes[session_id] = queue
-            return queue
-
     @classmethod
     async def submit_approval(
         cls, agent_id: str, session_id: str, decisions: list[dict]
     ) -> None:
-        """路由层 `/agent/approve` 调用：把 decisions 放进该会话的决策队列。"""
-        session_id = str(session_id or "").strip()
-        if not session_id:
-            raise AgentServiceError(
-                status_codes.INVALID_ARGUMENT, "session_id 不能为空"
-            )
-        doc = await NanobotSessionModel.find_one({"_id": session_id})
-        if doc is None or doc.agent_id != agent_id:
-            raise AgentServiceError(
-                status_codes.NOT_FOUND_AGENT,
-                f"会话不存在或不属于该 Agent: session_id={session_id}",
-            )
-        if doc.status != NanobotSessionStatusEnum.AWAITING_APPROVAL:
-            logger.warning(
-                f"/approve 写入时会话非 AWAITING_APPROVAL 状态: "
-                f"session_id={session_id} status={doc.status}"
-            )
-        queue = await cls._get_or_create_resume_queue(session_id)
-        await queue.put({"decisions": decisions, "submitted_at": datetime.now()})
+        """路由层 `/agent/approve` 调用，委托 `HitlService.submit_decisions`。"""
+        from app.service.analyst.hitl import HitlService
 
-    @classmethod
-    async def await_approval(cls, session_id: str) -> dict:
-        """业务工具 modify_entity 调用：阻塞等待决策到达。"""
-        session_id = str(session_id or "").strip()
-        if not session_id:
-            raise RuntimeError("await_approval 需要非空 session_id")
-        queue = await cls._get_or_create_resume_queue(session_id)
-        return await queue.get()
+        await HitlService.submit_decisions(agent_id, session_id, decisions)
 
     # ------------------------------------------------------------------
     # build_bot：拉配置 + 构造 provider + Nanobot
@@ -630,8 +527,9 @@ class AnalystService:
             sess.updated_at = now
             await sess.save()
 
-        async with cls._resume_lock:
-            cls._pending_resumes.pop(session_id, None)
+        from app.service.analyst.hitl import HitlService
+
+        await HitlService.clear_session(session_id)
         cls._cancel_reasons.pop(session_id, None)
 
         async with cls._bots_lock:
@@ -872,8 +770,9 @@ class AnalystService:
                     cls._bots.pop(session_id, None)
                 async with cls._task_lock:
                     cls._running_tasks.pop(session_id, None)
-                async with cls._resume_lock:
-                    cls._pending_resumes.pop(session_id, None)
+                from app.service.analyst.hitl import HitlService
+
+                await HitlService.clear_session(session_id)
                 cls._cancel_reasons.pop(session_id, None)
 
                 current_session_id.reset(token_session)

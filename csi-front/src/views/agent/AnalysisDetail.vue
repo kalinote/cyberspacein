@@ -162,20 +162,37 @@
                 </div>
             </section>
 
-            <el-dialog v-model="showApprovalDialog" title="审批请求" width="680px" :close-on-click-modal="false"
-                :show-close="false">
+            <el-dialog
+                v-model="showApprovalDialog"
+                :title="approvalDialogTitle"
+                width="760px"
+                :close-on-click-modal="false"
+                :show-close="false"
+                @closed="onApprovalDialogClosed"
+            >
                 <div v-if="pendingApproval">
                     <p class="text-gray-600 mb-4">Agent 请求执行以下操作，请选择批准或拒绝：</p>
-                    <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <pre class="text-xs bg-white p-2 rounded overflow-x-auto">{{ JSON.stringify(pendingApproval, null, 2) }}
-            </pre>
+                    <AgentApprovalPanel :approval="pendingApproval" />
+                    <div v-if="showRejectReason" class="mt-4 pt-4 border-t border-gray-100">
+                        <p class="text-sm text-gray-600 mb-2">拒绝理由（可选）</p>
+                        <el-input
+                            v-model="approvalReason"
+                            type="textarea"
+                            :autosize="{ minRows: 2, maxRows: 4 }"
+                            placeholder="请填写拒绝原因"
+                            resize="none"
+                        />
                     </div>
-                    <el-input v-model="approvalReason" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }"
-                        placeholder="可选：填写原因/备注（reason）" resize="none" />
                 </div>
                 <template #footer>
-                    <el-button type="danger" @click="submitApproval(false)" :loading="approvalLoading">拒绝</el-button>
-                    <el-button type="primary" @click="submitApproval(true)" :loading="approvalLoading">批准</el-button>
+                    <template v-if="showRejectReason">
+                        <el-button @click="cancelRejectFlow" :disabled="approvalLoading">返回</el-button>
+                        <el-button type="danger" @click="submitApprovalDecision('reject')" :loading="approvalLoading">确认拒绝</el-button>
+                    </template>
+                    <template v-else>
+                        <el-button type="danger" @click="showRejectReason = true" :loading="approvalLoading">拒绝</el-button>
+                        <el-button type="primary" @click="submitApprovalDecision('approve')" :loading="approvalLoading">批准</el-button>
+                    </template>
                 </template>
             </el-dialog>
         </template>
@@ -190,6 +207,7 @@ import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import AgentSseTimelineItem from '@/components/agent/AgentSseTimelineItem.vue'
+import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
 import { agentApi } from '@/api/agent'
 import {
     appendStreamDelta,
@@ -197,6 +215,7 @@ import {
     parseAgentSseData,
     stringifyJsonSafe,
 } from '@/utils/agentSse'
+import { getApprovalSourceLabel, isApprovalAwaitingUserAction } from '@/utils/agentApproval'
 import { formatDateTime, TODO_ITEM_STATUS } from '@/utils/action'
 
 const route = useRoute()
@@ -233,16 +252,16 @@ let eventSource = null
 let retryCount = 0
 const maxRetries = 3
 
-function isApprovalAwaitingUserAction(p) {
-    if (!p || typeof p !== 'object') return false
-    if (!('resolution' in p)) return true
-    return p.resolution == null
-}
-
 const showApprovalDialog = ref(false)
 const pendingApproval = ref(null)
 const approvalReason = ref('')
+const showRejectReason = ref(false)
 const approvalLoading = ref(false)
+
+const approvalDialogTitle = computed(() => {
+    const label = getApprovalSourceLabel(pendingApproval.value?.source)
+    return `审批请求 · ${label}`
+})
 
 const eventsScrollEl = ref(null)
 const isEventsScrollAtBottom = ref(true)
@@ -289,6 +308,66 @@ function pushParsedTimeline(sseType, ts, payload) {
         ts,
         payload,
     })
+}
+
+function findTimelineApprovalIndex(requestId) {
+    const id = requestId != null ? String(requestId) : ''
+    if (!id) return -1
+    for (let i = timelineItems.value.length - 1; i >= 0; i--) {
+        const it = timelineItems.value[i]
+        if (it?.kind === 'approval_required' && it.payload?.approval_request_id === id) {
+            return i
+        }
+    }
+    return -1
+}
+
+function onApprovalDialogClosed() {
+    pendingApproval.value = null
+}
+
+function closeApprovalDialog() {
+    showRejectReason.value = false
+    approvalReason.value = ''
+    showApprovalDialog.value = false
+}
+
+function clearApprovalDialogState() {
+    showRejectReason.value = false
+    approvalReason.value = ''
+    pendingApproval.value = null
+    showApprovalDialog.value = false
+}
+
+function handleApprovalRequiredEvent(raw) {
+    const ts = new Date().toISOString()
+    const p = parseAgentSseData(raw)
+    if (!p.ok) {
+        pushParseErrorTimeline('approval_required', raw, p.error, ts)
+        return
+    }
+    const envelope = p.value
+    const requestId = envelope?.approval_request_id
+
+    if (isApprovalAwaitingUserAction(envelope)) {
+        pushParsedTimeline('approval_required', ts, envelope)
+        pendingApproval.value = envelope
+        showRejectReason.value = false
+        approvalReason.value = ''
+        showApprovalDialog.value = true
+        return
+    }
+
+    const idx = findTimelineApprovalIndex(requestId)
+    if (idx >= 0) {
+        timelineItems.value[idx].payload = envelope
+    } else {
+        pushParsedTimeline('approval_required', ts, envelope)
+    }
+
+    if (pendingApproval.value?.approval_request_id === requestId) {
+        closeApprovalDialog()
+    }
 }
 
 function ingestSseNamedEvent(sseType, raw) {
@@ -533,20 +612,7 @@ function connectSSE() {
             })
         }
         eventSource.addEventListener('approval_required', (event) => {
-            const raw = event.data ?? ''
-            ingestSseNamedEvent('approval_required', raw)
-            let p = null
-            try {
-                const x = JSON.parse(raw)
-                if (x && typeof x === 'object') p = x
-            } catch {
-                p = null
-            }
-            if (!isApprovalAwaitingUserAction(p)) {
-                return
-            }
-            pendingApproval.value = p
-            showApprovalDialog.value = true
+            handleApprovalRequiredEvent(event.data ?? '')
         })
         eventSource.onmessage = (event) => {
             ingestSseNamedEvent('message', event.data ?? '')
@@ -635,22 +701,29 @@ async function cancel() {
     }
 }
 
-async function submitApproval(approved) {
+function cancelRejectFlow() {
+    showRejectReason.value = false
+    approvalReason.value = ''
+}
+
+async function submitApprovalDecision(action) {
     if (!sessionId.value) {
         ElMessage.warning('缺少 session_id，无法提交审批')
         return
     }
     try {
         approvalLoading.value = true
-        const decision = {
-            action: approved ? 'approve' : 'reject',
-            approved,
-            reason: approvalReason.value?.trim() || undefined
-        }
+        const decision =
+            action === 'approve'
+                ? { action: 'approve' }
+                : {
+                      action: 'reject',
+                      reason: approvalReason.value?.trim() || undefined,
+                  }
         const res = await agentApi.approveAgent({
             agent_id: agentId.value,
             session_id: sessionId.value,
-            decisions: [decision]
+            decisions: [decision],
         })
         if (res?.code !== 0) {
             ElMessage.error(res?.message || '审批提交失败')
@@ -658,9 +731,7 @@ async function submitApproval(approved) {
         }
         ElMessage.success(res?.message || '审批已提交')
         pushSystemTimeline('client_approve', '审批已提交', { decision })
-        showApprovalDialog.value = false
-        pendingApproval.value = null
-        approvalReason.value = ''
+        closeApprovalDialog()
     } catch (e) {
         ElMessage.error(e?.message || '审批提交失败，请稍后重试')
     } finally {
@@ -676,9 +747,7 @@ async function reload() {
     timelineSeq = 0
     todos.value = []
     sessionRuntimeStatus.value = 'unknown'
-    pendingApproval.value = null
-    showApprovalDialog.value = false
-    approvalReason.value = ''
+    clearApprovalDialogState()
     try {
         await loadAgentDetail()
     } catch (e) {

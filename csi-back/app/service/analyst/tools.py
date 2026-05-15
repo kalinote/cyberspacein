@@ -6,10 +6,7 @@
 工具清单（MIGRATION_PLAN §3.3）：
 - `get_current_time` ：返回当前时间字符串，无状态。
 - `get_entity`       ：按 `(entity_type, entity_uuid)` 去 Elasticsearch 拉实体。
-- `modify_entity`    ：HITL 握手 —— 写会话 `pending_approval` → SSE `approval_required` →
-                        `await AnalystService.await_approval(session_id)` → 按决策返回 approve/reject 文本。
-                        实际的实体写回业务（ES / DB）可以在审批通过分支中按需扩展；当前版本
-                        仅作握手骨架，落地逻辑留 TODO 注释。
+- `modify_entity`    ：经 `HitlService.request_approval` 人工审批；通过后写回 ES/DB（当前为 TODO）。
 - `notify_user`      ：SSE `notification` 广播一条消息，不改 DB。
 - `write_todos`      ：写 `NanobotSessionModel.todos` + SSE `todos`；供 LLM 自行拆解任务。
 - `web_search` / `web_fetch` ：联网搜索与页面抓取（实现见 `web_tools.py`，运行参数见 `WEB_RUNTIME`）。
@@ -21,7 +18,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime
 from typing import Any
 
@@ -164,7 +160,7 @@ class GetEntityTool(Tool):
 
 
 # ---------------------------------------------------------------------------
-# modify_entity —— HITL 握手核心
+# modify_entity
 # ---------------------------------------------------------------------------
 
 
@@ -209,22 +205,7 @@ class GetEntityTool(Tool):
     "additionalProperties": False,
 })
 class ModifyEntityTool(Tool):
-    """对实体发起修改 —— 工具内部完成 HITL 审批握手。
-
-    执行流程：
-    1) 写 `NanobotSessionModel.status=AWAITING_APPROVAL` + `pending_approval=payload`，
-       `AnalystService.broadcast_sse("approval_required", …)`，其中 `resolution=null`（待审批）、
-       `approval_request_id` 标识本次请求；审批结束后在同一条已持久化记录上写入 `resolution`（见步骤 4），
-       回放不重增 seq；
-    2) `await AnalystService.await_approval(session_id)` 阻塞等待 `/agent/approve` 写入决策；
-    3) 解析 decisions：
-       - 全 `approve`  → （TODO: 实际写回 ES / DB；当前仅日志）
-       - 存在 `reject` → 返回被拒说明
-    4) 调用 `AnalystService.patch_persisted_approval_required` 将首条已持久化 `approval_required` 的 `data`
-       合并 `resolution` / `reject_reasons`（回放仍为单条）；再对在线订阅者
-       `broadcast_sse(..., persist=False)` 推送同结构数据以便 UI 立即更新；最后
-       复位 `status=RUNNING` + `pending_approval=None` + SSE `status=running`。
-    """
+    """对实体发起修改，经 HITL 人工审批后生效。握手见 `HitlService.request_approval`。"""
 
     @property
     def name(self) -> str:
@@ -239,153 +220,52 @@ class ModifyEntityTool(Tool):
         return True
 
     async def execute(self, **kwargs: Any) -> str:
-        from app.service.analyst.service import AnalystService
+        from app.schemas.agent.hitl import HitlSource
+        from app.service.analyst.hitl import HitlService
 
         agent_id = _require_agent_id()
         session_id = get_current_session_id()
         if not session_id:
             return "[错误] 缺少 session 上下文"
 
-        approval_request_id = str(uuid.uuid4())
         payload = {
-            "approval_request_id": approval_request_id,
             "entity_type": kwargs.get("entity_type"),
             "entity_uuid": kwargs.get("entity_uuid"),
             "modifications": kwargs.get("modifications") or [],
             "reason": kwargs.get("reason") or "",
-            "requested_at": datetime.now().isoformat(),
-            "session_id": session_id,
         }
 
-        session = await NanobotSessionModel.find_one({"_id": session_id})
-        if session is None:
-            return f"[错误] 当前会话不存在: {session_id}"
-        session.status = NanobotSessionStatusEnum.AWAITING_APPROVAL
-        session.pending_approval = payload
-        session.updated_at = datetime.now()
-        await session.save()
-        await AnalystService.broadcast_sse(
-            agent_id,
-            "approval_required",
-            {
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "approval_request_id": approval_request_id,
-                "resolution": None,
-                "payload": payload,
-            },
-        )
-        await AnalystService.broadcast_sse(
-            agent_id,
-            "status",
-            {
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "status": NanobotSessionStatusEnum.AWAITING_APPROVAL.value,
-            },
-        )
-
         try:
-            decision_msg = await AnalystService.await_approval(session_id)
+            outcome = await HitlService.request_approval(
+                agent_id,
+                session_id,
+                HitlSource.TOOL_MODIFY_ENTITY,
+                payload,
+            )
+        except RuntimeError as exc:
+            return f"[错误] {exc}"
         except Exception as exc:
             logger.exception(
                 f"modify_entity 等待审批异常: agent_id={agent_id} session_id={session_id}"
             )
             return f"[错误] 等待审批异常: {exc}"
 
-        decisions = decision_msg.get("decisions") or []
-        approved, rejections = _parse_approval_decisions(decisions)
-        resolution = _approval_resolution_label(approved, rejections)
-
-        # 复位会话状态
-        session = await NanobotSessionModel.find_one({"_id": session_id})
-        if session is not None:
-            session.status = NanobotSessionStatusEnum.RUNNING
-            session.pending_approval = None
-            session.updated_at = datetime.now()
-            await session.save()
-        await AnalystService.patch_persisted_approval_required(
-            agent_id,
-            session_id,
-            approval_request_id,
-            resolution=resolution,
-            reject_reasons=rejections or None,
-        )
-        await AnalystService.broadcast_sse(
-            agent_id,
-            "approval_required",
-            {
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "approval_request_id": approval_request_id,
-                "resolution": resolution,
-                "payload": payload,
-                "reject_reasons": rejections or None,
-            },
-            persist=False,
-        )
-        await AnalystService.broadcast_sse(
-            agent_id,
-            "status",
-            {
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "status": NanobotSessionStatusEnum.RUNNING.value,
-            },
-        )
-
-        if rejections:
-            reason_text = "；".join(r or "" for r in rejections)
+        if outcome.rejections:
+            reason_text = "；".join(r or "" for r in outcome.rejections)
             return f"修改被拒绝：{reason_text or '未提供理由'}"
 
-        if not approved:
+        if not outcome.approved:
             return "修改未获得任何批准，未执行。"
 
-        # TODO(#20 后续): 在此处按 modifications 真正写回 ES / DB。
-        # 当前版本只记录日志，保持握手骨架可测。
         logger.info(
             f"modify_entity 审批通过: agent_id={agent_id} "
             f"entity={payload['entity_type']}:{payload['entity_uuid']} "
             f"modifications_count={len(payload['modifications'])}"
         )
         return (
-            f"修改已获批准（共 {len(approved)} 条决策），"
+            f"修改已获批准（共 {len(outcome.approved)} 条决策），"
             f"对实体 {payload['entity_type']}:{payload['entity_uuid']} 的修改将被应用。"
         )
-
-
-def _parse_approval_decisions(
-    decisions: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """把 `/agent/approve` 提交的决策列表拆成 (approved, rejection_reasons)。
-
-    单条决策约定：`{"action": "approve" | "reject", "reason": "..."}`，
-    兼容前端可能传 `{"approved": True/False}` 这种简写。
-    """
-    approved: list[dict[str, Any]] = []
-    rejections: list[str] = []
-    for item in decisions or []:
-        action = str(item.get("action") or "").lower()
-        if not action:
-            action = "approve" if item.get("approved") else "reject"
-        if action in {"approve", "approved", "yes"}:
-            approved.append(item)
-        else:
-            rejections.append(str(item.get("reason") or ""))
-    return approved, rejections
-
-
-def _approval_resolution_label(
-    approved: list[dict[str, Any]], rejections: list[str]
-) -> str:
-    """与 SSE `approval_required` 的 `resolution` 字段一致：已决时的终态标签。"""
-    if rejections and approved:
-        return "mixed"
-    if rejections:
-        return "rejected"
-    if approved:
-        return "approved"
-    return "rejected"
 
 
 # ---------------------------------------------------------------------------

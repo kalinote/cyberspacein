@@ -100,7 +100,9 @@ class StartAgentResponseSchema(BaseModel):
 class ApproveRequestSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
     session_id: str = Field(description="会话ID", min_length=1)
-    decisions: list[dict] = Field(description="审批决策列表")
+    decisions: list[dict] = Field(
+        description="审批决策列表，对应会话当前 pending_approval（与 source 无关，单会话单队列）"
+    )
 
 
 class CancelAgentRequestSchema(BaseModel):

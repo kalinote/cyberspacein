@@ -135,8 +135,10 @@ async def test_approval_required_patch_updates_single_persisted_row(sse_replay_d
             "agent_id": agent_id,
             "session_id": session_id,
             "approval_request_id": req_id,
+            "source": "tool:modify_entity",
             "resolution": None,
-            "payload": {"approval_request_id": req_id, "reason": "x"},
+            "reject_reasons": None,
+            "payload": {"reason": "x"},
         },
     )
     n1 = await NanobotAgentSseEventModel.find(
@@ -144,7 +146,9 @@ async def test_approval_required_patch_updates_single_persisted_row(sse_replay_d
     ).count()
     assert n1 == 1
 
-    await AnalystService.patch_persisted_approval_required(
+    from app.service.analyst.hitl import HitlService
+
+    await HitlService.patch_persisted_approval_required(
         agent_id,
         session_id,
         req_id,
