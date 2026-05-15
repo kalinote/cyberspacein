@@ -476,7 +476,7 @@ class AgentLoop:
             new_content, image_only = extract_documents(msg.content, msg.media)
             msg = dataclasses.replace(msg, content=new_content, media=image_only)
 
-        preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
+        preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
 
         # session_id 取来源顺序：显式参数 > 基于 InboundMessage.session_key 派生

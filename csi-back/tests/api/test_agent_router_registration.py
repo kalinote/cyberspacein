@@ -1,4 +1,4 @@
-"""MIGRATION_PLAN §12.17：agent router 注册数量回归。"""
+"""MIGRATION_PLAN §12.17：agent router 注册数量回归（含提示词模板删除）。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from app.api.v1.endpoints import agent as agent_ep
 
 
-def test_router_registers_all_31_endpoints() -> None:
+def test_router_registers_all_32_endpoints() -> None:
     app = FastAPI()
     app.include_router(agent_ep.router, prefix="/api/v1")
     paths = []
@@ -20,5 +20,5 @@ def test_router_registers_all_31_endpoints() -> None:
             if m in {"HEAD", "OPTIONS"}:
                 continue
             paths.append((m, path))
-    assert len(paths) == 31
+    assert len(paths) == 32
 

@@ -41,7 +41,7 @@ async def start_agent(data: StartAgentRequestSchema):
         context = {
             **data.extra_context,
             **({"entity_uuid": data.entity_uuid} if data.entity_uuid else {}),
-            **({"entity_type": data.entity_type.value} if data.entity_type else {}),
+            **({"entity_type": data.entity_type.value} if data.entity_type else {})
         }
 
         raw_user_prompt = str(data.user_prompt or "").strip()

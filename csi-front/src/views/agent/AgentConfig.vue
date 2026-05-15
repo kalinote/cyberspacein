@@ -240,7 +240,7 @@
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleAction('删除', item.name)">
+                    <el-button type="danger" link @click="handleDeletePromptTemplate(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -1964,6 +1964,32 @@ const handleSystemPromptSubmit = async () => {
   } finally {
     systemPromptSubmitLoading.value = false
   }
+}
+
+const handleDeletePromptTemplate = (item) => {
+  const id = item?.id
+  const displayName = item?.name?.trim() || id
+  if (!id) return
+
+  ElMessageBox.confirm(
+    `确定要删除提示词模板「${displayName}」吗？`,
+    '确认删除',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+    .then(async () => {
+      await agentApi.deletePromptTemplate(id)
+      ElMessage.success('删除成功')
+      if (promptTemplateList.value.length === 1 && promptTemplatePagination.value.page > 1) {
+        promptTemplatePagination.value.page -= 1
+      }
+      fetchPromptTemplateList()
+      fetchStatistics()
+    })
+    .catch(() => {})
 }
 
 const handleDeleteSystemPrompt = (item) => {

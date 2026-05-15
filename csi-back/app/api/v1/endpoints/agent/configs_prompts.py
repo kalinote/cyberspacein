@@ -1,11 +1,12 @@
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query
 from loguru import logger
 
 from app.models.agent.configs import AgentPromptTemplateModel
+from app.models.agent.nanobot import NanobotAgentModel, NanobotWorkspaceModel
 from app.schemas.agent.agent import AgentPromptTemplateCreateRequestSchema, AgentPromptTemplateSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
@@ -82,4 +83,29 @@ async def update_agent_prompt_template(prompt_template_id: str, data: AgentPromp
     doc.updated_at = datetime.now()
     await doc.save()
     return ApiResponseSchema.success(data=AgentPromptTemplateSchema.from_doc(doc))
+
+
+@router.delete(
+    "/prompt-template/{prompt_template_id}",
+    response_model=ApiResponseSchema[Any],
+    summary="删除提示词模板",
+)
+async def delete_agent_prompt_template(prompt_template_id: str):
+    bound_agent = await NanobotAgentModel.find_one({"prompt_template_id": prompt_template_id})
+    if bound_agent:
+        return ApiResponseSchema.error(
+            code=status_codes.CONFLICT_STATE,
+            message="仍有 Agent 绑定该提示词模板，无法删除",
+        )
+    workspace_ref = await NanobotWorkspaceModel.find_one({"prompt_template_ids": prompt_template_id})
+    if workspace_ref:
+        return ApiResponseSchema.error(
+            code=status_codes.CONFLICT_STATE,
+            message="仍有工作区将该模板列入可选列表，无法删除",
+        )
+    doc = await AgentPromptTemplateModel.find_one({"_id": prompt_template_id})
+    if not doc:
+        return ApiResponseSchema.error(code=status_codes.NOT_FOUND_TEMPLATE, message="提示词模板不存在")
+    await doc.delete()
+    return ApiResponseSchema.success(data=None, message="删除成功")
 
