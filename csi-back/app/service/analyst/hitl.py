@@ -80,6 +80,11 @@ class HitlService:
             cls._pending_resumes.pop(session_id, None)
 
     @classmethod
+    async def clear_all_sessions(cls) -> None:
+        async with cls._resume_lock:
+            cls._pending_resumes.clear()
+
+    @classmethod
     async def _get_or_create_resume_queue(cls, session_id: str) -> asyncio.Queue:
         async with cls._resume_lock:
             queue = cls._pending_resumes.get(session_id)

@@ -812,3 +812,74 @@ class AnalystService:
         cls._cancel_reasons[session_id] = reason
         task.cancel()
         return True
+
+    @staticmethod
+    def _parse_run_task_agent_id(task: asyncio.Task, session_id: str) -> str | None:
+        name = task.get_name() if hasattr(task, "get_name") else ""
+        prefix = "analyst-run:"
+        suffix = f":{session_id}"
+        if not name.startswith(prefix) or not name.endswith(suffix):
+            return None
+        agent_id = name[len(prefix) : -len(suffix)]
+        return agent_id or None
+
+    @classmethod
+    async def _cancel_orphan_run_task(cls, session_id: str) -> None:
+        async with cls._task_lock:
+            task = cls._running_tasks.get(session_id)
+        if task is None or task.done():
+            return
+        cls._cancel_reasons[session_id] = "shutdown"
+        task.cancel()
+
+    @classmethod
+    async def shutdown_running_agents(cls, *, timeout: float | None = None) -> None:
+        """进程退出时取消所有后台 run_analysis，并在有界时间内等待收尾。"""
+        from app.service.analyst.hitl import HitlService
+
+        raw_timeout = (
+            settings.NANOBOT_SHUTDOWN_TIMEOUT_S if timeout is None else timeout
+        )
+        wait_timeout = max(1.0, float(raw_timeout)) if raw_timeout else 1.0
+
+        async with cls._task_lock:
+            snapshot = list(cls._running_tasks.items())
+
+        for session_id, task in snapshot:
+            if task.done():
+                continue
+            agent_id: str | None = None
+            async with cls._bots_lock:
+                bot = cls._bots.get(session_id)
+            if bot is not None:
+                agent_id = bot.agent_id
+
+            if not agent_id:
+                agent_id = cls._parse_run_task_agent_id(task, session_id)
+
+            cancelled = False
+            if agent_id:
+                cancelled = await cls.cancel_agent(
+                    agent_id, session_id, reason="shutdown"
+                )
+            if not cancelled:
+                await cls._cancel_orphan_run_task(session_id)
+
+        async with cls._task_lock:
+            pending = [t for t in cls._running_tasks.values() if not t.done()]
+
+        if pending:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*pending, return_exceptions=True),
+                    timeout=wait_timeout,
+                )
+            except asyncio.TimeoutError:
+                still_running = sum(1 for t in pending if not t.done())
+                logger.warning(
+                    "关闭分析引擎超时: 仍有 {} 个任务未完成 (timeout={}s)",
+                    still_running,
+                    wait_timeout,
+                )
+
+        await HitlService.clear_all_sessions()

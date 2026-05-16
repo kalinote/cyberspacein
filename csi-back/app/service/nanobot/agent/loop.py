@@ -384,9 +384,13 @@ class AgentLoop:
         return result.final_content, result.tools_used, result.messages, result.stop_reason, result.had_injections
 
     async def close_mcp(self) -> None:
-        """Drain pending background archives, then close MCP connections."""
+        """取消分配中的后台任务, 然后关闭 MCP 连接。"""
         if self._background_tasks:
-            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            pending = [t for t in self._background_tasks if not t.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             self._background_tasks.clear()
         for name, stack in self._mcp_stacks.items():
             try:

@@ -1,72 +1,74 @@
 ---
 name: my
-description: Check and set the agent's own runtime state (model, iterations, context window, token usage). Use when diagnosing unexpected behavior ("why did you stop?", "this failed—what are my limits?"), checking resource limits before complex tasks, adapting configuration for long or simple tasks, or remembering user preferences across turns. Also use when the user asks what model you are running, how many tokens you've used, or what your settings are.
+description: 查看与调整 Agent 当前运行状态（模型、迭代上限、上下文窗口、Token 用量、会话便签）。适用于：任务异常中断需排查原因、复杂任务前确认余量、按任务长短临时调参、跨轮记住用户偏好；或用户询问"用的什么模型""还剩多少额度""当前配置是什么"。
 always: true
 ---
 
-# Self-Awareness
+# 运行状态自省
 
-## How to use
+通过 `my` 工具掌握并（在允许时）调整**当前会话**内的运行参数，避免凭猜测回答"为什么停了""额度够不够"等问题。
 
-1. **Identify the situation** from the categories below
-2. **Call the my tool** with the appropriate action
-3. **If set**, warn the user before changing impactful settings (model, iterations)
-4. **For detailed examples**, read [references/examples.md](references/examples.md)
+## 使用步骤
 
-## When to check
+1. 对照下文判断属于"只查"还是"要改"
+2. 调用 `my`，`action` 选 `check` 或 `set`
+3. 若要 `set` 且涉及模型、迭代上限等影响较大的项，**先向用户说明并征得同意**
+4. 需要完整示例时，阅读 [references/examples.md](references/examples.md)
+
+## 何时用 check（只读）
 
 <rule>
-**Diagnose before explaining.** When something doesn't work, check your state first.
+**先自查，再解释。** 工具失败、回答中断、用户追问"怎么停了"时，先 `check` 相关项，再说明原因，不要空口猜。
 </rule>
 
 <rule>
-**Check budget before complex tasks.** Know your limits before committing.
+**重活开工前先摸底。** 大范围读代码、长链路多步任务前，先看 `context_window_tokens`、`max_iterations` 和 `_last_usage`，心里有数再动手。
 </rule>
 
 <rule>
-**Recall across turns.** Store preferences in your scratchpad, read them back later.
+**跨轮延续靠便签。** 用户在本会话里表达的偏好（如"简短点""用 pytest"），用 `set` 写入便签；新话题开始前 `check` 便签键，保持风格一致。
 </rule>
 
-## When to set
+## 何时用 set（需 `tools.my.allow_set` 为 true）
 
 <rule>
-**Only set when benefit is clear and user is informed.** Warn before changing model.
+**能不改就不改，要改须说清楚。** 默认配置够用则保持不动；确需调整时告知用户改了什么、为何改。
 </rule>
 
-| Situation | Command |
-|-----------|---------|
-| Large codebase analysis | `my(action="set", key="context_window_tokens", value=131072)` |
-| Repetitive simple tasks | `my(action="set", key="model", value="<fast-model>")` |
-| Long multi-step task | `my(action="set", key="max_iterations", value=80)` |
+| 场景 | 示例 |
+|------|------|
+| 仓库体量大、上下文吃紧 | `my(action="set", key="context_window_tokens", value=131072)` |
+| 批量简单重复操作 | `my(action="set", key="model", value="<更快模型>")` |
+| 步骤多、易触达迭代上限 | `my(action="set", key="max_iterations", value=80)` |
 
-**Tradeoff:** Bias toward stability. Only set when defaults are genuinely insufficient.
+**原则：** 优先稳定；仅在默认明显不够用时才调参。
 
-## Anti-patterns
-
-<rule>
-**Don't check every turn.** Costs a tool call. Use when you need information, not reflexively.
-</rule>
+## 不宜做的事
 
 <rule>
-**Don't store sensitive data.** No API keys, passwords, or tokens in scratchpad.
+**不要每轮都 check。** 每次调用都占一轮工具开销；确有需要再查，勿形成条件反射。
 </rule>
 
 <rule>
-**Don't set workspace.** Does not update file tool boundaries — won't work.
+**便签里不要存敏感信息。** 禁止写入 API Key、密码、访问令牌等。
 </rule>
 
-## Constraints
+<rule>
+**不要指望 set workspace 改文件范围。** 该字段不会改变文件类工具的访问边界，设置了也不生效。
+</rule>
 
-- All modifications in-memory only — restart resets everything
-- Protected params have type/range validation: `max_iterations` (1–100), `context_window_tokens` (4096–1M), `model` (non-empty str)
-- If `tools.my.allow_set` is false, check only
+## 技术约束
 
-## Related tools
+- 所有 `set` 仅作用于**进程内存**，服务重启后恢复默认，便签一并清空
+- 受保护参数有类型与范围校验：`max_iterations`（1–100）、`context_window_tokens`（4096–1M）、`model`（非空字符串）
+- `tools.my.allow_set` 为 `false` 时仅允许 `check`
 
-| Need | Use | Persists? |
-|------|-----|-----------|
-| Per-session temp state | `my(action="set", key="...", value=...)` | No |
-| Long-term facts | Memory skill (`MEMORY.md`, `USER.md`) | Yes |
-| Permanent config change | Edit config file | Yes |
+## 与记忆、配置的分工
 
-**Rule of thumb:** Tomorrow? Memory. This turn only? My.
+| 需求 | 做法 | 是否持久 |
+|------|------|----------|
+| 本会话临时状态、当前任务上下文 | `my` 便签（`set` 自定义 key） | 否（重启丢失） |
+| 用户画像、项目事实等长期信息 | Memory 技能（`USER.md`、`MEMORY.md` 等） | 是 |
+| 部署级默认行为 | 改配置文件 | 是 |
+
+**记法：** 明天还要用 → Memory；只在本会话、本轮对话有用 → `my`。

@@ -10,7 +10,7 @@
             </p>
             <el-collapse class="border-0">
                 <el-collapse-item title="payload（JSON）" name="payload">
-                    <pre class="max-h-64 overflow-auto rounded bg-white p-2 text-xs text-gray-800 ring-1 ring-gray-100 whitespace-pre-wrap">{{ payloadJson }}</pre>
+                    <pre class="rounded bg-white p-2 text-xs text-gray-800 ring-1 ring-gray-100 whitespace-pre-wrap">{{ payloadJson }}</pre>
                 </el-collapse-item>
             </el-collapse>
         </div>

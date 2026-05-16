@@ -41,7 +41,11 @@ async def lifespan(app: FastAPI):
     await ensure_default_admin()
     
     yield
-    
+
+    from app.service.analyst.service import AnalystService
+
+    await AnalystService.shutdown_running_agents()
+
     await close_embedding_client()
     await close_cos()
     await close_rabbitmq()

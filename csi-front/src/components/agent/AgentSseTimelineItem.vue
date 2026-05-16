@@ -75,7 +75,7 @@
                 <p v-if="afterToolNames.length" class="mt-2 text-xs text-gray-600">工具：{{ afterToolNames.join('、') }}</p>
                 <el-collapse v-if="afterArgsJson" v-model="stepCollapse" class="mt-2 border-0">
                     <el-collapse-item title="参数（JSON）" name="args">
-                        <pre class="max-h-48 overflow-auto rounded bg-white p-2 text-[11px] text-gray-800 ring-1 ring-gray-100 whitespace-pre-wrap">{{ afterArgsJson }}</pre>
+                        <pre class="rounded bg-white p-2 text-[11px] text-gray-800 ring-1 ring-gray-100 whitespace-pre-wrap">{{ afterArgsJson }}</pre>
                     </el-collapse-item>
                 </el-collapse>
             </template>
@@ -162,10 +162,10 @@
                     <p class="text-sm text-gray-800 font-mono">{{ resultStopReason }}</p>
                 </el-collapse-item>
                 <el-collapse-item v-if="resultPayloadJson" title="payload（JSON）" name="payload">
-                    <pre class="max-h-56 overflow-auto rounded bg-gray-50 p-2 text-xs whitespace-pre-wrap">{{ resultPayloadJson }}</pre>
+                    <pre class="rounded bg-gray-50 p-2 text-xs whitespace-pre-wrap">{{ resultPayloadJson }}</pre>
                 </el-collapse-item>
                 <el-collapse-item v-if="item.payload?.error != null" title="错误" name="err">
-                    <pre class="max-h-40 overflow-auto text-xs whitespace-pre-wrap">{{ stringifyJsonSafe(item.payload.error) }}</pre>
+                    <pre class="rounded bg-gray-50 p-2 text-xs whitespace-pre-wrap">{{ stringifyJsonSafe(item.payload.error) }}</pre>
                 </el-collapse-item>
             </el-collapse>
         </div>
@@ -180,16 +180,32 @@
             </div>
             <el-collapse v-model="debugCollapse" class="mt-2 border-0">
                 <el-collapse-item title="系统提示" name="sys">
-                    <pre class="max-h-48 overflow-auto rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ item.payload?.system_prompt ?? '' }}</pre>
+                    <MarkdownViewer
+                        v-if="item.payload?.system_prompt"
+                        :content="item.payload.system_prompt"
+                        :breaks="true"
+                        custom-class="rounded bg-white p-2 text-xs ring-1 ring-gray-100"
+                    />
+                    <p v-else class="text-xs text-gray-500">—</p>
                 </el-collapse-item>
                 <el-collapse-item v-if="item.payload?.extra_system_suffix" title="系统后缀" name="suf">
-                    <pre class="max-h-32 overflow-auto rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ item.payload.extra_system_suffix }}</pre>
+                    <MarkdownViewer
+                        :content="item.payload.extra_system_suffix"
+                        :breaks="true"
+                        custom-class="rounded bg-white p-2 text-xs ring-1 ring-gray-100"
+                    />
                 </el-collapse-item>
                 <el-collapse-item title="用户提示" name="usr">
-                    <pre class="max-h-48 overflow-auto rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ item.payload?.user_prompt ?? '' }}</pre>
+                    <MarkdownViewer
+                        v-if="item.payload?.user_prompt"
+                        :content="item.payload.user_prompt"
+                        :breaks="true"
+                        custom-class="rounded bg-white p-2 text-xs ring-1 ring-gray-100"
+                    />
+                    <p v-else class="text-xs text-gray-500">—</p>
                 </el-collapse-item>
                 <el-collapse-item title="内存快照" name="mem">
-                    <pre class="max-h-48 overflow-auto rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ memorySnapshotText }}</pre>
+                    <pre class="rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ memorySnapshotText }}</pre>
                 </el-collapse-item>
             </el-collapse>
         </div>
@@ -222,7 +238,7 @@
             </div>
             <el-collapse v-model="unknownCollapse" class="mt-2 border-0">
                 <el-collapse-item title="原始数据" name="raw">
-                    <pre class="max-h-48 overflow-auto rounded bg-white p-2 text-xs whitespace-pre-wrap">{{ unknownRaw }}</pre>
+                    <pre class="rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ unknownRaw }}</pre>
                 </el-collapse-item>
             </el-collapse>
         </div>
