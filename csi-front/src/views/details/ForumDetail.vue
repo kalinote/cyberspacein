@@ -202,6 +202,14 @@
                                 :keyword-colors="keywordColors"
                                 :active-tab="activeTab"
                             />
+                            <KeywordConnector
+                                :selected-keywords="selectedEntityKeys"
+                                :keyword-tag-refs="entityTagRefs"
+                                :keyword-colors="entityColors"
+                                data-attribute="data-entity"
+                                highlight-selector=".entity-highlight"
+                                :active-tab="activeTab"
+                            />
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <div class="flex items-center justify-between mb-4">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
@@ -599,6 +607,15 @@
                                 </div>
                             </div>
 
+                            <EntityMentionPanel
+                                v-if="hasEntities(forumData.entities)"
+                                :entities="forumData.entities"
+                                :selected-keys="selectedEntityKeys"
+                                :colors="entityColors"
+                                :set-ref="setEntityRef"
+                                @toggle="toggleEntity"
+                            />
+
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-4">
                                     元数据<span class="text-blue-500">信息</span>
@@ -699,6 +716,7 @@ import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import KeywordConnector from '@/components/keyword/KeywordConnector.vue'
+import EntityMentionPanel from '@/components/entity/EntityMentionPanel.vue'
 import Timeline from '@/components/Timeline.vue'
 import { forumApi } from '@/api/forum'
 import { agentApi } from '@/api/agent'
@@ -708,6 +726,8 @@ import { convertRelativeLinks } from '@/utils/linkProcessor'
 import { useMarkingHandler } from '@/composables/useMarkingHandler'
 import { useHighlight } from '@/composables/useHighlight'
 import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
+import { useEntityHighlight } from '@/composables/useEntityHighlight'
+import { hasEntities } from '@/utils/entityDisplay'
 
 const route = useRoute()
 const router = useRouter()
@@ -726,20 +746,45 @@ const renderedContentRef = ref(null)
 const translateContentRef = ref(null)
 
 const {
+  selectedEntityKeys,
+  entityTagRefs,
+  entityColors,
+  setEntityRef,
+  toggleEntity,
+  buildEntityHighlightLayer,
+} = useEntityHighlight()
+
+const {
   selectedKeywords,
   keywordTagRefs,
   keywordColors,
-  highlightedCleanContent,
-  highlightedTranslateContent,
   setKeywordRef,
   toggleKeyword,
-  applyRenderedKeywordHighlight
+  applyRenderedKeywordHighlight,
+  getHighlightedPlainText,
 } = useKeywordHighlight({
   getCleanContent: () => forumData.value?.clean_content,
   getTranslateContent: () => forumData.value?.translate_content,
   renderedContentRef,
   activeTab
 })
+
+const entityHighlightLayers = computed(() => {
+  const layer = buildEntityHighlightLayer()
+  return layer ? [layer] : []
+})
+
+const highlightedCleanContent = computed(() =>
+  getHighlightedPlainText(() => forumData.value?.clean_content, entityHighlightLayers.value)
+)
+
+const highlightedTranslateContent = computed(() =>
+  getHighlightedPlainText(() => forumData.value?.translate_content, entityHighlightLayers.value)
+)
+
+function applyContentHighlights() {
+  applyRenderedKeywordHighlight(entityHighlightLayers.value)
+}
 
 const {
     currentRegion,
@@ -1065,11 +1110,11 @@ watch(activeTab, async (newTab, oldTab) => {
     await handleTabChange(newTab, oldTab)
 })
 
-watch([activeTab, selectedKeywords], () => {
-    applyRenderedKeywordHighlight()
+watch([activeTab, selectedKeywords, selectedEntityKeys], () => {
+    applyContentHighlights()
 }, { deep: true })
 watch(editableSafeRawContent, () => {
-    if (activeTab.value === 'rendered') applyRenderedKeywordHighlight()
+    if (activeTab.value === 'rendered') applyContentHighlights()
 })
 
 onMounted(() => {
@@ -1166,6 +1211,11 @@ onUnmounted(() => {
 
 .marking-container :deep(.keyword-highlight) {
     background-color: rgba(59, 130, 246, 0.25);
+    border-radius: 2px;
+}
+
+.marking-container :deep(.entity-highlight) {
+    background-color: rgba(16, 185, 129, 0.25);
     border-radius: 2px;
 }
 </style>

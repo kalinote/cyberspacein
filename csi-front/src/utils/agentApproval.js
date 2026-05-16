@@ -63,7 +63,7 @@ export function getActionLabel(action) {
     return lookupLabel(ACTION_LABELS, action)
 }
 
-function getEntityCategoryLabel(category) {
+export function getEntityCategoryLabel(category) {
     return lookupLabel(ENTITY_CATEGORY_LABELS, category)
 }
 

@@ -35,6 +35,14 @@ const props = defineProps({
   activeTab: {
     type: String,
     default: ''
+  },
+  dataAttribute: {
+    type: String,
+    default: 'data-keyword'
+  },
+  highlightSelector: {
+    type: String,
+    default: '.keyword-highlight'
   }
 })
 
@@ -55,11 +63,12 @@ function calculatePaths() {
   }
   const containerRect = container.getBoundingClientRect()
   const allPaths = []
-  const allHighlights = container.querySelectorAll('.keyword-highlight')
+  const allHighlights = container.querySelectorAll(props.highlightSelector)
+  const attrName = props.dataAttribute
   for (const keyword of props.selectedKeywords) {
     const tagEl = getTagEl(props.keywordTagRefs?.[keyword])
     if (!tagEl) continue
-    const highlights = Array.from(allHighlights).filter((el) => el.getAttribute('data-keyword') === keyword)
+    const highlights = Array.from(allHighlights).filter((el) => el.getAttribute(attrName) === keyword)
     const visibleHighlights = highlights.filter((el) => {
       const r = el.getBoundingClientRect()
       return r.width > 0 && r.height > 0
@@ -102,6 +111,8 @@ watch(() => props.selectedKeywords, updatePaths, { deep: true })
 watch(() => props.keywordTagRefs, updatePaths, { deep: true })
 watch(() => props.keywordColors, updatePaths, { deep: true })
 watch(() => props.activeTab, updatePaths)
+watch(() => props.dataAttribute, updatePaths)
+watch(() => props.highlightSelector, updatePaths)
 
 onMounted(() => {
   updatePaths()

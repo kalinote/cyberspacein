@@ -6,8 +6,8 @@
 工具清单（MIGRATION_PLAN §3.3）：
 - `get_current_time` ：返回当前时间字符串，无状态。
 - `get_entity`       ：按 `(entity_type, entity_uuid)` 去 Elasticsearch 拉实体。
-- `modify_entity`    ：经 `HitlService.request_approval` 人工审批；通过后写回 ES/DB（当前为 TODO）。
-- `notify_user`      ：SSE `notification` 广播一条消息，不改 DB。
+- `modify_entity`    ：经 `HitlService.request_approval` 人工审批；通过后写回 Elasticsearch。
+- `notify_user`      ：SSE `notification` 广播一条消息。
 - `write_todos`      ：写 `NanobotSessionModel.todos` + SSE `todos`；供 LLM 自行拆解任务。
 - `web_search` / `web_fetch` ：联网搜索与页面抓取（实现见 `web_tools.py`，运行参数见 `WEB_RUNTIME`）。
 
@@ -257,14 +257,25 @@ class ModifyEntityTool(Tool):
         if not outcome.approved:
             return "修改未获得任何批准，未执行。"
 
+        from app.service.analyst.utils.entity_modify import apply_entity_modifications_to_es
+
+        write_err = await apply_entity_modifications_to_es(
+            str(payload["entity_type"]),
+            str(payload["entity_uuid"]),
+            payload["modifications"],
+        )
+        if write_err:
+            return f"[错误] 应用修改失败: {write_err}"
+
         logger.info(
-            f"modify_entity 审批通过: agent_id={agent_id} "
+            f"modify_entity 已写入 ES: agent_id={agent_id} "
             f"entity={payload['entity_type']}:{payload['entity_uuid']} "
             f"modifications_count={len(payload['modifications'])}"
         )
         return (
             f"修改已获批准（共 {len(outcome.approved)} 条决策），"
-            f"对实体 {payload['entity_type']}:{payload['entity_uuid']} 的修改将被应用。"
+            f"已对实体 {payload['entity_type']}:{payload['entity_uuid']} "
+            f"应用 {len(payload['modifications'])} 项修改并写入 Elasticsearch。"
         )
 
 

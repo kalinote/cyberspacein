@@ -8,6 +8,7 @@ from app.schemas.response import ApiResponseSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime
+from app.utils.entity_entities import parse_entities
 
 logger = logger.bind(name=__name__)
 
@@ -115,7 +116,8 @@ async def get_forum_detail(uuid: str):
             topic_thread_uuid=topic_thread_uuid,
             is_highlighted=source_data.get("is_highlighted", False),
             highlighted_at=parse_datetime(source_data.get("highlighted_at")),
-            highlight_reason=source_data.get("highlight_reason")
+            highlight_reason=source_data.get("highlight_reason"),
+            entities=parse_entities(source_data.get("entities")),
         )
         
         return ApiResponseSchema.success(data=forum_data)

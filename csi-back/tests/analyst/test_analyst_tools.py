@@ -267,7 +267,12 @@ async def test_modify_entity_calls_hitl_with_source_and_payload(
         )
         return _hitl_outcome()
 
+    apply_mock = AsyncMock(return_value=None)
     monkeypatch.setattr(hitl_module.HitlService, "request_approval", _request)
+    monkeypatch.setattr(
+        "app.service.analyst.utils.entity_modify.apply_entity_modifications_to_es",
+        apply_mock,
+    )
     try:
         out = await tools_module.ModifyEntityTool().execute(
             entity_type=EntityType.ARTICLE.value,
@@ -279,6 +284,12 @@ async def test_modify_entity_calls_hitl_with_source_and_payload(
         _reset_agent_ctx(tokens)
 
     assert "修改已获批准" in out
+    assert "写入 Elasticsearch" in out
+    apply_mock.assert_awaited_once_with(
+        EntityType.ARTICLE.value,
+        "u1",
+        [{"field": "x", "action": "set", "value": 1}],
+    )
     assert captured["source"] == HitlSource.TOOL_MODIFY_ENTITY
     assert captured["payload"]["entity_uuid"] == "u1"
     assert captured["payload"]["reason"] == "r"
@@ -351,4 +362,28 @@ async def test_modify_entity_await_exception_returns(monkeypatch: pytest.MonkeyP
     finally:
         _reset_agent_ctx(tokens)
     assert out == "[错误] x"
+
+
+@pytest.mark.asyncio
+async def test_modify_entity_write_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    tokens = _set_agent_ctx()
+    monkeypatch.setattr(
+        hitl_module.HitlService,
+        "request_approval",
+        AsyncMock(return_value=_hitl_outcome()),
+    )
+    monkeypatch.setattr(
+        "app.service.analyst.utils.entity_modify.apply_entity_modifications_to_es",
+        AsyncMock(return_value="实体不存在"),
+    )
+    try:
+        out = await tools_module.ModifyEntityTool().execute(
+            entity_type=EntityType.ARTICLE.value,
+            entity_uuid="u1",
+            modifications=[{"field": "title", "action": "set", "value": "x"}],
+            reason="r",
+        )
+    finally:
+        _reset_agent_ctx(tokens)
+    assert out == "[错误] 应用修改失败: 实体不存在"
 

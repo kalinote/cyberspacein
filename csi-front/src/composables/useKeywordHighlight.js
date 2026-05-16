@@ -1,9 +1,8 @@
 import { ref, computed, nextTick } from 'vue'
 import {
-  buildHighlightedPlainTextHtmlMulti,
-  wrapKeywordInRenderedElementMulti,
-  unwrapKeywordHighlights,
-  getRandomKeywordColor
+  buildHighlightedPlainTextHtmlLayers,
+  applyRenderedHighlightsMulti,
+  getRandomKeywordColor,
 } from '@/utils/keywordHighlight'
 
 export function useKeywordHighlight(options = {}) {
@@ -13,17 +12,35 @@ export function useKeywordHighlight(options = {}) {
   const keywordTagRefs = ref({})
   const keywordColors = ref({})
 
-  const highlightedCleanContent = computed(() => {
-    const content = getCleanContent?.()
-    if (content == null || content === '') return ''
-    return buildHighlightedPlainTextHtmlMulti(content, selectedKeywords.value, keywordColors.value)
-  })
+  function buildKeywordHighlightLayer() {
+    if (!selectedKeywords.value.length) return null
+    return {
+      items: selectedKeywords.value,
+      colors: keywordColors.value,
+      dataAttr: 'data-keyword',
+      highlightClass: 'keyword-highlight',
+    }
+  }
 
-  const highlightedTranslateContent = computed(() => {
-    const content = getTranslateContent?.()
+  function buildHighlightLayers(extraLayers = []) {
+    const layers = []
+    const kw = buildKeywordHighlightLayer()
+    if (kw) layers.push(kw)
+    for (const layer of extraLayers) {
+      if (layer) layers.push(layer)
+    }
+    return layers
+  }
+
+  function getHighlightedPlainText(getContent, extraLayers = []) {
+    const content = getContent?.()
     if (content == null || content === '') return ''
-    return buildHighlightedPlainTextHtmlMulti(content, selectedKeywords.value, keywordColors.value)
-  })
+    return buildHighlightedPlainTextHtmlLayers(content, buildHighlightLayers(extraLayers))
+  }
+
+  const highlightedCleanContent = computed(() => getHighlightedPlainText(getCleanContent))
+
+  const highlightedTranslateContent = computed(() => getHighlightedPlainText(getTranslateContent))
 
   function setKeywordRef(keyword, el) {
     if (el) keywordTagRefs.value[keyword] = el
@@ -41,19 +58,20 @@ export function useKeywordHighlight(options = {}) {
     }
   }
 
-  function applyRenderedKeywordHighlight() {
+  function applyRenderedKeywordHighlight(extraLayers = []) {
     nextTick(() => {
       const container = renderedContentRef?.value
       if (!container) return
       if (activeTab?.value !== 'rendered') {
-        unwrapKeywordHighlights(container)
+        applyRenderedHighlightsMulti(container, [])
         return
       }
-      if (!selectedKeywords.value.length) {
-        unwrapKeywordHighlights(container)
+      const layers = buildHighlightLayers(extraLayers)
+      if (!layers.length) {
+        applyRenderedHighlightsMulti(container, [])
         return
       }
-      wrapKeywordInRenderedElementMulti(container, selectedKeywords.value, keywordColors.value)
+      applyRenderedHighlightsMulti(container, layers)
     })
   }
 
@@ -65,6 +83,9 @@ export function useKeywordHighlight(options = {}) {
     highlightedTranslateContent,
     setKeywordRef,
     toggleKeyword,
-    applyRenderedKeywordHighlight
+    applyRenderedKeywordHighlight,
+    buildKeywordHighlightLayer,
+    getHighlightedPlainText,
+    buildHighlightLayers,
   }
 }

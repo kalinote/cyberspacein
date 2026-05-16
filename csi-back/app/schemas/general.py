@@ -33,6 +33,15 @@ class PageResponseSchema(BaseModel, Generic[T]):
             items=items
         )
 
+class EntityEntitiesSchema(BaseModel):
+    person: list[str] = Field(default_factory=list, description="人物实体")
+    organization: list[str] = Field(default_factory=list, description="组织实体")
+    location: list[str] = Field(default_factory=list, description="地点实体")
+    company: list[str] = Field(default_factory=list, description="公司实体")
+    network_user: list[str] = Field(default_factory=list, description="网络用户实体")
+    region: list[str] = Field(default_factory=list, description="地区实体")
+
+
 class BaseEntitySchema(BaseModel):
     uuid: str = Field(description="主键。md5(entity_type + source_id + last_edit_at + raw_content)。用于去重或版本控制。")
     source_id: str | None = Field(default=None, description="平台原本的ID（如推文ID、文章ID）")
@@ -65,4 +74,7 @@ class BaseEntitySchema(BaseModel):
     is_highlighted: bool = Field(default=False, description="是否为重点目标")
     highlighted_at: datetime | None = Field(default=None, description="标记时间")
     highlight_reason: str | None = Field(default=None, description="标记理由")
-    
+    entities: EntityEntitiesSchema | None = Field(
+        default=None,
+        description="从正文提取的命名实体，按类型分组",
+    )

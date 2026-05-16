@@ -7,6 +7,7 @@ from app.schemas.article import ArticleSchema
 from app.schemas.response import ApiResponseSchema
 from app.models.platform.platform import PlatformModel
 from app.utils.date_time import parse_datetime
+from app.utils.entity_entities import parse_entities
 
 logger = logger.bind(name=__name__)
 
@@ -70,7 +71,8 @@ async def get_article_detail(uuid: str):
             likes=source_data.get("likes"),
             is_highlighted=source_data.get("is_highlighted", False),
             highlighted_at=parse_datetime(source_data.get("highlighted_at")),
-            highlight_reason=source_data.get("highlight_reason")
+            highlight_reason=source_data.get("highlight_reason"),
+            entities=parse_entities(source_data.get("entities")),
         )
         
         return ApiResponseSchema.success(data=article_data)
