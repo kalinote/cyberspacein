@@ -96,25 +96,28 @@
         </div>
 
         <div v-else-if="item.kind === 'approval_required'" class="rounded-lg border px-3 py-2.5 shadow-sm"
-            :class="approvalCardClass">
+            :class="approvalTheme.card">
             <div class="flex flex-wrap items-center gap-2 text-xs">
-                <Icon icon="mdi:shield-check" class="text-base shrink-0" :class="approvalIconClass" />
-                <span class="font-semibold text-gray-900">审批</span>
-                <span class="rounded bg-white/80 px-1.5 py-0.5 text-[11px] text-gray-700">{{ approvalSourceLabel }}</span>
+                <Icon :icon="approvalIcon" class="text-base shrink-0" :class="approvalTheme.icon" />
+                <span class="font-semibold" :class="approvalTheme.title">审批</span>
+                <span class="rounded px-1.5 py-0.5 text-[11px]" :class="approvalTheme.sourceTag">{{ approvalSourceLabel }}</span>
                 <span v-if="approvalResolutionLabel" class="rounded-md px-2 py-0.5 text-[11px] font-medium"
                     :class="approvalBadgeClass">{{ approvalResolutionLabel }}</span>
-                <span class="text-gray-500">{{ formatTime(item.ts) }}</span>
+                <span :class="approvalTheme.time">{{ formatTime(item.ts) }}</span>
             </div>
-            <p v-if="approvalEntityTypeLabel" class="mt-2 text-sm text-gray-800">
+            <p v-if="approvalEntityTypeLabel" class="mt-2 text-sm" :class="approvalTheme.meta">
                 实体：<span class="font-medium">{{ approvalEntityTypeLabel }}</span>
-                <span v-if="approvalEntityUuidShort" class="ml-1 font-mono text-xs text-gray-500">{{ approvalEntityUuidShort }}</span>
+                <span v-if="approvalEntityUuidShort" class="ml-1 font-mono text-xs opacity-70">{{ approvalEntityUuidShort }}</span>
             </p>
-            <p v-if="approvalModificationCount" class="mt-1 text-xs text-gray-600">修改项 {{ approvalModificationCount }} 个</p>
-            <p v-if="approvalReasonText" class="mt-1 text-sm text-gray-700 whitespace-pre-wrap wrap-break-word line-clamp-3">说明：{{ approvalReasonText }}</p>
-            <p v-if="approvalPending" class="mt-2 text-xs text-blue-700">已弹出审批对话框，请在对话框中操作。</p>
-            <ul v-else-if="rejectReasons.length" class="mt-2 list-disc pl-4 text-sm text-gray-800">
-                <li v-for="(r, i) in rejectReasons" :key="i">{{ r }}</li>
-            </ul>
+            <p v-if="approvalModificationCount" class="mt-1 text-xs" :class="approvalTheme.sub">修改项 {{ approvalModificationCount }} 个</p>
+            <p v-if="approvalReasonText" class="mt-1 text-sm whitespace-pre-wrap wrap-break-word line-clamp-3" :class="approvalTheme.reason">说明：{{ approvalReasonText }}</p>
+            <p v-if="approvalPending" class="mt-2 text-xs" :class="approvalTheme.pendingHint">需要审批，请在审批面板中操作。</p>
+            <div v-else-if="rejectReasons.length" class="mt-2">
+                <p class="text-xs font-semibold" :class="approvalTheme.sub">审批意见</p>
+                <ol class="mt-1 list-decimal pl-5 text-sm space-y-0.5" :class="approvalTheme.rejectList">
+                    <li v-for="(r, i) in rejectReasons" :key="i">{{ r }}</li>
+                </ol>
+            </div>
         </div>
 
         <div v-else-if="item.kind === 'notification'" class="rounded-lg border-l-4 bg-white px-3 py-2.5 shadow-sm ring-1 ring-gray-100"
@@ -365,21 +368,81 @@ const approvalResolutionLabel = computed(() => {
     return RESOLUTION_LABEL[r] || String(r)
 })
 
-const approvalCardClass = computed(() =>
-    approvalPending.value
-        ? 'border-amber-200 bg-amber-50/50'
-        : 'border-gray-200 bg-gray-50/80'
-)
+const APPROVAL_THEME_DEFAULT = {
+    card: 'border-gray-200 bg-gray-50/80',
+    icon: 'text-gray-600',
+    title: 'text-gray-900',
+    sourceTag: 'bg-white/80 text-gray-700',
+    time: 'text-gray-500',
+    meta: 'text-gray-800',
+    sub: 'text-gray-600',
+    reason: 'text-gray-700',
+    pendingHint: 'text-blue-700',
+    rejectList: 'text-gray-800',
+}
 
-const approvalIconClass = computed(() =>
-    approvalPending.value ? 'text-amber-600' : 'text-gray-600'
-)
+const APPROVAL_THEME_PENDING = {
+    card: 'border-amber-200 bg-amber-50/50',
+    icon: 'text-amber-600',
+    title: 'text-amber-900',
+    sourceTag: 'bg-white/90 text-amber-800',
+    time: 'text-amber-700/80',
+    meta: 'text-gray-800',
+    sub: 'text-gray-600',
+    reason: 'text-gray-700',
+    pendingHint: 'text-blue-700',
+    rejectList: 'text-gray-800',
+}
+
+const APPROVAL_THEME_APPROVED = {
+    card: 'border-green-200 bg-green-50/50',
+    icon: 'text-green-600',
+    title: 'text-green-900',
+    sourceTag: 'bg-white/90 text-green-800',
+    time: 'text-green-700/80',
+    meta: 'text-green-900/90',
+    sub: 'text-green-800/80',
+    reason: 'text-green-900/80',
+    pendingHint: 'text-green-700',
+    rejectList: 'text-green-900/90',
+}
+
+const APPROVAL_THEME_REJECTED = {
+    card: 'border-red-200 bg-red-50/50',
+    icon: 'text-red-600',
+    title: 'text-red-900',
+    sourceTag: 'bg-white/90 text-red-800',
+    time: 'text-red-700/80',
+    meta: 'text-red-900/90',
+    sub: 'text-red-800/80',
+    reason: 'text-red-900/80',
+    pendingHint: 'text-red-700',
+    rejectList: 'text-red-800',
+}
+
+const approvalTheme = computed(() => {
+    if (approvalPending.value) return APPROVAL_THEME_PENDING
+    const r = props.item.payload?.resolution
+    if (r === 'approved') return APPROVAL_THEME_APPROVED
+    if (r === 'rejected') return APPROVAL_THEME_REJECTED
+    if (r === 'mixed') return APPROVAL_THEME_PENDING
+    return APPROVAL_THEME_DEFAULT
+})
+
+const approvalIcon = computed(() => {
+    if (approvalPending.value) return 'mdi:shield-alert-outline'
+    const r = props.item.payload?.resolution
+    if (r === 'approved') return 'mdi:shield-check'
+    if (r === 'rejected') return 'mdi:shield-remove'
+    if (r === 'mixed') return 'mdi:shield-half-full'
+    return 'mdi:shield-outline'
+})
 
 const approvalBadgeClass = computed(() => {
     const r = props.item.payload?.resolution
-    if (r === 'approved') return 'bg-green-100 text-green-900'
-    if (r === 'rejected') return 'bg-red-100 text-red-900'
-    if (r === 'mixed') return 'bg-amber-100 text-amber-900'
+    if (r === 'approved') return 'bg-white/90 text-green-800 ring-1 ring-green-200'
+    if (r === 'rejected') return 'bg-white/90 text-red-800 ring-1 ring-red-200'
+    if (r === 'mixed') return 'bg-white/90 text-amber-800 ring-1 ring-amber-200'
     return 'bg-gray-200 text-gray-800'
 })
 
