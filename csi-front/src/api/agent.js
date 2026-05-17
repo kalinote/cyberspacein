@@ -49,6 +49,9 @@ export const agentApi = {
   getAgentList(params = { page: 1, page_size: 10 }) {
     return request.get('/agent/agents', params)
   },
+  getAgentSessionList(params = { page: 1, page_size: 10 }) {
+    return request.get('/agent/sessions', params)
+  },
   getAgentsConfigList() {
     return request.get('/agent/agents-list')
   },

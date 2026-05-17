@@ -746,9 +746,17 @@ const handleAnalyzeOption = async (option) => {
         if (response.code === 0 && response.data?.agent_id) {
             ElMessage.success('分析任务已启动')
             const sid = response.data.session_id
+            if (!sid) {
+                ElMessage.error('未返回 session_id，无法进入分析详情')
+                return
+            }
             router.push({
-                path: `/agent/analysis/${response.data.agent_id}`,
-                query: sid ? { session_id: sid } : undefined
+                path: `/agent/analysis/${sid}`,
+                query: {
+                    agent_id: response.data.agent_id,
+                    entity_uuid: articleData.value.uuid,
+                    entity_type: articleData.value.entity_type,
+                },
             })
         } else {
             ElMessage.error(response.message || '启动分析任务失败')

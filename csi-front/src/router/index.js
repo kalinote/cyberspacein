@@ -15,6 +15,7 @@ import ComponentTaskManagement from '../views/action/ComponentTaskManagement.vue
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import AgentConfig from '../views/agent/AgentConfig.vue'
 import AnalysisDetail from '../views/agent/AnalysisDetail.vue'
+import AgentSessionList from '../views/agent/AgentSessionList.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
 import HighlightTargetList from '../views/target/HighlightTargetList.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
@@ -165,8 +166,14 @@ const router = createRouter({
       meta: { requiresAuth: true, permissions: [PERM.pages.agent.use] }
     },
     {
+      path: '/agent/sessions',
+      name: 'agent-session-list',
+      component: AgentSessionList,
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.agent.use] }
+    },
+    {
       // 分析详情
-      path: '/agent/analysis/:threadId',
+      path: '/agent/analysis/:sessionId',
       name: 'agent-analysis-detail',
       component: AnalysisDetail,
       meta: { requiresAuth: true, permissions: [PERM.pages.agent.use] }

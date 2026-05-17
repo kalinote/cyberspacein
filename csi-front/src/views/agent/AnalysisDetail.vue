@@ -23,7 +23,7 @@
         </div>
 
         <template v-else>
-            <DetailPageHeader :title="agentTitle" :subtitle="agentId">
+            <DetailPageHeader :title="agentTitle" :subtitle="sessionId">
                 <template #tags>
                     <el-tag :type="statusTagType" size="default">{{ statusLabel }}</el-tag>
                     <el-tag v-if="agent?.workspace_id" type="info" size="default">workspace: {{ agent.workspace_id
@@ -217,11 +217,15 @@ import {
 } from '@/utils/agentSse'
 import { getApprovalSourceLabel, isApprovalAwaitingUserAction } from '@/utils/agentApproval'
 import { formatDateTime, TODO_ITEM_STATUS } from '@/utils/action'
+import {
+    getAgentSessionStatusLabel,
+    getAgentSessionStatusTagType,
+} from '@/utils/agent/sessionStatus'
 
 const route = useRoute()
 const router = useRouter()
-const agentId = computed(() => String(route.params.threadId || ''))
-const sessionId = computed(() => (route.query.session_id ? String(route.query.session_id) : ''))
+const sessionId = computed(() => String(route.params.sessionId || ''))
+const agentId = computed(() => (route.query.agent_id ? String(route.query.agent_id) : ''))
 
 const entityUuid = computed(() => (route.query.entity_uuid ? String(route.query.entity_uuid) : ''))
 const entityType = computed(() => (route.query.entity_type ? String(route.query.entity_type) : ''))
@@ -431,30 +435,8 @@ watch(
 const agentTitle = computed(() => agent.value?.name || '分析详情')
 const statusRaw = computed(() => String(sessionRuntimeStatus.value || 'unknown'))
 
-const statusLabelMap = {
-    unknown: '未知',
-    idle: '空闲',
-    running: '运行中',
-    awaiting_approval: '等待审批',
-    completed: '已完成',
-    failed: '失败',
-    paused: '已暂停',
-    cancelled: '已取消'
-}
-
-const statusTagMap = {
-    unknown: 'info',
-    idle: 'info',
-    running: 'primary',
-    awaiting_approval: 'warning',
-    completed: 'success',
-    failed: 'danger',
-    paused: 'info',
-    cancelled: 'info'
-}
-
-const statusLabel = computed(() => statusLabelMap[statusRaw.value] || statusRaw.value)
-const statusTagType = computed(() => statusTagMap[statusRaw.value] || 'info')
+const statusLabel = computed(() => getAgentSessionStatusLabel(statusRaw.value))
+const statusTagType = computed(() => getAgentSessionStatusTagType(statusRaw.value))
 
 const canStart = computed(() => Boolean(agentId.value) && !startLoading.value)
 const canCancel = computed(
@@ -539,6 +521,7 @@ function applyTodosFromSsePayload(raw) {
 }
 
 async function loadAgentDetail() {
+    if (!sessionId.value) throw new Error('缺少 session_id 参数')
     if (!agentId.value) throw new Error('缺少 agent_id 参数')
     const res = await agentApi.getAgentDetail(agentId.value)
     if (res?.code !== 0) {
@@ -678,9 +661,10 @@ async function start() {
         }
         ElMessage.success('已提交启动请求')
         pushSystemTimeline('client_start', '已提交启动分析', res?.data || {})
+        const { session_id: _removed, ...restQuery } = route.query
         await router.replace({
-            path: route.path,
-            query: { ...route.query, session_id: String(sid) }
+            path: `/agent/analysis/${sid}`,
+            query: { ...restQuery, agent_id: agentId.value },
         })
     } catch (e) {
         ElMessage.error(e?.message || '启动失败，请稍后重试')
@@ -783,16 +767,9 @@ watch(sessionId, (sid, oldSid) => {
     connectSSE()
 })
 
-watch(agentId, async (id, oldId) => {
-    if (!id) return
-    if (oldId && id !== oldId) {
-        const { session_id: _removed, ...restQuery } = route.query
-        await router.replace({
-            path: `/agent/analysis/${id}`,
-            query: restQuery
-        })
-        reload()
-    }
+watch(agentId, (id, oldId) => {
+    if (!id || id === oldId) return
+    reload()
 })
 
 onMounted(() => {

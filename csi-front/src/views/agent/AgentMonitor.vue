@@ -47,7 +47,7 @@
                         <div class="space-y-4">
                             <button
                                 class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
-                                @click="router.push('/agent/new')">
+                                @click="router.push({ name: 'agent-session-list' })">
                                 <Icon icon="mdi:clipboard-text-search-outline" />
                                 <span>分析引擎会话管理</span>
                             </button>
