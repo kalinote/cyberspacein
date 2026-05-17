@@ -24,7 +24,7 @@ class _FakeRequest:
 async def test_route_status_sse_event_stream_format(monkeypatch: pytest.MonkeyPatch) -> None:
     queue: asyncio.Queue = asyncio.Queue()
 
-    async def _subscribe(_agent_id: str, _session_id: str, *, debug: bool = False) -> asyncio.Queue:
+    async def _subscribe(_agent_id: str, _session_id: str) -> asyncio.Queue:
         return queue
 
     async def _unsubscribe(_agent_id: str, _session_id: str, _queue: asyncio.Queue) -> None:
@@ -52,7 +52,7 @@ async def test_route_status_sse_event_stream_format(monkeypatch: pytest.MonkeyPa
 async def test_route_status_sse_keepalive_on_idle(monkeypatch: pytest.MonkeyPatch) -> None:
     queue: asyncio.Queue = asyncio.Queue()
 
-    async def _subscribe(_agent_id: str, _session_id: str, *, debug: bool = False) -> asyncio.Queue:
+    async def _subscribe(_agent_id: str, _session_id: str) -> asyncio.Queue:
         return queue
 
     async def _unsubscribe(_agent_id: str, _session_id: str, _queue: asyncio.Queue) -> None:
@@ -86,7 +86,7 @@ async def test_route_status_unsubscribes_on_disconnect(monkeypatch: pytest.Monke
     queue: asyncio.Queue = asyncio.Queue()
     calls: list[tuple[str, str, asyncio.Queue]] = []
 
-    async def _subscribe(_agent_id: str, _session_id: str, *, debug: bool = False) -> asyncio.Queue:
+    async def _subscribe(_agent_id: str, _session_id: str) -> asyncio.Queue:
         return queue
 
     async def _unsubscribe(agent_id: str, session_id: str, q: asyncio.Queue) -> None:

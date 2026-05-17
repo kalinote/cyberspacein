@@ -74,7 +74,7 @@ async def _seed_agent_with_session() -> tuple[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_subscribe_replays_history_and_filters_debug(sse_replay_db: Any) -> None:
+async def test_subscribe_replays_all_persisted_events(sse_replay_db: Any) -> None:
     _ = sse_replay_db
     agent_id, session_id = await _seed_agent_with_session()
 
@@ -84,42 +84,33 @@ async def test_subscribe_replays_history_and_filters_debug(sse_replay_db: Any) -
         {"agent_id": agent_id, "session_id": session_id, "status": "running"},
     )
 
-    # stream：使用大块 delta 触发合并落库（避免逐字事件）
     await AnalystService.broadcast_sse(
         agent_id,
         "stream",
         {"agent_id": agent_id, "session_id": session_id, "delta": "a" * 3000},
     )
 
-    await AnalystService.broadcast_debug_sse(
+    await AnalystService.broadcast_sse(
         agent_id,
         "debug_prompt",
         {"agent_id": agent_id, "session_id": session_id, "user_prompt": "hi"},
     )
 
-    q_normal = await AnalystService.subscribe(agent_id, session_id, debug=False)
-    q_debug = await AnalystService.subscribe(agent_id, session_id, debug=True)
+    q = await AnalystService.subscribe(agent_id, session_id)
     try:
-        p1 = await q_normal.get()
+        p1 = await q.get()
         assert p1["event"] == "status"
         assert p1.get("id") is not None
 
-        p2 = await q_normal.get()
+        p2 = await q.get()
         assert p2["event"] == "stream"
         assert isinstance((p2.get("data") or {}).get("delta"), str)
 
-        # 普通订阅者不应回放 debug 事件
-        assert q_normal.empty()
-
-        d1 = await q_debug.get()
-        assert d1["event"] == "status"
-        d2 = await q_debug.get()
-        assert d2["event"] == "stream"
-        d3 = await q_debug.get()
-        assert d3["event"] == "debug_prompt"
+        p3 = await q.get()
+        assert p3["event"] == "debug_prompt"
+        assert q.empty()
     finally:
-        await AnalystService.unsubscribe(agent_id, session_id, q_normal)
-        await AnalystService.unsubscribe(agent_id, session_id, q_debug)
+        await AnalystService.unsubscribe(agent_id, session_id, q)
 
 
 @pytest.mark.asyncio
@@ -167,11 +158,10 @@ async def test_approval_required_patch_updates_single_persisted_row(sse_replay_d
     assert isinstance(row.data, dict)
     assert row.data.get("resolution") == "approved"
 
-    q = await AnalystService.subscribe(agent_id, session_id, debug=False)
+    q = await AnalystService.subscribe(agent_id, session_id)
     try:
         msg = await q.get()
         assert msg["event"] == "approval_required"
         assert (msg.get("data") or {}).get("resolution") == "approved"
     finally:
         await AnalystService.unsubscribe(agent_id, session_id, q)
-

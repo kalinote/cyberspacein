@@ -75,7 +75,7 @@ export const agentApi = {
   },
   getAgentStatusUrl(agentId, sessionId) {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-    return `${baseUrl}/agent/status?agent_id=${encodeURIComponent(agentId)}&session_id=${encodeURIComponent(sessionId)}&debug=true`
+    return `${baseUrl}/agent/status?agent_id=${encodeURIComponent(agentId)}&session_id=${encodeURIComponent(sessionId)}`
   },
   approveAgent(data) {
     return request.post('/agent/approve', data)

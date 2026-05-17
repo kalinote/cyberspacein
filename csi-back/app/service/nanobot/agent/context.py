@@ -122,7 +122,7 @@ class ContextBuilder:
             if always_skills:
                 always_content = self.skills.load_skills_for_context(always_skills)
                 if always_content:
-                    parts.append(f"# Active Skills\n\n{always_content}")
+                    parts.append(f"# 激活的 Skills\n\n{always_content}")
             skills_summary = self.skills.build_skills_summary(exclude=set(always_skills))
             if skills_summary:
                 parts.append(

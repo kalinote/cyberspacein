@@ -503,14 +503,24 @@ function onTodosSse(raw) {
         return
     }
     const list = todos.value
+    let completed = 0
+    let inProgress = 0
+    let waiting = 0
+    for (const t of list) {
+        const s = t?.status
+        if (s === TODO_ITEM_STATUS.COMPLETED || s === 'completed') completed++
+        else if (s === TODO_ITEM_STATUS.IN_PROGRESS || s === 'in_progress') inProgress++
+        else waiting++
+    }
+    const total = list.length
     timelineItems.value.push({
         id: nextTimelineId(),
         sseType: 'todos',
         kind: 'todos',
         ts,
         payload: p.value,
-        todoCount: list.length,
-        todoPreview: list[0]?.content ?? '',
+        todoCount: total,
+        todoPreview: `共 ${total} 项，已完成 ${completed} 项，正在进行 ${inProgress} 项，等待进行 ${waiting} 项`,
     })
 }
 

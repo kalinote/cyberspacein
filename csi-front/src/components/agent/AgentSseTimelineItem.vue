@@ -57,7 +57,7 @@
                 <span>{{ formatTime(item.ts) }}</span>
             </div>
             <template v-if="item.payload?.phase === 'before_tools'">
-                <p class="mt-2 text-sm text-gray-800">即将调用工具：</p>
+                <p class="mt-2 text-sm text-gray-800">调用工具：</p>
                 <ul class="mt-1.5 flex flex-wrap gap-1.5">
                     <li v-for="(tc, idx) in beforeToolCalls" :key="idx"
                         class="rounded-md bg-white px-2 py-1 text-xs font-mono text-indigo-900 ring-1 ring-indigo-100">
@@ -92,7 +92,7 @@
                 <span class="rounded bg-white px-1.5 py-0.5 font-medium text-emerald-800">{{ item.todoCount ?? 0 }} 项</span>
                 <span>{{ formatTime(item.ts) }}</span>
             </div>
-            <p v-if="item.todoPreview" class="mt-2 text-xs text-gray-600 line-clamp-2">预览：{{ item.todoPreview }}</p>
+            <p v-if="item.todoPreview" class="mt-2 text-xs text-gray-600">摘要：{{ item.todoPreview }}</p>
         </div>
 
         <div v-else-if="item.kind === 'approval_required'" class="rounded-lg border px-3 py-2.5 shadow-sm"

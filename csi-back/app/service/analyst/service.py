@@ -140,7 +140,6 @@ class AnalystService:
         session_id: str,
         event: str,
         data: Any,
-        is_debug: bool = False,
         compressed: bool = False,
     ) -> None:
         """将 SSE 事件写入事件日志（用于回放）。写失败不应影响主流程。"""
@@ -152,7 +151,6 @@ class AnalystService:
                 seq=seq,
                 event=event,
                 data=data,
-                is_debug=bool(is_debug),
                 compressed=bool(compressed),
                 created_at=datetime.now(),
             ).insert()
@@ -194,7 +192,6 @@ class AnalystService:
                 session_id=session_id,
                 event="stream",
                 data={**data, "delta": merged},
-                is_debug=False,
                 compressed=True,
             )
 
@@ -214,7 +211,6 @@ class AnalystService:
                 session_id=session_id,
                 event="stream",
                 data={"agent_id": agent_id, "session_id": session_id, "delta": merged},
-                is_debug=False,
                 compressed=True,
             )
 
@@ -235,20 +231,14 @@ class AnalystService:
     # ------------------------------------------------------------------
 
     @classmethod
-    async def subscribe(
-        cls, agent_id: str, session_id: str, *, debug: bool = False
-    ) -> asyncio.Queue:
-        """前端订阅某次会话的事件流；返回一个 per-subscriber 的 Queue。
-
-        debug=True 时，该订阅者会额外收到更详细的调试事件（仍通过同一 SSE 连接输出）。
-        """
+    async def subscribe(cls, agent_id: str, session_id: str) -> asyncio.Queue:
+        """前端订阅某次会话的事件流；返回一个 per-subscriber 的 Queue。"""
         session_id = str(session_id or "").strip()
         if not session_id:
             raise AgentServiceError(
                 status_codes.INVALID_ARGUMENT, "订阅 SSE 必须提供 session_id"
             )
         queue: asyncio.Queue = asyncio.Queue()
-        setattr(queue, "_csi_debug", bool(debug))
         try:
             await cls._flush_stream_buffer(agent_id, session_id)
             events = (
@@ -259,8 +249,6 @@ class AnalystService:
                 .to_list()
             )
             for ev in events:
-                if ev.is_debug and not bool(debug):
-                    continue
                 queue.put_nowait({"event": ev.event, "data": ev.data, "id": ev.seq})
         except Exception:
             logger.exception(
@@ -312,7 +300,6 @@ class AnalystService:
                         session_id=str(data.get("session_id")),
                         event=event,
                         data=data,
-                        is_debug=False,
                         compressed=False,
                     )
         if not session_key:
@@ -328,41 +315,6 @@ class AnalystService:
             except asyncio.QueueFull:
                 logger.warning(
                     f"SSE 队列已满丢弃事件: agent={agent_id} session={session_key} event={event}"
-                )
-
-    @classmethod
-    async def broadcast_debug_sse(cls, agent_id: str, event: str, data: Any) -> None:
-        """只给 debug 订阅者广播调试事件。"""
-        payload = {"event": event, "data": data}
-        session_key: str | None = None
-        if isinstance(data, dict):
-            sid = str(data.get("session_id") or "").strip()
-            if sid:
-                session_key = sid
-        if isinstance(data, dict) and data.get("session_id"):
-            await cls._persist_sse_event(
-                agent_id=agent_id,
-                session_id=str(data.get("session_id")),
-                event=event,
-                data=data,
-                is_debug=True,
-                compressed=False,
-            )
-        if not session_key:
-            logger.warning(
-                f"SSE debug 广播缺少 session_id，已跳过: agent={agent_id} event={event}"
-            )
-            return
-        async with cls._sse_lock:
-            subs = list(cls._sse_subscribers.get((agent_id, session_key), []))
-        for queue in subs:
-            if not bool(getattr(queue, "_csi_debug", False)):
-                continue
-            try:
-                queue.put_nowait(payload)
-            except asyncio.QueueFull:
-                logger.warning(
-                    f"SSE debug 队列已满丢弃事件: agent={agent_id} session={session_key} event={event}"
                 )
 
     @classmethod
@@ -584,11 +536,10 @@ class AnalystService:
         result_payload: dict | None = None
         error_message: str | None = None
         try:
-            # debug：把本轮 prompt 相关信息提前广播（仅 debug 订阅者可见）
             try:
                 await bot.loop.context.refresh_memory_snapshot()
                 system_prompt = bot.loop.context.build_system_prompt(channel="cli")
-                await cls.broadcast_debug_sse(
+                await cls.broadcast_sse(
                     agent_id,
                     "debug_prompt",
                     {

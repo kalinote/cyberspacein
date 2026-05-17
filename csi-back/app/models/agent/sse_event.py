@@ -32,7 +32,6 @@ class NanobotAgentSseEventModel(Document):
     event: str = Field(description="SSE event 字段")
     data: Any = Field(description="SSE data 字段（JSON 可序列化对象）")
 
-    is_debug: bool = Field(default=False, description="是否为调试事件（仅 debug 订阅者可见）")
     compressed: bool = Field(
         default=False, description="是否为合并后的流式块（例如 stream delta 合并）"
     )

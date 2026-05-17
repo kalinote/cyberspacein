@@ -196,5 +196,5 @@ def test_identity_no_workspace_path() -> None:
 def test_skills_none_safely() -> None:
     cb = _builder(FakeMemoryStore(), skills=None)
     prompt = cb.build_system_prompt()
-    assert "# Active Skills" not in prompt
+    assert "# 激活的 Skills" not in prompt
     assert isinstance(prompt, str) and len(prompt) > 50

@@ -95,14 +95,8 @@ async def get_agent_status(
     request: Request,
     agent_id: str = Query(..., description="分析引擎ID"),
     session_id: str = Query(..., description="会话ID"),
-    debug: bool = Query(False, description="是否开启调试模式（开启后会通过 SSE 额外返回更详细信息）"),
 ):
-    debug_enabled = (
-        debug
-        if isinstance(debug, bool)
-        else bool(getattr(debug, "default", False))
-    )
-    queue = await AnalystService.subscribe(agent_id, session_id, debug=debug_enabled)
+    queue = await AnalystService.subscribe(agent_id, session_id)
 
     async def event_stream():
         try:
