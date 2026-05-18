@@ -1,4 +1,4 @@
-"""完成工具调用后，后续 LLM 请求不再携带 tools。"""
+"""完成工具调用后，默认仍可向模型暴露 tools；opt-in completion_tool_names 可禁用。"""
 
 from __future__ import annotations
 
@@ -58,7 +58,9 @@ class _SeqProvider(LLMProvider):
 
 
 @pytest.mark.asyncio
-async def test_runner_omits_tools_after_submit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_runner_keeps_tools_after_submit_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(analyst_service.AnalystService, "broadcast_sse", AsyncMock())
     reg = ToolRegistry()
     reg.register(SubmitTaskResultTool())
@@ -73,6 +75,35 @@ async def test_runner_omits_tools_after_submit(monkeypatch: pytest.MonkeyPatch) 
             max_iterations=8,
             max_tool_result_chars=8000,
             concurrent_tools=False,
+        )
+        res = await runner.run(spec)
+        assert res.final_content == "## 总结\n完成。"
+        assert len(prov.chat_calls) >= 2
+        assert prov.chat_calls[0]["tools_len"] > 0
+        assert prov.chat_calls[1]["tools_len"] > 0
+    finally:
+        actx.current_agent_id.reset(tok)
+
+
+@pytest.mark.asyncio
+async def test_runner_omits_tools_after_submit_when_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(analyst_service.AnalystService, "broadcast_sse", AsyncMock())
+    reg = ToolRegistry()
+    reg.register(SubmitTaskResultTool())
+    tok = actx.current_agent_id.set("agent1")
+    try:
+        prov = _SeqProvider()
+        runner = AgentRunner(prov)
+        spec = AgentRunSpec(
+            initial_messages=[{"role": "user", "content": "hi"}],
+            tools=reg,
+            model="gpt-4o",
+            max_iterations=8,
+            max_tool_result_chars=8000,
+            concurrent_tools=False,
+            completion_tool_names=frozenset({SUBMIT_TASK_RESULT_TOOL_NAME}),
         )
         res = await runner.run(spec)
         assert res.final_content == "## 总结\n完成。"

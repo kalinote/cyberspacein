@@ -24,7 +24,12 @@ from typing import Any
 from loguru import logger
 
 from app.models.agent.nanobot import NanobotSessionModel
-from app.schemas.agent.result import SUBMIT_TASK_RESULT_TOOL_NAME, SubmitTaskResultParams
+from app.schemas.agent.result import (
+    SUBMIT_TASK_RESULT_TOOL_NAME,
+    SubmitTaskResultParams,
+    TaskSubmissionRecordSchema,
+)
+from app.utils.id_lib import generate_id
 from app.schemas.constants import (
     ENTITY_TYPE_INDEX_MAP,
     EntityType,
@@ -409,7 +414,7 @@ class WriteTodosTool(Tool):
 
 
 # ---------------------------------------------------------------------------
-# submit_task_result（必选注册，不在 agent.tools 白名单内）
+# submit_task_result（默认注册，不在 agent.tools 白名单内）
 # ---------------------------------------------------------------------------
 
 
@@ -432,7 +437,7 @@ class WriteTodosTool(Tool):
     "additionalProperties": False,
 })
 class SubmitTaskResultTool(Tool):
-    """提交机读任务结果；调用后下一轮由模型输出用户可见 Markdown。"""
+    """提交机读任务结果；"""
 
     @property
     def name(self) -> str:
@@ -441,36 +446,53 @@ class SubmitTaskResultTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "任务机读结果收口：在业务数据已就绪时调用，写入权威 success/payload。"
-            "调用后你应仅在下一轮回复中用 Markdown 向用户总结，勿再调用工具。"
+            "记录一段可交付工作的机读结果（success、failure_reason、short_summary、payload）。"
+            "在子任务完成、明确失败或需要固化业务结果时调用；简单问答或任务未完成时不必调用。"
         )
 
     @property
     def exclusive(self) -> bool:
-        return True
+        return False
 
     async def execute(self, **kwargs: Any) -> str:
         from app.service.analyst.service import AnalystService
 
         _require_agent_id()
         params = SubmitTaskResultParams.model_validate(kwargs)
-        data = params.model_dump()
-        current_task_completion.set(data)
 
         agent_id = get_current_agent_id() or ""
+        session_id = get_current_session_id() or ""
+        submission_id = generate_id(f"submission:{session_id}:{datetime.now().isoformat()}")
+        record = TaskSubmissionRecordSchema.from_submit_params(submission_id, params)
+        record_dict = record.model_dump()
+        current_task_completion.set(record_dict)
+
+        if session_id:
+            sess = await NanobotSessionModel.find_one({"_id": session_id})
+            if sess is not None:
+                sess.task_submissions = list(sess.task_submissions or []) + [record_dict]
+                sess.updated_at = datetime.now()
+                await sess.save()
+                submission_index = len(sess.task_submissions) - 1
+            else:
+                submission_index = 0
+        else:
+            submission_index = 0
+
         await AnalystService.broadcast_sse(
             agent_id,
             "task_submitted",
             {
                 "agent_id": agent_id,
-                "session_id": get_current_session_id(),
+                "session_id": session_id,
+                "submission_id": submission_id,
+                "index": submission_index,
                 "success": params.success,
                 "short_summary": (params.short_summary or "")[:500],
             },
         )
         return (
-            "任务机读结果已记录。请在本轮之后仅回复面向用户的 Markdown 总结，"
-            "不要调用任何工具，不要使用 JSON。"
+            "任务机读结果已记录。可继续对话、处理下一子任务，或用 Markdown 向用户说明。"
         )
 
 

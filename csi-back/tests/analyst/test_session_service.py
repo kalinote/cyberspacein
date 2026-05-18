@@ -35,6 +35,7 @@ class FakeSessionDoc:
     todos: list[dict] = field(default_factory=list)
     pending_approval: dict | None = None
     result: dict | None = None
+    task_submissions: list[dict] = field(default_factory=list)
     user_prompt: str | None = None
     error_message: str | None = None
     started_at: datetime | None = None

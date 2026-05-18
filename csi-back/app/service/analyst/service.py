@@ -15,7 +15,7 @@
 故意留到后续 TODO 的扩展点：
 - 业务 Hooks（StatusHook / TodosHook / ApprovalHook / ResultHook）→ TODO #20
 - 业务工具（get_entity / modify_entity / notify_user / write_todos）→ TODO #20
-- 终局机读结果由工具 `submit_task_result` 写入 ContextVar，`run_analysis` 组装 SSE/DB。
+- 工具 `submit_task_result` 写入 session.task_submissions；`run_analysis` 组装最近一轮 SSE/DB result。
 
 这些点都通过显式注释 `TODO(#20)` 等标注在对应位置。
 """
@@ -44,7 +44,8 @@ from app.models.agent.sse_event import (
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.agent.result import (
     RunAnalysisResultPayloadSchema,
-    TASK_COMPLETION_INSTRUCTION,
+    TASK_SUBMIT_GUIDANCE,
+    TaskSubmissionRecordSchema,
 )
 from app.schemas.constants import AgentStopReasonEnum, NanobotSessionStatusEnum
 from app.utils import status_codes
@@ -66,6 +67,65 @@ logger = logger.bind(name=__name__)
 
 
 _SANDBOX_ROOT: Path = Path(tempfile.gettempdir()) / "csi_nanobot"
+
+
+_RUN_FAILURE_STOP_REASONS = frozenset(
+    {
+        AgentStopReasonEnum.TOOL_ERROR,
+        AgentStopReasonEnum.ERROR,
+    }
+)
+
+
+def _resolve_run_outcome(
+    *,
+    content: str,
+    tools_used: list[str],
+    stop_reason: AgentStopReasonEnum | None,
+    completion: dict[str, Any] | None,
+) -> tuple[NanobotSessionStatusEnum, dict[str, Any], str | None]:
+    """根据运行结束原因与可选 submit 判定会话状态与 result 载荷。"""
+    completion_received = completion is not None
+    last_submission: TaskSubmissionRecordSchema | None = None
+    if completion_received and isinstance(completion, dict):
+        try:
+            last_submission = TaskSubmissionRecordSchema.model_validate(completion)
+        except Exception:
+            last_submission = None
+
+    short_summary = ""
+    payload: dict[str, Any] = {}
+    failure_reason: str | None = None
+    if last_submission is not None:
+        short_summary = last_submission.short_summary
+        payload = dict(last_submission.payload or {})
+        failure_reason = last_submission.failure_reason
+
+    error_message: str | None = None
+    final_status = NanobotSessionStatusEnum.COMPLETED
+
+    if stop_reason in _RUN_FAILURE_STOP_REASONS:
+        final_status = NanobotSessionStatusEnum.FAILED
+        error_message = (content or "").strip() or f"Agent 运行异常: {stop_reason}"
+    elif completion_received and completion is not None and not completion.get("success"):
+        final_status = NanobotSessionStatusEnum.FAILED
+        error_message = (
+            str(completion.get("failure_reason") or "").strip() or "任务未成功完成"
+        )
+        failure_reason = error_message
+
+    result_payload = RunAnalysisResultPayloadSchema(
+        success=final_status == NanobotSessionStatusEnum.COMPLETED,
+        failure_reason=failure_reason if final_status == NanobotSessionStatusEnum.FAILED else None,
+        short_summary=short_summary,
+        payload=payload,
+        user_markdown=content,
+        tools_used=tools_used,
+        stop_reason=stop_reason,
+        completion_received=completion_received,
+        last_submission=last_submission,
+    ).model_dump()
+    return final_status, result_payload, error_message
 
 
 def _agent_sandbox_dir(workspace_id: str, agent_id: str) -> Path:
@@ -418,7 +478,7 @@ class AnalystService:
         system_suffix_parts: list[str] = []
         if prompt_tpl.system_prompt and prompt_tpl.system_prompt.strip():
             system_suffix_parts.append(prompt_tpl.system_prompt.strip())
-        system_suffix_parts.append(TASK_COMPLETION_INSTRUCTION)
+        system_suffix_parts.append(TASK_SUBMIT_GUIDANCE)
         bot.loop.context.extra_system_suffix = "\n\n".join(system_suffix_parts)
 
         return bot
@@ -770,52 +830,15 @@ class AnalystService:
                 stop_reason_meta = getattr(run_result, "stop_reason", None)
 
             stop_reason = AgentStopReasonEnum.coerce(stop_reason_meta)
-
             completion = get_current_task_completion()
-            completion_received = completion is not None
-            if not completion_received:
-                final_session_status = NanobotSessionStatusEnum.FAILED
-                error_message = error_message or "未调用 submit_task_result 结束任务"
-                result_payload = RunAnalysisResultPayloadSchema(
-                    success=False,
-                    failure_reason=error_message,
-                    short_summary="",
-                    payload={},
-                    user_markdown=content,
-                    tools_used=tools_used,
-                    stop_reason=stop_reason,
-                    completion_received=False,
-                ).model_dump()
-            elif completion.get("success"):
-                result_payload = RunAnalysisResultPayloadSchema(
-                    success=True,
-                    failure_reason=completion.get("failure_reason"),
-                    short_summary=completion.get("short_summary") or "",
-                    payload=completion.get("payload")
-                    if isinstance(completion.get("payload"), dict)
-                    else {},
-                    user_markdown=content,
-                    tools_used=tools_used,
-                    stop_reason=stop_reason,
-                    completion_received=True,
-                ).model_dump()
-            else:
-                final_session_status = NanobotSessionStatusEnum.FAILED
-                error_message = (
-                    str(completion.get("failure_reason") or "").strip() or "任务未成功完成"
-                )
-                result_payload = RunAnalysisResultPayloadSchema(
-                    success=False,
-                    failure_reason=error_message,
-                    short_summary=completion.get("short_summary") or "",
-                    payload=completion.get("payload")
-                    if isinstance(completion.get("payload"), dict)
-                    else {},
-                    user_markdown=content,
-                    tools_used=tools_used,
-                    stop_reason=stop_reason,
-                    completion_received=True,
-                ).model_dump()
+            final_session_status, result_payload, resolved_error = _resolve_run_outcome(
+                content=content,
+                tools_used=tools_used,
+                stop_reason=stop_reason,
+                completion=completion,
+            )
+            if resolved_error:
+                error_message = resolved_error
         except asyncio.CancelledError:
             final_session_status = NanobotSessionStatusEnum.CANCELLED
             error_message = cls._cancel_reasons.get(session_id) or "任务被取消"

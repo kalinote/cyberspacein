@@ -60,4 +60,8 @@ class SessionService:
             return None
         agent = await NanobotAgentModel.find_one({"_id": doc.agent_id})
         agent_name = agent.name if agent is not None else None
-        return NanobotSessionSchema.from_doc(doc, agent_name=agent_name)
+        return NanobotSessionSchema.from_doc(
+            doc,
+            agent_name=agent_name,
+            include_task_submissions=True,
+        )

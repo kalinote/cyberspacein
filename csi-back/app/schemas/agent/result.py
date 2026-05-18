@@ -1,11 +1,13 @@
 """Agent 运行结果相关 Schema。
 
-- `SubmitTaskResultParams`：`submit_task_result` 工具参数（机读权威结果）。
-- `TASK_COMPLETION_INSTRUCTION`：追加到 system prompt，约束「工具收口 + 最后一轮 Markdown」流程。
-- `ResultPayloadSchema` / `parse_run_result`：历史兼容与测试保留（不再作为 `/start` 终局解析路径）。
+- `SubmitTaskResultParams`：`submit_task_result` 工具参数。
+- `TASK_SUBMIT_GUIDANCE`：可选的 system prompt 指导（何时调用 submit）。
+- `TaskSubmissionRecordSchema`：持久化到 session.task_submissions 的单条记录。
+- `ResultPayloadSchema` / `parse_run_result`：历史兼容与测试保留。
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import json_repair
@@ -17,7 +19,7 @@ SUBMIT_TASK_RESULT_TOOL_NAME = "submit_task_result"
 
 
 class SubmitTaskResultParams(BaseModel):
-    """通过 `submit_task_result` 提交的机读结果（权威业务态）。"""
+    """通过 `submit_task_result` 提交的机读结果。"""
 
     success: bool = Field(description="是否达成任务目标")
     failure_reason: str | None = Field(
@@ -38,34 +40,65 @@ class SubmitTaskResultParams(BaseModel):
         return self
 
 
-TASK_COMPLETION_INSTRUCTION: str = (
-    "# 任务结束流程（强制）\n\n"
-    "1. 在正常工作阶段可自由调用可用工具完成分析与修改。\n"
-    "2. 当你认为机读结果已齐备时，**必须调用工具** `"
-    + SUBMIT_TASK_RESULT_TOOL_NAME
-    + "`，并在参数中传入：\n"
-    "   - `success`：是否达成目标；\n"
-    "   - `failure_reason`：失败时必填，成功时为 null；\n"
-    "   - `short_summary`：一句话摘要；\n"
-    "   - `payload`：完整结构化业务结果（对象）。\n"
-    "3. 在收到该工具返回的提示后，**下一轮回复**必须仅为面向用户的 **Markdown 纯文本**总结，"
-    "不要再调用任何工具，也不要输出 JSON。\n"
-    "4. **仅允许调用当前请求里已列出的工具**；禁止编造或调用未列出的工具名，若未出现在工具列表中则一律不得调用。\n"
-    "5. **禁止滥用 spawn**：仅在需要进行任务分解或任务可以并行执行时使用 spawn，如果任务只能串行执行或只需要单步骤完成，则不要使用 spawn."
-    "等方式轮询其他子任务；子任务完成时结果会通过系统消息注入会话，请直接基于上下文与"
-    "已返回的工具结果继续推理，避免链式 spawn。\n"
-)
+class TaskSubmissionRecordSchema(BaseModel):
+    """单次 submit_task_result 的持久化记录。"""
 
-
-class RunAnalysisResultPayloadSchema(BaseModel):
-    """`run_analysis` 写入会话与 SSE `result` 事件内 `result` 字段的载荷。"""
-
-    model_config = ConfigDict(use_enum_values=True)
-
-    success: bool = Field(description="业务是否达成目标（以 submit_task_result 为准）")
+    id: str = Field(description="提交记录 ID")
+    success: bool = Field(description="是否达成任务目标")
     failure_reason: str | None = Field(default=None, description="失败原因")
     short_summary: str = Field(default="", description="简短摘要")
     payload: dict[str, Any] = Field(default_factory=dict, description="结构化业务结果")
+    submitted_at: str = Field(description="提交时间 ISO8601")
+
+    @classmethod
+    def from_submit_params(
+        cls,
+        submission_id: str,
+        params: SubmitTaskResultParams | dict[str, Any],
+        *,
+        submitted_at: datetime | None = None,
+    ) -> TaskSubmissionRecordSchema:
+        if isinstance(params, dict):
+            params = SubmitTaskResultParams.model_validate(params)
+        ts = submitted_at or datetime.now()
+        return cls(
+            id=submission_id,
+            success=params.success,
+            failure_reason=params.failure_reason,
+            short_summary=params.short_summary or "",
+            payload=dict(params.payload or {}),
+            submitted_at=ts.isoformat(),
+        )
+
+
+TASK_SUBMIT_GUIDANCE: str = (
+    "# 任务结果提交工具（可选）\n\n"
+    "工具 `"
+    + SUBMIT_TASK_RESULT_TOOL_NAME
+    + "` 用于在**一段可交付工作**结束、失败需固化、或需要写入机读业务结果时提交结构化结果。\n"
+    "参数：`success`、`failure_reason`（失败时必填）、`short_summary`、`payload`。\n\n"
+    "**适合调用**：子任务/分析/修改已完成或明确失败，需要记录机读 payload 时。\n"
+    "**不必调用**：寒暄、澄清、任务未完成、仅中间进度、简单问答。\n"
+    "同一对话可多次调用，每次对应一个子任务；调用后仍可继续对话或使用其他工具。\n\n"
+    "**仅允许调用当前请求里已列出的工具**；禁止编造未列出的工具名。\n"
+    "**禁止滥用 spawn**：仅在任务可分解或并行时使用 spawn；串行或单步任务勿用 spawn 轮询子任务。\n"
+)
+
+TASK_COMPLETION_INSTRUCTION = TASK_SUBMIT_GUIDANCE
+
+
+class RunAnalysisResultPayloadSchema(BaseModel):
+    """`run_analysis` 写入会话与 SSE `result` 事件内 `result` 字段的载荷（最近一轮）。"""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    success: bool = Field(description="本轮会话结束是否为 COMPLETED（非仅是否调用 submit）")
+    failure_reason: str | None = Field(default=None, description="失败原因")
+    short_summary: str = Field(default="", description="兼容字段：最近 submit 的摘要")
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        description="兼容字段：最近 submit 的 payload",
+    )
     user_markdown: str = Field(default="", description="面向用户的 Markdown 正文")
     tools_used: list[str] = Field(default_factory=list, description="本轮调用的工具名列表")
     stop_reason: AgentStopReasonEnum | None = Field(
@@ -74,7 +107,11 @@ class RunAnalysisResultPayloadSchema(BaseModel):
     )
     completion_received: bool = Field(
         default=False,
-        description="是否收到 submit_task_result",
+        description="本轮是否调用过 submit_task_result",
+    )
+    last_submission: TaskSubmissionRecordSchema | None = Field(
+        default=None,
+        description="本轮最后一次 submit_task_result 记录",
     )
 
 
@@ -96,7 +133,7 @@ class ResultPayloadSchema(BaseModel):
 
 
 RESULT_FORMAT_INSTRUCTION: str = (
-    "已弃用：请改用 `TASK_COMPLETION_INSTRUCTION` 与工具 `"
+    "已弃用：请改用 `TASK_SUBMIT_GUIDANCE` 与工具 `"
     + SUBMIT_TASK_RESULT_TOOL_NAME
     + "`。"
 )
@@ -149,6 +186,8 @@ def parse_run_result(raw: str | None) -> tuple[ResultPayloadSchema, bool]:
 __all__ = [
     "SUBMIT_TASK_RESULT_TOOL_NAME",
     "SubmitTaskResultParams",
+    "TaskSubmissionRecordSchema",
+    "TASK_SUBMIT_GUIDANCE",
     "TASK_COMPLETION_INSTRUCTION",
     "RunAnalysisResultPayloadSchema",
     "ResultPayloadSchema",

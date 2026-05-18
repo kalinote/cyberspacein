@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, Iterable
 from unittest.mock import AsyncMock, MagicMock
@@ -54,10 +55,12 @@ async def test_run_analysis_success_with_submit_tool_payload(monkeypatch: pytest
     async def _run(*_a: Any, **_kw: Any) -> Any:
         actx.current_task_completion.set(
             {
+                "id": "sub-1",
                 "success": True,
                 "failure_reason": None,
                 "short_summary": "x",
                 "payload": {"k": 1},
+                "submitted_at": datetime.now().isoformat(),
             }
         )
         return SimpleNamespace(
@@ -103,10 +106,12 @@ async def test_run_analysis_user_markdown_not_json_still_ok_when_submit_ok(
     async def _run(*_a: Any, **_kw: Any) -> Any:
         actx.current_task_completion.set(
             {
+                "id": "sub-2",
                 "success": True,
                 "failure_reason": None,
                 "short_summary": "y",
                 "payload": {},
+                "submitted_at": datetime.now().isoformat(),
             }
         )
         return SimpleNamespace(content="plain text 不是 json", tools_used=[], stop_reason="completed")

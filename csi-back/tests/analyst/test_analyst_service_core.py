@@ -28,6 +28,7 @@ class FakeSessionDoc:
     todos: list[dict] = field(default_factory=list)
     pending_approval: dict | None = None
     result: dict | None = None
+    task_submissions: list[dict] = field(default_factory=list)
     error_message: str | None = None
     finished_at: datetime | None = None
     updated_at: datetime = field(default_factory=datetime.now)
@@ -187,10 +188,12 @@ async def test_run_analysis_success_sets_result_and_resets_context(
     async def _run_ok(*_a: Any, **_kw: Any) -> Any:
         ctx.current_task_completion.set(
             {
+                "id": "sub-1",
                 "success": True,
                 "failure_reason": None,
                 "short_summary": "完成",
                 "payload": {"k": 1},
+                "submitted_at": datetime.now().isoformat(),
             }
         )
         return SimpleNamespace(
@@ -220,7 +223,7 @@ async def test_run_analysis_success_sets_result_and_resets_context(
 
 
 @pytest.mark.asyncio
-async def test_run_analysis_without_submit_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_analysis_without_submit_marks_completed(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     bot = MagicMock()
     bot.loop.process_direct = None
@@ -237,8 +240,45 @@ async def test_run_analysis_without_submit_marks_failed(monkeypatch: pytest.Monk
         context={},
     )
     doc = FakeNanobotSessionModel._docs["s1"]
-    assert doc.status == NanobotSessionStatusEnum.FAILED
+    assert doc.status == NanobotSessionStatusEnum.COMPLETED
     assert doc.result and doc.result.get("completion_received") is False
+    assert doc.result.get("success") is True
+    assert doc.result.get("user_markdown") == "直接回复"
+
+
+@pytest.mark.asyncio
+async def test_run_analysis_submit_failure_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
+    bot = MagicMock()
+    bot.loop.process_direct = None
+    bot.close = AsyncMock()
+
+    async def _run_fail(*_a: Any, **_kw: Any) -> Any:
+        ctx.current_task_completion.set(
+            {
+                "id": "sub-fail",
+                "success": False,
+                "failure_reason": "无法完成",
+                "short_summary": "失败",
+                "payload": {},
+                "submitted_at": datetime.now().isoformat(),
+            }
+        )
+        return SimpleNamespace(content="说明", tools_used=["submit_task_result"], stop_reason="completed")
+
+    bot.run = AsyncMock(side_effect=_run_fail)
+
+    await service_module.AnalystService.run_analysis(
+        agent_id="a1",
+        session_id="s1",
+        bot=bot,
+        user_prompt="hi",
+        context={},
+    )
+    doc = FakeNanobotSessionModel._docs["s1"]
+    assert doc.status == NanobotSessionStatusEnum.FAILED
+    assert doc.result and doc.result.get("completion_received") is True
+    assert doc.result.get("success") is False
 
 
 @pytest.mark.asyncio

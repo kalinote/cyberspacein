@@ -9,7 +9,7 @@ Hook 分工（MIGRATION_PLAN §3.2）：
 - TodosHook   ：`after_iteration` 扫描 tool_events 里的 `write_todos` 事件 → SSE `todos`
                 （DB 写由 `WriteTodosTool.execute` 完成，Hook 只做广播兜底）。
 - ApprovalHook：`after_iteration` 清理残留 `pending_approval`（兜底，正常路径由 `HitlService` 清理）。
-- ResultHook  ：`finalize_content` → 对助手正文做 strip；终局机读结果由 `submit_task_result` 工具写入。
+- ResultHook  ：`finalize_content` → 对助手正文做 strip；机读结果由工具 `submit_task_result` 写入。
 """
 from __future__ import annotations
 

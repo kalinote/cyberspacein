@@ -107,5 +107,5 @@ async def test_build_bot_injects_hooks_and_tools() -> None:
     assert len(bot.loop._extra_hooks) == 4
     assert set(bot.loop.tools._tools.keys()) == {"notify_user", "write_todos", "submit_task_result"}
     assert "SYS" in bot.loop.context.extra_system_suffix
-    assert service_module.TASK_COMPLETION_INSTRUCTION in bot.loop.context.extra_system_suffix
+    assert service_module.TASK_SUBMIT_GUIDANCE in bot.loop.context.extra_system_suffix
 

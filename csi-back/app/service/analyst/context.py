@@ -39,5 +39,5 @@ def get_current_session_id() -> str | None:
 
 
 def get_current_task_completion() -> dict[str, Any] | None:
-    """读取 `submit_task_result` 工具写入的机读结果（未调用时为 None）。"""
+    """读取当前 run 内最后一次 `submit_task_result` 写入的快照（权威列表见 session.task_submissions）。"""
     return current_task_completion.get()

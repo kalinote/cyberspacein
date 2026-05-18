@@ -75,9 +75,7 @@ class AgentRunSpec:
     retry_wait_callback: Any | None = None
     checkpoint_callback: Any | None = None
     injection_callback: Any | None = None
-    completion_tool_names: frozenset[str] = field(
-        default_factory=lambda: frozenset({SUBMIT_TASK_RESULT_TOOL_NAME}),
-    )
+    completion_tool_names: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(slots=True)

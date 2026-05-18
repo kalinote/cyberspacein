@@ -84,7 +84,11 @@ class NanobotSessionModel(Document):
     steps: list[dict] = Field(default_factory=list, description="当前运行的步骤流水")
     todos: list[dict] = Field(default_factory=list, description="write_todos 工具产生的待办列表")
     pending_approval: dict | None = Field(default=None, description="待审批载荷（HITL）")
-    result: dict | None = Field(default=None, description="最近一次 ResultPayloadSchema dump")
+    result: dict | None = Field(default=None, description="最近一次 run_analysis 回合快照")
+    task_submissions: list[dict] = Field(
+        default_factory=list,
+        description="submit_task_result 历史记录（按调用顺序 append）",
+    )
 
     user_prompt: str | None = Field(default=None, description="本轮用户提示词（渲染后）")
     error_message: str | None = Field(default=None, description="失败或取消时的错误说明")
