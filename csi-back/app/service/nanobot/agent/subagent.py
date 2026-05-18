@@ -10,6 +10,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.schemas.constants import AgentStopReasonEnum
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
 from app.service.nanobot.utils.prompt_templates import render_template
 from app.service.nanobot.agent.runner import AgentRunSpec, AgentRunner
@@ -31,7 +32,7 @@ class SubagentStatus:
     iteration: int = 0
     tool_events: list = field(default_factory=list)   # [{name, status, detail}, ...]
     usage: dict = field(default_factory=dict)          # token usage
-    stop_reason: str | None = None
+    stop_reason: AgentStopReasonEnum | None = None
     error: str | None = None
 
 
@@ -174,14 +175,14 @@ class SubagentManager:
             status.phase = "done"
             status.stop_reason = result.stop_reason
 
-            if result.stop_reason == "tool_error":
+            if result.stop_reason == AgentStopReasonEnum.TOOL_ERROR:
                 status.tool_events = list(result.tool_events)
                 await self._announce_result(
                     task_id, label, task,
                     self._format_partial_progress(result),
                     origin, "error",
                 )
-            elif result.stop_reason == "error":
+            elif result.stop_reason == AgentStopReasonEnum.ERROR:
                 await self._announce_result(
                     task_id, label, task,
                     result.error or "Error: subagent execution failed.",

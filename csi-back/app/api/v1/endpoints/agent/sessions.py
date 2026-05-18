@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, Query
 from app.schemas.agent.nanobot_session import NanobotSessionSchema
 from app.schemas.constants import NanobotSessionStatusEnum
 from app.schemas.general import PageParamsSchema, PageResponseSchema
+from app.schemas.response import ApiResponseSchema
 from app.service.analyst.session import SessionService
+import app.utils.status_codes as status_codes
 
 router = APIRouter()
 
@@ -29,3 +31,18 @@ async def get_session_list(
         status=status,
     )
     return PageResponseSchema.create(items, total, params.page, params.page_size)
+
+
+@router.get(
+    "/sessions/{session_id}",
+    response_model=ApiResponseSchema[NanobotSessionSchema],
+    summary="查询分析会话详情",
+)
+async def get_session_detail(session_id: str):
+    item = await SessionService.get_detail(session_id)
+    if item is None:
+        return ApiResponseSchema.error(
+            code=status_codes.NOT_FOUND_SESSION,
+            message=f"会话不存在: {session_id}",
+        )
+    return ApiResponseSchema.success(data=item)

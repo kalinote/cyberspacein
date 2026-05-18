@@ -97,6 +97,20 @@ class StartAgentResponseSchema(BaseModel):
     session_id: str = Field(description="本次启动分配的会话ID")
 
 
+class SendAgentMessageRequestSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="会话ID", min_length=1)
+    user_prompt: str = Field(description="用户本轮输入的 prompt", min_length=1)
+    extra_context: dict[str, Any] = Field(
+        default_factory=dict, description="Jinja 渲染上下文（可选）"
+    )
+
+
+class SendAgentMessageResponseSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="续聊使用的会话ID")
+
+
 class ApproveRequestSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
     session_id: str = Field(description="会话ID", min_length=1)

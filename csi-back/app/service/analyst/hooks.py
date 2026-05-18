@@ -19,7 +19,7 @@ from typing import Any
 from loguru import logger
 
 from app.models.agent.nanobot import NanobotSessionModel
-from app.schemas.constants import NanobotSessionStatusEnum
+from app.schemas.constants import AgentStopReasonEnum, NanobotSessionStatusEnum
 from app.service.analyst.context import get_current_agent_id, get_current_session_id
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
 
@@ -81,7 +81,9 @@ class StatusHook(AgentHook):
             ],
             "tool_events": list(context.tool_events),
             "usage": dict(context.usage) if context.usage else {},
-            "stop_reason": context.stop_reason,
+            "stop_reason": (
+                context.stop_reason.value if context.stop_reason is not None else None
+            ),
             "error": context.error,
             "created_at": datetime.now().isoformat(),
         }
@@ -157,7 +159,7 @@ class ApprovalHook(AgentHook):
         if (
             session.status == NanobotSessionStatusEnum.AWAITING_APPROVAL
             and context.stop_reason
-            and context.stop_reason != "awaiting_approval"
+            and context.stop_reason != AgentStopReasonEnum.AWAITING_APPROVAL
         ):
             session.status = NanobotSessionStatusEnum.RUNNING
             session.pending_approval = None

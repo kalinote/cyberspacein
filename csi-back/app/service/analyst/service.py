@@ -42,8 +42,11 @@ from app.models.agent.sse_event import (
     NanobotAgentSseEventStateModel,
 )
 from app.schemas.agent.nanobot_agent import AgentServiceError
-from app.schemas.agent.result import TASK_COMPLETION_INSTRUCTION
-from app.schemas.constants import NanobotSessionStatusEnum
+from app.schemas.agent.result import (
+    RunAnalysisResultPayloadSchema,
+    TASK_COMPLETION_INSTRUCTION,
+)
+from app.schemas.constants import AgentStopReasonEnum, NanobotSessionStatusEnum
 from app.utils import status_codes
 from app.service.analyst.context import (
     current_agent_id,
@@ -107,6 +110,14 @@ class AnalystService:
     # stream 合并阈值（用于回放落库；实时 SSE 仍按原样逐条广播）
     _SSE_STREAM_FLUSH_MAX_CHARS: int = 2048
     _SSE_STREAM_FLUSH_MAX_MS: int = 200
+
+    _MESSAGE_ALLOWED_STATUSES: frozenset[NanobotSessionStatusEnum] = frozenset(
+        {
+            NanobotSessionStatusEnum.COMPLETED,
+            NanobotSessionStatusEnum.FAILED,
+            NanobotSessionStatusEnum.CANCELLED,
+        }
+    )
 
     # ------------------------------------------------------------------
     # 基础组件获取（懒加载 + 进程级单例）
@@ -331,24 +342,35 @@ class AnalystService:
     # ------------------------------------------------------------------
 
     @classmethod
-    async def build_bot(
+    async def _check_parallel_session_cap(cls, agent_id: str) -> None:
+        max_parallel = settings.NANOBOT_AGENT_MAX_PARALLEL_SESSIONS
+        if max_parallel <= 0:
+            return
+        running_n = await NanobotSessionModel.find(
+            {
+                "agent_id": agent_id,
+                "status": NanobotSessionStatusEnum.RUNNING.value,
+            }
+        ).count()
+        if running_n >= max_parallel:
+            logger.info(
+                "拒绝启动: agent_id={} 已达并行上限 running={} max={}",
+                agent_id,
+                running_n,
+                max_parallel,
+            )
+            raise AgentServiceError(
+                status_codes.CONFLICT_STATE,
+                f"该 Agent 已有 {running_n} 个运行中的会话，达到并行上限 {max_parallel}，请稍后再试",
+            )
+
+    @classmethod
+    async def _assemble_bot(
         cls,
         agent: NanobotAgentModel,
         workspace: NanobotWorkspaceModel,
-    ) -> tuple[Nanobot, str]:
-        """构造本次 /start 的 Nanobot，并分配新的 session_id。
-
-        步骤：
-        1) 按 `agent.model_config_id` / `agent.prompt_template_id` 拉模型配置与提示词模板；
-        2) 构造 provider（`OpenAICompatProvider`，后续支持 anthropic 时再按 spec 派发）；
-        3) 生成新 session_id，写入 `NanobotSessionModel` 初始运行态；
-        4) `Nanobot.from_components(...)` 装配出 bot。
-
-        注意：
-        - 本方法不写入会话 `status=RUNNING`，留给 `start_agent` 把 task 正式拉起后统一写。
-        - Hooks / 业务工具在 TODO #20 中通过 `bot.loop.tools.register(...)` / `bot.loop._extra_hooks`
-          注入；本方法只预留 `bot` 给调用方。
-        """
+    ) -> Nanobot:
+        """按 Agent/Workspace 配置装配 Nanobot（不创建会话文档）。"""
         model_cfg = await AgentModelConfigModel.find_one({"_id": agent.model_config_id})
         if model_cfg is None:
             raise AgentServiceError(
@@ -371,12 +393,43 @@ class AnalystService:
             default_model=model_cfg.model,
         )
 
-        # 按 agent.mcp_servers 从 workspace.enabled_mcp_servers 里挑子集作为本次可用的 MCP
         mcp_subset: dict[str, dict] = {}
         for server_name in agent.mcp_servers:
             if server_name in (workspace.enabled_mcp_servers or {}):
                 mcp_subset[server_name] = workspace.enabled_mcp_servers[server_name]
 
+        bot = Nanobot.from_components(
+            agent_id=agent.id,
+            workspace_id=agent.workspace_id,
+            provider=provider,
+            memory_backend=cls._get_memory_backend(),
+            session_store=cls._get_session_store(),
+            workspace=_agent_sandbox_dir(agent.workspace_id, agent.id),
+            model=model_cfg.model,
+            dream_config=DreamConfig(),
+            mcp_servers=mcp_subset or None,
+            hooks=default_analyst_hooks(),
+        )
+
+        for tool in build_business_tools(agent.tools):
+            bot.loop.tools.register(tool)
+        bot.loop.tools.register(SubmitTaskResultTool())
+
+        system_suffix_parts: list[str] = []
+        if prompt_tpl.system_prompt and prompt_tpl.system_prompt.strip():
+            system_suffix_parts.append(prompt_tpl.system_prompt.strip())
+        system_suffix_parts.append(TASK_COMPLETION_INSTRUCTION)
+        bot.loop.context.extra_system_suffix = "\n\n".join(system_suffix_parts)
+
+        return bot
+
+    @classmethod
+    async def build_bot(
+        cls,
+        agent: NanobotAgentModel,
+        workspace: NanobotWorkspaceModel,
+    ) -> tuple[Nanobot, str]:
+        """构造本次 /start 的 Nanobot，并分配新的 session_id。"""
         session_id = generate_id(f"session:{agent.id}:{datetime.now().isoformat()}")
         now = datetime.now()
         await NanobotSessionModel(
@@ -398,31 +451,58 @@ class AnalystService:
             updated_at=now,
         ).insert()
 
-        bot = Nanobot.from_components(
-            agent_id=agent.id,
-            workspace_id=agent.workspace_id,
-            provider=provider,
-            memory_backend=cls._get_memory_backend(),
-            session_store=cls._get_session_store(),
-            workspace=_agent_sandbox_dir(agent.workspace_id, agent.id),
-            model=model_cfg.model,
-            dream_config=DreamConfig(),
-            mcp_servers=mcp_subset or None,
-            hooks=default_analyst_hooks(),
-        )
-
-        # 业务工具按 agent.tools 白名单注册（未启用任何业务工具时跳过，保留 AgentLoop 的内置工具）
-        for tool in build_business_tools(agent.tools):
-            bot.loop.tools.register(tool)
-        bot.loop.tools.register(SubmitTaskResultTool())
-
-        system_suffix_parts: list[str] = []
-        if prompt_tpl.system_prompt and prompt_tpl.system_prompt.strip():
-            system_suffix_parts.append(prompt_tpl.system_prompt.strip())
-        system_suffix_parts.append(TASK_COMPLETION_INSTRUCTION)
-        bot.loop.context.extra_system_suffix = "\n\n".join(system_suffix_parts)
-
+        bot = await cls._assemble_bot(agent, workspace)
         return bot, session_id
+
+    @classmethod
+    async def _launch_background_run(
+        cls,
+        *,
+        agent_id: str,
+        session_id: str,
+        bot: Nanobot,
+        user_prompt: str,
+        context: dict[str, Any],
+    ) -> None:
+        from app.service.analyst.hitl import HitlService
+
+        await HitlService.clear_session(session_id)
+        cls._cancel_reasons.pop(session_id, None)
+
+        async with cls._bots_lock:
+            cls._bots[session_id] = bot
+
+        task = asyncio.create_task(
+            cls.run_analysis(
+                agent_id=agent_id,
+                session_id=session_id,
+                bot=bot,
+                user_prompt=user_prompt,
+                context=context,
+            ),
+            name=f"analyst-run:{agent_id}:{session_id}",
+        )
+        async with cls._task_lock:
+            cls._running_tasks[session_id] = task
+
+        await cls.broadcast_sse(
+            agent_id,
+            "user_message",
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "content": user_prompt,
+            },
+        )
+        await cls.broadcast_sse(
+            agent_id,
+            "status",
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "status": NanobotSessionStatusEnum.RUNNING.value,
+            },
+        )
 
     # ------------------------------------------------------------------
     # /agent/start：启动分析任务
@@ -448,25 +528,7 @@ class AnalystService:
                 f"Agent 所属工作区不存在: {agent.workspace_id}",
             )
 
-        max_parallel = settings.NANOBOT_AGENT_MAX_PARALLEL_SESSIONS
-        if max_parallel > 0:
-            running_n = await NanobotSessionModel.find(
-                {
-                    "agent_id": agent_id,
-                    "status": NanobotSessionStatusEnum.RUNNING.value,
-                }
-            ).count()
-            if running_n >= max_parallel:
-                logger.info(
-                    "拒绝启动: agent_id={} 已达并行上限 running={} max={}",
-                    agent_id,
-                    running_n,
-                    max_parallel,
-                )
-                raise AgentServiceError(
-                    status_codes.CONFLICT_STATE,
-                    f"该 Agent 已有 {running_n} 个运行中的会话，达到并行上限 {max_parallel}，请稍后再试",
-                )
+        await cls._check_parallel_session_cap(agent_id)
 
         bot, session_id = await cls.build_bot(agent, workspace)
 
@@ -479,39 +541,117 @@ class AnalystService:
             sess.updated_at = now
             await sess.save()
 
-        from app.service.analyst.hitl import HitlService
-
-        await HitlService.clear_session(session_id)
-        cls._cancel_reasons.pop(session_id, None)
-
-        async with cls._bots_lock:
-            cls._bots[session_id] = bot
-
-        task = asyncio.create_task(
-            cls.run_analysis(
-                agent_id=agent_id,
-                session_id=session_id,
-                bot=bot,
-                user_prompt=user_prompt,
-                context=context or {},
-            ),
-            name=f"analyst-run:{agent_id}:{session_id}",
-        )
-        async with cls._task_lock:
-            cls._running_tasks[session_id] = task
-
-        await cls.broadcast_sse(
-            agent_id,
-            "status",
-            {
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "status": NanobotSessionStatusEnum.RUNNING.value,
-            },
+        await cls._launch_background_run(
+            agent_id=agent_id,
+            session_id=session_id,
+            bot=bot,
+            user_prompt=user_prompt,
+            context=context or {},
         )
 
         logger.info(
             f"启动 agent 成功: agent_id={agent_id} session_id={session_id}"
+        )
+        return session_id
+
+    # ------------------------------------------------------------------
+    # /agent/message：已结束会话续聊
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _validate_session_for_message(cls, sess: NanobotSessionModel) -> None:
+        if sess.status in (
+            NanobotSessionStatusEnum.RUNNING,
+            NanobotSessionStatusEnum.AWAITING_APPROVAL,
+        ):
+            raise AgentServiceError(
+                status_codes.CONFLICT_STATE,
+                "会话仍在运行中，请等待输出完成后再提交消息",
+            )
+        if sess.status == NanobotSessionStatusEnum.PAUSED:
+            raise AgentServiceError(
+                status_codes.CONFLICT_STATE,
+                "会话已暂停，当前不支持续聊",
+            )
+        if sess.status == NanobotSessionStatusEnum.IDLE:
+            raise AgentServiceError(
+                status_codes.CONFLICT_STATE,
+                "会话尚未完成首轮执行，无法续聊",
+            )
+        if sess.status not in cls._MESSAGE_ALLOWED_STATUSES:
+            raise AgentServiceError(
+                status_codes.CONFLICT_STATE,
+                f"当前会话状态不允许续聊: {sess.status.value}",
+            )
+
+    @classmethod
+    async def send_message(
+        cls,
+        agent_id: str,
+        session_id: str,
+        user_prompt: str,
+        context: dict[str, Any] | None = None,
+    ) -> str:
+        """向已结束输出的会话提交用户消息并后台再跑一轮分析。"""
+        session_id = str(session_id or "").strip()
+        if not session_id:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT, "session_id 不能为空"
+            )
+
+        sess = await NanobotSessionModel.find_one({"_id": session_id})
+        if sess is None or sess.agent_id != agent_id:
+            raise AgentServiceError(
+                status_codes.NOT_FOUND_AGENT,
+                f"会话不存在或不属于该 Agent: session_id={session_id}",
+            )
+
+        cls._validate_session_for_message(sess)
+
+        async with cls._task_lock:
+            task = cls._running_tasks.get(session_id)
+        if task is not None and not task.done():
+            raise AgentServiceError(
+                status_codes.CONFLICT_STATE,
+                "会话仍在运行中，请等待输出完成后再提交消息",
+            )
+
+        agent = await NanobotAgentModel.find_one({"_id": agent_id})
+        if agent is None:
+            raise AgentServiceError(
+                status_codes.NOT_FOUND_AGENT, f"Agent 不存在: {agent_id}"
+            )
+        workspace = await NanobotWorkspaceModel.find_one({"_id": agent.workspace_id})
+        if workspace is None:
+            raise AgentServiceError(
+                status_codes.NOT_FOUND_WORKSPACE,
+                f"Agent 所属工作区不存在: {agent.workspace_id}",
+            )
+
+        await cls._check_parallel_session_cap(agent_id)
+
+        await cls._get_session_store().invalidate(session_id)
+        bot = await cls._assemble_bot(agent, workspace)
+
+        now = datetime.now()
+        sess.status = NanobotSessionStatusEnum.RUNNING
+        sess.user_prompt = user_prompt
+        sess.finished_at = None
+        sess.error_message = None
+        sess.pending_approval = None
+        sess.updated_at = now
+        await sess.save()
+
+        await cls._launch_background_run(
+            agent_id=agent_id,
+            session_id=session_id,
+            bot=bot,
+            user_prompt=user_prompt,
+            context=context or {},
+        )
+
+        logger.info(
+            f"续聊消息已提交: agent_id={agent_id} session_id={session_id}"
         )
         return session_id
 
@@ -629,47 +769,53 @@ class AnalystService:
                 tools_used = list(getattr(run_result, "tools_used", []) or [])
                 stop_reason_meta = getattr(run_result, "stop_reason", None)
 
+            stop_reason = AgentStopReasonEnum.coerce(stop_reason_meta)
+
             completion = get_current_task_completion()
             completion_received = completion is not None
             if not completion_received:
                 final_session_status = NanobotSessionStatusEnum.FAILED
                 error_message = error_message or "未调用 submit_task_result 结束任务"
-                result_payload = {
-                    "success": False,
-                    "failure_reason": error_message,
-                    "short_summary": "",
-                    "payload": {},
-                    "user_markdown": content,
-                    "tools_used": tools_used,
-                    "stop_reason": stop_reason_meta,
-                    "completion_received": False,
-                }
+                result_payload = RunAnalysisResultPayloadSchema(
+                    success=False,
+                    failure_reason=error_message,
+                    short_summary="",
+                    payload={},
+                    user_markdown=content,
+                    tools_used=tools_used,
+                    stop_reason=stop_reason,
+                    completion_received=False,
+                ).model_dump()
             elif completion.get("success"):
-                result_payload = {
-                    "success": True,
-                    "failure_reason": completion.get("failure_reason"),
-                    "short_summary": completion.get("short_summary") or "",
-                    "payload": completion.get("payload") if isinstance(completion.get("payload"), dict) else {},
-                    "user_markdown": content,
-                    "tools_used": tools_used,
-                    "stop_reason": stop_reason_meta,
-                    "completion_received": True,
-                }
+                result_payload = RunAnalysisResultPayloadSchema(
+                    success=True,
+                    failure_reason=completion.get("failure_reason"),
+                    short_summary=completion.get("short_summary") or "",
+                    payload=completion.get("payload")
+                    if isinstance(completion.get("payload"), dict)
+                    else {},
+                    user_markdown=content,
+                    tools_used=tools_used,
+                    stop_reason=stop_reason,
+                    completion_received=True,
+                ).model_dump()
             else:
                 final_session_status = NanobotSessionStatusEnum.FAILED
                 error_message = (
                     str(completion.get("failure_reason") or "").strip() or "任务未成功完成"
                 )
-                result_payload = {
-                    "success": False,
-                    "failure_reason": error_message,
-                    "short_summary": completion.get("short_summary") or "",
-                    "payload": completion.get("payload") if isinstance(completion.get("payload"), dict) else {},
-                    "user_markdown": content,
-                    "tools_used": tools_used,
-                    "stop_reason": stop_reason_meta,
-                    "completion_received": True,
-                }
+                result_payload = RunAnalysisResultPayloadSchema(
+                    success=False,
+                    failure_reason=error_message,
+                    short_summary=completion.get("short_summary") or "",
+                    payload=completion.get("payload")
+                    if isinstance(completion.get("payload"), dict)
+                    else {},
+                    user_markdown=content,
+                    tools_used=tools_used,
+                    stop_reason=stop_reason,
+                    completion_received=True,
+                ).model_dump()
         except asyncio.CancelledError:
             final_session_status = NanobotSessionStatusEnum.CANCELLED
             error_message = cls._cancel_reasons.get(session_id) or "任务被取消"

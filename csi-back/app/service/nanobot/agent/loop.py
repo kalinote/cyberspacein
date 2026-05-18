@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from loguru import logger
 
+from app.schemas.constants import AgentStopReasonEnum
 from app.service.nanobot.agent.context import ContextBuilder
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from app.service.nanobot.agent.memory import Consolidator, Dream, MemoryStore
@@ -373,13 +374,13 @@ class AgentLoop:
             checkpoint_callback=_checkpoint,
         ))
         self._last_usage = result.usage
-        if result.stop_reason == "max_iterations":
+        if result.stop_reason == AgentStopReasonEnum.MAX_ITERATIONS:
             logger.warning("Max iterations ({}) reached", self.max_iterations)
             # Push final content through stream so the UI can finalize partial output.
             if on_stream and on_stream_end:
                 await on_stream(result.final_content or "")
                 await on_stream_end(resuming=False)
-        elif result.stop_reason == "error":
+        elif result.stop_reason == AgentStopReasonEnum.ERROR:
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
         return result.final_content, result.tools_used, result.messages, result.stop_reason, result.had_injections
 
@@ -583,10 +584,10 @@ class AgentLoop:
         logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
 
         meta = dict(msg.metadata or {})
-        if on_stream is not None and stop_reason != "error":
+        if on_stream is not None and stop_reason != AgentStopReasonEnum.ERROR:
             meta["_streamed"] = True
         meta["_tools_used"] = list(tools_used)
-        meta["_stop_reason"] = stop_reason
+        meta["_stop_reason"] = stop_reason.value if stop_reason is not None else None
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,

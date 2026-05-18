@@ -12,6 +12,8 @@ from app.schemas.agent.agent import (
     ApproveRequestSchema,
     CancelAgentRequestSchema,
     CancelAgentResponseSchema,
+    SendAgentMessageRequestSchema,
+    SendAgentMessageResponseSchema,
     StartAgentRequestSchema,
     StartAgentResponseSchema,
 )
@@ -31,7 +33,8 @@ router = APIRouter()
     response_model=ApiResponseSchema[StartAgentResponseSchema],
     summary="启动分析引擎",
     description=(
-        "成功时返回 `data.session_id`。后续 SSE `/agent/status`、取消与审批接口均须携带同一 `session_id`。"
+        "成功时返回 `data.session_id`。后续 SSE `/agent/status` 会收到 `user_message`（首轮用户输入）与 `status` 等事件；"
+        "取消与审批接口均须携带同一 `session_id`。"
         "当环境变量 `NANOBOT_AGENT_MAX_PARALLEL_SESSIONS` 大于 0 且该 Agent 在库中 `running` 会话数已达上限时，"
         "返回 HTTP 200 且业务码为冲突态（`CONFLICT_STATE`），不会在库中新建本会话。"
     ),
@@ -87,6 +90,43 @@ async def start_agent(data: StartAgentRequestSchema):
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
     return ApiResponseSchema.success(
         data=StartAgentResponseSchema(agent_id=data.agent_id, session_id=session_id)
+    )
+
+
+@router.post(
+    "/message",
+    response_model=ApiResponseSchema[SendAgentMessageResponseSchema],
+    summary="向已结束会话提交续聊消息",
+    description=(
+        "仅当会话状态为 `completed`、`failed` 或 `cancelled` 时可提交；"
+        "`running`、`awaiting_approval`、`paused` 等状态返回冲突错误。"
+        "成功后会话重新进入 `running`，并通过 SSE 推送 `user_message`（用户本轮输入）与 `status`；"
+        "后续仍通过 `/agent/status` 订阅其它事件。"
+    ),
+)
+async def send_agent_message(data: SendAgentMessageRequestSchema):
+    try:
+        final_user_prompt = render_user_prompt(
+            str(data.user_prompt).strip(), data.extra_context
+        ).strip()
+        if not final_user_prompt:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT,
+                "用户提示词为空，且模板渲染后仍为空",
+            )
+
+        session_id = await AnalystService.send_message(
+            agent_id=data.agent_id,
+            session_id=data.session_id,
+            user_prompt=final_user_prompt,
+            context=data.extra_context,
+        )
+    except AgentServiceError as exc:
+        return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
+    return ApiResponseSchema.success(
+        data=SendAgentMessageResponseSchema(
+            agent_id=data.agent_id, session_id=session_id
+        )
     )
 
 

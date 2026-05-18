@@ -89,6 +89,10 @@ class FakeNanobotSessionModel:
     _docs: dict[str, FakeSessionDoc] = {}
 
     @classmethod
+    async def find_one(cls, query: dict[str, Any]) -> FakeSessionDoc | None:
+        return cls._docs.get(query.get("_id"))
+
+    @classmethod
     def find(cls, query_filters: dict[str, Any]) -> _FakeQuery:
         items = list(cls._docs.values())
         if "agent_id" in query_filters:
@@ -104,6 +108,10 @@ class FakeNanobotSessionModel:
 
 class FakeNanobotAgentModel:
     _docs: dict[str, FakeAgentDoc] = {}
+
+    @classmethod
+    async def find_one(cls, query: dict[str, Any]) -> FakeAgentDoc | None:
+        return cls._docs.get(query.get("_id"))
 
     @classmethod
     def find(cls, query_filters: dict[str, Any]) -> _FakeQuery:
@@ -211,3 +219,30 @@ async def test_list_page_schema_excludes_heavy_fields() -> None:
     assert "todos" not in dumped
     assert "user_prompt" not in dumped
     assert dumped["agent_name"] == "A"
+
+
+@pytest.mark.asyncio
+async def test_get_detail_returns_same_fields_as_list() -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(
+        id="s1",
+        agent_id="a1",
+        workspace_id="w1",
+        status=NanobotSessionStatusEnum.COMPLETED,
+        result={"success": True},
+        error_message=None,
+        started_at=_dt(10),
+        finished_at=_dt(20),
+        created_at=_dt(1),
+        updated_at=_dt(21),
+    )
+    FakeNanobotAgentModel._docs["a1"] = FakeAgentDoc(id="a1", name="Agent1")
+    detail = await session_module.SessionService.get_detail("s1")
+    assert detail is not None
+    items, _ = await session_module.SessionService.list_page(page=1, page_size=10)
+    assert detail.model_dump() == items[0].model_dump()
+
+
+@pytest.mark.asyncio
+async def test_get_detail_not_found() -> None:
+    assert await session_module.SessionService.get_detail("missing") is None
+    assert await session_module.SessionService.get_detail("  ") is None

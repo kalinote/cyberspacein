@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import Enum
 
 _ACTION_NODE_TYPE_LABELS = {
@@ -259,3 +261,25 @@ class NanobotSessionStatusEnum(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class AgentStopReasonEnum(str, Enum):
+    """Agent 推理循环结束原因（AgentRunner → SSE/DB `result.stop_reason`）。"""
+
+    COMPLETED = "completed"
+    TOOL_ERROR = "tool_error"
+    ERROR = "error"
+    EMPTY_FINAL_RESPONSE = "empty_final_response"
+    MAX_ITERATIONS = "max_iterations"
+    AWAITING_APPROVAL = "awaiting_approval"
+
+    @classmethod
+    def coerce(cls, value: str | AgentStopReasonEnum | None) -> AgentStopReasonEnum | None:
+        if value is None:
+            return None
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value))
+        except ValueError:
+            return None

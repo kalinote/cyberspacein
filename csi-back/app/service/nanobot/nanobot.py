@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.schemas.constants import AgentStopReasonEnum
 from app.service.nanobot.agent.hook import AgentHook
 from app.service.nanobot.agent.loop import AgentLoop
 from app.service.nanobot.agent.memory import MemoryStore
@@ -43,7 +44,7 @@ class RunResult:
     content: str
     tools_used: list[str]
     messages: list[dict[str, Any]]
-    stop_reason: str | None = None
+    stop_reason: AgentStopReasonEnum | None = None
 
 
 class Nanobot:
@@ -184,8 +185,8 @@ class Nanobot:
         content = (response.content if response else None) or ""
         meta = (response.metadata if response else None) or {}
         tools_used = list(meta.get("_tools_used") or []) if isinstance(meta, dict) else []
-        stop_reason = meta.get("_stop_reason") if isinstance(meta, dict) else None
-        sr = str(stop_reason) if stop_reason is not None else None
+        raw_stop = meta.get("_stop_reason") if isinstance(meta, dict) else None
+        sr = AgentStopReasonEnum.coerce(raw_stop)
         return RunResult(content=content, tools_used=tools_used, messages=[], stop_reason=sr)
 
     async def close(self) -> None:

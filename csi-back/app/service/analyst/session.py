@@ -48,3 +48,16 @@ class SessionService:
             for doc in docs
         ]
         return items, total
+
+    @classmethod
+    async def get_detail(cls, session_id: str) -> NanobotSessionSchema | None:
+        """按会话 ID 查询详情（字段与列表项一致）。"""
+        session_id = str(session_id or "").strip()
+        if not session_id:
+            return None
+        doc = await NanobotSessionModel.find_one({"_id": session_id})
+        if doc is None:
+            return None
+        agent = await NanobotAgentModel.find_one({"_id": doc.agent_id})
+        agent_name = agent.name if agent is not None else None
+        return NanobotSessionSchema.from_doc(doc, agent_name=agent_name)

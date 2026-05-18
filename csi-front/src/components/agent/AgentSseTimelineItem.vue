@@ -1,6 +1,17 @@
 <template>
     <div class="min-w-0">
-        <div v-if="item.kind === 'assistant_stream'" class="flex gap-3 min-w-0">
+        <div v-if="item.kind === 'user_message'" class="flex justify-end gap-3 min-w-0">
+            <div
+                class="min-w-0 max-w-[85%] rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 shadow-sm">
+                <div class="mb-2 flex flex-wrap items-center justify-end gap-2 text-xs text-gray-500">
+                    <span>{{ formatTime(item.ts) }}</span>
+                    <span class="font-medium text-emerald-800">用户输入</span>
+                </div>
+                <p class="text-sm text-gray-900 whitespace-pre-wrap wrap-break-word">{{ userMessageContent }}</p>
+            </div>
+        </div>
+
+        <div v-else-if="item.kind === 'assistant_stream'" class="flex gap-3 min-w-0">
             <div class="mt-1.5 h-8 w-1 shrink-0 rounded-full bg-blue-500/80" />
             <div
                 class="min-w-0 flex-1 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm ring-1 ring-gray-100/80">
@@ -144,12 +155,18 @@
         </div>
 
         <div v-else-if="item.kind === 'result'"
-            class="rounded-xl border border-blue-100 bg-linear-to-br from-blue-50/80 to-white px-4 py-3 shadow-sm">
+            class="rounded-xl border px-4 py-3 shadow-sm"
+            :class="resultBoxClass">
             <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <Icon icon="mdi:flag-checkered" class="text-lg text-blue-600" />
+                <Icon :icon="resultIcon" class="text-lg shrink-0" :class="resultIconClass" />
                 <span class="font-semibold text-gray-900">本轮结束</span>
-                <span class="rounded-md bg-white px-2 py-0.5 font-mono text-xs ring-1 ring-gray-200">{{ item.payload?.status ?? '—' }}</span>
-                <span>{{ formatTime(item.ts) }}</span>
+                <span v-if="resultStopReasonLabel"
+                    class="rounded-md bg-white/80 px-2 py-0.5 text-xs font-medium text-gray-800 ring-1 ring-gray-200/80">{{
+                    resultStopReasonLabel }}</span>
+                <span v-if="resultSessionStatusLabel"
+                    class="rounded-md px-2 py-0.5 font-mono text-xs font-medium ring-1"
+                    :class="resultSessionStatusBadgeClass">{{ resultSessionStatusLabel }}</span>
+                <span class="text-gray-400">{{ formatTime(item.ts) }}</span>
             </div>
             <p v-if="resultSummary" class="mt-2 text-sm font-medium text-gray-900">{{ resultSummary }}</p>
             <MarkdownViewer
@@ -157,20 +174,14 @@
                 :content="resultUserMarkdown"
                 custom-class="mt-2 rounded-lg border border-gray-100 bg-white/90 p-3"
             />
-            <el-collapse v-model="resultCollapse" class="mt-2 border-0">
-                <el-collapse-item v-if="resultToolsLine" title="使用工具" name="tools">
-                    <p class="text-sm text-gray-800">{{ resultToolsLine }}</p>
-                </el-collapse-item>
-                <el-collapse-item v-if="resultStopReason" title="停止原因" name="stop">
-                    <p class="text-sm text-gray-800 font-mono">{{ resultStopReason }}</p>
-                </el-collapse-item>
-                <el-collapse-item v-if="resultPayloadJson" title="payload（JSON）" name="payload">
-                    <pre class="rounded bg-gray-50 p-2 text-xs whitespace-pre-wrap">{{ resultPayloadJson }}</pre>
-                </el-collapse-item>
-                <el-collapse-item v-if="item.payload?.error != null" title="错误" name="err">
-                    <pre class="rounded bg-gray-50 p-2 text-xs whitespace-pre-wrap">{{ stringifyJsonSafe(item.payload.error) }}</pre>
-                </el-collapse-item>
-            </el-collapse>
+            <p v-if="resultToolsLine" class="mt-2 text-xs text-gray-600">
+                <span class="text-gray-500">使用工具：</span>{{ resultToolsLine }}
+            </p>
+            <div v-if="resultErrorText"
+                class="mt-3 rounded-lg border border-red-200/80 bg-red-50/90 px-3 py-2.5">
+                <p class="text-xs font-semibold text-red-800">错误信息</p>
+                <pre class="mt-1 text-xs text-red-900/90 whitespace-pre-wrap wrap-break-word">{{ resultErrorText }}</pre>
+            </div>
         </div>
 
         <div v-else-if="item.kind === 'debug_prompt'"
@@ -270,8 +281,7 @@ const props = defineProps({
 })
 
 const stepCollapse = ref([])
-const resultCollapse = ref([])
-const debugCollapse = ref(['sys'])
+const debugCollapse = ref([])
 const unknownCollapse = ref([])
 
 function formatTime(ts) {
@@ -289,10 +299,24 @@ const RUNTIME_STATUS_LABEL = {
     cancelled: '已取消',
 }
 
+const RESULT_STOP_REASON_LABEL = {
+    completed: '任务完成',
+    tool_error: '工具调用错误',
+    error: '运行错误',
+    empty_final_response: '最终回复为空',
+    max_iterations: '达到迭代上限',
+    awaiting_approval: '等待人工审批',
+}
+
 const statusText = computed(() => {
     const s = props.item.payload?.status
     const key = s != null ? String(s) : ''
     return RUNTIME_STATUS_LABEL[key] || key || '—'
+})
+
+const userMessageContent = computed(() => {
+    const content = props.item.payload?.content
+    return content != null && String(content).length > 0 ? String(content) : '—'
 })
 
 const phaseLabel = computed(() => {
@@ -476,15 +500,93 @@ const resultToolsLine = computed(() => {
     return t.join('、')
 })
 
-const resultStopReason = computed(() => {
+const resultStopReasonKey = computed(() => {
     const s = props.item.payload?.result?.stop_reason
-    return s != null && s !== '' ? String(s) : ''
+    return s != null && String(s).trim() !== '' ? String(s).trim() : ''
 })
 
-const resultPayloadJson = computed(() => {
-    const p = props.item.payload?.result?.payload
-    if (p == null) return ''
-    return stringifyJsonSafe(p, 2)
+const resultStopReasonLabel = computed(() => {
+    const key = resultStopReasonKey.value
+    if (!key) return ''
+    return RESULT_STOP_REASON_LABEL[key] || key
+})
+
+const resultStatusKey = computed(() => {
+    const s = props.item.payload?.status
+    return s != null && String(s).trim() !== '' ? String(s).trim() : ''
+})
+
+const resultSessionStatusLabel = computed(() => {
+    const key = resultStatusKey.value
+    if (!key) return ''
+    return RUNTIME_STATUS_LABEL[key] || key
+})
+
+const resultBoxClass = computed(() => {
+    switch (resultStatusKey.value) {
+        case 'completed':
+            return 'border-green-200 bg-linear-to-br from-green-50/90 to-white'
+        case 'failed':
+            return 'border-red-200 bg-linear-to-br from-red-50/90 to-white'
+        case 'cancelled':
+            return 'border-gray-200 bg-linear-to-br from-gray-50/90 to-white'
+        case 'paused':
+            return 'border-amber-200 bg-linear-to-br from-amber-50/90 to-white'
+        default:
+            return 'border-slate-200 bg-linear-to-br from-slate-50/80 to-white'
+    }
+})
+
+const resultIcon = computed(() => {
+    switch (resultStatusKey.value) {
+        case 'completed':
+            return 'mdi:check-circle'
+        case 'failed':
+            return 'mdi:alert-circle'
+        case 'cancelled':
+            return 'mdi:cancel'
+        case 'paused':
+            return 'mdi:pause-circle'
+        default:
+            return 'mdi:flag-checkered'
+    }
+})
+
+const resultIconClass = computed(() => {
+    switch (resultStatusKey.value) {
+        case 'completed':
+            return 'text-green-600'
+        case 'failed':
+            return 'text-red-600'
+        case 'cancelled':
+            return 'text-gray-500'
+        case 'paused':
+            return 'text-amber-600'
+        default:
+            return 'text-slate-600'
+    }
+})
+
+const resultSessionStatusBadgeClass = computed(() => {
+    switch (resultStatusKey.value) {
+        case 'completed':
+            return 'bg-green-100/90 text-green-900 ring-green-200/80'
+        case 'failed':
+            return 'bg-red-100/90 text-red-900 ring-red-200/80'
+        case 'cancelled':
+            return 'bg-gray-100/90 text-gray-700 ring-gray-200/80'
+        case 'paused':
+            return 'bg-amber-100/90 text-amber-900 ring-amber-200/80'
+        default:
+            return 'bg-white/80 text-gray-800 ring-gray-200/80'
+    }
+})
+
+const resultErrorText = computed(() => {
+    if (resultStatusKey.value !== 'failed') return ''
+    const err = props.item.payload?.error
+    if (err == null) return ''
+    return typeof err === 'string' ? err.trim() : stringifyJsonSafe(err, 2)
 })
 
 const memorySnapshotText = computed(() => {

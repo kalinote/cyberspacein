@@ -23,10 +23,10 @@
         </div>
 
         <template v-else>
-            <DetailPageHeader :title="agentTitle" :subtitle="sessionId">
+            <DetailPageHeader :title="pageTitle" :subtitle="sessionId">
                 <template #tags>
                     <el-tag :type="statusTagType" size="default">{{ statusLabel }}</el-tag>
-                    <el-tag v-if="agent?.workspace_id" type="info" size="default">workspace: {{ agent.workspace_id
+                    <el-tag v-if="session?.workspace_id" type="info" size="default">workspace: {{ session.workspace_id
                         }}</el-tag>
                     <el-tag v-if="sseConnected" type="success" size="default">实时连接</el-tag>
                     <el-tag v-else type="warning" size="default">未连接</el-tag>
@@ -41,16 +41,16 @@
                                 class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100">
                                 <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                     <div class="min-w-0">
-                                        <p class="text-sm text-gray-500">启动本次分析</p>
+                                        <p class="text-sm text-gray-500">继续对话</p>
                                         <p class="text-xs text-gray-500 mt-1">
-                                            将调用 <span class="font-mono">/agent/start</span>，并通过 <span
+                                            将调用 <span class="font-mono">/agent/message</span>，并通过 <span
                                                 class="font-mono">/agent/status</span> 实时展示进度
                                         </p>
                                     </div>
                                     <div class="flex gap-2 shrink-0">
-                                        <el-button type="primary" :loading="startLoading" :disabled="!canStart"
-                                            @click="start">
-                                            启动
+                                        <el-button type="primary" :loading="sendLoading" :disabled="!canSendMessage"
+                                            @click="sendMessage">
+                                            发送
                                         </el-button>
                                         <el-button type="warning" :loading="cancelLoading" :disabled="!canCancel"
                                             @click="cancel">
@@ -61,7 +61,7 @@
                                 <div class="mt-4">
                                     <el-input v-model="userPrompt" type="textarea"
                                         :autosize="{ minRows: 3, maxRows: 8 }"
-                                        placeholder="用户提示词（user_prompt），留空则使用服务端模板默认"
+                                        placeholder="描述你的分析需求，通过 / 使用命令，通过 @ 引用实体"
                                         resize="none" />
                                     <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
                                         <span v-if="entityType">entity_type: <span class="font-mono">{{ entityType
@@ -90,9 +90,9 @@
                                         <span class="text-gray-500">session_id</span>
                                         <span class="font-mono text-gray-900 truncate">{{ sessionId }}</span>
                                     </div>
-                                    <div class="flex justify-between gap-3" v-if="agent?.updated_at">
+                                    <div class="flex justify-between gap-3" v-if="session?.updated_at">
                                         <span class="text-gray-500">更新时间</span>
-                                        <span class="text-gray-900">{{ formatDateTime(agent.updated_at, {
+                                        <span class="text-gray-900">{{ formatDateTime(session.updated_at, {
                                             includeSecond:
                                             true })
                                             }}</span>
@@ -201,7 +201,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -220,12 +220,12 @@ import { formatDateTime, TODO_ITEM_STATUS } from '@/utils/action'
 import {
     getAgentSessionStatusLabel,
     getAgentSessionStatusTagType,
+    isAgentSessionTerminalStatus,
 } from '@/utils/agent/sessionStatus'
 
 const route = useRoute()
-const router = useRouter()
 const sessionId = computed(() => String(route.params.sessionId || ''))
-const agentId = computed(() => (route.query.agent_id ? String(route.query.agent_id) : ''))
+const agentIdFromQuery = computed(() => (route.query.agent_id ? String(route.query.agent_id) : ''))
 
 const entityUuid = computed(() => (route.query.entity_uuid ? String(route.query.entity_uuid) : ''))
 const entityType = computed(() => (route.query.entity_type ? String(route.query.entity_type) : ''))
@@ -234,13 +234,18 @@ const extraContextText = computed(() => (route.query.extra_context ? String(rout
 const pageLoading = ref(true)
 const pageError = ref('')
 
-const agent = ref(null)
+const session = ref(null)
+const agentId = computed(() => {
+    const fromSession = session.value?.agent_id
+    if (fromSession) return String(fromSession)
+    return agentIdFromQuery.value
+})
 const sessionRuntimeStatus = ref('unknown')
 const sseConnected = ref(false)
 const sseError = ref('')
 
 const userPrompt = ref('')
-const startLoading = ref(false)
+const sendLoading = ref(false)
 const cancelLoading = ref(false)
 
 const todos = ref([])
@@ -399,11 +404,6 @@ function ingestSseNamedEvent(sseType, raw) {
     pushParsedTimeline(sseType, ts, p.value)
 }
 
-function mergeAgent(partial) {
-    const p = partial && typeof partial === 'object' ? partial : {}
-    agent.value = { ...(agent.value || {}), ...p }
-}
-
 function normalizeTodosPayload(raw) {
     if (Array.isArray(raw)) return raw
     if (raw && typeof raw === 'object') {
@@ -432,13 +432,28 @@ watch(
     { deep: true }
 )
 
-const agentTitle = computed(() => agent.value?.name || '分析详情')
-const statusRaw = computed(() => String(sessionRuntimeStatus.value || 'unknown'))
+const pageTitle = computed(() => session.value?.agent_name || '分析详情')
+const statusRaw = computed(() => {
+    const runtime = String(sessionRuntimeStatus.value || 'unknown')
+    const persisted = session.value?.status ? String(session.value.status) : ''
+    if (isAgentSessionTerminalStatus(persisted) && runtime === 'running') {
+        return persisted
+    }
+    if (runtime !== 'unknown') return runtime
+    return persisted || 'unknown'
+})
 
 const statusLabel = computed(() => getAgentSessionStatusLabel(statusRaw.value))
 const statusTagType = computed(() => getAgentSessionStatusTagType(statusRaw.value))
 
-const canStart = computed(() => Boolean(agentId.value) && !startLoading.value)
+const canSendMessage = computed(
+    () =>
+        Boolean(agentId.value) &&
+        Boolean(sessionId.value) &&
+        isAgentSessionTerminalStatus(statusRaw.value) &&
+        userPrompt.value.trim().length > 0 &&
+        !sendLoading.value
+)
 const canCancel = computed(
     () =>
         Boolean(agentId.value) &&
@@ -461,18 +476,27 @@ function todoStatusIconColor(s) {
     return 'text-gray-400'
 }
 
+function applySessionRuntimeStatus(nextStatus) {
+    const s = String(nextStatus ?? '').trim()
+    if (!s) return
+    sessionRuntimeStatus.value = s
+    if (session.value && typeof session.value === 'object') {
+        session.value = { ...session.value, status: s }
+    }
+}
+
 function applyStatusFromSsePayload(raw) {
     const text = String(raw ?? '').trim()
     if (!text) return
     try {
         const x = JSON.parse(text)
         if (typeof x === 'string') {
-            sessionRuntimeStatus.value = x
+            applySessionRuntimeStatus(x)
         } else if (x && typeof x === 'object' && x.status != null) {
-            sessionRuntimeStatus.value = String(x.status)
+            applySessionRuntimeStatus(x.status)
         }
     } catch {
-        sessionRuntimeStatus.value = text
+        applySessionRuntimeStatus(text)
     }
 }
 
@@ -520,19 +544,17 @@ function applyTodosFromSsePayload(raw) {
     }
 }
 
-async function loadAgentDetail() {
+async function loadSessionDetail() {
     if (!sessionId.value) throw new Error('缺少 session_id 参数')
-    if (!agentId.value) throw new Error('缺少 agent_id 参数')
-    const res = await agentApi.getAgentDetail(agentId.value)
+    const res = await agentApi.getAgentSessionDetail(sessionId.value)
     if (res?.code !== 0) {
-        throw new Error(res?.message || '获取 Agent 详情失败')
+        throw new Error(res?.message || '获取会话详情失败')
     }
-    const raw = res?.data && typeof res.data === 'object' ? { ...res.data } : {}
-    delete raw.status
-    delete raw.todos
-    delete raw.pending_approval
-    delete raw.current_session_id
-    mergeAgent(raw)
+    const raw = res?.data && typeof res.data === 'object' ? res.data : null
+    session.value = raw
+    if (raw?.status) {
+        sessionRuntimeStatus.value = String(raw.status)
+    }
 }
 
 function connectSSE() {
@@ -579,6 +601,10 @@ function connectSSE() {
             }
         }
 
+        eventSource.addEventListener('user_message', (event) => {
+            ingestSseNamedEvent('user_message', event.data ?? '')
+        })
+
         eventSource.addEventListener('status', (event) => {
             const raw = event.data ?? ''
             ingestSseNamedEvent('status', raw)
@@ -589,9 +615,14 @@ function connectSSE() {
             onTodosSse(raw)
         })
 
+        eventSource.addEventListener('result', (event) => {
+            const raw = event.data ?? ''
+            ingestSseNamedEvent('result', raw)
+            applyStatusFromSsePayload(raw)
+        })
+
         const sseNamedEvents = [
             'notification',
-            'result',
             'debug_prompt',
             'progress',
             'step',
@@ -636,40 +667,37 @@ function parseExtraContext() {
     }
 }
 
-async function start() {
-    if (!canStart.value) return
+function buildMessageExtraContext() {
+    const merged = { ...(parseExtraContext() || {}) }
+    if (entityUuid.value) merged.entity_uuid = entityUuid.value
+    if (entityType.value) merged.entity_type = entityType.value
+    return merged
+}
+
+async function sendMessage() {
+    if (!canSendMessage.value) return
+    const trimmedPrompt = userPrompt.value.trim()
+    if (!trimmedPrompt) return
     try {
-        startLoading.value = true
-        const trimmedPrompt = userPrompt.value.trim()
-        const payload = {
+        sendLoading.value = true
+        const extraContext = buildMessageExtraContext()
+        const res = await agentApi.sendAgentMessage({
             agent_id: agentId.value,
-            user_prompt: trimmedPrompt.length > 0 ? trimmedPrompt : null,
-            entity_uuid: entityUuid.value || null,
-            entity_type: entityType.value || null,
-            extra_context: parseExtraContext(),
-            debug: true
-        }
-        const res = await agentApi.startAgent(payload)
-        if (res?.code !== 0) {
-            ElMessage.error(res?.message || '启动失败')
-            return
-        }
-        const sid = res?.data?.session_id
-        if (!sid) {
-            ElMessage.error('未返回 session_id，无法订阅进度')
-            return
-        }
-        ElMessage.success('已提交启动请求')
-        pushSystemTimeline('client_start', '已提交启动分析', res?.data || {})
-        const { session_id: _removed, ...restQuery } = route.query
-        await router.replace({
-            path: `/agent/analysis/${sid}`,
-            query: { ...restQuery, agent_id: agentId.value },
+            session_id: sessionId.value,
+            user_prompt: trimmedPrompt,
+            extra_context: Object.keys(extraContext).length > 0 ? extraContext : {},
         })
+        if (res?.code !== 0) {
+            ElMessage.error(res?.message || '发送失败')
+            return
+        }
+        ElMessage.success('已提交续聊请求')
+        pushSystemTimeline('client_message', '已提交续聊消息', res?.data || {})
+        userPrompt.value = ''
     } catch (e) {
-        ElMessage.error(e?.message || '启动失败，请稍后重试')
+        ElMessage.error(e?.message || '发送失败，请稍后重试')
     } finally {
-        startLoading.value = false
+        sendLoading.value = false
     }
 }
 
@@ -737,13 +765,14 @@ async function reload() {
     disconnectSSE()
     pageLoading.value = true
     pageError.value = ''
+    session.value = null
     timelineItems.value = []
     timelineSeq = 0
     todos.value = []
     sessionRuntimeStatus.value = 'unknown'
     clearApprovalDialogState()
     try {
-        await loadAgentDetail()
+        await loadSessionDetail()
     } catch (e) {
         pageError.value = e?.message || '加载失败'
     } finally {
@@ -757,18 +786,6 @@ async function reload() {
 
 watch(sessionId, (sid, oldSid) => {
     if (sid === oldSid) return
-    disconnectSSE()
-    sessionRuntimeStatus.value = 'unknown'
-    todos.value = []
-    timelineItems.value = []
-    timelineSeq = 0
-    if (!sid || !agentId.value) return
-    if (pageLoading.value) return
-    connectSSE()
-})
-
-watch(agentId, (id, oldId) => {
-    if (!id || id === oldId) return
     reload()
 })
 

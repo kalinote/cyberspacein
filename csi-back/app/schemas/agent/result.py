@@ -9,7 +9,9 @@ from __future__ import annotations
 from typing import Any
 
 import json_repair
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.schemas.constants import AgentStopReasonEnum
 
 SUBMIT_TASK_RESULT_TOOL_NAME = "submit_task_result"
 
@@ -53,6 +55,27 @@ TASK_COMPLETION_INSTRUCTION: str = (
     "等方式轮询其他子任务；子任务完成时结果会通过系统消息注入会话，请直接基于上下文与"
     "已返回的工具结果继续推理，避免链式 spawn。\n"
 )
+
+
+class RunAnalysisResultPayloadSchema(BaseModel):
+    """`run_analysis` 写入会话与 SSE `result` 事件内 `result` 字段的载荷。"""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    success: bool = Field(description="业务是否达成目标（以 submit_task_result 为准）")
+    failure_reason: str | None = Field(default=None, description="失败原因")
+    short_summary: str = Field(default="", description="简短摘要")
+    payload: dict[str, Any] = Field(default_factory=dict, description="结构化业务结果")
+    user_markdown: str = Field(default="", description="面向用户的 Markdown 正文")
+    tools_used: list[str] = Field(default_factory=list, description="本轮调用的工具名列表")
+    stop_reason: AgentStopReasonEnum | None = Field(
+        default=None,
+        description="Agent 推理循环结束原因",
+    )
+    completion_received: bool = Field(
+        default=False,
+        description="是否收到 submit_task_result",
+    )
 
 
 class ResultPayloadSchema(BaseModel):
@@ -127,6 +150,7 @@ __all__ = [
     "SUBMIT_TASK_RESULT_TOOL_NAME",
     "SubmitTaskResultParams",
     "TASK_COMPLETION_INSTRUCTION",
+    "RunAnalysisResultPayloadSchema",
     "ResultPayloadSchema",
     "RESULT_FORMAT_INSTRUCTION",
     "build_response_format_schema",

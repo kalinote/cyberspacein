@@ -52,6 +52,9 @@ export const agentApi = {
   getAgentSessionList(params = { page: 1, page_size: 10 }) {
     return request.get('/agent/sessions', params)
   },
+  getAgentSessionDetail(sessionId) {
+    return request.get(`/agent/sessions/${sessionId}`)
+  },
   getAgentsConfigList() {
     return request.get('/agent/agents-list')
   },
@@ -72,6 +75,9 @@ export const agentApi = {
   },
   startAgent(data) {
     return request.post('/agent/start', data)
+  },
+  sendAgentMessage(data) {
+    return request.post('/agent/message', data)
   },
   cancelAgent(data) {
     return request.post('/agent/cancel', data)

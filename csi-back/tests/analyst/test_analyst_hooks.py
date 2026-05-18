@@ -11,7 +11,7 @@ import pytest
 
 import app.service.analyst.hooks as hooks_module
 import app.service.analyst.context as ctx
-from app.schemas.constants import NanobotSessionStatusEnum
+from app.schemas.constants import AgentStopReasonEnum, NanobotSessionStatusEnum
 from app.service.nanobot.agent.hook import AgentHookContext
 
 
@@ -103,7 +103,7 @@ async def test_status_hook_after_iteration_appends_step_and_broadcasts(
             tool_calls=[type("TC", (), {"name": "t1", "arguments": {}})()],
             tool_events=[{"tool": "x"}],
             usage={"in": 1},
-            stop_reason="stop",
+            stop_reason=AgentStopReasonEnum.COMPLETED,
         )
         await hook.after_iteration(ctx_obj)
     finally:
@@ -187,7 +187,7 @@ async def test_approval_hook_resets_pending_when_advanced() -> None:
     try:
         hook = hooks_module.ApprovalHook()
         await hook.after_iteration(
-            AgentHookContext(iteration=1, messages=[], stop_reason="stop")
+            AgentHookContext(iteration=1, messages=[], stop_reason=AgentStopReasonEnum.COMPLETED)
         )
     finally:
         ctx.current_session_id.reset(tok_s)

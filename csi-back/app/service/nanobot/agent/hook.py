@@ -7,6 +7,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.schemas.constants import AgentStopReasonEnum
 from app.service.nanobot.providers.base import LLMResponse, ToolCallRequest
 
 
@@ -22,7 +23,7 @@ class AgentHookContext:
     tool_results: list[Any] = field(default_factory=list)
     tool_events: list[dict[str, str]] = field(default_factory=list)
     final_content: str | None = None
-    stop_reason: str | None = None
+    stop_reason: AgentStopReasonEnum | None = None
     error: str | None = None
 
 

@@ -40,6 +40,16 @@ export const AGENT_SESSION_STATUS_OPTIONS = [
   { label: '已取消', value: AGENT_SESSION_STATUS.CANCELLED },
 ]
 
+const TERMINAL_STATUSES = new Set([
+  AGENT_SESSION_STATUS.COMPLETED,
+  AGENT_SESSION_STATUS.FAILED,
+  AGENT_SESSION_STATUS.CANCELLED,
+])
+
+export function isAgentSessionTerminalStatus(status) {
+  return TERMINAL_STATUSES.has(String(status || ''))
+}
+
 export function getAgentSessionStatusLabel(status) {
   const key = String(status || 'unknown')
   return STATUS_LABEL_MAP[key] || key
