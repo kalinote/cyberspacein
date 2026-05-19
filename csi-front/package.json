@@ -40,6 +40,7 @@
     "markdown-it-sub": "^2.0.0",
     "markdown-it-sup": "^2.0.0",
     "markdown-it-task-lists": "^2.1.1",
+    "mhtml-to-html": "^2.0.1",
     "monaco-editor": "^0.55.1",
     "rough-notation": "^0.5.1",
     "vue": "^3.5.24",

@@ -1,0 +1,24 @@
+{
+    "meta": {
+        "node_id": "snapshot_task",
+        "action_id": "snapshot_task"
+    },
+    "config": {
+        "url_field": "url",
+        "max_concurrency": 12,
+        "max_retries": 3,
+        "batch_size": 12
+    },
+    "inputs": {
+        "data_in": {
+            "type": "reference",
+            "value": ["waiting_for_embedding"]
+        }
+    },
+    "outputs": {
+        "data_out": {
+            "type": "reference",
+            "value": ["snapshot_out"]
+        }
+    }
+}

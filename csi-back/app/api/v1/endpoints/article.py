@@ -73,6 +73,8 @@ async def get_article_detail(uuid: str):
             highlighted_at=parse_datetime(source_data.get("highlighted_at")),
             highlight_reason=source_data.get("highlight_reason"),
             entities=parse_entities(source_data.get("entities")),
+            snapshot=source_data.get("snapshot"),
+            screenshot=source_data.get("screenshot"),
         )
         
         return ApiResponseSchema.success(data=article_data)

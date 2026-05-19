@@ -78,3 +78,5 @@ class BaseEntitySchema(BaseModel):
         default=None,
         description="从正文提取的命名实体，按类型分组",
     )
+    snapshot: str | None = Field(default=None, description="快照")
+    screenshot: str | None = Field(default=None, description="截图")

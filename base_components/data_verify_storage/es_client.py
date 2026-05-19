@@ -34,6 +34,7 @@ class ElasticsearchClient:
         client_config = {
             'hosts': [f"{'https' if self.use_ssl else 'http'}://{self.host}:{self.port}"],
             'verify_certs': self.verify_certs,
+            'request_timeout': 120,
         }
         
         if http_auth:

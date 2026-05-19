@@ -76,7 +76,7 @@ def main():
 
         try:
             total_processed = 0
-            batch_size = 500
+            batch_size = 100
             
             for queue_name in queue_names:
                 logger.info(f"开始消费队列: {queue_name} (批量大小: {batch_size})")

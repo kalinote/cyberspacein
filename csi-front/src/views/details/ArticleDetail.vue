@@ -215,6 +215,38 @@
                                             language="html"
                                         />
                                     </el-tab-pane>
+                                    <el-tab-pane v-if="articleData.snapshot" label="页面快照" name="snapshot">
+                                        <div v-if="snapshotLoading" class="flex flex-col items-center justify-center py-16 text-gray-500">
+                                            <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin mb-2" />
+                                            <p>快照加载中...</p>
+                                        </div>
+                                        <div v-else-if="snapshotError" class="flex flex-col items-center justify-center py-16 text-gray-500">
+                                            <Icon icon="mdi:alert-circle-outline" class="text-5xl text-red-400 mb-2" />
+                                            <p class="mb-4 text-center max-w-md">{{ snapshotError }}</p>
+                                            <el-button type="primary" @click="loadSnapshot">重试</el-button>
+                                        </div>
+                                        <div v-else-if="snapshotBlobUrl" class="space-y-2">
+                                            <div class="flex justify-end">
+                                                <el-link
+                                                    :href="snapshotBlobUrl"
+                                                    target="_blank"
+                                                    type="primary"
+                                                    class="text-sm"
+                                                >
+                                                    <template #icon>
+                                                        <Icon icon="mdi:open-in-new" />
+                                                    </template>
+                                                    新窗口打开
+                                                </el-link>
+                                            </div>
+                                            <iframe
+                                                :src="snapshotBlobUrl"
+                                                sandbox="allow-same-origin"
+                                                class="w-full min-h-128 border-0 rounded-lg bg-white ring-1 ring-gray-200"
+                                                title="页面快照"
+                                            />
+                                        </div>
+                                    </el-tab-pane>
                                 </el-tabs>
                             </div>
 
@@ -447,6 +479,7 @@ import { useHighlight } from '@/composables/useHighlight'
 import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
 import { useEntityHighlight } from '@/composables/useEntityHighlight'
 import { hasEntities } from '@/utils/entityDisplay'
+import { loadMhtmlSnapshot, revokeBlobUrl, resolveSnapshotUrl } from '@/utils/mhtmlSnapshot'
 
 const route = useRoute()
 const router = useRouter()
@@ -463,6 +496,9 @@ const safeRawEditorRef = ref(null)
 const cleanContentRef = ref(null)
 const renderedContentRef = ref(null)
 const translateContentRef = ref(null)
+const snapshotLoading = ref(false)
+const snapshotError = ref('')
+const snapshotBlobUrl = ref('')
 
 const {
   selectedEntityKeys,
@@ -547,9 +583,35 @@ const loadAnalyzeOptions = async () => {
     }
 }
 
+function revokeSnapshotBlob() {
+    revokeBlobUrl(snapshotBlobUrl.value)
+    snapshotBlobUrl.value = ''
+}
+
+async function loadSnapshot() {
+    const url = resolveSnapshotUrl(articleData.value?.snapshot)
+    if (!url) {
+        snapshotError.value = '快照地址无效'
+        return
+    }
+    snapshotLoading.value = true
+    snapshotError.value = ''
+    try {
+        const { blobUrl } = await loadMhtmlSnapshot(url)
+        revokeSnapshotBlob()
+        snapshotBlobUrl.value = blobUrl
+    } catch (err) {
+        snapshotError.value = err?.message || '快照加载失败'
+    } finally {
+        snapshotLoading.value = false
+    }
+}
+
 const loadArticleDetail = async () => {
     loading.value = true
     error.value = null
+    revokeSnapshotBlob()
+    snapshotError.value = ''
     
     try {
         const response = await articleApi.getArticleDetail(uuid.value)
@@ -757,6 +819,9 @@ watch(() => route.params.uuid, () => {
 }, { immediate: false })
 
 watch(activeTab, async (newTab, oldTab) => {
+    if (newTab === 'snapshot' && !snapshotBlobUrl.value && !snapshotLoading.value) {
+        loadSnapshot()
+    }
     if (newTab === 'raw' && rawEditorRef.value && articleData.value?.raw_content) {
         await nextTick()
         await rawEditorRef.value.formatDocument()
@@ -778,6 +843,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+    revokeSnapshotBlob()
     cleanupEventListeners()
 })
 </script>
