@@ -16,7 +16,11 @@ from app.schemas.agent.nanobot_agent import (
     NanobotAgentCreateRequestSchema,
     NanobotAgentUpdateRequestSchema,
 )
-from app.schemas.constants import NanobotSessionStatusEnum
+from app.schemas.constants import (
+    NANOBOT_BUILTIN_WORKSPACE_ID,
+    NanobotMemoryDocTypeEnum,
+    NanobotSessionStatusEnum,
+)
 
 
 def _dt(n: int) -> datetime:
@@ -46,6 +50,7 @@ class FakeAgentDoc:
     skills: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     llm_config: dict[str, Any] = field(default_factory=dict)
+    agent_builtin_prompt_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -174,6 +179,33 @@ class FakeSessionDoc:
     status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.IDLE
 
 
+@dataclass
+class FakeMemoryDoc:
+    id: str
+    workspace_id: str
+    type: NanobotMemoryDocTypeEnum
+    name: str = ""
+
+
+class FakeNanobotMemoryDocsModel:
+    _docs: dict[str, FakeMemoryDoc] = {}
+
+    @classmethod
+    def find(cls, query_filters: dict[str, Any]) -> _FakeQuery:
+        items = list(cls._docs.values())
+        if query_filters.get("workspace_id"):
+            items = [d for d in items if d.workspace_id == query_filters["workspace_id"]]
+        if query_filters.get("type") is not None:
+            items = [d for d in items if d.type == query_filters["type"]]
+        if "$or" in query_filters:
+            ids: set[str] = set()
+            for clause in query_filters["$or"]:
+                for raw_id in clause.get("_id", {}).get("$in", []):
+                    ids.add(str(raw_id))
+            items = [d for d in items if d.id in ids]
+        return _FakeQuery(items)
+
+
 class FakeNanobotSessionModel:
     _docs: dict[str, FakeSessionDoc] = {}
 
@@ -194,9 +226,11 @@ def _patch_models(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     FakeNanobotAgentModel._docs = {}
     FakeNanobotWorkspaceModel._docs = {}
     FakeNanobotSessionModel._docs = {}
+    FakeNanobotMemoryDocsModel._docs = {}
     monkeypatch.setattr(agent_module, "NanobotAgentModel", FakeNanobotAgentModel)
     monkeypatch.setattr(agent_module, "NanobotWorkspaceModel", FakeNanobotWorkspaceModel)
     monkeypatch.setattr(agent_module, "NanobotSessionModel", FakeNanobotSessionModel)
+    monkeypatch.setattr(agent_module, "NanobotMemoryDocsModel", FakeNanobotMemoryDocsModel)
     monkeypatch.setattr(agent_module, "generate_id", lambda _: "agent_fixed")
     yield
 
@@ -548,6 +582,41 @@ async def test_delete_success() -> None:
     await FakeAgentDoc(id="a1", workspace_id="w1", name="A", prompt_template_id="p1", model_config_id="m1").insert()
     await agent_module.AgentService.delete("a1")
     assert await FakeNanobotAgentModel.find_one({"_id": "a1"}) is None
+
+
+@pytest.mark.asyncio
+async def test_create_with_builtin_prompt_ids() -> None:
+    _seed_workspace("w1", prompt_template_ids=["p1"], model_config_ids=["m1"])
+    FakeNanobotMemoryDocsModel._docs["bp1"] = FakeMemoryDoc(
+        id="bp1",
+        workspace_id=NANOBOT_BUILTIN_WORKSPACE_ID,
+        type=NanobotMemoryDocTypeEnum.AGENT,
+        name="identity",
+    )
+    data = NanobotAgentCreateRequestSchema(
+        workspace_id="w1",
+        name="A",
+        prompt_template_id="p1",
+        model_config_id="m1",
+        agent_builtin_prompt_ids=["bp1"],
+    )
+    doc = await agent_module.AgentService.create(data)
+    assert doc.agent_builtin_prompt_ids == ["bp1"]
+
+
+@pytest.mark.asyncio
+async def test_create_duplicate_builtin_prompt_ids() -> None:
+    _seed_workspace("w1", prompt_template_ids=["p1"], model_config_ids=["m1"])
+    data = NanobotAgentCreateRequestSchema(
+        workspace_id="w1",
+        name="A",
+        prompt_template_id="p1",
+        model_config_id="m1",
+        agent_builtin_prompt_ids=["bp1", "bp1"],
+    )
+    with pytest.raises(AgentServiceError) as e:
+        await agent_module.AgentService.create(data)
+    assert e.value.code == status_codes.INVALID_ARGUMENT
 
 
 @pytest.mark.asyncio

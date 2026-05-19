@@ -40,6 +40,9 @@ export const agentApi = {
   getToolsList() {
     return request.get('/agent/configs/tools')
   },
+  getAgentBuiltinPromptOptions() {
+    return request.get('/agent/configs/filter/agent-prompts')
+  },
   getToolsListForAgent() {
     return request.get('/agent/configs/tools-list')
   },

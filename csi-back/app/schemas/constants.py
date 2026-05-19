@@ -229,6 +229,9 @@ class NanobotMessageRoleEnum(str, Enum):
     SYSTEM = "system"
     TOOL = "tool"
     
+NANOBOT_BUILTIN_WORKSPACE_ID = "__nanobot__"
+
+
 class NanobotMemoryDocTypeEnum(str, Enum):
     """
     nanobot记忆类型枚举

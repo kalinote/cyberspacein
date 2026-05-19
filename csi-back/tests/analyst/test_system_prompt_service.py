@@ -179,6 +179,18 @@ async def _seed(
 
 
 @pytest.mark.asyncio
+async def test_create_agent_type_forces_builtin_workspace() -> None:
+    data = SystemPromptCreateRequestSchema(
+        workspace_id="w1",
+        type=NanobotMemoryDocTypeEnum.AGENT,
+        name="identity",
+        content="hello",
+    )
+    doc = await system_prompt_module.SystemPromptService.create(data)
+    assert doc.workspace_id == system_prompt_module.NANOBOT_BUILTIN_WORKSPACE_ID
+
+
+@pytest.mark.asyncio
 async def test_create_success() -> None:
     data = SystemPromptCreateRequestSchema(
         workspace_id="w1",

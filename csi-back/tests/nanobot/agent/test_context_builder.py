@@ -11,6 +11,7 @@ import pytest
 
 import app.service.nanobot.agent.context as context_module
 from app.service.nanobot.agent.context import ContextBuilder, MemorySnapshot
+from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
 
 
 class FakeMemoryStore:
@@ -46,7 +47,18 @@ class FakeMemoryStore:
 
 
 def _builder(mem: FakeMemoryStore, **kw: Any) -> ContextBuilder:
-    return ContextBuilder(mem, skills=kw.get("skills"), timezone=kw.get("timezone"), extra_system_suffix=kw.get("extra_system_suffix", ""))
+    repo: AgentPromptRepository | None = kw.get("prompt_repo")
+    if repo is None and kw.get("skills") is not None:
+        repo = AgentPromptRepository()
+        repo._name_cache["_skills_section"] = "# Skills\n\n{{ skills_summary }}"
+    return ContextBuilder(
+        mem,
+        skills=kw.get("skills"),
+        timezone=kw.get("timezone"),
+        extra_system_suffix=kw.get("extra_system_suffix", ""),
+        prompt_repo=repo,
+        builtin_prompt_sections=kw.get("builtin_prompt_sections", []),
+    )
 
 
 @pytest.mark.asyncio
@@ -94,11 +106,22 @@ def test_empty_snapshot_prompt() -> None:
     cb = _builder(FakeMemoryStore())
     prompt = cb.build_system_prompt()
 
-    assert "对话中请直接用文字回复" in prompt
+    assert prompt == ""
+    assert "对话中请直接用文字回复" not in prompt
     assert "# Memory\n\n## Long-term Memory" not in prompt
     assert "# Recent History" not in prompt
     assert "## SOUL\n\n" not in prompt
     assert "## USER\n\n" not in prompt
+
+
+def test_builtin_prompt_sections_order() -> None:
+    cb = _builder(
+        FakeMemoryStore(),
+        builtin_prompt_sections=["第一段", "第二段"],
+    )
+    prompt = cb.build_system_prompt()
+    assert prompt.index("第一段") < prompt.index("第二段")
+    assert "---" in prompt
 
 
 def test_persona_block_soul_only() -> None:
@@ -197,4 +220,16 @@ def test_skills_none_safely() -> None:
     cb = _builder(FakeMemoryStore(), skills=None)
     prompt = cb.build_system_prompt()
     assert "# 激活的 Skills" not in prompt
-    assert isinstance(prompt, str) and len(prompt) > 50
+    assert prompt == ""
+
+
+def test_skills_summary_not_auto_injected_without_builtin_selection() -> None:
+    skills = MagicMock()
+    skills.get_always_skills.return_value = []
+    skills.build_skills_summary.return_value = "- **demo** — desc"
+    repo = AgentPromptRepository()
+    repo._name_cache["_skills_section"] = "# 技能\n\n{{ skills_summary }}"
+    cb = _builder(FakeMemoryStore(), skills=skills, prompt_repo=repo)
+    prompt = cb.build_system_prompt()
+    assert "# 技能" not in prompt
+    assert "demo" not in prompt

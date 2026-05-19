@@ -20,6 +20,7 @@ class FakeAgent:
     prompt_template_id: str = "p1"
     tools: list[str] = field(default_factory=lambda: ["notify_user", "write_todos"])
     mcp_servers: list[str] = field(default_factory=lambda: ["srv1"])
+    agent_builtin_prompt_ids: list[str] = field(default_factory=list)
     updated_at: Any = None
 
     async def save(self) -> None:
@@ -41,10 +42,13 @@ class FakeRegistry:
 
 
 class FakeBot:
-    def __init__(self, provider: Any, hooks: list[Any]) -> None:
+    def __init__(self, provider: Any, hooks: list[Any], builtin_prompt_sections: list[str] | None = None) -> None:
         self.loop = SimpleNamespace(
             tools=FakeRegistry(),
-            context=SimpleNamespace(extra_system_suffix=""),
+            context=SimpleNamespace(
+                extra_system_suffix="",
+                builtin_prompt_sections=list(builtin_prompt_sections or []),
+            ),
             provider=provider,
             _extra_hooks=list(hooks),
         )
@@ -89,9 +93,29 @@ def _patch_deps(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
         lambda enabled: [SimpleNamespace(name=n) for n in enabled],
     )
 
-    # Nanobot.from_components
+    class _FakePromptRepo:
+        async def resolve_builtin_render_context(
+            self,
+            doc_ids: list[str],
+            **kwargs: Any,
+        ) -> dict[str, Any]:
+            return {"channel": kwargs.get("channel", "cli")}
+
+        async def render_many_by_ids(self, doc_ids: list[str], **kwargs: Any) -> list[str]:
+            return [f"builtin:{i}" for i in doc_ids]
+
+    monkeypatch.setattr(
+        service_module,
+        "AgentPromptRepository",
+        lambda: _FakePromptRepo(),
+    )
+
     def _from_components(**kw: Any) -> Any:
-        return FakeBot(provider=kw["provider"], hooks=kw.get("hooks") or [])
+        return FakeBot(
+            provider=kw["provider"],
+            hooks=kw.get("hooks") or [],
+            builtin_prompt_sections=kw.get("builtin_prompt_sections"),
+        )
 
     monkeypatch.setattr(service_module.Nanobot, "from_components", staticmethod(_from_components))
     yield
@@ -108,4 +132,12 @@ async def test_build_bot_injects_hooks_and_tools() -> None:
     assert set(bot.loop.tools._tools.keys()) == {"notify_user", "write_todos", "submit_task_result"}
     assert "SYS" in bot.loop.context.extra_system_suffix
     assert service_module.TASK_SUBMIT_GUIDANCE in bot.loop.context.extra_system_suffix
+
+
+@pytest.mark.asyncio
+async def test_build_bot_builtin_prompt_sections() -> None:
+    agent = FakeAgent(agent_builtin_prompt_ids=["id1", "id2"])
+    ws = FakeWorkspace()
+    bot, _ = await service_module.AnalystService.build_bot(agent, ws)
+    assert bot.loop.context.builtin_prompt_sections == ["builtin:id1", "builtin:id2"]
 

@@ -20,6 +20,7 @@ class FakeAgent:
     prompt_template_id: str = "p1"
     tools: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
+    agent_builtin_prompt_ids: list[str] = field(default_factory=list)
     updated_at: Any = None
 
     async def save(self) -> None:
@@ -73,6 +74,18 @@ async def test_build_bot_always_uses_openai_compat_provider(monkeypatch: pytest.
         return SimpleNamespace(**kw)
 
     monkeypatch.setattr(service_module, "OpenAICompatProvider", _openai_provider)
+    class _FakePromptRepo:
+        async def resolve_builtin_render_context(
+            self,
+            doc_ids: list[str],
+            **kwargs: Any,
+        ) -> dict[str, Any]:
+            return {}
+
+        async def render_many_by_ids(self, doc_ids: list[str], **kwargs: Any) -> list[str]:
+            return []
+
+    monkeypatch.setattr(service_module, "AgentPromptRepository", lambda: _FakePromptRepo())
     monkeypatch.setattr(
         service_module.Nanobot,
         "from_components",
@@ -80,7 +93,10 @@ async def test_build_bot_always_uses_openai_compat_provider(monkeypatch: pytest.
             lambda **kw: SimpleNamespace(
                 loop=SimpleNamespace(
                     tools=SimpleNamespace(register=lambda _t: None, has=lambda _n: False),
-                    context=SimpleNamespace(extra_system_suffix=""),
+                    context=SimpleNamespace(
+                        extra_system_suffix="",
+                        builtin_prompt_sections=[],
+                    ),
                     _extra_hooks=[],
                 )
             )

@@ -39,11 +39,12 @@ async def lifespan(app: FastAPI):
     await init_cos()
     await init_embedding_client()
     await ensure_default_admin()
-    
+    from app.service.nanobot.bootstrap import ensure_builtin_agent_prompts
+    await ensure_builtin_agent_prompts()
+
     yield
 
     from app.service.analyst.service import AnalystService
-
     await AnalystService.shutdown_running_agents()
 
     await close_embedding_client()

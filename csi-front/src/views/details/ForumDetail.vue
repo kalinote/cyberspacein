@@ -68,7 +68,26 @@
             <section class="py-8 bg-white">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                        <router-link
+                            v-if="forumData.author_uuid"
+                            :to="`/user/${forumData.author_uuid}`"
+                            class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md hover:border-blue-200 transition-all"
+                        >
+                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">作者</p>
+                                <p class="text-lg font-bold text-blue-600 truncate">
+                                    {{ forumData.author_name || forumData.author_id || '未知' }}
+                                </p>
+                            </div>
+                            <Icon icon="mdi:chevron-right" class="text-gray-400 text-xl shrink-0" />
+                        </router-link>
+                        <div
+                            v-else
+                            class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
+                        >
                             <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                                 <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
                             </div>
@@ -76,6 +95,37 @@
                                 <p class="text-sm text-gray-500">作者</p>
                                 <p class="text-lg font-bold text-gray-900 truncate">
                                     {{ forumData.author_name || forumData.author_id || '未知' }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <router-link
+                            v-if="forumData.platform_uuid"
+                            :to="`/details/platform/${forumData.platform_uuid}`"
+                            class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md hover:border-purple-200 transition-all"
+                        >
+                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">来源平台</p>
+                                <p class="text-base font-bold text-purple-600 truncate">
+                                    {{ forumData.platform || '未知' }}
+                                </p>
+                            </div>
+                            <Icon icon="mdi:chevron-right" class="text-gray-400 text-xl shrink-0" />
+                        </router-link>
+                        <div
+                            v-else
+                            class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
+                        >
+                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">来源平台</p>
+                                <p class="text-base font-bold text-gray-900 truncate">
+                                    {{ forumData.platform || '未知' }}
                                 </p>
                             </div>
                         </div>
@@ -104,20 +154,75 @@
                             </div>
                         </div>
 
-                        <div class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
+                    </div>
+
+                    <div v-if="hasPostMetaCards" class="flex flex-wrap gap-6 mt-6">
+                        <div
+                            v-if="forumData.topic_id"
+                            class="w-62.5 shrink-0 bg-linear-to-br from-slate-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
+                        >
+                            <div class="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                                <Icon icon="mdi:identifier" class="text-slate-600 text-2xl" />
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">来源平台</p>
-                                <p class="text-base font-bold text-gray-900 truncate">
-                                    {{ forumData.platform || '未知' }}
+                                <p class="text-sm text-gray-500">主题ID</p>
+                                <p class="text-sm font-bold text-gray-900 break-all">{{ forumData.topic_id }}</p>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="forumData.parent_id"
+                            class="w-62.5 shrink-0 bg-linear-to-br from-cyan-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
+                        >
+                            <div class="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center shrink-0">
+                                <Icon icon="mdi:file-tree" class="text-cyan-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">父ID</p>
+                                <p class="text-sm font-bold text-gray-900 break-all">{{ forumData.parent_id }}</p>
+                            </div>
+                        </div>
+
+                        <div v-if="forumData.comments !== null && forumData.comments !== -1" class="w-62.5 shrink-0 bg-linear-to-br from-teal-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center shrink-0">
+                                <Icon icon="mdi:comment" class="text-teal-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">评论</p>
+                                <p class="text-2xl font-bold text-gray-900">
+                                    {{ forumData.comments.toLocaleString() }}
                                 </p>
                             </div>
                         </div>
-                    </div>
 
-                    <div v-if="hasInteractionData" class="grid grid-cols-2 md:grid-cols-5 gap-6 mt-6">
+                        <div v-if="forumData.views !== null && forumData.views !== -1" class="w-62.5 shrink-0 bg-linear-to-br from-indigo-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                            <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
+                                <Icon icon="mdi:eye" class="text-indigo-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">浏览</p>
+                                <p class="text-2xl font-bold text-gray-900">
+                                    {{ forumData.views.toLocaleString() }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <router-link
+                            v-if="forumData.topic_thread_uuid && forumData.thread_type !== 'thread'"
+                            :to="`/details/forum/${forumData.topic_thread_uuid}`"
+                            class="w-62.5 shrink-0 bg-linear-to-br from-indigo-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md hover:border-indigo-200 transition-all"
+                        >
+                            <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
+                                <Icon icon="mdi:forum-outline" class="text-indigo-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">主贴</p>
+                                <p class="text-base font-bold text-indigo-600 truncate">查看主贴</p>
+                            </div>
+                            <Icon icon="mdi:chevron-right" class="text-gray-400 text-xl shrink-0" />
+                        </router-link>
+                    </div>
+                    <div v-if="hasInteractionData" class="grid grid-cols-2 md:grid-cols-3 gap-6 mt-6">
                         <div v-if="forumData.likes !== null && forumData.likes !== -1" class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
                             <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                                 <Icon icon="mdi:thumb-up" class="text-blue-600 text-2xl" />
@@ -153,37 +258,13 @@
                                 </p>
                             </div>
                         </div>
-
-                        <div v-if="forumData.comments !== null && forumData.comments !== -1" class="bg-linear-to-br from-green-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:comment" class="text-green-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">评论</p>
-                                <p class="text-2xl font-bold text-gray-900">
-                                    {{ forumData.comments.toLocaleString() }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div v-if="forumData.views !== null && forumData.views !== -1" class="bg-linear-to-br from-indigo-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:eye" class="text-indigo-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">浏览</p>
-                                <p class="text-2xl font-bold text-gray-900">
-                                    {{ forumData.views.toLocaleString() }}
-                                </p>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </section>
 
             <section class="py-12 bg-gray-50">
                 <div class="w-full px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
                         <MarkingSidebar
                             :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
                             :active-marking-id="activeMarkingId"
@@ -534,58 +615,6 @@
                                 </div>
                             </div>
 
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    帖子<span class="text-blue-500">信息</span>
-                                </h3>
-                                <div class="space-y-4">
-                                    <div v-if="forumData.author_name || forumData.author_id">
-                                        <p class="text-sm text-gray-500 mb-1">作者</p>
-                                        <router-link
-                                            v-if="forumData.author_uuid"
-                                            :to="`/user/${forumData.author_uuid}`"
-                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
-                                        >
-                                            {{ forumData.author_name || forumData.author_id }}
-                                        </router-link>
-                                        <p v-else class="font-medium text-gray-900">
-                                            {{ forumData.author_name || forumData.author_id }}
-                                        </p>
-                                    </div>
-                                    <div v-if="forumData.platform">
-                                        <p class="text-sm text-gray-500 mb-1">平台</p>
-                                        <router-link
-                                            v-if="forumData.platform_uuid"
-                                            :to="`/details/platform/${forumData.platform_uuid}`"
-                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
-                                        >
-                                            {{ forumData.platform }}
-                                        </router-link>
-                                        <p v-else class="font-medium text-gray-900">
-                                            {{ forumData.platform }}
-                                        </p>
-                                    </div>
-                                    <div v-if="forumData.topic_id">
-                                        <p class="text-sm text-gray-500 mb-1">主题ID</p>
-                                        <p class="font-medium text-gray-900 break-all text-sm">{{ forumData.topic_id }}</p>
-                                    </div>
-                                    <div v-if="forumData.parent_id">
-                                        <p class="text-sm text-gray-500 mb-1">父ID</p>
-                                        <p class="font-medium text-gray-900 break-all text-sm">{{ forumData.parent_id }}</p>
-                                    </div>
-                                    <div v-if="forumData.floor">
-                                        <p class="text-sm text-gray-500 mb-1">楼层号</p>
-                                        <p class="font-medium text-gray-900">{{ forumData.floor }}</p>
-                                    </div>
-                                    <div v-if="forumData.thread_type">
-                                        <p class="text-sm text-gray-500 mb-1">帖子类型</p>
-                                        <el-tag :type="getThreadTypeTag(forumData.thread_type)" size="default">
-                                            {{ getThreadTypeText(forumData.thread_type) }}
-                                        </el-tag>
-                                    </div>
-                                </div>
-                            </div>
-
                             <div v-if="forumData.keywords && forumData.keywords.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:tag-multiple" class="text-blue-600 mr-2" />
@@ -897,13 +926,20 @@ const loadAnalyzeOptions = async () => {
     }
 }
 
+const hasPostMetaCards = computed(() => {
+    if (!forumData.value) return false
+    const d = forumData.value
+    return !!(d.topic_id || d.parent_id ||
+        (d.comments != null && d.comments !== -1) ||
+        (d.views != null && d.views !== -1) ||
+        (d.topic_thread_uuid && d.thread_type !== 'thread'))
+})
+
 const hasInteractionData = computed(() => {
     if (!forumData.value) return false
     return (forumData.value.likes !== null && forumData.value.likes !== -1) ||
            (forumData.value.dislikes !== null && forumData.value.dislikes !== -1) ||
-           (forumData.value.collections !== null && forumData.value.collections !== -1) ||
-           (forumData.value.comments !== null && forumData.value.comments !== -1) ||
-           (forumData.value.views !== null && forumData.value.views !== -1)
+           (forumData.value.collections !== null && forumData.value.collections !== -1)
 })
 
 const handleSaveSafeContent = async () => {

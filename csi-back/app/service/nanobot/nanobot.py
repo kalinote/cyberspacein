@@ -98,6 +98,8 @@ class Nanobot:
         send_progress: bool = True,
         send_tool_hints: bool = False,
         hooks: list[AgentHook] | None = None,
+        prompt_repo: Any | None = None,
+        builtin_prompt_sections: list[str] | None = None,
     ) -> "Nanobot":
         """按已构建好的组件装配 Nanobot。
 
@@ -136,6 +138,8 @@ class Nanobot:
             disabled_skills=disabled_skills,
             tools_config=tools_config,
             dream_config=dream_config,
+            prompt_repo=prompt_repo,
+            builtin_prompt_sections=builtin_prompt_sections,
         )
         return cls(loop)
 

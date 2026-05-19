@@ -26,9 +26,8 @@ from app.service.nanobot.utils.helpers import (
     estimate_prompt_tokens_chain,
     strip_think,
 )
-from app.service.nanobot.utils.prompt_templates import render_template
-
 if TYPE_CHECKING:
+    from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
     from app.service.nanobot.config.schema import DreamConfig
     from app.service.nanobot.providers.base import LLMProvider
     from app.service.nanobot.session.manager import Session, SessionManager
@@ -173,6 +172,7 @@ class Consolidator:
         context_window_tokens: int,
         build_messages: Callable[..., list[dict[str, Any]]],
         get_tool_definitions: Callable[[], list[dict[str, Any]]],
+        prompt_repo: AgentPromptRepository,
         max_completion_tokens: int = 4096,
     ):
         self.store = store
@@ -183,6 +183,7 @@ class Consolidator:
         self.max_completion_tokens = max_completion_tokens
         self._build_messages = build_messages
         self._get_tool_definitions = get_tool_definitions
+        self._prompt_repo = prompt_repo
         # 按 session.id 区分锁：同 session 不能并发做 consolidation
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
@@ -273,8 +274,8 @@ class Consolidator:
                 messages=[
                     {
                         "role": "system",
-                        "content": render_template(
-                            "agent/consolidator_archive.md",
+                        "content": await self._prompt_repo.render_by_name(
+                            "_consolidator_archive",
                             strip=True,
                         ),
                     },

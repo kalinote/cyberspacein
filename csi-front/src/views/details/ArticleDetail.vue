@@ -53,7 +53,26 @@
             <section class="py-8 bg-white">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div class="grid grid-cols-1 gap-6" :class="(articleData.likes != null && articleData.likes !== -1) ? 'md:grid-cols-5' : 'md:grid-cols-4'">
-                        <div class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                        <router-link
+                            v-if="articleData.author_uuid"
+                            :to="`/user/${articleData.author_uuid}`"
+                            class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md hover:border-blue-200 transition-all"
+                        >
+                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">作者</p>
+                                <p class="text-lg font-bold text-blue-600 truncate">
+                                    {{ articleData.author_name || articleData.author_id || '未知' }}
+                                </p>
+                            </div>
+                            <Icon icon="mdi:chevron-right" class="text-gray-400 text-xl shrink-0" />
+                        </router-link>
+                        <div
+                            v-else
+                            class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
+                        >
                             <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                                 <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
                             </div>
@@ -64,8 +83,26 @@
                                 </p>
                             </div>
                         </div>
-
-                        <div class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
+                        <router-link
+                            v-if="articleData.platform_uuid"
+                            :to="`/details/platform/${articleData.platform_uuid}`"
+                            class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md hover:border-purple-200 transition-all"
+                        >
+                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-500">来源平台</p>
+                                <p class="text-base font-bold text-purple-600 truncate">
+                                    {{ articleData.platform || '未知' }}
+                                </p>
+                            </div>
+                            <Icon icon="mdi:chevron-right" class="text-gray-400 text-xl shrink-0" />
+                        </router-link>
+                        <div
+                            v-else
+                            class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
+                        >
                             <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
                                 <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
                             </div>
@@ -118,7 +155,7 @@
 
             <section class="py-12 bg-gray-50">
                 <div class="w-full px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
                         <MarkingSidebar
                             :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
                             :active-marking-id="activeMarkingId"
@@ -361,40 +398,6 @@
                                         <Icon :icon="isPriorityTarget ? 'mdi:star' : 'mdi:star-outline'" />
                                         <span>{{ isPriorityTarget ? '取消重点目标' : '设置重点目标' }}</span>
                                     </button>
-                                </div>
-                            </div>
-
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    文章<span class="text-blue-500">信息</span>
-                                </h3>
-                                <div class="space-y-4">
-                                    <div v-if="articleData.author_name || articleData.author_id">
-                                        <p class="text-sm text-gray-500 mb-1">作者</p>
-                                        <router-link
-                                            v-if="articleData.author_uuid"
-                                            :to="`/user/${articleData.author_uuid}`"
-                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
-                                        >
-                                            {{ articleData.author_name || articleData.author_id }}
-                                        </router-link>
-                                        <p v-else class="font-medium text-gray-900">
-                                            {{ articleData.author_name || articleData.author_id }}
-                                        </p>
-                                    </div>
-                                    <div v-if="articleData.platform">
-                                        <p class="text-sm text-gray-500 mb-1">平台</p>
-                                        <router-link
-                                            v-if="articleData.platform_uuid"
-                                            :to="`/details/platform/${articleData.platform_uuid}`"
-                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
-                                        >
-                                            {{ articleData.platform }}
-                                        </router-link>
-                                        <p v-else class="font-medium text-gray-900">
-                                            {{ articleData.platform }}
-                                        </p>
-                                    </div>
                                 </div>
                             </div>
 

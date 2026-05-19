@@ -60,6 +60,9 @@ from app.service.analyst.tools import SubmitTaskResultTool, build_business_tools
 from app.service.nanobot import Nanobot
 from app.service.nanobot.config.schema import DreamConfig
 from app.service.nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
+from app.service.nanobot.agent.skills import SkillsLoader
+from app.service.nanobot.config.schema import AgentDefaults
 from app.service.nanobot.storage import MongoMemoryBackend, MongoSessionStore
 from app.utils.id_lib import generate_id
 
@@ -458,6 +461,27 @@ class AnalystService:
             if server_name in (workspace.enabled_mcp_servers or {}):
                 mcp_subset[server_name] = workspace.enabled_mcp_servers[server_name]
 
+        prompt_repo = AgentPromptRepository()
+        prompt_ids = list(agent.agent_builtin_prompt_ids)
+        if prompt_ids:
+            skills_loader = SkillsLoader(_agent_sandbox_dir(agent.workspace_id, agent.id))
+            always_skills = skills_loader.get_always_skills()
+            skills_summary = skills_loader.build_skills_summary(
+                exclude=set(always_skills),
+            )
+            jinja_ctx = await prompt_repo.resolve_builtin_render_context(
+                prompt_ids,
+                channel="cli",
+                skills_summary=skills_summary,
+                max_iterations=AgentDefaults().max_tool_iterations,
+            )
+            builtin_sections = await prompt_repo.render_many_by_ids(
+                prompt_ids,
+                **jinja_ctx,
+            )
+        else:
+            builtin_sections = []
+
         bot = Nanobot.from_components(
             agent_id=agent.id,
             workspace_id=agent.workspace_id,
@@ -469,6 +493,8 @@ class AnalystService:
             dream_config=DreamConfig(),
             mcp_servers=mcp_subset or None,
             hooks=default_analyst_hooks(),
+            prompt_repo=prompt_repo,
+            builtin_prompt_sections=builtin_sections,
         )
 
         for tool in build_business_tools(agent.tools):

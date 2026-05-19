@@ -703,7 +703,7 @@
     <el-dialog
       v-model="agentDialogVisible"
       :title="editingAgentId ? '编辑分析引擎' : '新增分析引擎'"
-      width="560px"
+      width="640px"
       :close-on-click-modal="false"
       @closed="afterAgentDialogClosed"
       @opened="loadAgentDialogOptions"
@@ -744,6 +744,67 @@
             placeholder="请输入描述（可选）"
             clearable
           />
+        </el-form-item>
+        <el-form-item label="内置提示词" prop="agent_builtin_prompt_ids">
+          <div class="w-full space-y-2">
+            <el-select
+              v-model="agentBuiltinPromptPicker"
+              placeholder="添加内置提示词（按顺序拼入 system prompt 前部）"
+              class="w-full"
+              filterable
+              clearable
+              :loading="agentBuiltinPromptOptionsLoading"
+              @change="handleAddAgentBuiltinPrompt"
+            >
+              <el-option
+                v-for="item in agentBuiltinPromptAvailableOptions"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+              />
+            </el-select>
+            <div
+              v-if="agentFormData.agent_builtin_prompt_ids.length"
+              class="space-y-2"
+            >
+              <div
+                v-for="(id, index) in agentFormData.agent_builtin_prompt_ids"
+                :key="id"
+                class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
+              >
+                <span class="shrink-0 text-xs text-gray-500 w-5 text-center">{{ index + 1 }}</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-900 truncate">{{ getAgentBuiltinPromptLabel(id) }}</div>
+                  <div
+                    v-if="getAgentBuiltinPromptDescription(id)"
+                    class="text-xs text-gray-500 truncate"
+                  >
+                    {{ getAgentBuiltinPromptDescription(id) }}
+                  </div>
+                </div>
+                <el-button
+                  type="primary"
+                  link
+                  :disabled="index === 0"
+                  @click="moveAgentBuiltinPrompt(index, -1)"
+                >
+                  <Icon icon="mdi:arrow-up" />
+                </el-button>
+                <el-button
+                  type="primary"
+                  link
+                  :disabled="index === agentFormData.agent_builtin_prompt_ids.length - 1"
+                  @click="moveAgentBuiltinPrompt(index, 1)"
+                >
+                  <Icon icon="mdi:arrow-down" />
+                </el-button>
+                <el-button type="danger" link @click="removeAgentBuiltinPrompt(index)">
+                  <Icon icon="mdi:close" />
+                </el-button>
+              </div>
+            </div>
+            <p v-else class="text-xs text-gray-500 m-0">未选择时运行时不注入 nanobot 内置骨架段</p>
+          </div>
         </el-form-item>
         <el-form-item label="提示词模板" prop="prompt_template_id">
           <el-select
@@ -823,6 +884,9 @@
               <span class="whitespace-pre-line">{{ agentDetail.description || '-' }}</span>
             </el-descriptions-item>
             <el-descriptions-item label="模型配置ID">{{ agentDetail.model_config_id || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="内置提示词">
+              <span class="whitespace-pre-line">{{ formatAgentBuiltinPromptDetail(agentDetail.agent_builtin_prompt_ids) }}</span>
+            </el-descriptions-item>
             <el-descriptions-item label="提示词模板ID">{{ agentDetail.prompt_template_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="工具">
               {{ Array.isArray(agentDetail.tools) && agentDetail.tools.length ? agentDetail.tools.join(', ') : '-' }}
@@ -1395,6 +1459,7 @@ const agentFormData = ref({
   workspace_id: '',
   name: '',
   description: '',
+  agent_builtin_prompt_ids: [],
   prompt_template_id: '',
   model_config_id: '',
   llm_config: {},
@@ -1406,6 +1471,76 @@ const agentFormRules = {
   prompt_template_id: [{ required: true, message: '请选择提示词模板', trigger: 'change' }],
   model_config_id: [{ required: true, message: '请选择模型', trigger: 'change' }]
 }
+const agentBuiltinPromptOptions = ref([])
+const agentBuiltinPromptOptionsLoading = ref(false)
+const agentBuiltinPromptPicker = ref('')
+const agentBuiltinPromptById = computed(() => {
+  const map = new Map()
+  for (const item of agentBuiltinPromptOptions.value || []) {
+    if (item?.id) map.set(item.id, item)
+  }
+  return map
+})
+const agentBuiltinPromptAvailableOptions = computed(() => {
+  const selected = new Set(agentFormData.value.agent_builtin_prompt_ids || [])
+  return (agentBuiltinPromptOptions.value || []).filter((item) => item?.id && !selected.has(item.id))
+})
+
+const getAgentBuiltinPromptLabel = (id) => agentBuiltinPromptById.value.get(id)?.name || id
+const getAgentBuiltinPromptDescription = (id) => agentBuiltinPromptById.value.get(id)?.description || ''
+
+const formatAgentBuiltinPromptDetail = (ids) => {
+  if (!Array.isArray(ids) || !ids.length) return '-'
+  return ids
+    .map((id, index) => {
+      const item = agentBuiltinPromptById.value.get(id)
+      const name = item?.name || id
+      const desc = item?.description ? ` — ${item.description}` : ''
+      return `${index + 1}. ${name}${desc}`
+    })
+    .join('\n')
+}
+
+const loadAgentBuiltinPromptOptions = async () => {
+  if (agentBuiltinPromptOptions.value.length > 0) return
+  agentBuiltinPromptOptionsLoading.value = true
+  try {
+    const res = await agentApi.getAgentBuiltinPromptOptions()
+    agentBuiltinPromptOptions.value = Array.isArray(res?.data) ? res.data : []
+  } catch {
+    agentBuiltinPromptOptions.value = []
+  } finally {
+    agentBuiltinPromptOptionsLoading.value = false
+  }
+}
+
+const handleAddAgentBuiltinPrompt = (id) => {
+  if (!id) return
+  const ids = agentFormData.value.agent_builtin_prompt_ids || []
+  if (ids.includes(id)) {
+    agentBuiltinPromptPicker.value = ''
+    return
+  }
+  agentFormData.value.agent_builtin_prompt_ids = [...ids, id]
+  agentBuiltinPromptPicker.value = ''
+}
+
+const removeAgentBuiltinPrompt = (index) => {
+  const ids = [...(agentFormData.value.agent_builtin_prompt_ids || [])]
+  ids.splice(index, 1)
+  agentFormData.value.agent_builtin_prompt_ids = ids
+}
+
+const moveAgentBuiltinPrompt = (index, delta) => {
+  const ids = [...(agentFormData.value.agent_builtin_prompt_ids || [])]
+  const next = index + delta
+  if (next < 0 || next >= ids.length) return
+  const tmp = ids[index]
+  ids[index] = ids[next]
+  ids[next] = tmp
+  agentFormData.value.agent_builtin_prompt_ids = ids
+}
+
 const agentToolsListOptions = ref([])
 const agentToolsOptionsLoading = ref(false)
 const promptTemplateOptionsForAgent = ref([])
@@ -1455,6 +1590,10 @@ const agentToolsListOptionsFiltered = computed(() => {
 })
 
 const loadAgentDialogOptions = async () => {
+  if (agentBuiltinPromptOptions.value.length === 0) {
+    await loadAgentBuiltinPromptOptions()
+  }
+
   agentToolsOptionsLoading.value = true
   try {
     const res = await agentApi.getToolsListForAgent()
@@ -1532,11 +1671,13 @@ const resetAgentForm = () => {
     workspace_id: '',
     name: '',
     description: '',
+    agent_builtin_prompt_ids: [],
     prompt_template_id: '',
     model_config_id: '',
     llm_config: {},
     tools: []
   }
+  agentBuiltinPromptPicker.value = ''
   agentFormRef.value?.resetFields()
   agentWorkspaceDetail.value = null
 }
@@ -1562,11 +1703,11 @@ const handleAgentSubmit = async () => {
     await agentFormRef.value.validate()
     agentSubmitLoading.value = true
     const payload = {
-      workspace_id: agentFormData.value.workspace_id,
       name: agentFormData.value.name,
       description: agentFormData.value.description || undefined,
       prompt_template_id: agentFormData.value.prompt_template_id,
       model_config_id: agentFormData.value.model_config_id,
+      agent_builtin_prompt_ids: agentFormData.value.agent_builtin_prompt_ids || [],
       llm_config: agentFormData.value.llm_config || {},
       tools: agentFormData.value.tools || []
     }
@@ -1575,7 +1716,10 @@ const handleAgentSubmit = async () => {
       await agentApi.updateAgent(editingAgentId.value, payload)
       ElMessage.success('修改成功')
     } else {
-      await agentApi.createAgent(payload)
+      await agentApi.createAgent({
+        ...payload,
+        workspace_id: agentFormData.value.workspace_id
+      })
       ElMessage.success('新增成功')
     }
     handleAgentDialogClose()
@@ -1601,6 +1745,7 @@ const openAgentDetail = async (item) => {
   agentDetail.value = null
   agentDetailLoading.value = true
   try {
+    await loadAgentBuiltinPromptOptions()
     const res = await agentApi.getAgentDetail(id)
     agentDetail.value = res?.data ?? null
   } catch (e) {
@@ -1628,11 +1773,13 @@ const openAgentEdit = async (item) => {
       workspace_id: d.workspace_id ?? '',
       name: d.name ?? '',
       description: d.description ?? '',
+      agent_builtin_prompt_ids: Array.isArray(d.agent_builtin_prompt_ids) ? [...d.agent_builtin_prompt_ids] : [],
       prompt_template_id: d.prompt_template_id ?? '',
       model_config_id: d.model_config_id ?? '',
       llm_config: d.llm_config && typeof d.llm_config === 'object' ? d.llm_config : {},
       tools: Array.isArray(d.tools) ? d.tools : []
     }
+    agentBuiltinPromptPicker.value = ''
 
     if (agentFormData.value.workspace_id) {
       await loadAgentWorkspaceDetail(agentFormData.value.workspace_id)

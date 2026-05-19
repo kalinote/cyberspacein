@@ -14,7 +14,7 @@ from app.schemas.agent.configs import (
     SystemPromptCreateRequestSchema,
     SystemPromptUpdateRequestSchema,
 )
-from app.schemas.constants import NanobotMemoryDocTypeEnum
+from app.schemas.constants import NANOBOT_BUILTIN_WORKSPACE_ID, NanobotMemoryDocTypeEnum
 
 logger = logger.bind(name=__name__)
 
@@ -28,13 +28,40 @@ class SystemPromptServiceError(Exception):
 
 
 class SystemPromptService:
+    @staticmethod
+    def _normalize_workspace_id(
+        workspace_id: str,
+        doc_type: NanobotMemoryDocTypeEnum,
+    ) -> str:
+        if doc_type == NanobotMemoryDocTypeEnum.AGENT:
+            return NANOBOT_BUILTIN_WORKSPACE_ID
+        return workspace_id
+
+    @classmethod
+    async def list_agent_prompt_brief(cls) -> list[dict[str, str]]:
+        docs = await NanobotMemoryDocsModel.find(
+            {
+                "workspace_id": NANOBOT_BUILTIN_WORKSPACE_ID,
+                "type": NanobotMemoryDocTypeEnum.AGENT,
+            }
+        ).sort("+name").to_list()
+        return [
+            {
+                "id": str(doc.id),
+                "name": doc.name,
+                **({"description": doc.description} if doc.description else {}),
+            }
+            for doc in docs
+        ]
+
     @classmethod
     async def create(
         cls,
         data: SystemPromptCreateRequestSchema,
     ) -> NanobotMemoryDocsModel:
+        workspace_id = cls._normalize_workspace_id(data.workspace_id, data.type)
         doc = NanobotMemoryDocsModel(
-            workspace_id=data.workspace_id,
+            workspace_id=workspace_id,
             type=data.type,
             name=data.name,
             description=data.description,
@@ -89,7 +116,7 @@ class SystemPromptService:
         data: SystemPromptUpdateRequestSchema,
     ) -> NanobotMemoryDocsModel:
         doc = await cls.get(system_prompt_id)
-        doc.workspace_id = data.workspace_id
+        doc.workspace_id = cls._normalize_workspace_id(data.workspace_id, data.type)
         doc.type = data.type
         doc.name = data.name
         doc.description = data.description

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.service.nanobot.agent.memory import Consolidator
+from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
 from app.service.nanobot.session.manager import Session
 
 
@@ -54,6 +55,8 @@ def _make_consolidator(
     sm = sessions or FakeSessionManager()
     prov = provider or MagicMock()
     prov.generation.max_tokens = max_completion_tokens
+    repo = AgentPromptRepository()
+    repo._name_cache["_consolidator_archive"] = "summarize"
     return Consolidator(
         store=st,  # type: ignore[arg-type]
         provider=prov,
@@ -62,6 +65,7 @@ def _make_consolidator(
         context_window_tokens=context_window_tokens,
         build_messages=_build_messages,
         get_tool_definitions=_tools,
+        prompt_repo=repo,
         max_completion_tokens=max_completion_tokens,
     )
 

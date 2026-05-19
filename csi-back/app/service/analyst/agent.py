@@ -18,9 +18,11 @@ from loguru import logger
 import app.utils.status_codes as status_codes
 from app.models.agent.nanobot import (
     NanobotAgentModel,
+    NanobotMemoryDocsModel,
     NanobotSessionModel,
     NanobotWorkspaceModel,
 )
+from app.schemas.constants import NANOBOT_BUILTIN_WORKSPACE_ID, NanobotMemoryDocTypeEnum
 from app.schemas.agent.nanobot_agent import (
     AgentServiceError,
     NanobotAgentCreateRequestSchema,
@@ -117,6 +119,7 @@ class AgentService:
             skills=data.skills,
             mcp_servers=data.mcp_servers,
         )
+        await cls._validate_builtin_prompt_ids(data.agent_builtin_prompt_ids)
 
         name_conflict = await NanobotAgentModel.find_one(
             {"workspace_id": data.workspace_id, "name": data.name}
@@ -141,6 +144,7 @@ class AgentService:
             skills=list(data.skills),
             mcp_servers=list(data.mcp_servers),
             llm_config=dict(data.llm_config or {}),
+            agent_builtin_prompt_ids=list(data.agent_builtin_prompt_ids),
         )
         await doc.insert()
         logger.info(
@@ -184,6 +188,7 @@ class AgentService:
             skills=data.skills,
             mcp_servers=data.mcp_servers,
         )
+        await cls._validate_builtin_prompt_ids(data.agent_builtin_prompt_ids)
 
         doc.name = data.name
         doc.description = data.description
@@ -193,6 +198,7 @@ class AgentService:
         doc.skills = list(data.skills)
         doc.mcp_servers = list(data.mcp_servers)
         doc.llm_config = dict(data.llm_config or {})
+        doc.agent_builtin_prompt_ids = list(data.agent_builtin_prompt_ids)
         doc.updated_at = datetime.now()
         await doc.save()
         logger.info(f"更新 Agent 成功: id={agent_id} name={data.name}")
@@ -223,6 +229,46 @@ class AgentService:
                 f"工作区不存在: {workspace_id}",
             )
         return workspace
+
+    @staticmethod
+    async def _validate_builtin_prompt_ids(prompt_ids: list[str]) -> None:
+        if len(prompt_ids) != len(set(prompt_ids)):
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT,
+                "agent_builtin_prompt_ids 中存在重复项",
+            )
+        if not prompt_ids:
+            return
+        from bson import ObjectId
+        from bson.errors import InvalidId
+
+        object_ids: list[ObjectId] = []
+        string_ids: list[str] = []
+        for pid in prompt_ids:
+            try:
+                object_ids.append(ObjectId(pid))
+            except InvalidId:
+                string_ids.append(pid)
+        or_clauses: list[dict] = []
+        if object_ids:
+            or_clauses.append({"_id": {"$in": object_ids}})
+        if string_ids:
+            or_clauses.append({"_id": {"$in": string_ids}})
+        docs = await NanobotMemoryDocsModel.find(
+            {
+                "workspace_id": NANOBOT_BUILTIN_WORKSPACE_ID,
+                "type": NanobotMemoryDocTypeEnum.AGENT,
+                "$or": or_clauses,
+            }
+        ).to_list()
+        found = {str(d.id) for d in docs}
+        missing = [pid for pid in prompt_ids if pid not in found]
+        if missing:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT,
+                "agent_builtin_prompt_ids 含有无效或非 AGENT 内置文档",
+                data={"invalid_ids": missing},
+            )
 
     @staticmethod
     def _validate_subset(

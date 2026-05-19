@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from loguru import logger
 
 from app.schemas.agent.configs import (
+    AgentPromptBriefSchema,
     SystemPromptCreateRequestSchema,
     SystemPromptSchema,
     SystemPromptUpdateRequestSchema,
@@ -99,3 +100,14 @@ async def delete_system_prompt(system_prompt_id: str):
     except SystemPromptServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
     return ApiResponseSchema.success(data=None, message="删除成功")
+
+@router.get(
+    "/filter/agent-prompts",
+    response_model=ApiResponseSchema[list[AgentPromptBriefSchema]],
+    summary="获取 AGENT 内置提示词简要列表",
+)
+async def list_agent_prompt_brief():
+    items = await SystemPromptService.list_agent_prompt_brief()
+    return ApiResponseSchema.success(
+        data=[AgentPromptBriefSchema.model_validate(item) for item in items],
+    )

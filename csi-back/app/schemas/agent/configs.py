@@ -14,6 +14,12 @@ class ModelConfigListItemSchema(BaseModel):
     name: str = Field(description="模型配置名称")
 
 
+class AgentPromptBriefSchema(BaseModel):
+    id: str = Field(description="AGENT 内置提示词文档 ID")
+    name: str = Field(description="文档名称")
+    description: str | None = Field(default=None, description="文档描述")
+
+
 class SystemPromptCreateRequestSchema(BaseModel):
     workspace_id: str = Field(description="工作区ID", min_length=1)
     type: NanobotMemoryDocTypeEnum = Field(description="系统指令模板类型")

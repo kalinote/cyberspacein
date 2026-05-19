@@ -54,6 +54,10 @@ class NanobotAgentModel(Document):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表，⊆ workspace.enabled_skills")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的MCP服务名列表，元素 ∈ workspace.enabled_mcp_servers.keys()")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数（temperature / max_tokens / reasoning_effort 等）")
+    agent_builtin_prompt_ids: list[str] = Field(
+        default_factory=list,
+        description="绑定的 AGENT 内置提示词文档 ID 列表，按顺序拼入 system prompt；可为空",
+    )
 
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
@@ -143,9 +147,9 @@ class NanobotSessionMessagesModel(Document):
 
 
 class NanobotMemoryDocsModel(Document):
-    """长期记忆文档 对应原 memory/MEMORY.md / SOUL.md / USER.md"""
+    """长期记忆和内置系统提示词文档 对应原 memory/MEMORY.md / SOUL.md / USER.md 等文件"""
     workspace_id: str = Field(description="工作区ID")
-    type: NanobotMemoryDocTypeEnum = Field(description="记忆类型（USER 可能后续下线；SOUL 语义可能调整为报告风格）")
+    type: NanobotMemoryDocTypeEnum = Field(description="记忆类型")
     name: str = Field(description="记忆名称")
     description: str | None = Field(default=None, description="记忆描述")
     content: str = Field(description="记忆内容")
@@ -156,6 +160,10 @@ class NanobotMemoryDocsModel(Document):
         name = "nanobot_memory_docs"
         indexes = [
             IndexModel([("workspace_id", ASCENDING), ("type", ASCENDING)]),
+            IndexModel(
+                [("workspace_id", ASCENDING), ("type", ASCENDING), ("name", ASCENDING)],
+                unique=True,
+            ),
             "created_at",
             "updated_at",
         ]

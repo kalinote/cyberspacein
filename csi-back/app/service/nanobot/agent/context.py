@@ -6,6 +6,8 @@
   异步预取（`refresh_memory_snapshot`）后缓存，`build_system_prompt` / `build_messages`
   全部保持**同步接口**，直接读快照。
 - `SkillsLoader` 由外部构造并注入（本期只读内置 skills，无 workspace skill）。
+- Agent 绑定的 AGENT 内置提示词在装配时预渲染为 `builtin_prompt_sections`；
+  未在 `agent_builtin_prompt_ids` 中选中的内置模板不会自动注入 system prompt。
 """
 
 from __future__ import annotations
@@ -13,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import mimetypes
-import platform
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -23,10 +24,10 @@ from app.service.nanobot.utils.helpers import (
     current_time_str,
     detect_image_mime,
 )
-from app.service.nanobot.utils.prompt_templates import render_template
 
 if TYPE_CHECKING:
     from app.service.nanobot.agent.memory import MemoryStore
+    from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
     from app.service.nanobot.agent.skills import SkillsLoader
 
 
@@ -56,27 +57,22 @@ class ContextBuilder:
         skills: SkillsLoader | None = None,
         timezone: str | None = None,
         extra_system_suffix: str = "",
+        prompt_repo: AgentPromptRepository | None = None,
+        builtin_prompt_sections: list[str] | None = None,
     ):
         self.memory = memory
         self.skills = skills
         self.timezone = timezone
-        # 业务层（AnalystService）可以按 agent 维度动态注入业务 prompt：
-        # AgentPromptTemplateModel.system_prompt、结构化结果约束、todo 指令等，
-        # 最终会以独立 section 追加到 system prompt 末尾。
+        self.prompt_repo = prompt_repo
+        self.builtin_prompt_sections: list[str] = list(builtin_prompt_sections or [])
         self.extra_system_suffix: str = extra_system_suffix
         self._snapshot: MemorySnapshot = MemorySnapshot()
-
-    # ------------------------------------------------------------------
-    # 快照刷新：每次请求开始前调用一次
-    # ------------------------------------------------------------------
 
     @property
     def snapshot(self) -> MemorySnapshot:
         return self._snapshot
 
     async def refresh_memory_snapshot(self) -> MemorySnapshot:
-        """并发预取 MEMORY / SOUL / USER + 最近 history，写入内部缓存后返回"""
-        # 文档存到 nanobot_memory_docs 数据库中，不再从文件中读取
         memory_doc, soul_doc, user_doc, dream_cursor = await asyncio.gather(
             self.memory.read_memory(),
             self.memory.read_soul(),
@@ -94,21 +90,17 @@ class ContextBuilder:
         )
         return self._snapshot
 
-    # ------------------------------------------------------------------
-    # system prompt：同步；数据来自 self._snapshot
-    # ------------------------------------------------------------------
-
     def build_system_prompt(
         self,
         skill_names: list[str] | None = None,
         channel: str | None = None,
     ) -> str:
         snap = self._snapshot
-        parts: list[str] = [self._get_identity(channel=channel)]
+        parts: list[str] = []
 
-        format_hint = self._get_channel_format_hint(channel)
-        if format_hint:
-            parts.append(format_hint)
+        for section in self.builtin_prompt_sections:
+            if section and section.strip():
+                parts.append(section.strip())
 
         persona = self._build_persona_block(snap)
         if persona:
@@ -123,15 +115,6 @@ class ContextBuilder:
                 always_content = self.skills.load_skills_for_context(always_skills)
                 if always_content:
                     parts.append(f"# 激活的 Skills\n\n{always_content}")
-            skills_summary = self.skills.build_skills_summary(exclude=set(always_skills))
-            if skills_summary:
-                parts.append(
-                    render_template(
-                        "agent/skills_section.md",
-                        skills_summary=skills_summary,
-                    ),
-                )
-
         if snap.recent_history:
             parts.append(
                 "# Recent History\n\n"
@@ -144,11 +127,12 @@ class ContextBuilder:
         if self.extra_system_suffix and self.extra_system_suffix.strip():
             parts.append(self.extra_system_suffix.strip())
 
+        if not parts:
+            return ""
         return "\n\n---\n\n".join(parts)
 
     @staticmethod
     def _build_persona_block(snap: MemorySnapshot) -> str:
-        """把 SOUL / USER 两份文档拼成一个可选 section（都没内容则返回空串）"""
         pieces: list[str] = []
         if snap.soul.strip():
             pieces.append(f"## SOUL\n\n{snap.soul.rstrip()}")
@@ -158,7 +142,6 @@ class ContextBuilder:
 
     @staticmethod
     def _format_history_ts(entry: dict[str, Any]) -> str:
-        """统一 history 时间戳渲染（兼容 datetime / ISO 字符串 / 缺失）"""
         from datetime import datetime as _dt
 
         ts = entry.get("created_at") or entry.get("timestamp")
@@ -167,52 +150,6 @@ class ContextBuilder:
         if isinstance(ts, str) and ts:
             return ts[:16]
         return "?"
-
-    @staticmethod
-    def _get_channel_format_hint(channel: str | None) -> str:
-        """特定渠道的格式提示"""
-        # if channel == "telegram":
-        #     return "\n".join([
-        #         "## 格式提示",
-        #         "",
-        #         "- 当前渠道为**即时通讯**（Telegram）。",
-        #         "- 回复尽量短、分段清晰，避免过长大段文字；必要时用要点列表。",
-        #     ])
-        # if channel == "whatsapp":
-        #     return "\n".join([
-        #         "## 格式提示",
-        #         "",
-        #         "- 当前渠道偏好**纯文本**（WhatsApp）。",
-        #         "- 避免复杂排版与过多分隔线；优先使用简短段落与列表。",
-        #     ])
-        # return ""
-        
-        # 现在"暂时"不分channel，统一返回Markdown格式
-        # TODO: 确认是否需要简化或优化
-        return "\n".join([
-            "## 格式提示",
-            "",
-            # "- 当前渠道为**即时通讯**（Telegram）。",
-            "- 回复尽量短、分段清晰，避免过长大段文字；必要时用要点列表。",
-        ])
-
-    def _get_identity(self, channel: str | None = None) -> str:
-        """渲染 identity.md：在新架构下不再需要 workspace_path"""
-        # TODO: 后续将这些运行时相关信息合并到AIO沙盒系统工具中
-        system = platform.system()
-        runtime = (
-            f"{'macOS' if system == 'Darwin' else system} "
-            f"{platform.machine()}, Python {platform.python_version()}"
-        )
-        return render_template(
-            "agent/identity.md",
-            runtime=runtime,
-            channel=channel or "",
-        )
-
-    # ------------------------------------------------------------------
-    # runtime context 注入 + 消息装配
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _build_runtime_context(
@@ -262,7 +199,6 @@ class ContextBuilder:
         current_role: str = "user",
         session_summary: str | None = None,
     ) -> list[dict[str, Any]]:
-        """装配一次 LLM 调用的完整 messages 列表（同步）"""
         runtime_ctx = self._build_runtime_context(
             channel, chat_id, self.timezone, session_summary=session_summary,
         )

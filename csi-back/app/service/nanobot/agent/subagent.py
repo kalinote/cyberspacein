@@ -12,7 +12,7 @@ from loguru import logger
 
 from app.schemas.constants import AgentStopReasonEnum
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
-from app.service.nanobot.utils.prompt_templates import render_template
+from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
 from app.service.nanobot.agent.runner import AgentRunSpec, AgentRunner
 from app.service.nanobot.agent.tools.registry import ToolRegistry
 from app.service.nanobot.bus.events import InboundMessage
@@ -71,6 +71,7 @@ class SubagentManager:
         workspace: Path,
         bus: MessageBus,
         max_tool_result_chars: int,
+        prompt_repo: AgentPromptRepository,
         model: str | None = None,
         restrict_to_workspace: bool = False,
         disabled_skills: list[str] | None = None,
@@ -78,11 +79,12 @@ class SubagentManager:
         self.provider = provider
         self.workspace = workspace
         self.bus = bus
+        self._prompt_repo = prompt_repo
         self.model = model or provider.get_default_model()
         self.max_tool_result_chars = max_tool_result_chars
         self.restrict_to_workspace = restrict_to_workspace
         self.disabled_skills = set(disabled_skills or [])
-        self.runner = AgentRunner(provider)
+        self.runner = AgentRunner(provider, prompt_repo=prompt_repo)
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
         self._task_statuses: dict[str, SubagentStatus] = {}
         self._session_tasks: dict[str, set[str]] = {}  # session_key -> {task_id, ...}
@@ -152,7 +154,7 @@ class SubagentManager:
         try:
             # Build subagent tools (no message tool, no spawn tool)
             tools = ToolRegistry()
-            system_prompt = self._build_subagent_prompt()
+            system_prompt = await self._build_subagent_prompt()
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": task},
@@ -211,8 +213,8 @@ class SubagentManager:
         """Announce the subagent result to the main agent via the message bus."""
         status_text = "completed successfully" if status == "ok" else "failed"
 
-        announce_content = render_template(
-            "agent/subagent_announce.md",
+        announce_content = await self._prompt_repo.render_by_name(
+            "_subagent_announce",
             label=label,
             status_text=status_text,
             task=task,
@@ -255,8 +257,7 @@ class SubagentManager:
             lines.append(f"- {result.error}")
         return "\n".join(lines) or (result.error or "Error: subagent execution failed.")
 
-    def _build_subagent_prompt(self) -> str:
-        """Build a focused system prompt for the subagent."""
+    async def _build_subagent_prompt(self) -> str:
         from app.service.nanobot.agent.context import ContextBuilder
         from app.service.nanobot.agent.skills import SkillsLoader
 
@@ -265,8 +266,8 @@ class SubagentManager:
             self.workspace,
             disabled_skills=self.disabled_skills,
         ).build_skills_summary()
-        return render_template(
-            "agent/subagent_system.md",
+        return await self._prompt_repo.render_by_name(
+            "_subagent_system",
             time_ctx=time_ctx,
             workspace=str(self.workspace),
             skills_summary=skills_summary or "",

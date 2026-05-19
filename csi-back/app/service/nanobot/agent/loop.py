@@ -148,6 +148,8 @@ class AgentLoop:
         disabled_skills: list[str] | None = None,
         tools_config: ToolsConfig | None = None,
         dream_config: DreamConfig | None = None,
+        prompt_repo: Any | None = None,
+        builtin_prompt_sections: list[str] | None = None,
     ):
         """构造 AgentLoop。
 
@@ -162,8 +164,10 @@ class AgentLoop:
           与长期记忆、session、配置等持久化完全无关。
         - `dream_config`：Dream 触发阈值等配置，未传入时使用默认 `DreamConfig()`。
         """
+        from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
         from app.service.nanobot.config.schema import ToolsConfig
 
+        _prompt_repo = prompt_repo or AgentPromptRepository()
         _tc = tools_config or ToolsConfig()
         defaults = AgentDefaults()
         _dream_cfg = dream_config or DreamConfig()
@@ -203,19 +207,23 @@ class AgentLoop:
             workspace,
             disabled_skills=set(disabled_skills) if disabled_skills else None,
         )
+        self.prompt_repo = _prompt_repo
         self.context = ContextBuilder(
             memory=memory,
             skills=self.skills,
             timezone=timezone,
+            prompt_repo=_prompt_repo,
+            builtin_prompt_sections=builtin_prompt_sections,
         )
         self.tools = ToolRegistry()
-        self.runner = AgentRunner(provider)
+        self.runner = AgentRunner(provider, prompt_repo=_prompt_repo)
         self.subagents = SubagentManager(
             provider=provider,
             workspace=workspace,
             bus=bus,
-            model=self.model,
             max_tool_result_chars=self.max_tool_result_chars,
+            prompt_repo=_prompt_repo,
+            model=self.model,
             restrict_to_workspace=restrict_to_workspace,
             disabled_skills=disabled_skills,
         )
@@ -233,6 +241,7 @@ class AgentLoop:
             context_window_tokens=self.context_window_tokens,
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
+            prompt_repo=_prompt_repo,
             max_completion_tokens=provider.generation.max_tokens,
         )
         self.dream = Dream(

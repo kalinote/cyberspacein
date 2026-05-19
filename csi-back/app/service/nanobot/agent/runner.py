@@ -13,7 +13,6 @@ from loguru import logger
 from app.schemas.agent.result import SUBMIT_TASK_RESULT_TOOL_NAME
 from app.schemas.constants import AgentStopReasonEnum
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
-from app.service.nanobot.utils.prompt_templates import render_template
 from app.service.nanobot.agent.tools.registry import ToolRegistry
 from app.service.nanobot.providers.base import LLMProvider, ToolCallRequest
 from app.service.nanobot.utils.helpers import (
@@ -95,8 +94,15 @@ class AgentRunResult:
 class AgentRunner:
     """Run a tool-capable LLM loop without product-layer concerns."""
 
-    def __init__(self, provider: LLMProvider):
+    def __init__(
+        self,
+        provider: LLMProvider,
+        prompt_repo: Any | None = None,
+    ):
+        from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
+
         self.provider = provider
+        self._prompt_repo = prompt_repo or AgentPromptRepository()
 
     @staticmethod
     def _merge_message_content(left: Any, right: Any) -> str | list[dict[str, Any]]:
@@ -532,8 +538,8 @@ class AgentRunner:
                     max_iterations=spec.max_iterations,
                 )
             else:
-                final_content = render_template(
-                    "agent/max_iterations_message.md",
+                final_content = await self._prompt_repo.render_by_name(
+                    "_max_iterations_message",
                     strip=True,
                     max_iterations=spec.max_iterations,
                 )

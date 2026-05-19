@@ -8,8 +8,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
 from app.service.nanobot.agent.runner import AgentRunResult
 from app.service.nanobot.agent.subagent import SubagentManager
+
+
+def _prompt_repo() -> AgentPromptRepository:
+    repo = AgentPromptRepository()
+    repo._name_cache["_subagent_system"] = "sub {{ workspace }}"
+    repo._name_cache["_subagent_announce"] = "{{ result }}"
+    return repo
 
 
 @pytest.mark.asyncio
@@ -30,6 +38,7 @@ async def test_subagent_runner_gets_workspace_and_session_key_with_parent() -> N
         workspace=Path("/tmp/sub_ws"),
         bus=bus,
         max_tool_result_chars=8000,
+        prompt_repo=_prompt_repo(),
     )
     mgr.runner.run = fake_run
 
@@ -71,6 +80,7 @@ async def test_subagent_runner_session_key_when_no_parent_session() -> None:
         workspace=Path("/x"),
         bus=bus,
         max_tool_result_chars=4000,
+        prompt_repo=_prompt_repo(),
     )
     mgr.runner.run = fake_run
 

@@ -31,6 +31,10 @@ class NanobotAgentCreateRequestSchema(BaseModel):
         default_factory=dict,
         description="LLM 生成参数（temperature / max_tokens / reasoning_effort 等），透传给 provider",
     )
+    agent_builtin_prompt_ids: list[str] = Field(
+        default_factory=list,
+        description="AGENT 内置提示词文档 ID 列表，按顺序拼入 system prompt",
+    )
 
 
 class NanobotAgentUpdateRequestSchema(BaseModel):
@@ -44,6 +48,10 @@ class NanobotAgentUpdateRequestSchema(BaseModel):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的 MCP 服务名列表")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数")
+    agent_builtin_prompt_ids: list[str] = Field(
+        default_factory=list,
+        description="AGENT 内置提示词文档 ID 列表",
+    )
 
 
 class NanobotAgentSchema(BaseModel):
@@ -59,6 +67,10 @@ class NanobotAgentSchema(BaseModel):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的 MCP 服务名列表")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数")
+    agent_builtin_prompt_ids: list[str] = Field(
+        default_factory=list,
+        description="AGENT 内置提示词文档 ID 列表",
+    )
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
 
@@ -75,6 +87,7 @@ class NanobotAgentSchema(BaseModel):
             skills=list(doc.skills),
             mcp_servers=list(doc.mcp_servers),
             llm_config=dict(doc.llm_config or {}),
+            agent_builtin_prompt_ids=list(doc.agent_builtin_prompt_ids or []),
             created_at=doc.created_at,
             updated_at=doc.updated_at,
         )
