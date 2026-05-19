@@ -15,6 +15,18 @@ export function escapeRegex(str) {
 
 export const KEYWORD_COLOR_PALETTE = ['#e53935', '#d81b60', '#8e24aa', '#5e35b1', '#3949ab', '#1e88e5', '#00acc1', '#00897b', '#43a047', '#7cb342', '#c0ca33', '#fdd835', '#ffb300', '#fb8c00', '#f4511e', '#6d4c41']
 
+export function isSensitiveKeyword(text) {
+  if (text == null || text === '') return false
+  const s = String(text).toUpperCase()
+  return s.includes('NSFW') || s.includes('AIGC')
+}
+
+export function getKeywordTagType(keyword, selectedKeywords) {
+  if (isSensitiveKeyword(keyword)) return 'danger'
+  if (Array.isArray(selectedKeywords) && selectedKeywords.includes(keyword)) return 'success'
+  return 'primary'
+}
+
 export function getRandomKeywordColor() {
   return KEYWORD_COLOR_PALETTE[Math.floor(Math.random() * KEYWORD_COLOR_PALETTE.length)]
 }

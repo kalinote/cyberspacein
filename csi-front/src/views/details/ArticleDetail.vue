@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <div class="min-h-screen bg-gray-50">
         <Header />
 
@@ -50,103 +50,56 @@
                 </template>
             </DetailPageHeader>
 
-            <section class="py-8 bg-white">
+            <section v-if="articleInfoItems.length || hasArticleInfoTags" class="py-6 bg-white">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 gap-6" :class="(articleData.likes != null && articleData.likes !== -1) ? 'md:grid-cols-5' : 'md:grid-cols-4'">
-                        <router-link
-                            v-if="articleData.author_uuid"
-                            :to="`/user/${articleData.author_uuid}`"
-                            class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md hover:border-blue-200 transition-all"
+                    <div class="rounded-xl border border-gray-200 bg-gray-50/60 p-4 sm:p-5 shadow-sm">
+                        <dl
+                            v-if="articleInfoItems.length"
+                            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-5 gap-y-3.5"
                         >
-                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
+                            <div
+                                v-for="item in articleInfoItems"
+                                :key="item.key"
+                                class="min-w-0"
+                            >
+                                <dt class="text-xs text-gray-500 leading-tight">{{ item.label }}</dt>
+                                <dd
+                                    class="mt-0.5 text-sm font-medium text-gray-900"
+                                    :class="{
+                                        'font-mono text-xs': item.mono,
+                                        'break-all': item.breakAll,
+                                    }"
+                                >
+                                    <router-link
+                                        v-if="item.to"
+                                        :to="item.to"
+                                        class="text-blue-600 hover:text-blue-800 inline-flex items-center gap-0.5 max-w-full"
+                                    >
+                                        <span class="truncate">{{ item.value }}</span>
+                                        <Icon icon="mdi:chevron-right" class="shrink-0 text-base" />
+                                    </router-link>
+                                    <span
+                                        v-else
+                                        class="block truncate"
+                                        :title="item.value"
+                                    >{{ item.value }}</span>
+                                </dd>
                             </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">作者</p>
-                                <p class="text-lg font-bold text-blue-600 truncate">
-                                    {{ articleData.author_name || articleData.author_id || '未知' }}
-                                </p>
-                            </div>
-                            <Icon icon="mdi:chevron-right" class="text-gray-400 text-xl shrink-0" />
-                        </router-link>
+                        </dl>
                         <div
-                            v-else
-                            class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
+                            v-if="hasArticleInfoTags"
+                            :class="articleInfoItems.length ? 'mt-4 pt-4 border-t border-gray-200' : ''"
                         >
-                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">作者</p>
-                                <p class="text-lg font-bold text-gray-900 truncate">
-                                    {{ articleData.author_name || articleData.author_id || '未知' }}
-                                </p>
-                            </div>
-                        </div>
-                        <router-link
-                            v-if="articleData.platform_uuid"
-                            :to="`/details/platform/${articleData.platform_uuid}`"
-                            class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md hover:border-purple-200 transition-all"
-                        >
-                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">来源平台</p>
-                                <p class="text-base font-bold text-purple-600 truncate">
-                                    {{ articleData.platform || '未知' }}
-                                </p>
-                            </div>
-                            <Icon icon="mdi:chevron-right" class="text-gray-400 text-xl shrink-0" />
-                        </router-link>
-                        <div
-                            v-else
-                            class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4"
-                        >
-                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">来源平台</p>
-                                <p class="text-base font-bold text-gray-900 truncate">
-                                    {{ articleData.platform || '未知' }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="bg-linear-to-br from-green-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:calendar" class="text-green-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">发布时间</p>
-                                <p class="text-base font-bold text-gray-900">
-                                    {{ formatDateTime(articleData.publish_at) }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="bg-linear-to-br from-amber-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:clock-outline" class="text-amber-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">采集时间</p>
-                                <p class="text-base font-bold text-gray-900">
-                                    {{ formatDateTime(articleData.crawled_at) }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div v-if="articleData.likes !== null && articleData.likes !== -1" class="bg-linear-to-br from-pink-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:thumb-up" class="text-pink-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">点赞数</p>
-                                <p class="text-2xl font-bold text-gray-900">
-                                    {{ articleData.likes.toLocaleString() }}
-                                </p>
+                            <p class="text-xs text-gray-500 mb-2">标签</p>
+                            <div class="flex flex-wrap gap-1.5">
+                                <el-tag
+                                    v-for="tag in articleData.tags"
+                                    :key="tag"
+                                    type="info"
+                                    size="small"
+                                >
+                                    {{ tag }}
+                                </el-tag>
                             </div>
                         </div>
                     </div>
@@ -429,54 +382,6 @@
                                 :set-ref="setEntityRef"
                                 @toggle="toggleEntity"
                             />
-
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    元数据<span class="text-blue-500">信息</span>
-                                </h3>
-                                <div class="space-y-4">
-                                    <div v-if="articleData.tags && articleData.tags.length > 0">
-                                        <p class="text-sm text-gray-500 mb-2">标签</p>
-                                        <div class="flex flex-wrap gap-2">
-                                            <el-tag v-for="tag in articleData.tags" :key="tag" type="info" size="small">
-                                                {{ tag }}
-                                            </el-tag>
-                                        </div>
-                                    </div>
-                                    <div v-if="articleData.language">
-                                        <p class="text-sm text-gray-500 mb-1">语言</p>
-                                        <p class="font-medium text-gray-900">{{ articleData.language }}</p>
-                                    </div>
-                                    <div v-if="articleData.entity_type">
-                                        <p class="text-sm text-gray-500 mb-1">实体类型</p>
-                                        <p class="font-medium text-gray-900">{{ articleData.entity_type }}</p>
-                                    </div>
-                                    <div v-if="articleData.data_version">
-                                        <p class="text-sm text-gray-500 mb-1">数据版本</p>
-                                        <p class="font-medium text-gray-900">v{{ articleData.data_version }}</p>
-                                    </div>
-                                    <div v-if="articleData.source_id">
-                                        <p class="text-sm text-gray-500 mb-1">来源ID</p>
-                                        <p class="font-medium text-gray-900 break-all text-sm">{{ articleData.source_id }}</p>
-                                    </div>
-                                    <div v-if="articleData.last_edit_at">
-                                        <p class="text-sm text-gray-500 mb-1">最后编辑</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.last_edit_at) }}</p>
-                                    </div>
-                                    <div v-if="articleData.update_at">
-                                        <p class="text-sm text-gray-500 mb-1">更新时间</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.update_at) }}</p>
-                                    </div>
-                                    <div v-if="articleData.highlighted_at">
-                                        <p class="text-sm text-gray-500 mb-1">标记时间</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.highlighted_at) }}</p>
-                                    </div>
-                                    <div v-if="articleData.highlight_reason">
-                                        <p class="text-sm text-gray-500 mb-1">标记理由</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ articleData.highlight_reason }}</p>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -693,6 +598,75 @@ const {
     getData: () => articleData.value,
     reloadData: loadArticleDetail,
     withDialog: true
+})
+
+const isValidMetric = (value) => value !== null && value !== undefined && value !== -1
+
+const hasArticleInfoTags = computed(() => {
+    const tags = articleData.value?.tags
+    return Array.isArray(tags) && tags.length > 0
+})
+
+const articleInfoItems = computed(() => {
+    const d = articleData.value
+    if (!d) return []
+
+    /** @type {{ key: string, label: string, value: string, to?: string, mono?: boolean, breakAll?: boolean }[]} */
+    const items = []
+
+    const push = (item) => {
+        if (item.value !== undefined && item.value !== null && item.value !== '') {
+            items.push(item)
+        }
+    }
+
+    push({
+        key: 'author',
+        label: '作者',
+        value: d.author_name || d.author_id || '未知',
+        to: d.author_uuid ? `/user/${d.author_uuid}` : undefined,
+    })
+    push({
+        key: 'platform',
+        label: '来源平台',
+        value: d.platform || '未知',
+        to: d.platform_uuid ? `/details/platform/${d.platform_uuid}` : undefined,
+    })
+    if (d.publish_at) {
+        push({ key: 'publish_at', label: '发布时间', value: formatDateTime(d.publish_at) })
+    }
+    if (d.crawled_at) {
+        push({ key: 'crawled_at', label: '采集时间', value: formatDateTime(d.crawled_at) })
+    }
+    if (isValidMetric(d.likes)) {
+        push({ key: 'likes', label: '点赞', value: d.likes.toLocaleString() })
+    }
+    if (d.language) {
+        push({ key: 'language', label: '语言', value: d.language })
+    }
+    if (d.entity_type) {
+        push({ key: 'entity_type', label: '实体类型', value: d.entity_type })
+    }
+    if (d.data_version) {
+        push({ key: 'data_version', label: '数据版本', value: `v${d.data_version}` })
+    }
+    if (d.source_id) {
+        push({ key: 'source_id', label: '来源ID', value: String(d.source_id), mono: true, breakAll: true })
+    }
+    if (d.last_edit_at) {
+        push({ key: 'last_edit_at', label: '最后编辑', value: formatDateTime(d.last_edit_at) })
+    }
+    if (d.update_at) {
+        push({ key: 'update_at', label: '更新时间', value: formatDateTime(d.update_at) })
+    }
+    if (d.highlighted_at) {
+        push({ key: 'highlighted_at', label: '标记时间', value: formatDateTime(d.highlighted_at) })
+    }
+    if (d.highlight_reason) {
+        push({ key: 'highlight_reason', label: '标记理由', value: d.highlight_reason, breakAll: true })
+    }
+
+    return items
 })
 
 const handleSaveSafeContent = async () => {
