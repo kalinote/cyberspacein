@@ -116,7 +116,7 @@ def _resolve_run_outcome(
             str(completion.get("failure_reason") or "").strip() or "任务未成功完成"
         )
         failure_reason = error_message
-
+    
     result_payload = RunAnalysisResultPayloadSchema(
         success=final_status == NanobotSessionStatusEnum.COMPLETED,
         failure_reason=failure_reason if final_status == NanobotSessionStatusEnum.FAILED else None,
@@ -129,7 +129,7 @@ def _resolve_run_outcome(
         last_submission=last_submission,
     ).model_dump()
     return final_status, result_payload, error_message
-
+    
 
 def _agent_sandbox_dir(workspace_id: str, agent_id: str) -> Path:
     """per-agent 文件系统沙箱目录。

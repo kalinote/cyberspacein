@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-full flex flex-col min-h-0">
     <h3 class="text-lg font-bold text-gray-900 mb-4">
       内容<span class="text-blue-500">标注</span>
     </h3>
@@ -7,7 +7,7 @@
       共 {{ sortedMarkings.length }} 条标注
     </div>
     
-    <div class="space-y-3">
+    <div class="space-y-3 flex-1 min-h-0">
       <div v-if="sortedMarkings.length === 0" class="text-center py-8 text-gray-400">
         <Icon icon="mdi:comment-text-outline" class="text-4xl mb-2 mx-auto" />
         <p class="text-sm">暂无标注</p>

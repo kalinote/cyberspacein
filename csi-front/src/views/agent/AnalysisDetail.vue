@@ -47,28 +47,26 @@
                                                 class="font-mono">/agent/status</span> 实时展示进度
                                         </p>
                                     </div>
-                                    <div class="flex gap-2 shrink-0">
-                                        <el-button type="primary" :loading="sendLoading" :disabled="!canSendMessage"
-                                            @click="sendMessage">
-                                            发送
-                                        </el-button>
-                                        <el-button type="warning" :loading="cancelLoading" :disabled="!canCancel"
-                                            @click="cancel">
-                                            取消
-                                        </el-button>
-                                    </div>
                                 </div>
-                                <div class="mt-4">
-                                    <el-input v-model="userPrompt" type="textarea"
-                                        :autosize="{ minRows: 3, maxRows: 8 }"
-                                        placeholder="描述你的分析需求，通过 / 使用命令，通过 @ 引用实体"
-                                        resize="none" />
-                                    <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
-                                        <span v-if="entityType">entity_type: <span class="font-mono">{{ entityType
-                                                }}</span></span>
-                                        <span v-if="entityUuid">entity_uuid: <span class="font-mono">{{ entityUuid
-                                                }}</span></span>
-                                    </div>
+                                <AgentContinueChatBar
+                                    class="mt-4"
+                                    :compact="false"
+                                    :show-status="false"
+                                    :user-prompt="userPrompt"
+                                    :send-loading="sendLoading"
+                                    :cancel-loading="cancelLoading"
+                                    :can-send-message="canSendMessage"
+                                    :can-cancel="canCancel"
+                                    :has-session="Boolean(sessionId)"
+                                    @update:user-prompt="userPrompt = $event"
+                                    @send="sendMessage"
+                                    @cancel="cancel"
+                                />
+                                <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+                                    <span v-if="entityType">entity_type: <span class="font-mono">{{ entityType
+                                            }}</span></span>
+                                    <span v-if="entityUuid">entity_uuid: <span class="font-mono">{{ entityUuid
+                                            }}</span></span>
                                 </div>
                             </div>
                         </div>
@@ -93,9 +91,8 @@
                                     <div class="flex justify-between gap-3" v-if="session?.updated_at">
                                         <span class="text-gray-500">更新时间</span>
                                         <span class="text-gray-900">{{ formatDateTime(session.updated_at, {
-                                            includeSecond:
-                                            true })
-                                            }}</span>
+                                            includeSecond: true,
+                                        }) }}</span>
                                     </div>
                                 </div>
                             </div>
@@ -107,26 +104,14 @@
             <section class="py-8 bg-gray-50">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        <div class="lg:col-span-8 bg-white rounded-xl shadow-sm border border-gray-200">
-                            <h2 class="text-xl font-bold text-gray-900 flex items-center p-4 pb-2">
-                                <Icon icon="mdi:timeline-text" class="text-blue-600 mr-2" />
-                                实时事件
-                            </h2>
-                            <div ref="eventsScrollEl" class="overflow-y-auto px-4 pb-4 border-t border-gray-100"
-                                style="height: 70vh" @scroll="onEventsScroll">
-                                <div v-if="!timelineItems.length"
-                                    class="flex flex-col items-center justify-center h-full min-h-70 text-gray-400">
-                                    <Icon icon="mdi:access-point" class="text-2xl text-blue-500 mb-2" />
-                                    <p class="text-sm font-medium text-gray-500">等待事件推送</p>
-                                </div>
-
-                                <div v-else class="space-y-3 pt-4">
-                                    <div v-for="ev in timelineItems" :key="ev.id"
-                                        class="rounded-lg border border-gray-100 bg-gray-50/80 p-3">
-                                        <AgentSseTimelineItem :item="ev" />
-                                    </div>
-                                </div>
-                            </div>
+                        <div class="lg:col-span-8 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col min-h-0" style="height: 70vh">
+                            <AgentRealtimeEventsPanel
+                                class="h-full min-h-0"
+                                :timeline-items="timelineItems"
+                                :events-scroll-el="eventsScrollEl"
+                                :on-events-scroll="onEventsScroll"
+                                scroll-class="border-t border-gray-100"
+                            />
                         </div>
 
                         <div class="lg:col-span-4 min-w-0 bg-white rounded-xl shadow-sm border border-gray-200">
@@ -200,33 +185,20 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
-import AgentSseTimelineItem from '@/components/agent/AgentSseTimelineItem.vue'
+import AgentRealtimeEventsPanel from '@/components/agent/AgentRealtimeEventsPanel.vue'
+import AgentContinueChatBar from '@/components/agent/AgentContinueChatBar.vue'
 import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
-import { agentApi } from '@/api/agent'
-import {
-    appendStreamDelta,
-    closeStreamInTimeline,
-    parseAgentSseData,
-    stringifyJsonSafe,
-} from '@/utils/agentSse'
-import { getApprovalSourceLabel, isApprovalAwaitingUserAction } from '@/utils/agentApproval'
-import { formatDateTime, TODO_ITEM_STATUS } from '@/utils/action'
-import {
-    getAgentSessionStatusLabel,
-    getAgentSessionStatusTagType,
-    isAgentSessionTerminalStatus,
-} from '@/utils/agent/sessionStatus'
+import { useAgentSessionStream } from '@/composables/useAgentSessionStream'
+import { formatDateTime } from '@/utils/action'
 
 const route = useRoute()
 const sessionId = computed(() => String(route.params.sessionId || ''))
 const agentIdFromQuery = computed(() => (route.query.agent_id ? String(route.query.agent_id) : ''))
-
 const entityUuid = computed(() => (route.query.entity_uuid ? String(route.query.entity_uuid) : ''))
 const entityType = computed(() => (route.query.entity_type ? String(route.query.entity_type) : ''))
 const extraContextText = computed(() => (route.query.extra_context ? String(route.query.extra_context) : ''))
@@ -234,553 +206,58 @@ const extraContextText = computed(() => (route.query.extra_context ? String(rout
 const pageLoading = ref(true)
 const pageError = ref('')
 
-const session = ref(null)
-const agentId = computed(() => {
-    const fromSession = session.value?.agent_id
-    if (fromSession) return String(fromSession)
-    return agentIdFromQuery.value
-})
-const sessionRuntimeStatus = ref('unknown')
-const sseConnected = ref(false)
-const sseError = ref('')
-
-const userPrompt = ref('')
-const sendLoading = ref(false)
-const cancelLoading = ref(false)
-
-const todos = ref([])
-const timelineItems = ref([])
-
-let timelineSeq = 0
-function nextTimelineId() {
-    timelineSeq += 1
-    return timelineSeq
-}
-
-let eventSource = null
-let retryCount = 0
-const maxRetries = 3
-
-const showApprovalDialog = ref(false)
-const pendingApproval = ref(null)
-const approvalReason = ref('')
-const showRejectReason = ref(false)
-const approvalLoading = ref(false)
-
-const approvalDialogTitle = computed(() => {
-    const label = getApprovalSourceLabel(pendingApproval.value?.source)
-    return `审批请求 · ${label}`
+const stream = useAgentSessionStream({
+    sessionId,
+    agentIdFallback: agentIdFromQuery,
+    entityUuid,
+    entityType,
+    extraContext: extraContextText,
 })
 
-const eventsScrollEl = ref(null)
-const isEventsScrollAtBottom = ref(true)
-
-function pushSystemTimeline(systemSubtype, message, payload = null) {
-    const ts = new Date().toISOString()
-    let metaJson = null
-    if (payload != null && typeof payload === 'object') {
-        try {
-            metaJson = stringifyJsonSafe(payload, 2)
-        } catch {
-            metaJson = null
-        }
-    } else if (payload != null) {
-        metaJson = String(payload)
-    }
-    timelineItems.value.push({
-        id: nextTimelineId(),
-        sseType: 'system',
-        kind: 'system',
-        ts,
-        systemSubtype,
-        message,
-        metaJson,
-    })
-}
-
-function pushParseErrorTimeline(sseType, raw, error, ts) {
-    timelineItems.value.push({
-        id: nextTimelineId(),
-        sseType,
-        kind: 'parse_error',
-        ts,
-        error: error || 'parse',
-        rawSnippet: String(raw ?? '').slice(0, 4000),
-    })
-}
-
-function pushParsedTimeline(sseType, ts, payload) {
-    timelineItems.value.push({
-        id: nextTimelineId(),
-        sseType,
-        kind: sseType,
-        ts,
-        payload,
-    })
-}
-
-function findTimelineApprovalIndex(requestId) {
-    const id = requestId != null ? String(requestId) : ''
-    if (!id) return -1
-    for (let i = timelineItems.value.length - 1; i >= 0; i--) {
-        const it = timelineItems.value[i]
-        if (it?.kind === 'approval_required' && it.payload?.approval_request_id === id) {
-            return i
-        }
-    }
-    return -1
-}
-
-function onApprovalDialogClosed() {
-    pendingApproval.value = null
-}
-
-function closeApprovalDialog() {
-    showRejectReason.value = false
-    approvalReason.value = ''
-    showApprovalDialog.value = false
-}
-
-function clearApprovalDialogState() {
-    showRejectReason.value = false
-    approvalReason.value = ''
-    pendingApproval.value = null
-    showApprovalDialog.value = false
-}
-
-function handleApprovalRequiredEvent(raw) {
-    const ts = new Date().toISOString()
-    const p = parseAgentSseData(raw)
-    if (!p.ok) {
-        pushParseErrorTimeline('approval_required', raw, p.error, ts)
-        return
-    }
-    const envelope = p.value
-    const requestId = envelope?.approval_request_id
-
-    if (isApprovalAwaitingUserAction(envelope)) {
-        pushParsedTimeline('approval_required', ts, envelope)
-        pendingApproval.value = envelope
-        showRejectReason.value = false
-        approvalReason.value = ''
-        showApprovalDialog.value = true
-        return
-    }
-
-    const idx = findTimelineApprovalIndex(requestId)
-    if (idx >= 0) {
-        timelineItems.value[idx].payload = envelope
-    } else {
-        pushParsedTimeline('approval_required', ts, envelope)
-    }
-
-    if (pendingApproval.value?.approval_request_id === requestId) {
-        closeApprovalDialog()
-    }
-}
-
-function ingestSseNamedEvent(sseType, raw) {
-    const ts = new Date().toISOString()
-    if (sseType === 'stream') {
-        const p = parseAgentSseData(raw)
-        if (!p.ok) {
-            pushParseErrorTimeline('stream', raw, p.error, ts)
-            return
-        }
-        appendStreamDelta(timelineItems.value, p.value?.delta ?? '', ts, nextTimelineId)
-        return
-    }
-    if (sseType === 'stream_end') {
-        const p = parseAgentSseData(raw)
-        const payload = p.ok && p.value && typeof p.value === 'object' ? p.value : {}
-        closeStreamInTimeline(timelineItems.value, payload, ts, nextTimelineId)
-        return
-    }
-    const p = parseAgentSseData(raw)
-    if (!p.ok) {
-        pushParseErrorTimeline(sseType, raw, p.error, ts)
-        return
-    }
-    pushParsedTimeline(sseType, ts, p.value)
-}
-
-function normalizeTodosPayload(raw) {
-    if (Array.isArray(raw)) return raw
-    if (raw && typeof raw === 'object') {
-        if (Array.isArray(raw.todos)) return raw.todos
-        if (Array.isArray(raw.items)) return raw.items
-        if (Array.isArray(raw.data)) return raw.data
-    }
-    return []
-}
-
-function onEventsScroll() {
-    const el = eventsScrollEl.value
-    if (!el) return
-    isEventsScrollAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
-}
-
-watch(
-    () => timelineItems.value,
-    () => {
-        if (!isEventsScrollAtBottom.value || !eventsScrollEl.value) return
-        nextTick(() => {
-            const el = eventsScrollEl.value
-            if (el) el.scrollTop = el.scrollHeight
-        })
-    },
-    { deep: true }
-)
+const {
+    session,
+    agentId,
+    userPrompt,
+    sendLoading,
+    cancelLoading,
+    todos,
+    timelineItems,
+    sseConnected,
+    showApprovalDialog,
+    pendingApproval,
+    approvalReason,
+    showRejectReason,
+    approvalLoading,
+    approvalDialogTitle,
+    eventsScrollEl,
+    onEventsScroll,
+    statusLabel,
+    statusTagType,
+    canSendMessage,
+    canCancel,
+    todoStatusIcon,
+    todoStatusIconColor,
+    disconnectSSE,
+    reloadSession,
+    sendMessage,
+    cancel,
+    cancelRejectFlow,
+    submitApprovalDecision,
+    onApprovalDialogClosed,
+} = stream
 
 const pageTitle = computed(() => session.value?.agent_name || '分析详情')
-const statusRaw = computed(() => {
-    const runtime = String(sessionRuntimeStatus.value || 'unknown')
-    const persisted = session.value?.status ? String(session.value.status) : ''
-    if (isAgentSessionTerminalStatus(persisted) && runtime === 'running') {
-        return persisted
-    }
-    if (runtime !== 'unknown') return runtime
-    return persisted || 'unknown'
-})
-
-const statusLabel = computed(() => getAgentSessionStatusLabel(statusRaw.value))
-const statusTagType = computed(() => getAgentSessionStatusTagType(statusRaw.value))
-
-const canSendMessage = computed(
-    () =>
-        Boolean(agentId.value) &&
-        Boolean(sessionId.value) &&
-        isAgentSessionTerminalStatus(statusRaw.value) &&
-        userPrompt.value.trim().length > 0 &&
-        !sendLoading.value
-)
-const canCancel = computed(
-    () =>
-        Boolean(agentId.value) &&
-        Boolean(sessionId.value) &&
-        (statusRaw.value === 'running' || statusRaw.value === 'awaiting_approval') &&
-        !cancelLoading.value
-)
-
-function todoStatusIcon(s) {
-    if (s === TODO_ITEM_STATUS.PENDING || s === 'pending') return 'mdi:circle-outline'
-    if (s === TODO_ITEM_STATUS.IN_PROGRESS || s === 'in_progress') return 'mdi:progress-clock'
-    if (s === TODO_ITEM_STATUS.COMPLETED || s === 'completed') return 'mdi:check-circle'
-    return 'mdi:circle-outline'
-}
-
-function todoStatusIconColor(s) {
-    if (s === TODO_ITEM_STATUS.PENDING || s === 'pending') return 'text-gray-400'
-    if (s === TODO_ITEM_STATUS.IN_PROGRESS || s === 'in_progress') return 'text-amber-600'
-    if (s === TODO_ITEM_STATUS.COMPLETED || s === 'completed') return 'text-green-600'
-    return 'text-gray-400'
-}
-
-function applySessionRuntimeStatus(nextStatus) {
-    const s = String(nextStatus ?? '').trim()
-    if (!s) return
-    sessionRuntimeStatus.value = s
-    if (session.value && typeof session.value === 'object') {
-        session.value = { ...session.value, status: s }
-    }
-}
-
-function applyStatusFromSsePayload(raw) {
-    const text = String(raw ?? '').trim()
-    if (!text) return
-    try {
-        const x = JSON.parse(text)
-        if (typeof x === 'string') {
-            applySessionRuntimeStatus(x)
-        } else if (x && typeof x === 'object' && x.status != null) {
-            applySessionRuntimeStatus(x.status)
-        }
-    } catch {
-        applySessionRuntimeStatus(text)
-    }
-}
-
-function onTodosSse(raw) {
-    const ts = new Date().toISOString()
-    applyTodosFromSsePayload(raw)
-    const p = parseAgentSseData(raw)
-    if (!p.ok) {
-        pushParseErrorTimeline('todos', raw, p.error, ts)
-        return
-    }
-    const list = todos.value
-    let completed = 0
-    let inProgress = 0
-    let waiting = 0
-    for (const t of list) {
-        const s = t?.status
-        if (s === TODO_ITEM_STATUS.COMPLETED || s === 'completed') completed++
-        else if (s === TODO_ITEM_STATUS.IN_PROGRESS || s === 'in_progress') inProgress++
-        else waiting++
-    }
-    const total = list.length
-    timelineItems.value.push({
-        id: nextTimelineId(),
-        sseType: 'todos',
-        kind: 'todos',
-        ts,
-        payload: p.value,
-        todoCount: total,
-        todoPreview: `共 ${total} 项，已完成 ${completed} 项，正在进行 ${inProgress} 项，等待进行 ${waiting} 项`,
-    })
-}
-
-function applyTodosFromSsePayload(raw) {
-    const text = String(raw ?? '').trim()
-    if (!text) {
-        todos.value = []
-        return
-    }
-    try {
-        const x = JSON.parse(text)
-        todos.value = normalizeTodosPayload(x)
-    } catch {
-        todos.value = []
-    }
-}
-
-async function loadSessionDetail() {
-    if (!sessionId.value) throw new Error('缺少 session_id 参数')
-    const res = await agentApi.getAgentSessionDetail(sessionId.value)
-    if (res?.code !== 0) {
-        throw new Error(res?.message || '获取会话详情失败')
-    }
-    const raw = res?.data && typeof res.data === 'object' ? res.data : null
-    session.value = raw
-    if (raw?.status) {
-        sessionRuntimeStatus.value = String(raw.status)
-    }
-}
-
-function connectSSE() {
-    if (!agentId.value) {
-        sseError.value = '缺少 agent_id 参数'
-        return
-    }
-    if (!sessionId.value) {
-        sseError.value = ''
-        return
-    }
-
-    disconnectSSE()
-
-    try {
-        const url = agentApi.getAgentStatusUrl(agentId.value, sessionId.value)
-        eventSource = new EventSource(url)
-
-        eventSource.onopen = () => {
-            sseConnected.value = true
-            sseError.value = ''
-            retryCount = 0
-            pushSystemTimeline('sse_open', '实时通道已建立')
-        }
-
-        eventSource.onerror = () => {
-            sseConnected.value = false
-            if (eventSource) {
-                eventSource.close()
-                eventSource = null
-            }
-
-            if (retryCount < maxRetries) {
-                retryCount++
-                const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000)
-                pushSystemTimeline('sse_retry', `第 ${retryCount} 次重连，${delay}ms 后执行`)
-                setTimeout(() => {
-                    if (retryCount <= maxRetries && sessionId.value && agentId.value) connectSSE()
-                }, delay)
-            } else {
-                sseError.value = 'SSE 连接失败，请刷新页面重试'
-                pushSystemTimeline('sse_error', sseError.value)
-                ElMessage.error('实时连接中断，请稍后重试')
-            }
-        }
-
-        eventSource.addEventListener('user_message', (event) => {
-            ingestSseNamedEvent('user_message', event.data ?? '')
-        })
-
-        eventSource.addEventListener('status', (event) => {
-            const raw = event.data ?? ''
-            ingestSseNamedEvent('status', raw)
-            applyStatusFromSsePayload(raw)
-        })
-        eventSource.addEventListener('todos', (event) => {
-            const raw = event.data ?? ''
-            onTodosSse(raw)
-        })
-
-        eventSource.addEventListener('result', (event) => {
-            const raw = event.data ?? ''
-            ingestSseNamedEvent('result', raw)
-            applyStatusFromSsePayload(raw)
-        })
-
-        const sseNamedEvents = [
-            'notification',
-            'debug_prompt',
-            'progress',
-            'step',
-            'task_submitted',
-            'stream',
-            'stream_end',
-        ]
-        for (const name of sseNamedEvents) {
-            eventSource.addEventListener(name, (event) => {
-                ingestSseNamedEvent(name, event.data ?? '')
-            })
-        }
-        eventSource.addEventListener('approval_required', (event) => {
-            handleApprovalRequiredEvent(event.data ?? '')
-        })
-        eventSource.onmessage = (event) => {
-            ingestSseNamedEvent('message', event.data ?? '')
-        }
-    } catch (e) {
-        sseConnected.value = false
-        sseError.value = e?.message || '创建 SSE 连接失败'
-        pushSystemTimeline('sse_error', sseError.value)
-    }
-}
-
-function disconnectSSE() {
-    if (eventSource) {
-        eventSource.close()
-        eventSource = null
-    }
-    sseConnected.value = false
-}
-
-function parseExtraContext() {
-    const text = extraContextText.value.trim()
-    if (!text) return undefined
-    try {
-        const obj = JSON.parse(text)
-        return obj && typeof obj === 'object' ? obj : undefined
-    } catch {
-        return undefined
-    }
-}
-
-function buildMessageExtraContext() {
-    const merged = { ...(parseExtraContext() || {}) }
-    if (entityUuid.value) merged.entity_uuid = entityUuid.value
-    if (entityType.value) merged.entity_type = entityType.value
-    return merged
-}
-
-async function sendMessage() {
-    if (!canSendMessage.value) return
-    const trimmedPrompt = userPrompt.value.trim()
-    if (!trimmedPrompt) return
-    try {
-        sendLoading.value = true
-        const extraContext = buildMessageExtraContext()
-        const res = await agentApi.sendAgentMessage({
-            agent_id: agentId.value,
-            session_id: sessionId.value,
-            user_prompt: trimmedPrompt,
-            extra_context: Object.keys(extraContext).length > 0 ? extraContext : {},
-        })
-        if (res?.code !== 0) {
-            ElMessage.error(res?.message || '发送失败')
-            return
-        }
-        ElMessage.success('已提交续聊请求')
-        pushSystemTimeline('client_message', '已提交续聊消息', res?.data || {})
-        userPrompt.value = ''
-    } catch (e) {
-        ElMessage.error(e?.message || '发送失败，请稍后重试')
-    } finally {
-        sendLoading.value = false
-    }
-}
-
-async function cancel() {
-    if (!canCancel.value) return
-    try {
-        cancelLoading.value = true
-        const res = await agentApi.cancelAgent({
-            agent_id: agentId.value,
-            session_id: sessionId.value,
-            reason: '用户取消'
-        })
-        if (res?.code !== 0) {
-            ElMessage.error(res?.message || '取消失败')
-            return
-        }
-        ElMessage.success(res?.message || '已提交取消请求')
-        pushSystemTimeline('client_cancel', '已提交取消请求', res?.data || {})
-    } catch (e) {
-        ElMessage.error(e?.message || '取消失败，请稍后重试')
-    } finally {
-        cancelLoading.value = false
-    }
-}
-
-function cancelRejectFlow() {
-    showRejectReason.value = false
-    approvalReason.value = ''
-}
-
-async function submitApprovalDecision(action) {
-    if (!sessionId.value) {
-        ElMessage.warning('缺少 session_id，无法提交审批')
-        return
-    }
-    try {
-        approvalLoading.value = true
-        const decision =
-            action === 'approve'
-                ? { action: 'approve' }
-                : {
-                      action: 'reject',
-                      reason: approvalReason.value?.trim() || undefined,
-                  }
-        const res = await agentApi.approveAgent({
-            agent_id: agentId.value,
-            session_id: sessionId.value,
-            decisions: [decision],
-        })
-        if (res?.code !== 0) {
-            ElMessage.error(res?.message || '审批提交失败')
-            return
-        }
-        ElMessage.success(res?.message || '审批已提交')
-        pushSystemTimeline('client_approve', '审批已提交', { decision })
-        closeApprovalDialog()
-    } catch (e) {
-        ElMessage.error(e?.message || '审批提交失败，请稍后重试')
-    } finally {
-        approvalLoading.value = false
-    }
-}
 
 async function reload() {
-    disconnectSSE()
     pageLoading.value = true
     pageError.value = ''
     session.value = null
-    timelineItems.value = []
-    timelineSeq = 0
-    todos.value = []
-    sessionRuntimeStatus.value = 'unknown'
-    clearApprovalDialogState()
     try {
-        await loadSessionDetail()
+        await reloadSession({ loadDetail: true })
     } catch (e) {
         pageError.value = e?.message || '加载失败'
     } finally {
         pageLoading.value = false
-        if (sessionId.value && agentId.value) {
-            await nextTick()
-            connectSSE()
-        }
     }
 }
 

@@ -108,33 +108,41 @@
 
             <section class="py-12 bg-gray-50">
                 <div class="w-full px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start lg:items-stretch">
+                        <div class="min-w-0 h-full">
+                        <div class="lg:sticky lg:top-20 h-full min-h-0">
                         <MarkingSidebar
+                            class="h-full"
                             :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
                             :active-marking-id="activeMarkingId"
                             @update="handleUpdateMarking"
                             @delete="handleDeleteMarking"
                             @hover="handleMarkingHover"
                         />
-                        <div class="lg:col-span-3 space-y-6 relative marking-container">
-                            <MarkingConnector
-                                :markings="getMarkingsByRegion(currentRegion)"
-                                :active-marking-id="activeMarkingId"
-                            />
-                            <KeywordConnector
-                                :selected-keywords="selectedKeywords"
-                                :keyword-tag-refs="keywordTagRefs"
-                                :keyword-colors="keywordColors"
-                                :active-tab="activeTab"
-                            />
-                            <KeywordConnector
-                                :selected-keywords="selectedEntityKeys"
-                                :keyword-tag-refs="entityTagRefs"
-                                :keyword-colors="entityColors"
-                                data-attribute="data-entity"
-                                highlight-selector=".entity-highlight"
-                                :active-tab="activeTab"
-                            />
+                        </div>
+                        </div>
+                        <div class="lg:col-span-3 relative marking-container min-w-0">
+                            <div class="absolute inset-0 pointer-events-none z-10" aria-hidden="true">
+                                <MarkingConnector
+                                    :markings="getMarkingsByRegion(currentRegion)"
+                                    :active-marking-id="activeMarkingId"
+                                />
+                                <KeywordConnector
+                                    :selected-keywords="selectedKeywords"
+                                    :keyword-tag-refs="keywordTagRefs"
+                                    :keyword-colors="keywordColors"
+                                    :active-tab="activeTab"
+                                />
+                                <KeywordConnector
+                                    :selected-keywords="selectedEntityKeys"
+                                    :keyword-tag-refs="entityTagRefs"
+                                    :keyword-colors="entityColors"
+                                    data-attribute="data-entity"
+                                    highlight-selector=".entity-highlight"
+                                    :active-tab="activeTab"
+                                />
+                            </div>
+                            <div class="space-y-6">
                             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <div class="flex items-center justify-between mb-4">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
@@ -346,74 +354,61 @@
                                     <span class="text-3xl font-bold text-gray-900">{{ articleData.subjective_rating }}/10</span>
                                 </div>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="space-y-6">
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    快速<span class="text-blue-500">操作</span>
-                                </h3>
-                                <div class="space-y-3">
-                                    <SplitButton
-                                        :main-button-text="'分析此实体'"
-                                        :loading-text="'分析实体中...'"
-                                        :disabled="analyzing"
-                                        :loading="analyzing"
-                                        :options="analyzeOptions"
-                                        main-button-icon="mdi:brain"
-                                        @main-click="handleAnalyze"
-                                        @option-click="handleAnalyzeOption"
-                                    />
-                                    <button 
-                                        @click="handleExport"
-                                        class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
-                                    >
-                                        <Icon icon="mdi:download" />
-                                        <span>媒体文件本地化</span>
-                                    </button>
-                                    <button 
-                                        @click="togglePriorityTarget"
-                                        :class="[
-                                            'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2',
-                                            isPriorityTarget 
-                                                ? 'bg-amber-500 hover:bg-amber-600 text-white border-2 border-amber-500' 
-                                                : 'border-2 border-gray-200 text-gray-600 hover:bg-gray-50'
-                                        ]"
-                                    >
-                                        <Icon :icon="isPriorityTarget ? 'mdi:star' : 'mdi:star-outline'" />
-                                        <span>{{ isPriorityTarget ? '取消重点目标' : '设置重点目标' }}</span>
-                                    </button>
-                                </div>
+                        <div class="lg:col-span-1 min-w-0 h-full">
+                        <div
+                            class="flex min-w-0 gap-0 h-full min-h-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)]"
+                        >
+                            <div
+                                class="flex-1 min-w-0 flex flex-col min-h-0 h-full bg-white rounded-l-xl shadow-sm border border-gray-200 border-r-0 overflow-hidden"
+                            >
+                                <ArticleDetailInfoPanel
+                                    v-show="rightPanel === 'info'"
+                                    :keywords="articleData.keywords"
+                                    :entities="articleData.entities"
+                                    :analyze-options="analyzeOptions"
+                                    :analyzing="analyzing"
+                                    :is-priority-target="isPriorityTarget"
+                                    :selected-keywords="selectedKeywords"
+                                    :keyword-colors="keywordColors"
+                                    :selected-entity-keys="selectedEntityKeys"
+                                    :entity-colors="entityColors"
+                                    :set-keyword-ref="setKeywordRef"
+                                    :set-entity-ref="setEntityRef"
+                                    @analyze-main="handleAnalyze"
+                                    @analyze-option="handleAnalyzeOption"
+                                    @export="handleExport"
+                                    @toggle-priority="togglePriorityTarget"
+                                    @toggle-keyword="toggleKeyword"
+                                    @toggle-entity="toggleEntity"
+                                />
+                                <ArticleDetailAnalysisPanel
+                                    v-show="rightPanel === 'analysis'"
+                                    :session-id="activeSessionId"
+                                    :timeline-items="timelineItems"
+                                    :events-scroll-el="eventsScrollEl"
+                                    :on-events-scroll="onEventsScroll"
+                                    v-model:user-prompt="userPrompt"
+                                    :send-loading="sendLoading"
+                                    :cancel-loading="cancelLoading"
+                                    :can-send-message="canSendMessage"
+                                    :can-cancel="canCancel"
+                                    :sse-connected="sseConnected"
+                                    :status-label="agentStatusLabel"
+                                    :status-tag-type="agentStatusTagType"
+                                    @open-fullscreen="openAnalysisFullscreen"
+                                    @send="sendMessage"
+                                    @cancel="cancelAgentTask"
+                                />
                             </div>
-
-                            <div v-if="articleData.keywords && articleData.keywords.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                                    关键词<span class="text-blue-500">提取</span>
-                                </h3>
-                                <div class="flex flex-wrap gap-2">
-                                    <el-tag
-                                        v-for="keyword in articleData.keywords"
-                                        :key="keyword"
-                                        :type="selectedKeywords.includes(keyword) ? 'success' : 'primary'"
-                                        size="large"
-                                        class="cursor-pointer"
-                                        :style="selectedKeywords.includes(keyword) && keywordColors[keyword] ? { borderColor: keywordColors[keyword], backgroundColor: keywordColors[keyword] + '22' } : undefined"
-                                        :ref="(el) => setKeywordRef(keyword, el)"
-                                        @click="toggleKeyword(keyword)"
-                                    >
-                                        {{ keyword }}
-                                    </el-tag>
-                                </div>
-                            </div>
-
-                            <EntityMentionPanel
-                                v-if="hasEntities(articleData.entities)"
-                                :entities="articleData.entities"
-                                :selected-keys="selectedEntityKeys"
-                                :colors="entityColors"
-                                :set-ref="setEntityRef"
-                                @toggle="toggleEntity"
+                            <DetailRightActivityRail
+                                v-model="rightPanel"
+                                :items="rightRailItems"
+                                class="h-full"
                             />
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -452,6 +447,40 @@
             @style-select="handleStyleSelect"
             @create="handleCreateMarking"
         />
+
+        <el-dialog
+            v-model="showApprovalDialog"
+            :title="approvalDialogTitle"
+            width="760px"
+            :close-on-click-modal="false"
+            :show-close="false"
+            @closed="onApprovalDialogClosed"
+        >
+            <div v-if="pendingApproval">
+                <p class="text-gray-600 mb-4">Agent 请求执行以下操作，请选择批准或拒绝：</p>
+                <AgentApprovalPanel :approval="pendingApproval" />
+                <div v-if="showRejectReason" class="mt-4 pt-4 border-t border-gray-100">
+                    <p class="text-sm text-gray-600 mb-2">拒绝理由（可选）</p>
+                    <el-input
+                        v-model="approvalReason"
+                        type="textarea"
+                        :autosize="{ minRows: 2, maxRows: 4 }"
+                        placeholder="请填写拒绝原因"
+                        resize="none"
+                    />
+                </div>
+            </div>
+            <template #footer>
+                <template v-if="showRejectReason">
+                    <el-button @click="cancelRejectFlow" :disabled="approvalLoading">返回</el-button>
+                    <el-button type="danger" @click="submitApprovalDecision('reject')" :loading="approvalLoading">确认拒绝</el-button>
+                </template>
+                <template v-else>
+                    <el-button type="danger" @click="showRejectReason = true" :loading="approvalLoading">拒绝</el-button>
+                    <el-button type="primary" @click="submitApprovalDecision('approve')" :loading="approvalLoading">批准</el-button>
+                </template>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
@@ -461,14 +490,17 @@ import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
-import SplitButton from '@/components/SplitButton.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import KeywordConnector from '@/components/keyword/KeywordConnector.vue'
-import EntityMentionPanel from '@/components/entity/EntityMentionPanel.vue'
 import Timeline from '@/components/Timeline.vue'
+import DetailRightActivityRail from '@/components/detail/DetailRightActivityRail.vue'
+import ArticleDetailInfoPanel from '@/components/detail/ArticleDetailInfoPanel.vue'
+import ArticleDetailAnalysisPanel from '@/components/detail/ArticleDetailAnalysisPanel.vue'
+import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
+import { useAgentSessionStream } from '@/composables/useAgentSessionStream'
 import { articleApi } from '@/api/article'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -488,6 +520,53 @@ const uuid = computed(() => route.params.uuid)
 const articleData = ref(null)
 const loading = ref(false)
 const error = ref(null)
+
+const rightPanel = ref('info')
+const rightRailItems = [
+    { key: 'info', icon: 'mdi:information-outline', label: '信息栏' },
+    { key: 'analysis', icon: 'mdi:brain', label: '分析框' },
+]
+
+const activeSessionId = ref('')
+const activeAgentId = ref('')
+
+const articleEntityUuid = computed(() => articleData.value?.uuid || '')
+const articleEntityType = computed(() => articleData.value?.entity_type || '')
+
+const agentStream = useAgentSessionStream({
+    sessionId: activeSessionId,
+    agentId: activeAgentId,
+    entityUuid: articleEntityUuid,
+    entityType: articleEntityType,
+})
+
+const {
+    userPrompt,
+    sendLoading,
+    cancelLoading,
+    timelineItems,
+    sseConnected,
+    showApprovalDialog,
+    pendingApproval,
+    approvalReason,
+    showRejectReason,
+    approvalLoading,
+    approvalDialogTitle,
+    eventsScrollEl,
+    onEventsScroll,
+    statusLabel: agentStatusLabel,
+    statusTagType: agentStatusTagType,
+    canSendMessage,
+    canCancel,
+    disconnectSSE,
+    startStreamForSession,
+    sendMessage,
+    cancel: cancelAgentTask,
+    cancelRejectFlow,
+    submitApprovalDecision,
+    onApprovalDialogClosed,
+} = agentStream
+
 const activeTab = ref('clean')
 const analyzing = ref(false)
 const editableSafeRawContent = ref('')
@@ -786,17 +865,14 @@ const handleAnalyzeOption = async (option) => {
             ElMessage.success('分析任务已启动')
             const sid = response.data.session_id
             if (!sid) {
-                ElMessage.error('未返回 session_id，无法进入分析详情')
+                ElMessage.error('未返回 session_id，无法开始分析')
                 return
             }
-            router.push({
-                path: `/agent/analysis/${sid}`,
-                query: {
-                    agent_id: response.data.agent_id,
-                    entity_uuid: articleData.value.uuid,
-                    entity_type: articleData.value.entity_type,
-                },
-            })
+            activeSessionId.value = String(sid)
+            activeAgentId.value = String(response.data.agent_id)
+            rightPanel.value = 'analysis'
+            syncAgentSessionQuery()
+            await startStreamForSession({ loadDetail: true })
         } else {
             ElMessage.error(response.message || '启动分析任务失败')
         }
@@ -814,7 +890,46 @@ const handleExport = () => {
     ElMessage.info('导出功能开发中')
 }
 
+function syncAgentSessionQuery() {
+    const q = { ...route.query }
+    if (activeSessionId.value) {
+        q.agent_session = activeSessionId.value
+        q.agent_id = activeAgentId.value
+    } else {
+        delete q.agent_session
+        delete q.agent_id
+    }
+    router.replace({ query: q })
+}
+
+function restoreAgentSessionFromQuery() {
+    const sid = route.query.agent_session
+    const aid = route.query.agent_id
+    if (!sid || !aid) return
+    activeSessionId.value = String(sid)
+    activeAgentId.value = String(aid)
+    rightPanel.value = 'analysis'
+    startStreamForSession({ loadDetail: true })
+}
+
+function openAnalysisFullscreen() {
+    if (!activeSessionId.value) return
+    router.push({
+        path: `/agent/analysis/${activeSessionId.value}`,
+        query: {
+            agent_id: activeAgentId.value,
+            entity_uuid: articleData.value?.uuid || '',
+            entity_type: articleData.value?.entity_type || '',
+        },
+    })
+}
+
 watch(() => route.params.uuid, () => {
+    disconnectSSE()
+    activeSessionId.value = ''
+    activeAgentId.value = ''
+    rightPanel.value = 'info'
+    syncAgentSessionQuery()
     loadArticleDetail()
 }, { immediate: false })
 
@@ -840,11 +955,13 @@ onMounted(() => {
     loadArticleDetail()
     loadAnalyzeOptions()
     setupEventListeners()
+    restoreAgentSessionFromQuery()
 })
 
 onUnmounted(() => {
     revokeSnapshotBlob()
     cleanupEventListeners()
+    disconnectSSE()
 })
 </script>
 

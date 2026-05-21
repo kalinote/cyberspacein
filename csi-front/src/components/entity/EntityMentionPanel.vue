@@ -1,9 +1,12 @@
 <template>
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center">
+    <div :class="embedded ? '' : 'bg-white rounded-xl shadow-sm border border-gray-200 p-6'">
+        <h3
+            v-if="!embedded"
+            class="text-lg font-bold text-gray-900 mb-4 flex items-center"
+        >
             提及<span class="text-blue-500">实体</span>
         </h3>
-        <div class="space-y-4">
+        <div :class="embedded ? 'space-y-3' : 'space-y-4'">
             <div v-for="group in groups" :key="group.key">
                 <p class="text-sm text-gray-500 mb-2">{{ group.label }}</p>
                 <div class="flex flex-wrap gap-2">
@@ -45,6 +48,10 @@ const props = defineProps({
     setRef: {
         type: Function,
         default: () => {},
+    },
+    embedded: {
+        type: Boolean,
+        default: false,
     },
 })
 
