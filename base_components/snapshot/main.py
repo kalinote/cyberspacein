@@ -170,6 +170,7 @@ def main() -> None:
             minimum=1,
         )
         service = build_service(
+            headed=True,
             max_concurrency=max_concurrency,
             max_retries=_coerce_int_config(
                 component.get_config("max_retries", 3),

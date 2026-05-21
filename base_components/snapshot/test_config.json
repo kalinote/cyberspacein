@@ -12,7 +12,7 @@
     "inputs": {
         "data_in": {
             "type": "reference",
-            "value": ["waiting_for_embedding"]
+            "value": ["snapshot"]
         }
     },
     "outputs": {
