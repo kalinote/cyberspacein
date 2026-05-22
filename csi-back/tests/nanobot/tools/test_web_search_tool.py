@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from app.service.analyst.web_tools import AnalystWebSearchConfig, WebSearchTool
+from app.service.analyst.tools import AnalystWebSearchConfig, WebSearchTool
 
 
 def _tool(provider: str = "brave", api_key: str = "", base_url: str = "") -> WebSearchTool:

@@ -11,7 +11,7 @@ import pytest
 
 import app.service.analyst.context as ctx
 import app.service.analyst.service as analyst_service
-import app.service.analyst.tools as tools_module
+import app.service.analyst.tools.submit_task_result as submit_task_result_module
 from app.service.analyst.tools import SubmitTaskResultTool
 
 
@@ -36,7 +36,7 @@ class FakeNanobotSessionModel:
 @pytest.fixture(autouse=True)
 def _patch_session_model(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeNanobotSessionModel._docs = {"s1": FakeSessionDoc(id="s1")}
-    monkeypatch.setattr(tools_module, "NanobotSessionModel", FakeNanobotSessionModel)
+    monkeypatch.setattr(submit_task_result_module, "NanobotSessionModel", FakeNanobotSessionModel)
 
 
 @pytest.mark.asyncio

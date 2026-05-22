@@ -15,6 +15,8 @@ import app.service.analyst.context as ctx
 import app.service.analyst.hitl as hitl_module
 import app.service.analyst.service as service_module
 import app.service.analyst.tools as tools_module
+import app.service.analyst.tools.submit_task_result as submit_task_result_module
+import app.service.analyst.tools.write_todos as write_todos_module
 from app.schemas.agent.hitl import HitlSource
 from app.schemas.constants import EntityType, NanobotSessionStatusEnum
 from app.service.analyst.hitl import HitlOutcome
@@ -44,7 +46,8 @@ class FakeNanobotSessionModel:
 @pytest.fixture(autouse=True)
 def _patch_session_model(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     FakeNanobotSessionModel._docs = {}
-    monkeypatch.setattr(tools_module, "NanobotSessionModel", FakeNanobotSessionModel)
+    monkeypatch.setattr(write_todos_module, "NanobotSessionModel", FakeNanobotSessionModel)
+    monkeypatch.setattr(submit_task_result_module, "NanobotSessionModel", FakeNanobotSessionModel)
     yield
 
 
@@ -71,7 +74,9 @@ def test_tool_schemas_valid() -> None:
 
 def test_build_business_tools_whitelist(monkeypatch: pytest.MonkeyPatch) -> None:
     warns: list[str] = []
-    monkeypatch.setattr(tools_module.logger, "warning", lambda msg: warns.append(str(msg)))
+    import app.service.analyst.tools.registry as registry_module
+
+    monkeypatch.setattr(registry_module.logger, "warning", lambda msg: warns.append(str(msg)))
     tools = tools_module.build_business_tools(["notify_user", "write_todos", "unknown"])
     assert [t.name for t in tools] == ["notify_user", "write_todos"]
     assert warns and "unknown" in warns[0]

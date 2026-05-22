@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.service.analyst.web_tools import WebFetchTool
+from app.service.analyst.tools import WebFetchTool
 
 
 def _fake_resolve_private(hostname, port, family=0, type_=0):
@@ -110,7 +110,7 @@ async def test_web_fetch_blocks_private_redirect_before_returning_image(monkeypa
         def stream(self, method, url, headers=None):
             return FakeStreamResponse()
 
-    monkeypatch.setattr("app.service.analyst.web_tools.httpx.AsyncClient", FakeClient)
+    monkeypatch.setattr("app.service.analyst.tools.web_fetch.httpx.AsyncClient", FakeClient)
 
     with patch("app.service.analyst.network_security.socket.getaddrinfo", _fake_resolve_public):
         result = await tool.execute(url="https://example.com/image.png")
