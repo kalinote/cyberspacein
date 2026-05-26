@@ -180,15 +180,15 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="handleAction('查看', item.name)">
+                    <el-button type="primary" link @click="openModelDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="handleAction('编辑', item.name)">
+                    <el-button type="primary" link @click="openModelEdit(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleAction('删除', item.name)">
+                    <el-button type="danger" link @click="handleDeleteModel(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -457,7 +457,7 @@
 
     <el-dialog
       v-model="modelDialogVisible"
-      title="新增模型资源"
+      :title="editingModelId ? '编辑模型资源' : '新增模型资源'"
       width="560px"
       :close-on-click-modal="false"
       @close="handleModelDialogClose"
@@ -493,6 +493,37 @@
       <template #footer>
         <el-button @click="handleModelDialogClose">取消</el-button>
         <el-button type="primary" :loading="modelSubmitLoading" @click="handleModelSubmit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="modelDetailVisible"
+      title="模型资源详情"
+      width="720px"
+      :close-on-click-modal="true"
+    >
+      <div v-loading="modelDetailLoading" element-loading-text="加载中..." class="min-h-30">
+        <template v-if="modelDetail">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="配置ID">{{ modelDetail.id }}</el-descriptions-item>
+            <el-descriptions-item label="名称">{{ modelDetail.name }}</el-descriptions-item>
+            <el-descriptions-item label="描述">
+              <span class="whitespace-pre-line">{{ modelDetail.description || '-' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="API 地址">
+              <span class="font-mono text-xs">{{ modelDetail.base_url || '-' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="API Key">
+              <span class="font-mono text-xs">{{ maskApiKey(modelDetail.api_key) }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="模型">{{ modelDetail.model || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ modelDetail.created_at ? formatModelDate(modelDetail.created_at) : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="更新时间">{{ modelDetail.updated_at ? formatModelDate(modelDetail.updated_at) : '-' }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="modelDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -1392,6 +1423,7 @@ const handleCurrentTabSearch = () => {
 const modelDialogVisible = ref(false)
 const modelFormRef = ref(null)
 const modelSubmitLoading = ref(false)
+const editingModelId = ref(null)
 const modelFormData = ref({
   name: '',
   description: '',
@@ -1405,6 +1437,10 @@ const modelFormRules = {
   api_key: [{ required: true, message: '请输入 API Key', trigger: 'blur' }],
   model: [{ required: true, message: '请输入模型', trigger: 'blur' }]
 }
+
+const modelDetailVisible = ref(false)
+const modelDetail = ref(null)
+const modelDetailLoading = ref(false)
 
 const workspaceDialogVisible = ref(false)
 const workspaceFormRef = ref(null)
@@ -1972,6 +2008,7 @@ const handleAdd = () => {
   if (activeTab.value === 'analysisEngines') {
     openAgentDialog()
   } else if (activeTab.value === 'modelResources') {
+    editingModelId.value = null
     modelDialogVisible.value = true
   } else if (activeTab.value === 'promptTemplates') {
     editingPromptTemplateId.value = null
@@ -1989,6 +2026,7 @@ const handleAdd = () => {
 
 const handleModelDialogClose = () => {
   modelDialogVisible.value = false
+  editingModelId.value = null
   modelFormRef.value?.resetFields()
   modelFormData.value = { name: '', description: '', base_url: '', api_key: '', model: '' }
 }
@@ -1998,23 +2036,99 @@ const handleModelSubmit = async () => {
   try {
     await modelFormRef.value.validate()
     modelSubmitLoading.value = true
-    await agentApi.createModel({
+    const payload = {
       name: modelFormData.value.name,
       description: modelFormData.value.description || undefined,
       base_url: modelFormData.value.base_url,
       api_key: modelFormData.value.api_key,
       model: modelFormData.value.model
-    })
-    ElMessage.success('新增成功')
+    }
+    if (editingModelId.value) {
+      await agentApi.updateModel(editingModelId.value, payload)
+      ElMessage.success('修改成功')
+    } else {
+      await agentApi.createModel(payload)
+      ElMessage.success('新增成功')
+    }
     handleModelDialogClose()
     modelPagination.value.page = 1
     fetchModelList()
     fetchStatistics()
   } catch (e) {
-    if (e !== false) console.error('新增模型失败:', e)
+    if (e !== false) console.error(editingModelId.value ? '修改模型失败:' : '新增模型失败:', e)
   } finally {
     modelSubmitLoading.value = false
   }
+}
+
+const openModelDetail = async (item) => {
+  const id = item?.id
+  if (!id) return
+  modelDetailVisible.value = true
+  modelDetailLoading.value = true
+  modelDetail.value = null
+  try {
+    const res = await agentApi.getModelDetail(id)
+    modelDetail.value = res?.data ?? null
+  } catch {
+    ElMessage.error('获取模型资源详情失败')
+    modelDetailVisible.value = false
+  } finally {
+    modelDetailLoading.value = false
+  }
+}
+
+const openModelEdit = async (item) => {
+  const id = item?.id
+  if (!id) return
+  editingModelId.value = id
+  modelDialogVisible.value = true
+  modelSubmitLoading.value = true
+  modelFormRef.value?.resetFields()
+  try {
+    const res = await agentApi.getModelDetail(id)
+    const d = res?.data
+    if (!d) throw new Error('empty model detail')
+    modelFormData.value = {
+      name: d.name ?? '',
+      description: d.description ?? '',
+      base_url: d.base_url ?? '',
+      api_key: d.api_key ?? '',
+      model: d.model ?? ''
+    }
+  } catch (e) {
+    ElMessage.error('获取模型资源详情失败')
+    modelDialogVisible.value = false
+    editingModelId.value = null
+  } finally {
+    modelSubmitLoading.value = false
+  }
+}
+
+const handleDeleteModel = (item) => {
+  const id = item?.id
+  const name = item?.name || id
+  if (!id) return
+
+  ElMessageBox.confirm(
+    `确定要删除模型资源“${name}”吗？若仍被分析引擎或工作区引用将无法删除。`,
+    '确认删除',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+    .then(async () => {
+      await agentApi.deleteModel(id)
+      ElMessage.success('删除成功')
+      if (modelList.value.length === 1 && modelPagination.value.page > 1) {
+        modelPagination.value.page -= 1
+      }
+      fetchModelList()
+      fetchStatistics()
+    })
+    .catch(() => {})
 }
 
 const createSystemPromptFormData = () => ({
@@ -2353,7 +2467,4 @@ const handlePromptTemplateSubmit = async () => {
   }
 }
 
-const handleAction = (action, name) => {
-  ElMessage.info(`功能开发中：${action} ${name}`)
-}
 </script>

@@ -7,6 +7,15 @@ export const agentApi = {
   createModel(data) {
     return request.post('/agent/configs/models', data)
   },
+  getModelDetail(modelConfigId) {
+    return request.get(`/agent/configs/model/${modelConfigId}`)
+  },
+  updateModel(modelConfigId, data) {
+    return request.put(`/agent/configs/model/${modelConfigId}`, data)
+  },
+  deleteModel(modelConfigId) {
+    return request.delete(`/agent/configs/model/${modelConfigId}`)
+  },
   getPromptTemplateList(params = { page: 1, page_size: 10 }) {
     return request.get('/agent/configs/prompt-templates', params)
   },
