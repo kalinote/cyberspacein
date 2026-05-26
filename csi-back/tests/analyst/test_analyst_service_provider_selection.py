@@ -20,6 +20,7 @@ class FakeAgent:
     model_config_id: str = "m1"
     prompt_template_id: str = "p1"
     llm_provider: NanobotLLMProviderEnum = NanobotLLMProviderEnum.OPENAI_COMPAT
+    reasoning_effort: str | None = None
     tools: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     agent_builtin_prompt_ids: list[str] = field(default_factory=list)

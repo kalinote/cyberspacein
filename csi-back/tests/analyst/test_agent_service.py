@@ -51,6 +51,7 @@ class FakeAgentDoc:
     skills: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     llm_config: dict[str, Any] = field(default_factory=dict)
+    reasoning_effort: Any | None = None
     llm_provider: NanobotLLMProviderEnum = NanobotLLMProviderEnum.OPENAI_COMPAT
     agent_builtin_prompt_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)

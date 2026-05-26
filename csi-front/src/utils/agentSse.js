@@ -39,15 +39,53 @@ export function appendStreamDelta(items, delta, ts, nextId) {
     return { merged: false }
 }
 
-export function closeStreamInTimeline(items, streamEndPayload, ts, nextId) {
+export function appendReasoningStreamDelta(items, delta, ts, nextId) {
+    const d = String(delta ?? '')
+    const last = items[items.length - 1]
+    if (last && last.kind === 'assistant_reasoning_stream' && last.streaming === true) {
+        last.text = String(last.text ?? '') + d
+        last.updatedTs = ts
+        return { merged: true }
+    }
+    items.push({
+        id: nextId(),
+        sseType: 'reasoning_stream',
+        kind: 'assistant_reasoning_stream',
+        ts,
+        updatedTs: ts,
+        text: d,
+        streaming: true,
+        resuming: false,
+    })
+    return { merged: false }
+}
+
+function closeActiveStreamKind(items, kind, streamEndPayload, ts) {
+    const resuming = Boolean(streamEndPayload && streamEndPayload.resuming)
+    let closed = false
     for (let i = items.length - 1; i >= 0; i--) {
         const it = items[i]
-        if (it && it.kind === 'assistant_stream' && it.streaming === true) {
+        if (it && it.kind === kind && it.streaming === true) {
             it.streaming = false
-            it.resuming = Boolean(streamEndPayload && streamEndPayload.resuming)
+            it.resuming = resuming
             it.streamEndTs = ts
-            return { closed: true }
+            closed = true
+            break
         }
+    }
+    return closed
+}
+
+export function closeStreamInTimeline(items, streamEndPayload, ts, nextId) {
+    const closedReasoning = closeActiveStreamKind(
+        items,
+        'assistant_reasoning_stream',
+        streamEndPayload,
+        ts
+    )
+    const closedAnswer = closeActiveStreamKind(items, 'assistant_stream', streamEndPayload, ts)
+    if (closedReasoning || closedAnswer) {
+        return { closed: true, closedReasoning, closedAnswer }
     }
     items.push({
         id: nextId(),
@@ -58,7 +96,7 @@ export function closeStreamInTimeline(items, streamEndPayload, ts, nextId) {
         message: '收到流结束信号，但未找到进行中的流式输出',
         payload: streamEndPayload ?? null,
     })
-    return { closed: false }
+    return { closed: false, closedReasoning: false, closedAnswer: false }
 }
 
 export function stringifyJsonSafe(value, space = 2) {

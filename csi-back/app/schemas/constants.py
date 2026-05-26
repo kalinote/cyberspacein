@@ -293,4 +293,18 @@ class NanobotLLMProviderEnum(str, Enum):
     """
     OPENAI_COMPAT = "openai"
     ANTHROPIC_COMPAT = "anthropic"
+
+
+class ReasoningEffortEnum(str, Enum):
+    """
+    推理强度枚举（用于启用/调节模型思考模式）。
+
+    - None（null）表示关闭推理/思考模式。
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
     

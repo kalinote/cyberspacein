@@ -149,6 +149,7 @@ class OpenAICompatProvider(LLMProvider):
         self.extra_headers = extra_headers or {}
         self._spec = spec
         self.response_format = response_format
+        self._extra_body: dict[str, Any] = {}
 
         if api_key and spec and spec.env_key:
             self._setup_env(api_key, api_base)
@@ -170,6 +171,13 @@ class OpenAICompatProvider(LLMProvider):
         # probe again after _RESPONSES_PROBE_INTERVAL_S seconds.
         self._responses_failures: dict[str, int] = {}
         self._responses_tripped_at: dict[str, float] = {}
+
+    @property
+    def extra_body(self) -> dict[str, Any]:
+        return dict(self._extra_body)
+
+    def set_extra_body(self, body: dict[str, Any] | None) -> None:
+        self._extra_body = dict(body or {})
 
     def _setup_env(self, api_key: str, api_base: str | None) -> None:
         """Set environment variables based on provider spec."""
@@ -348,6 +356,9 @@ class OpenAICompatProvider(LLMProvider):
         if self.response_format:
             kwargs["response_format"] = self.response_format
 
+        if self._extra_body:
+            kwargs["extra_body"] = dict(self._extra_body)
+
         return kwargs
 
     def _should_use_responses_api(
@@ -462,6 +473,9 @@ class OpenAICompatProvider(LLMProvider):
         if tools:
             body["tools"] = convert_tools(tools)
             body["tool_choice"] = tool_choice or "auto"
+
+        if self._extra_body:
+            body["extra_body"] = dict(self._extra_body)
 
         return body
 
@@ -922,6 +936,7 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         try:
@@ -948,6 +963,7 @@ class OpenAICompatProvider(LLMProvider):
                     content, tool_calls, finish_reason, usage, reasoning_content = await consume_sdk_stream(
                         _timed_stream(),
                         on_content_delta,
+                        on_reasoning_delta,
                     )
                     self._record_responses_success(model, reasoning_effort)
                     return LLMResponse(
@@ -980,10 +996,16 @@ class OpenAICompatProvider(LLMProvider):
                 except StopAsyncIteration:
                     break
                 chunks.append(chunk)
-                if on_content_delta and chunk.choices:
-                    text = getattr(chunk.choices[0].delta, "content", None)
-                    if text:
-                        await on_content_delta(text)
+                if chunk.choices:
+                    delta = chunk.choices[0].delta
+                    if on_content_delta and delta.content:
+                        await on_content_delta(delta.content)
+                    if on_reasoning_delta:
+                        reasoning = getattr(delta, "reasoning_content", None)
+                        if reasoning is None:
+                            reasoning = getattr(delta, "reasoning", None)
+                        if reasoning:
+                            await on_reasoning_delta(reasoning)
             return self._parse_chunks(chunks)
         except asyncio.TimeoutError:
             return LLMResponse(

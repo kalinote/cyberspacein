@@ -11,6 +11,34 @@
             </div>
         </div>
 
+        <div v-else-if="item.kind === 'assistant_reasoning_stream'" class="flex gap-3 min-w-0">
+            <div class="mt-1.5 h-8 w-1 shrink-0 rounded-full bg-violet-400/70" />
+            <div
+                class="min-w-0 flex-1 rounded-xl border border-violet-100 bg-violet-50/50 px-4 py-3 shadow-sm ring-1 ring-violet-100/60">
+                <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <Icon icon="mdi:brain" class="text-base text-violet-600 shrink-0" />
+                    <span class="font-medium text-violet-900">思考过程</span>
+                    <span>{{ formatTime(item.ts) }}</span>
+                    <span v-if="item.streaming"
+                        class="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-800">思考中</span>
+                    <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">已结束</span>
+                </div>
+                <div class="min-w-0 text-sm text-gray-700">
+                    <MarkdownViewer
+                        v-if="item.text"
+                        :content="item.text"
+                        :breaks="true"
+                        custom-class="min-w-0"
+                    />
+                    <span v-else-if="item.streaming" class="text-xs text-violet-700/80">等待思考内容…</span>
+                    <span v-if="item.streaming && item.text"
+                        class="ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-sm bg-violet-500 align-middle animate-pulse"
+                        aria-hidden="true" />
+                </div>
+                <p v-if="item.resuming" class="mt-2 text-xs text-amber-700">后续可能继续思考…</p>
+            </div>
+        </div>
+
         <div v-else-if="item.kind === 'assistant_stream'" class="flex gap-3 min-w-0">
             <div class="mt-1.5 h-8 w-1 shrink-0 rounded-full bg-blue-500/80" />
             <div

@@ -27,6 +27,7 @@ class FakeAgentDoc:
         self.skills: list[str] = []
         self.mcp_servers: list[str] = []
         self.llm_config: dict = {}
+        self.reasoning_effort = None
         self.llm_provider: NanobotLLMProviderEnum = NanobotLLMProviderEnum.OPENAI_COMPAT
         self.agent_builtin_prompt_ids: list[str] = []
         self.created_at = datetime(2026, 1, 1, 0, 0, 0)

@@ -496,6 +496,7 @@ class AnthropicProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         kwargs = self._build_kwargs(
             messages, tools, model, max_tokens, temperature,
@@ -504,17 +505,25 @@ class AnthropicProvider(LLMProvider):
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         try:
             async with self._client.messages.stream(**kwargs) as stream:
-                if on_content_delta:
-                    stream_iter = stream.text_stream.__aiter__()
+                if on_content_delta or on_reasoning_delta:
+                    event_iter = stream.__aiter__()
                     while True:
                         try:
-                            text = await asyncio.wait_for(
-                                stream_iter.__anext__(),
+                            event = await asyncio.wait_for(
+                                event_iter.__anext__(),
                                 timeout=idle_timeout_s,
                             )
                         except StopAsyncIteration:
                             break
-                        await on_content_delta(text)
+                        if event.type != "content_block_delta":
+                            continue
+                        delta = event.delta
+                        if delta.type == "thinking_delta" and on_reasoning_delta:
+                            if delta.thinking:
+                                await on_reasoning_delta(delta.thinking)
+                        elif delta.type == "text_delta" and on_content_delta:
+                            if delta.text:
+                                await on_content_delta(delta.text)
                 response = await asyncio.wait_for(
                     stream.get_final_message(),
                     timeout=idle_timeout_s,

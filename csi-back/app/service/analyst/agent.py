@@ -144,6 +144,7 @@ class AgentService:
             skills=list(data.skills),
             mcp_servers=list(data.mcp_servers),
             llm_config=dict(data.llm_config or {}),
+            reasoning_effort=data.reasoning_effort,
             agent_builtin_prompt_ids=list(data.agent_builtin_prompt_ids),
             llm_provider=data.llm_provider,
         )
@@ -199,6 +200,7 @@ class AgentService:
         doc.skills = list(data.skills)
         doc.mcp_servers = list(data.mcp_servers)
         doc.llm_config = dict(data.llm_config or {})
+        doc.reasoning_effort = data.reasoning_effort
         doc.llm_provider = data.llm_provider
         doc.agent_builtin_prompt_ids = list(data.agent_builtin_prompt_ids)
         doc.updated_at = datetime.now()

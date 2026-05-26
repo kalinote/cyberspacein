@@ -36,10 +36,16 @@ class AgentHook:
     def wants_streaming(self) -> bool:
         return False
 
+    def wants_reasoning_streaming(self) -> bool:
+        return False
+
     async def before_iteration(self, context: AgentHookContext) -> None:
         pass
 
     async def on_stream(self, context: AgentHookContext, delta: str) -> None:
+        pass
+
+    async def on_reasoning_stream(self, context: AgentHookContext, delta: str) -> None:
         pass
 
     async def on_stream_end(self, context: AgentHookContext, *, resuming: bool) -> None:
@@ -72,6 +78,9 @@ class CompositeHook(AgentHook):
     def wants_streaming(self) -> bool:
         return any(h.wants_streaming() for h in self._hooks)
 
+    def wants_reasoning_streaming(self) -> bool:
+        return any(h.wants_reasoning_streaming() for h in self._hooks)
+
     async def _for_each_hook_safe(self, method_name: str, *args: Any, **kwargs: Any) -> None:
         for h in self._hooks:
             if getattr(h, "_reraise", False):
@@ -88,6 +97,9 @@ class CompositeHook(AgentHook):
 
     async def on_stream(self, context: AgentHookContext, delta: str) -> None:
         await self._for_each_hook_safe("on_stream", context, delta)
+
+    async def on_reasoning_stream(self, context: AgentHookContext, delta: str) -> None:
+        await self._for_each_hook_safe("on_reasoning_stream", context, delta)
 
     async def on_stream_end(self, context: AgentHookContext, *, resuming: bool) -> None:
         await self._for_each_hook_safe("on_stream_end", context, resuming=resuming)

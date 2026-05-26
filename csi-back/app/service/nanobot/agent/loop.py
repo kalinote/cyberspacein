@@ -45,6 +45,7 @@ class _LoopHook(AgentHook):
         agent_loop: AgentLoop,
         on_progress: Callable[..., Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
         *,
         channel: str = "cli",
@@ -55,6 +56,7 @@ class _LoopHook(AgentHook):
         self._loop = agent_loop
         self._on_progress = on_progress
         self._on_stream = on_stream
+        self._on_reasoning_stream = on_reasoning_stream
         self._on_stream_end = on_stream_end
         self._channel = channel
         self._chat_id = chat_id
@@ -63,6 +65,9 @@ class _LoopHook(AgentHook):
 
     def wants_streaming(self) -> bool:
         return self._on_stream is not None
+
+    def wants_reasoning_streaming(self) -> bool:
+        return self._on_reasoning_stream is not None
 
     async def on_stream(self, context: AgentHookContext, delta: str) -> None:
         from app.service.nanobot.utils.helpers import strip_think
@@ -73,6 +78,10 @@ class _LoopHook(AgentHook):
         incremental = new_clean[len(prev_clean) :]
         if incremental and self._on_stream:
             await self._on_stream(incremental)
+
+    async def on_reasoning_stream(self, context: AgentHookContext, delta: str) -> None:
+        if delta and self._on_reasoning_stream:
+            await self._on_reasoning_stream(delta)
 
     async def on_stream_end(self, context: AgentHookContext, *, resuming: bool) -> None:
         if self._on_stream_end:
@@ -326,6 +335,7 @@ class AgentLoop:
         initial_messages: list[dict],
         on_progress: Callable[..., Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
         on_retry_wait: Callable[[str], Awaitable[None]] | None = None,
         *,
@@ -336,6 +346,7 @@ class AgentLoop:
         """Run the agent iteration loop.
 
         *on_stream*: called with each content delta during streaming.
+        *on_reasoning_stream*: called with each reasoning/thinking delta during streaming.
         *on_stream_end(resuming)*: called when a streaming session finishes.
         ``resuming=True`` means tool calls follow (spinner should restart);
         ``resuming=False`` means this is the final response.
@@ -346,6 +357,7 @@ class AgentLoop:
             self,
             on_progress=on_progress,
             on_stream=on_stream,
+            on_reasoning_stream=on_reasoning_stream,
             on_stream_end=on_stream_end,
             channel=channel,
             chat_id=chat_id,
@@ -421,6 +433,7 @@ class AgentLoop:
         session_id: str | None = None,
         on_progress: Callable[[str], Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
@@ -571,6 +584,7 @@ class AgentLoop:
             initial_messages,
             on_progress=on_progress or _bus_progress,
             on_stream=on_stream,
+            on_reasoning_stream=on_reasoning_stream,
             on_stream_end=on_stream_end,
             on_retry_wait=_on_retry_wait,
             session=session,
@@ -823,6 +837,7 @@ class AgentLoop:
         media: list[str] | None = None,
         on_progress: Callable[[str], Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """单次直连调用入口（非 bus 路径）。
@@ -841,5 +856,6 @@ class AgentLoop:
             session_id=session_id,
             on_progress=on_progress,
             on_stream=on_stream,
+            on_reasoning_stream=on_reasoning_stream,
             on_stream_end=on_stream_end,
         )

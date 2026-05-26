@@ -605,13 +605,17 @@ class AgentRunner:
             messages,
             tools=tool_defs,
         )
-        if hook.wants_streaming():
+        if hook.wants_streaming() or hook.wants_reasoning_streaming():
             async def _stream(delta: str) -> None:
                 await hook.on_stream(context, delta)
 
+            async def _reasoning_stream(delta: str) -> None:
+                await hook.on_reasoning_stream(context, delta)
+
             return await self.provider.chat_stream_with_retry(
                 **kwargs,
-                on_content_delta=_stream,
+                on_content_delta=_stream if hook.wants_streaming() else None,
+                on_reasoning_delta=_reasoning_stream if hook.wants_reasoning_streaming() else None,
             )
         return await self.provider.chat_with_retry(**kwargs)
 

@@ -80,3 +80,22 @@ async def test_launch_background_run_emits_user_message_before_status(
         "session_id": "s1",
         "content": "继续分析",
     }
+
+
+@pytest.mark.asyncio
+async def test_broadcast_sse_reasoning_stream_event() -> None:
+    agent_id = "a1"
+    session_id = "s1"
+    q = await AnalystService.subscribe(agent_id, session_id)
+    try:
+        await AnalystService.broadcast_sse(
+            agent_id,
+            "reasoning_stream",
+            {"agent_id": agent_id, "session_id": session_id, "delta": "思考中…"},
+        )
+        payload = await q.get()
+        assert payload["event"] == "reasoning_stream"
+        assert payload["data"]["delta"] == "思考中…"
+        assert q.empty()
+    finally:
+        await AnalystService.unsubscribe(agent_id, session_id, q)

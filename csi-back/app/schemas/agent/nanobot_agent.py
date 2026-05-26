@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from app.schemas.constants import NanobotLLMProviderEnum
+from app.schemas.constants import NanobotLLMProviderEnum, ReasoningEffortEnum
 
 if TYPE_CHECKING:
     from app.models.agent.nanobot import NanobotAgentModel
@@ -31,7 +31,11 @@ class NanobotAgentCreateRequestSchema(BaseModel):
     )
     llm_config: dict[str, Any] = Field(
         default_factory=dict,
-        description="LLM 生成参数（temperature / max_tokens / reasoning_effort 等），透传给 provider",
+        description="LLM 生成参数（temperature / max_tokens 等），透传给 provider",
+    )
+    reasoning_effort: ReasoningEffortEnum | None = Field(
+        default=None,
+        description="推理强度（low/medium/high/xhigh/max；null 表示关闭推理/思考模式）",
     )
     llm_provider: NanobotLLMProviderEnum = Field(
         default=NanobotLLMProviderEnum.OPENAI_COMPAT,
@@ -54,6 +58,10 @@ class NanobotAgentUpdateRequestSchema(BaseModel):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的 MCP 服务名列表")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数")
+    reasoning_effort: ReasoningEffortEnum | None = Field(
+        default=None,
+        description="推理强度（low/medium/high/xhigh/max；null 表示关闭推理/思考模式）",
+    )
     llm_provider: NanobotLLMProviderEnum = Field(
         default=NanobotLLMProviderEnum.OPENAI_COMPAT,
         description="LLM 兼容提供商",
@@ -77,6 +85,10 @@ class NanobotAgentSchema(BaseModel):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的 MCP 服务名列表")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数")
+    reasoning_effort: ReasoningEffortEnum | None = Field(
+        default=None,
+        description="推理强度（low/medium/high/xhigh/max；null 表示关闭推理/思考模式）",
+    )
     llm_provider: NanobotLLMProviderEnum = Field(
         default=NanobotLLMProviderEnum.OPENAI_COMPAT,
         description="LLM 兼容提供商",
@@ -101,6 +113,7 @@ class NanobotAgentSchema(BaseModel):
             skills=list(doc.skills),
             mcp_servers=list(doc.mcp_servers),
             llm_config=dict(doc.llm_config or {}),
+            reasoning_effort=doc.reasoning_effort,
             llm_provider=doc.llm_provider,
             agent_builtin_prompt_ids=list(doc.agent_builtin_prompt_ids or []),
             created_at=doc.created_at,

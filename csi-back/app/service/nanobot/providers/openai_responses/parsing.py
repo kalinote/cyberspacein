@@ -210,6 +210,7 @@ def parse_response_output(response: Any) -> LLMResponse:
 async def consume_sdk_stream(
     stream: Any,
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+    on_reasoning_delta: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
     """Consume an SDK async stream from ``client.responses.create(stream=True)``."""
     content = ""
@@ -290,6 +291,8 @@ async def consume_sdk_stream(
                                 text = getattr(s, "text", None)
                                 if text:
                                     reasoning_content = (reasoning_content or "") + text
+                                    if on_reasoning_delta:
+                                        await on_reasoning_delta(text)
         elif event_type in {"error", "response.failed"}:
             detail = getattr(event, "error", None) or getattr(event, "message", None) or event
             raise RuntimeError(f"Response failed: {str(detail)[:500]}")

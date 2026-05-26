@@ -2,6 +2,7 @@ import { computed, nextTick, onUnmounted, ref, toValue, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import {
+    appendReasoningStreamDelta,
     appendStreamDelta,
     closeStreamInTimeline,
     parseAgentSseData,
@@ -181,6 +182,15 @@ export function useAgentSessionStream(options = {}) {
 
     function ingestSseNamedEvent(sseType, raw) {
         const ts = new Date().toISOString()
+        if (sseType === 'reasoning_stream') {
+            const p = parseAgentSseData(raw)
+            if (!p.ok) {
+                pushParseErrorTimeline('reasoning_stream', raw, p.error, ts)
+                return
+            }
+            appendReasoningStreamDelta(timelineItems.value, p.value?.delta ?? '', ts, nextTimelineId)
+            return
+        }
         if (sseType === 'stream') {
             const p = parseAgentSseData(raw)
             if (!p.ok) {
@@ -466,6 +476,9 @@ export function useAgentSessionStream(options = {}) {
                     ingestSseNamedEvent(name, event.data ?? '')
                 })
             }
+            eventSource.addEventListener('reasoning_stream', (event) => {
+                ingestSseNamedEvent('reasoning_stream', event.data ?? '')
+            })
             eventSource.addEventListener('approval_required', (event) => {
                 handleApprovalRequiredEvent(event.data ?? '')
             })

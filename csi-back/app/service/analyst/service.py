@@ -60,6 +60,7 @@ from app.service.analyst.tools import SubmitTaskResultTool, build_business_tools
 from app.service.nanobot import Nanobot
 from app.service.nanobot.config.schema import DreamConfig
 from app.service.nanobot.providers.anthropic_provider import AnthropicProvider
+from app.service.nanobot.providers.base import GenerationSettings, LLMProvider
 from app.service.nanobot.providers.openai_compat_provider import OpenAICompatProvider
 from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
 from app.service.nanobot.agent.skills import SkillsLoader
@@ -154,9 +155,10 @@ class AnalystService:
     _sse_subscribers: dict[tuple[str, str], list[asyncio.Queue]] = {}
     _sse_lock: asyncio.Lock = asyncio.Lock()
 
-    # SSE 历史持久化：stream 合并缓冲（用于回放，避免逐字 delta 落库）
+    # SSE 历史持久化：stream / reasoning_stream 合并缓冲（用于回放，避免逐字 delta 落库）
     # key=(agent_id, session_id) -> {"delta": str, "last_flush_at": datetime, "created_at": datetime}
     _sse_stream_buffers: dict[tuple[str, str], dict[str, Any]] = {}
+    _sse_reasoning_stream_buffers: dict[tuple[str, str], dict[str, Any]] = {}
     _sse_persist_lock: asyncio.Lock = asyncio.Lock()
 
     # 后台 run_analysis 任务，key=session_id；用于 cancel / 状态查询。
@@ -290,6 +292,61 @@ class AnalystService:
             )
 
     @classmethod
+    async def _maybe_persist_reasoning_stream_delta(cls, agent_id: str, data: Any) -> None:
+        """合并 reasoning_stream delta 后再持久化，避免逐字落库。"""
+        if not isinstance(data, dict):
+            return
+        session_id = str(data.get("session_id") or "").strip()
+        delta = data.get("delta")
+        if not session_id or not isinstance(delta, str) or delta == "":
+            return
+
+        now = datetime.now()
+        key = (agent_id, session_id)
+        async with cls._sse_persist_lock:
+            buf = cls._sse_reasoning_stream_buffers.get(key)
+            if buf is None:
+                buf = {"delta": "", "created_at": now, "last_flush_at": now}
+                cls._sse_reasoning_stream_buffers[key] = buf
+            buf["delta"] = str(buf.get("delta") or "") + delta
+
+            elapsed_ms = int((now - buf["last_flush_at"]).total_seconds() * 1000)
+            if len(buf["delta"]) < cls._SSE_STREAM_FLUSH_MAX_CHARS and elapsed_ms < cls._SSE_STREAM_FLUSH_MAX_MS:
+                return
+
+            merged = str(buf.get("delta") or "")
+            buf["delta"] = ""
+            buf["last_flush_at"] = now
+
+        if merged:
+            await cls._persist_sse_event(
+                agent_id=agent_id,
+                session_id=session_id,
+                event="reasoning_stream",
+                data={**data, "delta": merged},
+                compressed=True,
+            )
+
+    @classmethod
+    async def _flush_reasoning_stream_buffer(cls, agent_id: str, session_id: str) -> None:
+        key = (agent_id, session_id)
+        async with cls._sse_persist_lock:
+            buf = cls._sse_reasoning_stream_buffers.get(key)
+            if not buf:
+                return
+            merged = str(buf.get("delta") or "")
+            buf["delta"] = ""
+            buf["last_flush_at"] = datetime.now()
+        if merged:
+            await cls._persist_sse_event(
+                agent_id=agent_id,
+                session_id=session_id,
+                event="reasoning_stream",
+                data={"agent_id": agent_id, "session_id": session_id, "delta": merged},
+                compressed=True,
+            )
+
+    @classmethod
     def _get_memory_backend(cls) -> MongoMemoryBackend:
         if cls._memory_backend is None:
             cls._memory_backend = MongoMemoryBackend()
@@ -316,6 +373,7 @@ class AnalystService:
         queue: asyncio.Queue = asyncio.Queue()
         try:
             await cls._flush_stream_buffer(agent_id, session_id)
+            await cls._flush_reasoning_stream_buffer(agent_id, session_id)
             events = (
                 await NanobotAgentSseEventModel.find(
                     {"agent_id": agent_id, "session_id": session_id}
@@ -368,6 +426,8 @@ class AnalystService:
         if persist:
             if event == "stream":
                 await cls._maybe_persist_stream_delta(agent_id, data)
+            elif event == "reasoning_stream":
+                await cls._maybe_persist_reasoning_stream_delta(agent_id, data)
             else:
                 if isinstance(data, dict) and data.get("session_id"):
                     await cls._persist_sse_event(
@@ -467,6 +527,26 @@ class AnalystService:
             raise AgentServiceError(
                 status_codes.INVALID_ARGUMENT,
                 f"不支持的 LLM 提供商: {agent.llm_provider}",
+            )
+
+        # OpenAI 兼容 provider：将 llm_config 透传给 SDK 的 extra_body。
+        # 说明：这里不负责解析/拆分 temperature、max_tokens 等顶层生成参数；
+        # llm_config 仅用于“额外载荷”直传。
+        set_extra_body = getattr(provider, "set_extra_body", None)
+        if callable(set_extra_body):
+            set_extra_body(getattr(agent, "llm_config", None))
+
+        # 将 Agent 的 reasoning_effort 应用到 provider 生成参数（未设置则为 None）。
+        if isinstance(provider, LLMProvider):
+            prev = provider.generation
+            provider.generation = GenerationSettings(
+                temperature=prev.temperature,
+                max_tokens=prev.max_tokens,
+                reasoning_effort=(
+                    agent.reasoning_effort.value
+                    if agent.reasoning_effort is not None
+                    else None
+                ),
             )
 
         mcp_subset: dict[str, dict] = {}
@@ -820,9 +900,17 @@ class AnalystService:
                         {"agent_id": agent_id, "session_id": session_id, "delta": delta},
                     )
 
+                async def _on_reasoning_stream(delta: str) -> None:
+                    await cls.broadcast_sse(
+                        agent_id,
+                        "reasoning_stream",
+                        {"agent_id": agent_id, "session_id": session_id, "delta": delta},
+                    )
+
                 async def _on_stream_end(*, resuming: bool = False, **_kw: Any) -> None:
                     # stream_end 到来时把当前缓冲的 stream 合并块先落库（用于回放）
                     await cls._flush_stream_buffer(agent_id, session_id)
+                    await cls._flush_reasoning_stream_buffer(agent_id, session_id)
                     await cls.broadcast_sse(
                         agent_id,
                         "stream_end",
@@ -852,6 +940,7 @@ class AnalystService:
                     chat_id="direct",
                     on_progress=_on_progress,
                     on_stream=_on_stream,
+                    on_reasoning_stream=_on_reasoning_stream,
                     on_stream_end=_on_stream_end,
                 )
                 content = (getattr(response, "content", None) if response else None) or ""
@@ -908,6 +997,7 @@ class AnalystService:
                     await sess.save()
                 # run 结束前冲刷一次 stream 缓冲，保证回放不缺尾巴
                 await cls._flush_stream_buffer(agent_id, session_id)
+                await cls._flush_reasoning_stream_buffer(agent_id, session_id)
                 await cls.broadcast_sse(
                     agent_id,
                     "result",

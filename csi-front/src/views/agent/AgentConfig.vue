@@ -890,8 +890,36 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="LLM 配置" prop="llm_config">
-          <KeyValueEditor v-model="agentFormData.llm_config" />
+        <el-form-item label="思考强度" prop="reasoning_effort">
+          <div class="w-full space-y-2 pr-2">
+            <el-slider
+              v-model="agentReasoningEffortIndex"
+              :min="0"
+              :max="reasoningEffortSliderMax"
+              :step="1"
+              :show-stops="true"
+              :format-tooltip="formatReasoningEffortTooltip"
+            />
+            <p class="text-xs text-gray-500 m-0">
+              当前：{{ formatReasoningEffortLabel(agentFormData.reasoning_effort) }}（关闭时不启用思考流）
+            </p>
+          </div>
+        </el-form-item>
+        <el-form-item prop="llm_config">
+          <template #label>
+            <span class="inline-flex items-center gap-1">
+              <span>LLM 配置</span>
+              <el-tooltip
+                content="该值将被直接用于OpenAI兼容的extra_body传参，Anthropic无效"
+                placement="top"
+              >
+                <span class="inline-flex items-center cursor-help text-gray-400 hover:text-gray-600">
+                  <Icon icon="mdi:help-circle-outline" class="text-sm" />
+                </span>
+              </el-tooltip>
+            </span>
+          </template>
+          <KeyValueEditor v-model="agentFormData.llm_config" typed-values />
         </el-form-item>
         <el-form-item label="工具" prop="tools">
           <el-select
@@ -943,6 +971,9 @@
             </el-descriptions-item>
             <el-descriptions-item label="LLM 提供商">
               {{ formatLlmProviderLabel(agentDetail.llm_provider) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="思考强度">
+              {{ formatReasoningEffortLabel(agentDetail.reasoning_effort) }}
             </el-descriptions-item>
             <el-descriptions-item label="LLM 配置">
               <pre class="m-0 p-2 bg-gray-50 rounded text-xs max-h-60 overflow-auto">{{ JSON.stringify(agentDetail.llm_config || {}, null, 2) }}</pre>
@@ -1094,6 +1125,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
 import { formatDateTime } from '@/utils/action'
+import {
+  REASONING_EFFORT_STEPS,
+  formatReasoningEffortLabel,
+  formatReasoningEffortTooltip,
+  indexToReasoningEffort,
+  reasoningEffortToIndex
+} from '@/utils/agent/reasoningEffort'
 
 const activeTab = ref('analysisEngines')
 const searchKeyword = ref('')
@@ -1523,6 +1561,8 @@ const handleWorkspaceDialogClose = () => {
 const agentDialogVisible = ref(false)
 const agentFormRef = ref(null)
 const agentSubmitLoading = ref(false)
+const reasoningEffortSliderMax = REASONING_EFFORT_STEPS.length - 1
+
 const agentFormData = ref({
   workspace_id: '',
   name: '',
@@ -1531,8 +1571,18 @@ const agentFormData = ref({
   prompt_template_id: '',
   model_config_id: '',
   llm_provider: 'openai',
+  reasoning_effort: null,
   llm_config: {},
   tools: []
+})
+
+const agentReasoningEffortIndex = computed({
+  get() {
+    return reasoningEffortToIndex(agentFormData.value.reasoning_effort)
+  },
+  set(index) {
+    agentFormData.value.reasoning_effort = indexToReasoningEffort(index)
+  }
 })
 const agentFormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
@@ -1744,6 +1794,7 @@ const resetAgentForm = () => {
     prompt_template_id: '',
     model_config_id: '',
     llm_provider: 'openai',
+    reasoning_effort: null,
     llm_config: {},
     tools: []
   }
@@ -1779,6 +1830,7 @@ const handleAgentSubmit = async () => {
       model_config_id: agentFormData.value.model_config_id,
       agent_builtin_prompt_ids: agentFormData.value.agent_builtin_prompt_ids || [],
       llm_provider: agentFormData.value.llm_provider || 'openai',
+      reasoning_effort: agentFormData.value.reasoning_effort ?? null,
       llm_config: agentFormData.value.llm_config || {},
       tools: agentFormData.value.tools || []
     }
@@ -1848,6 +1900,7 @@ const openAgentEdit = async (item) => {
       prompt_template_id: d.prompt_template_id ?? '',
       model_config_id: d.model_config_id ?? '',
       llm_provider: d.llm_provider || 'openai',
+      reasoning_effort: d.reasoning_effort ?? null,
       llm_config: d.llm_config && typeof d.llm_config === 'object' ? d.llm_config : {},
       tools: Array.isArray(d.tools) ? d.tools : []
     }

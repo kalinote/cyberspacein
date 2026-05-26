@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 import app.service.analyst.service as service_module
-from app.schemas.constants import NanobotLLMProviderEnum
+from app.schemas.constants import NanobotLLMProviderEnum, ReasoningEffortEnum
+from app.service.nanobot.providers.base import GenerationSettings, LLMProvider
 
 
 @dataclass
@@ -20,6 +21,8 @@ class FakeAgent:
     model_config_id: str = "m1"
     prompt_template_id: str = "p1"
     llm_provider: NanobotLLMProviderEnum = NanobotLLMProviderEnum.OPENAI_COMPAT
+    llm_config: dict[str, Any] = field(default_factory=dict)
+    reasoning_effort: ReasoningEffortEnum | None = None
     tools: list[str] = field(default_factory=lambda: ["notify_user", "write_todos"])
     mcp_servers: list[str] = field(default_factory=lambda: ["srv1"])
     agent_builtin_prompt_ids: list[str] = field(default_factory=list)
@@ -80,7 +83,26 @@ def _patch_deps(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
 
     monkeypatch.setattr(service_module, "NanobotSessionModel", lambda **kw: _StubSession(**kw))
 
-    monkeypatch.setattr(service_module, "OpenAICompatProvider", lambda **kw: SimpleNamespace(**kw))
+    class _ProviderStub(LLMProvider):
+        def __init__(self, **kw: Any) -> None:
+            super().__init__(api_key=kw.get("api_key"), api_base=kw.get("api_base"))
+            self.default_model = str(kw.get("default_model") or "gpt")
+            self._extra_body: dict[str, Any] = {}
+
+        async def chat(self, *args: Any, **kwargs: Any) -> Any:
+            raise NotImplementedError
+
+        @property
+        def extra_body(self) -> dict[str, Any]:
+            return dict(self._extra_body)
+
+        def set_extra_body(self, body: dict[str, Any] | None) -> None:
+            self._extra_body = dict(body or {})
+
+        def get_default_model(self) -> str:
+            return self.default_model
+
+    monkeypatch.setattr(service_module, "OpenAICompatProvider", lambda **kw: _ProviderStub(**kw))
 
     # memory/session singletons
     monkeypatch.setattr(service_module.AnalystService, "_get_memory_backend", classmethod(lambda cls: object()))
@@ -134,6 +156,22 @@ async def test_build_bot_injects_hooks_and_tools() -> None:
     assert set(bot.loop.tools._tools.keys()) == {"notify_user", "write_todos", "submit_task_result"}
     assert "SYS" in bot.loop.context.extra_system_suffix
     assert service_module.TASK_SUBMIT_GUIDANCE in bot.loop.context.extra_system_suffix
+
+
+@pytest.mark.asyncio
+async def test_build_bot_applies_reasoning_effort_to_provider_generation() -> None:
+    agent = FakeAgent(reasoning_effort=ReasoningEffortEnum.HIGH)
+    ws = FakeWorkspace()
+    bot, _ = await service_module.AnalystService.build_bot(agent, ws)
+    assert bot.loop.provider.generation.reasoning_effort == "high"
+
+
+@pytest.mark.asyncio
+async def test_build_bot_applies_llm_config_to_openai_compat_extra_body() -> None:
+    agent = FakeAgent(llm_config={"seed": 42, "top_p": 0.9})
+    ws = FakeWorkspace()
+    bot, _ = await service_module.AnalystService.build_bot(agent, ws)
+    assert getattr(bot.loop.provider, "extra_body", None) == {"seed": 42, "top_p": 0.9}
 
 
 @pytest.mark.asyncio
