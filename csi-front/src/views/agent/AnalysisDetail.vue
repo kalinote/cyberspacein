@@ -108,7 +108,7 @@
                             <AgentRealtimeEventsPanel
                                 class="h-full min-h-0"
                                 :timeline-items="timelineItems"
-                                :events-scroll-el="eventsScrollEl"
+                                :register-events-scroll-el="registerEventsScrollEl"
                                 :on-events-scroll="onEventsScroll"
                                 scroll-class="border-t border-gray-100"
                             />
@@ -229,7 +229,7 @@ const {
     showRejectReason,
     approvalLoading,
     approvalDialogTitle,
-    eventsScrollEl,
+    registerEventsScrollEl,
     onEventsScroll,
     statusLabel,
     statusTagType,

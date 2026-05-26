@@ -114,14 +114,29 @@ watch(() => props.activeTab, updatePaths)
 watch(() => props.dataAttribute, updatePaths)
 watch(() => props.highlightSelector, updatePaths)
 
+/** @type {ResizeObserver | null} */
+let layoutObserver = null
+
 onMounted(() => {
   updatePaths()
   window.addEventListener('scroll', scheduleUpdate, true)
   window.addEventListener('resize', scheduleUpdate)
+
+  nextTick(() => {
+    const container = svgRef.value?.closest('.marking-container')
+    if (container) {
+      layoutObserver = new ResizeObserver(scheduleUpdate)
+      layoutObserver.observe(container)
+      const sidebar = container.closest('[data-article-detail-workbench]')?.querySelector('[data-marking-sidebar]')
+      if (sidebar) layoutObserver.observe(sidebar)
+    }
+  })
 })
 
 onUnmounted(() => {
   if (updateTimer) clearTimeout(updateTimer)
+  layoutObserver?.disconnect()
+  layoutObserver = null
   window.removeEventListener('scroll', scheduleUpdate, true)
   window.removeEventListener('resize', scheduleUpdate)
 })

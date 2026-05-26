@@ -12,7 +12,7 @@
             <AgentRealtimeEventsPanel
                 class="flex-1 min-h-0"
                 :timeline-items="timelineItems"
-                :events-scroll-el="eventsScrollEl"
+                :register-events-scroll-el="registerEventsScrollEl"
                 :on-events-scroll="onEventsScroll"
                 empty-text="等待事件推送"
             >
@@ -25,6 +25,11 @@
                     </el-link>
                 </template>
             </AgentRealtimeEventsPanel>
+            <AgentTodosPanel
+                :todos="todos"
+                :todo-status-icon="todoStatusIcon"
+                :todo-status-icon-color="todoStatusIconColor"
+            />
             <AgentContinueChatBar
                 :user-prompt="userPrompt"
                 :send-loading="sendLoading"
@@ -48,6 +53,7 @@
 import { Icon } from '@iconify/vue'
 import AgentRealtimeEventsPanel from '@/components/agent/AgentRealtimeEventsPanel.vue'
 import AgentContinueChatBar from '@/components/agent/AgentContinueChatBar.vue'
+import AgentTodosPanel from '@/components/agent/AgentTodosPanel.vue'
 
 defineProps({
     sessionId: {
@@ -58,9 +64,9 @@ defineProps({
         type: Array,
         default: () => [],
     },
-    eventsScrollEl: {
-        type: Object,
-        default: null,
+    registerEventsScrollEl: {
+        type: Function,
+        default: undefined,
     },
     onEventsScroll: {
         type: Function,
@@ -97,6 +103,18 @@ defineProps({
     statusTagType: {
         type: String,
         default: 'info',
+    },
+    todos: {
+        type: Array,
+        default: () => [],
+    },
+    todoStatusIcon: {
+        type: Function,
+        default: () => 'mdi:circle-outline',
+    },
+    todoStatusIconColor: {
+        type: Function,
+        default: () => 'text-gray-400',
     },
 })
 

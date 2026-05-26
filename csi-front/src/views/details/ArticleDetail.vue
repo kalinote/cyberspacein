@@ -1,5 +1,5 @@
 ﻿<template>
-    <div class="min-h-screen bg-gray-50">
+    <div class="min-h-screen bg-gray-50 flex flex-col">
         <Header />
 
         <div v-if="loading" class="flex items-center justify-center h-96">
@@ -18,7 +18,7 @@
             </div>
         </div>
 
-        <template v-else-if="articleData">
+        <div v-else-if="articleData" class="flex flex-col flex-1 min-h-0">
             <DetailPageHeader
                 :title="articleData.title || '无标题'"
                 :subtitle="articleData.uuid"
@@ -106,22 +106,21 @@
                 </div>
             </section>
 
-            <section class="py-12 bg-gray-50">
-                <div class="w-full px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start lg:items-stretch">
-                        <div class="min-w-0 h-full">
-                        <div class="lg:sticky lg:top-20 h-full min-h-0">
-                        <MarkingSidebar
-                            class="h-full"
-                            :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
-                            :active-marking-id="activeMarkingId"
-                            @update="handleUpdateMarking"
-                            @delete="handleDeleteMarking"
-                            @hover="handleMarkingHover"
-                        />
-                        </div>
-                        </div>
-                        <div class="lg:col-span-3 relative marking-container min-w-0">
+            <section
+                class="shrink-0 py-6 bg-gray-50 flex flex-col overflow-hidden lg:sticky lg:top-16 lg:z-10 lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:min-h-120"
+            >
+                <div class="w-full h-full min-h-0 px-4 sm:px-6 lg:px-8 flex flex-col">
+                    <ArticleDetailWorkbench
+                        class="flex-1 min-h-0"
+                        :constrain-height="workbenchHeightEnabled"
+                        :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
+                        :active-marking-id="activeMarkingId"
+                        @marking-update="handleUpdateMarking"
+                        @marking-delete="handleDeleteMarking"
+                        @marking-hover="handleMarkingHover"
+                        @pane-resized="handlePaneResized"
+                    >
+                        <template #center-top>
                             <div class="absolute inset-0 pointer-events-none z-10" aria-hidden="true">
                                 <MarkingConnector
                                     :markings="getMarkingsByRegion(currentRegion)"
@@ -142,9 +141,8 @@
                                     :active-tab="activeTab"
                                 />
                             </div>
-                            <div class="space-y-6">
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <div class="flex items-center justify-between mb-4">
+                            <div class="flex h-full min-h-0 flex-1 flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <div class="mb-4 flex shrink-0 items-center justify-between">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
                                         <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
                                         文章<span class="text-blue-500">内容</span>
@@ -174,7 +172,7 @@
                                         </el-button>
                                     </div>
                                 </div>
-                                <el-tabs v-model="activeTab" class="article-tabs">
+                                <el-tabs v-model="activeTab" class="article-tabs min-h-0 flex-1 flex flex-col">
                                     <el-tab-pane v-if="articleData.clean_content" label="纯文本内容" name="clean">
                                         <div
                                             ref="cleanContentRef"
@@ -257,9 +255,16 @@
                                     </el-tab-pane>
                                 </el-tabs>
                             </div>
+                        </template>
 
+                        <template #center-bottom>
+                            <div
+                                class="flex h-full min-h-0 flex-col gap-6"
+                                :class="hasCenterBottomExtraCards ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'"
+                            >
                             <Timeline
-                                v-if="articleData.entity_type && articleData.source_id"
+                                v-if="showArticleTimeline"
+                                :fill-height="!hasCenterBottomExtraCards && workbenchHeightEnabled"
                                 :entity-type="articleData.entity_type"
                                 :source-id="articleData.source_id"
                                 :current-uuid="articleData.uuid"
@@ -268,7 +273,7 @@
                                 :current-last-edit-at="articleData.last_edit_at || ''"
                             />
 
-                            <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:emoticon-happy-outline" class="text-amber-600 mr-2" />
                                     情感<span class="text-blue-500">分析</span>
@@ -298,7 +303,7 @@
                                 </div>
                             </div>
 
-                            <div v-if="articleData.political_bias && articleData.political_bias.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.political_bias && articleData.political_bias.length > 0" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:scale-balance" class="text-purple-600 mr-2" />
                                     政治<span class="text-blue-500">倾向</span>
@@ -310,7 +315,7 @@
                                 </div>
                             </div>
 
-                            <div v-if="articleData.confidence !== null && articleData.confidence !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.confidence !== null && articleData.confidence !== undefined" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:shield-check" class="text-green-600 mr-2" />
                                     置信<span class="text-blue-500">度</span>
@@ -338,7 +343,7 @@
                                 </div>
                             </div>
 
-                            <div v-if="articleData.subjective_rating !== null && articleData.subjective_rating !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.subjective_rating !== null && articleData.subjective_rating !== undefined" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:star" class="text-amber-600 mr-2" />
                                     主观<span class="text-blue-500">评分</span>
@@ -355,12 +360,10 @@
                                 </div>
                             </div>
                             </div>
-                        </div>
+                        </template>
 
-                        <div class="lg:col-span-1 min-w-0 h-full">
-                        <div
-                            class="flex min-w-0 gap-0 h-full min-h-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)]"
-                        >
+                        <template #right>
+                        <div class="flex min-w-0 gap-0 h-full min-h-0 w-full">
                             <div
                                 class="flex-1 min-w-0 flex flex-col min-h-0 h-full bg-white rounded-l-xl shadow-sm border border-gray-200 border-r-0 overflow-hidden"
                             >
@@ -388,7 +391,7 @@
                                     v-show="rightPanel === 'analysis'"
                                     :session-id="activeSessionId"
                                     :timeline-items="timelineItems"
-                                    :events-scroll-el="eventsScrollEl"
+                                    :register-events-scroll-el="registerEventsScrollEl"
                                     :on-events-scroll="onEventsScroll"
                                     v-model:user-prompt="userPrompt"
                                     :send-loading="sendLoading"
@@ -398,6 +401,9 @@
                                     :sse-connected="sseConnected"
                                     :status-label="agentStatusLabel"
                                     :status-tag-type="agentStatusTagType"
+                                    :todos="todos"
+                                    :todo-status-icon="todoStatusIcon"
+                                    :todo-status-icon-color="todoStatusIconColor"
                                     @open-fullscreen="openAnalysisFullscreen"
                                     @send="sendMessage"
                                     @cancel="cancelAgentTask"
@@ -406,14 +412,14 @@
                             <DetailRightActivityRail
                                 v-model="rightPanel"
                                 :items="rightRailItems"
-                                class="h-full"
+                                class="h-full shrink-0"
                             />
                         </div>
-                        </div>
-                    </div>
+                        </template>
+                    </ArticleDetailWorkbench>
                 </div>
             </section>
-        </template>
+        </div>
 
         <el-dialog
             v-model="showHighlightDialog"
@@ -491,7 +497,7 @@ import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
+import ArticleDetailWorkbench from '@/components/detail/ArticleDetailWorkbench.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import KeywordConnector from '@/components/keyword/KeywordConnector.vue'
@@ -512,6 +518,7 @@ import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
 import { useEntityHighlight } from '@/composables/useEntityHighlight'
 import { hasEntities } from '@/utils/entityDisplay'
 import { loadMhtmlSnapshot, revokeBlobUrl, resolveSnapshotUrl } from '@/utils/mhtmlSnapshot'
+import { useMinLg } from '@/composables/useMinLg'
 
 const route = useRoute()
 const router = useRouter()
@@ -520,6 +527,8 @@ const uuid = computed(() => route.params.uuid)
 const articleData = ref(null)
 const loading = ref(false)
 const error = ref(null)
+
+const { isLgUp: workbenchHeightEnabled } = useMinLg()
 
 const rightPanel = ref('info')
 const rightRailItems = [
@@ -544,6 +553,7 @@ const {
     userPrompt,
     sendLoading,
     cancelLoading,
+    todos,
     timelineItems,
     sseConnected,
     showApprovalDialog,
@@ -552,12 +562,15 @@ const {
     showRejectReason,
     approvalLoading,
     approvalDialogTitle,
-    eventsScrollEl,
+    registerEventsScrollEl,
+    scrollEventsToBottom,
     onEventsScroll,
     statusLabel: agentStatusLabel,
     statusTagType: agentStatusTagType,
     canSendMessage,
     canCancel,
+    todoStatusIcon,
+    todoStatusIconColor,
     disconnectSSE,
     startStreamForSession,
     sendMessage,
@@ -618,6 +631,13 @@ const highlightedTranslateContent = computed(() =>
 
 function applyContentHighlights() {
   applyRenderedKeywordHighlight(entityHighlightLayers.value)
+}
+
+function handlePaneResized() {
+    nextTick(() => {
+        rawEditorRef.value?.layout?.()
+        safeRawEditorRef.value?.layout?.()
+    })
 }
 
 const {
@@ -746,6 +766,20 @@ const isValidMetric = (value) => value !== null && value !== undefined && value 
 const hasArticleInfoTags = computed(() => {
     const tags = articleData.value?.tags
     return Array.isArray(tags) && tags.length > 0
+})
+
+const showArticleTimeline = computed(
+    () => Boolean(articleData.value?.entity_type && articleData.value?.source_id),
+)
+
+const hasCenterBottomExtraCards = computed(() => {
+    const d = articleData.value
+    if (!d) return false
+    if (d.emotion !== null && d.emotion !== undefined) return true
+    if (d.political_bias?.length) return true
+    if (d.confidence !== null && d.confidence !== undefined) return true
+    if (d.subjective_rating !== null && d.subjective_rating !== undefined) return true
+    return false
 })
 
 const articleInfoItems = computed(() => {
@@ -912,6 +946,13 @@ function restoreAgentSessionFromQuery() {
     startStreamForSession({ loadDetail: true })
 }
 
+watch(rightPanel, async (panel) => {
+    if (panel === 'analysis') {
+        await nextTick()
+        scrollEventsToBottom(true)
+    }
+})
+
 function openAnalysisFullscreen() {
     if (!activeSessionId.value) return
     router.push({
@@ -1000,6 +1041,31 @@ onUnmounted(() => {
     font-family: inherit;
 }
 
+.article-tabs {
+    display: flex;
+    flex-direction: column;
+}
+
+.article-tabs :deep(.el-tabs__header) {
+    flex-shrink: 0;
+}
+
+.article-tabs :deep(.el-tabs__content) {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.article-tabs :deep(.el-tab-pane) {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.article-tabs :deep(.monaco-editor-container) {
+    min-height: 20rem;
+    height: 100%;
+}
+
 .article-tabs :deep(.el-tabs__nav-wrap::after) {
     height: 1px;
 }
@@ -1029,15 +1095,6 @@ onUnmounted(() => {
     overflow: visible !important;
 }
 
-.marking-container :deep(.bg-white),
-.marking-container :deep(.rounded-xl) {
-    overflow: visible !important;
-}
-
-.article-tabs :deep(.el-tabs__content),
-.article-tabs :deep(.el-tab-pane) {
-    overflow: visible !important;
-}
 
 .prose pre {
     padding-left: 8px;

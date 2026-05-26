@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, toValue, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toValue, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import {
@@ -55,6 +55,8 @@ export function useAgentSessionStream(options = {}) {
 
     const eventsScrollEl = ref(null)
     const isEventsScrollAtBottom = ref(true)
+    /** @type {ResizeObserver | null} */
+    let eventsScrollResizeObserver = null
 
     const sessionId = computed(() => String(toValue(options.sessionId) || ''))
     const resolvedAgentId = computed(() => {
@@ -218,17 +220,46 @@ export function useAgentSessionStream(options = {}) {
         isEventsScrollAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
     }
 
+    function teardownEventsScrollObserver() {
+        if (eventsScrollResizeObserver) {
+            eventsScrollResizeObserver.disconnect()
+            eventsScrollResizeObserver = null
+        }
+    }
+
+    /** @param {boolean} [force] */
+    function scrollEventsToBottom(force = false) {
+        if (!force && !isEventsScrollAtBottom.value) return
+        const el = eventsScrollEl.value
+        if (!el) return
+        el.scrollTop = el.scrollHeight
+    }
+
+    /** @param {HTMLElement | null} el */
+    function registerEventsScrollEl(el) {
+        teardownEventsScrollObserver()
+        eventsScrollEl.value = el
+        if (!el) return
+        onEventsScroll()
+        scrollEventsToBottom(true)
+        const content = el.firstElementChild
+        if (content) {
+            eventsScrollResizeObserver = new ResizeObserver(() => {
+                scrollEventsToBottom()
+            })
+            eventsScrollResizeObserver.observe(content)
+        }
+    }
+
     watch(
         () => timelineItems.value,
         () => {
-            if (!isEventsScrollAtBottom.value || !eventsScrollEl.value) return
-            nextTick(() => {
-                const el = eventsScrollEl.value
-                if (el) el.scrollTop = el.scrollHeight
-            })
+            scrollEventsToBottom()
         },
-        { deep: true }
+        { deep: true, flush: 'post' }
     )
+
+    onUnmounted(teardownEventsScrollObserver)
 
     const statusRaw = computed(() => {
         const runtime = String(sessionRuntimeStatus.value || 'unknown')
@@ -622,6 +653,8 @@ export function useAgentSessionStream(options = {}) {
         approvalLoading,
         approvalDialogTitle,
         eventsScrollEl,
+        registerEventsScrollEl,
+        scrollEventsToBottom,
         onEventsScroll,
         statusRaw,
         statusLabel,

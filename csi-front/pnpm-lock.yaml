@@ -110,6 +110,9 @@ importers:
       rough-notation:
         specifier: ^0.5.1
         version: 0.5.1
+      splitpanes:
+        specifier: ^4.1.2
+        version: 4.1.2(vue@3.5.26)
       vue:
         specifier: ^3.5.24
         version: 3.5.26
@@ -1514,6 +1517,11 @@ packages:
   speakingurl@14.0.1:
     resolution: {integrity: sha512-1POYv7uv2gXoyGFpBCmpDVSNV74IfsWlDW216UPjbWufNf+bSU6GdbDsxdcxtfwb4xlI3yxzOTKClUosxARYrQ==}
     engines: {node: '>=0.10.0'}
+
+  splitpanes@4.1.2:
+    resolution: {integrity: sha512-frNchoCv7w0nMQEuaDGgMGMU6jv3NhN6bBGQVfCNgwJdVcYaRmi1dwYDjp7SifAoUFdiQjBRB254LJNidzo15Q==}
+    peerDependencies:
+      vue: ^3.2.0
 
   state-local@1.0.7:
     resolution: {integrity: sha512-HTEHMNieakEnoe33shBYcZ7NX83ACUjCu8c40iOGEZsngj9zRnkqS9j1pqQPXwobB0ZcVTk27REb7COQ0UR59w==}
@@ -2940,6 +2948,10 @@ snapshots:
   source-map-js@1.2.1: {}
 
   speakingurl@14.0.1: {}
+
+  splitpanes@4.1.2(vue@3.5.26):
+    dependencies:
+      vue: 3.5.26
 
   state-local@1.0.7: {}
 

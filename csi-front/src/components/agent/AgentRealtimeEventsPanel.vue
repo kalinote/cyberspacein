@@ -37,7 +37,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import AgentSseTimelineItem from '@/components/agent/AgentSseTimelineItem.vue'
 
@@ -58,9 +58,9 @@ const props = defineProps({
         type: String,
         default: '',
     },
-    eventsScrollEl: {
-        type: Object,
-        default: null,
+    registerEventsScrollEl: {
+        type: Function,
+        default: undefined,
     },
     onEventsScroll: {
         type: Function,
@@ -73,12 +73,14 @@ const scrollEl = ref(null)
 watch(
     scrollEl,
     (el) => {
-        if (props.eventsScrollEl && el) {
-            props.eventsScrollEl.value = el
-        }
+        props.registerEventsScrollEl?.(el ?? null)
     },
     { immediate: true }
 )
+
+onUnmounted(() => {
+    props.registerEventsScrollEl?.(null)
+})
 
 function onScroll() {
     props.onEventsScroll?.()

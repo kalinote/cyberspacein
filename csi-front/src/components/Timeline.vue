@@ -1,6 +1,9 @@
 <template>
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div class="flex items-center justify-between mb-4">
+    <div
+        class="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+        :class="fillHeight ? 'flex h-full min-h-0 flex-1 flex-col' : ''"
+    >
+        <div class="mb-4 flex shrink-0 items-center justify-between">
             <h3 class="text-xl font-bold text-gray-900 flex items-center">
                 <Icon icon="mdi:timeline-clock" class="text-blue-600 mr-2" />
                 实体变更<span class="text-blue-500">溯源</span>
@@ -10,22 +13,35 @@
             </span>
         </div>
 
-        <div v-if="initialLoading" class="flex items-center justify-center py-12">
+        <div :class="fillHeight ? 'flex min-h-0 flex-1 flex-col' : ''">
+        <div
+            v-if="initialLoading"
+            class="flex items-center justify-center py-12"
+            :class="fillHeight ? 'min-h-0 flex-1' : ''"
+        >
             <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin" />
         </div>
 
-        <div v-else-if="error" class="text-center py-12">
+        <div
+            v-else-if="error"
+            class="py-12 text-center"
+            :class="fillHeight ? 'flex min-h-0 flex-1 flex-col items-center justify-center' : ''"
+        >
             <Icon icon="mdi:alert-circle" class="text-red-500 text-4xl mb-2" />
             <p class="text-gray-600">{{ error }}</p>
         </div>
 
-        <div v-else-if="timelineItems.length === 0" class="text-center py-12">
+        <div
+            v-else-if="timelineItems.length === 0"
+            class="py-12 text-center"
+            :class="fillHeight ? 'flex min-h-0 flex-1 flex-col items-center justify-center' : ''"
+        >
             <Icon icon="mdi:timeline-alert" class="text-gray-400 text-4xl mb-2" />
             <p class="text-gray-500">暂无历史记录</p>
         </div>
 
-        <div v-else class="relative">
-            <div class="flex items-center gap-3">
+        <div v-else class="relative" :class="fillHeight ? 'flex min-h-0 flex-1 flex-col justify-center' : ''">
+            <div class="flex items-center gap-3" :class="fillHeight ? 'min-h-0 w-full flex-1' : ''">
                 <button
                     v-if="timelineItems.length > 0"
                     @click="scrollByDistance(-600)"
@@ -172,10 +188,11 @@
                 </button>
             </div>
         </div>
+        </div>
 
         <div
             v-show="contextMenu.visible"
-            class="context-menu-floating rounded-lg shadow-lg border border-gray-200 bg-white py-1 min-w-[120px]"
+            class="context-menu-floating rounded-lg shadow-lg border border-gray-200 bg-white py-1 min-w-30"
             :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         >
             <button
@@ -255,7 +272,11 @@ const props = defineProps({
     currentLastEditAt: {
         type: String,
         default: ''
-    }
+    },
+    fillHeight: {
+        type: Boolean,
+        default: false,
+    },
 })
 
 const router = useRouter()
