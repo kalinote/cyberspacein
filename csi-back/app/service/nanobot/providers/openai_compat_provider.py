@@ -17,15 +17,7 @@ from typing import TYPE_CHECKING, Any
 import json_repair
 from loguru import logger
 
-if os.environ.get("LANGFUSE_SECRET_KEY") and importlib.util.find_spec("langfuse"):
-    from langfuse.openai import AsyncOpenAI
-else:
-    if os.environ.get("LANGFUSE_SECRET_KEY"):
-        logger.warning(
-            "LANGFUSE_SECRET_KEY is set but langfuse is not installed; "
-            "install with `pip install langfuse` to enable tracing"
-        )
-    from openai import AsyncOpenAI
+from openai import AsyncOpenAI
 
 from app.service.nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from app.service.nanobot.providers.openai_responses import (

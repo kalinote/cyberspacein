@@ -17,7 +17,7 @@ from app.service.nanobot.utils.helpers import image_placeholder_text
 
 @dataclass
 class ToolCallRequest:
-    """A tool call request from the LLM."""
+    """工具调用请求"""
     id: str
     name: str
     arguments: dict[str, Any]
@@ -46,7 +46,7 @@ class ToolCallRequest:
 
 @dataclass
 class LLMResponse:
-    """Response from an LLM provider."""
+    """LLM的响应"""
     content: str | None
     tool_calls: list[ToolCallRequest] = field(default_factory=list)
     finish_reason: str = "stop"
