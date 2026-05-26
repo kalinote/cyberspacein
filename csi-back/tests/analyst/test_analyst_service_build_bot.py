@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import app.service.analyst.service as service_module
+from app.schemas.constants import NanobotLLMProviderEnum
 
 
 @dataclass
@@ -18,6 +19,7 @@ class FakeAgent:
     workspace_id: str = "w1"
     model_config_id: str = "m1"
     prompt_template_id: str = "p1"
+    llm_provider: NanobotLLMProviderEnum = NanobotLLMProviderEnum.OPENAI_COMPAT
     tools: list[str] = field(default_factory=lambda: ["notify_user", "write_todos"])
     mcp_servers: list[str] = field(default_factory=lambda: ["srv1"])
     agent_builtin_prompt_ids: list[str] = field(default_factory=list)

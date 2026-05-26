@@ -19,6 +19,7 @@ from app.schemas.agent.nanobot_agent import (
 from app.schemas.constants import (
     NANOBOT_BUILTIN_WORKSPACE_ID,
     NanobotMemoryDocTypeEnum,
+    NanobotLLMProviderEnum,
     NanobotSessionStatusEnum,
 )
 
@@ -50,6 +51,7 @@ class FakeAgentDoc:
     skills: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     llm_config: dict[str, Any] = field(default_factory=dict)
+    llm_provider: NanobotLLMProviderEnum = NanobotLLMProviderEnum.OPENAI_COMPAT
     agent_builtin_prompt_ids: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
@@ -464,6 +466,7 @@ async def test_update_success() -> None:
     doc = await agent_module.AgentService.update("a1", data)
     assert doc.name == "new"
     assert doc.tools == ["t2"]
+    assert doc.llm_provider == NanobotLLMProviderEnum.OPENAI_COMPAT
     assert doc.updated_at > _dt(1)
 
 

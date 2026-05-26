@@ -80,6 +80,11 @@
                       </div>
                       <p v-if="item.description" class="text-sm text-gray-600 mb-2">{{ item.description }}</p>
                       <div class="flex items-center gap-6 text-sm flex-wrap">
+                        <div v-if="item.llm_provider" class="flex items-center gap-2">
+                          <Icon icon="mdi:api" class="text-cyan-500" />
+                          <span class="text-gray-600">LLM 提供商:</span>
+                          <span class="text-gray-700">{{ formatLlmProviderLabel(item.llm_provider) }}</span>
+                        </div>
                         <div v-if="item.llm_config && Object.keys(item.llm_config).length" class="flex items-center gap-2">
                           <Icon icon="mdi:cog" class="text-orange-500" />
                           <span class="text-gray-600">LLM 配置:</span>
@@ -840,6 +845,20 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="LLM 提供商" prop="llm_provider">
+          <el-select
+            v-model="agentFormData.llm_provider"
+            placeholder="请选择 LLM 兼容提供商"
+            class="w-full"
+          >
+            <el-option
+              v-for="opt in LLM_PROVIDER_OPTIONS"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="LLM 配置" prop="llm_config">
           <KeyValueEditor v-model="agentFormData.llm_config" />
         </el-form-item>
@@ -890,6 +909,9 @@
             <el-descriptions-item label="提示词模板ID">{{ agentDetail.prompt_template_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="工具">
               {{ Array.isArray(agentDetail.tools) && agentDetail.tools.length ? agentDetail.tools.join(', ') : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="LLM 提供商">
+              {{ formatLlmProviderLabel(agentDetail.llm_provider) }}
             </el-descriptions-item>
             <el-descriptions-item label="LLM 配置">
               <pre class="m-0 p-2 bg-gray-50 rounded text-xs max-h-60 overflow-auto">{{ JSON.stringify(agentDetail.llm_config || {}, null, 2) }}</pre>
@@ -1044,6 +1066,16 @@ import { formatDateTime } from '@/utils/action'
 
 const activeTab = ref('analysisEngines')
 const searchKeyword = ref('')
+
+const LLM_PROVIDER_OPTIONS = [
+  { value: 'openai', label: 'OpenAI 兼容' },
+  { value: 'anthropic', label: 'Anthropic Claude 兼容' }
+]
+
+const formatLlmProviderLabel = (value) => {
+  const opt = LLM_PROVIDER_OPTIONS.find((item) => item.value === value)
+  return opt?.label ?? value ?? '-'
+}
 
 const engineTabs = [
   { key: 'workspaces', label: '工作区', icon: 'mdi:view-dashboard-variant' },
@@ -1462,6 +1494,7 @@ const agentFormData = ref({
   agent_builtin_prompt_ids: [],
   prompt_template_id: '',
   model_config_id: '',
+  llm_provider: 'openai',
   llm_config: {},
   tools: []
 })
@@ -1674,6 +1707,7 @@ const resetAgentForm = () => {
     agent_builtin_prompt_ids: [],
     prompt_template_id: '',
     model_config_id: '',
+    llm_provider: 'openai',
     llm_config: {},
     tools: []
   }
@@ -1708,6 +1742,7 @@ const handleAgentSubmit = async () => {
       prompt_template_id: agentFormData.value.prompt_template_id,
       model_config_id: agentFormData.value.model_config_id,
       agent_builtin_prompt_ids: agentFormData.value.agent_builtin_prompt_ids || [],
+      llm_provider: agentFormData.value.llm_provider || 'openai',
       llm_config: agentFormData.value.llm_config || {},
       tools: agentFormData.value.tools || []
     }
@@ -1776,6 +1811,7 @@ const openAgentEdit = async (item) => {
       agent_builtin_prompt_ids: Array.isArray(d.agent_builtin_prompt_ids) ? [...d.agent_builtin_prompt_ids] : [],
       prompt_template_id: d.prompt_template_id ?? '',
       model_config_id: d.model_config_id ?? '',
+      llm_provider: d.llm_provider || 'openai',
       llm_config: d.llm_config && typeof d.llm_config === 'object' ? d.llm_config : {},
       tools: Array.isArray(d.tools) ? d.tools : []
     }

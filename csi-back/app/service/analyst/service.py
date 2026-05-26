@@ -47,7 +47,7 @@ from app.schemas.agent.result import (
     TASK_SUBMIT_GUIDANCE,
     TaskSubmissionRecordSchema,
 )
-from app.schemas.constants import AgentStopReasonEnum, NanobotSessionStatusEnum
+from app.schemas.constants import AgentStopReasonEnum, NanobotLLMProviderEnum, NanobotSessionStatusEnum
 from app.utils import status_codes
 from app.service.analyst.context import (
     current_agent_id,
@@ -59,6 +59,7 @@ from app.service.analyst.hooks import default_analyst_hooks
 from app.service.analyst.tools import SubmitTaskResultTool, build_business_tools
 from app.service.nanobot import Nanobot
 from app.service.nanobot.config.schema import DreamConfig
+from app.service.nanobot.providers.anthropic_provider import AnthropicProvider
 from app.service.nanobot.providers.openai_compat_provider import OpenAICompatProvider
 from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
 from app.service.nanobot.agent.skills import SkillsLoader
@@ -450,11 +451,23 @@ class AnalystService:
                 f"Agent 绑定的提示词模板不存在: {agent.prompt_template_id}",
             )
 
-        provider = OpenAICompatProvider(
-            api_key=model_cfg.api_key,
-            api_base=model_cfg.base_url,
-            default_model=model_cfg.model,
-        )
+        if agent.llm_provider == NanobotLLMProviderEnum.ANTHROPIC_COMPAT:
+            provider = AnthropicProvider(
+                api_key=model_cfg.api_key,
+                api_base=model_cfg.base_url,
+                default_model=model_cfg.model,
+            )
+        elif agent.llm_provider == NanobotLLMProviderEnum.OPENAI_COMPAT:
+            provider = OpenAICompatProvider(
+                api_key=model_cfg.api_key,
+                api_base=model_cfg.base_url,
+                default_model=model_cfg.model,
+            )
+        else:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT,
+                f"不支持的 LLM 提供商: {agent.llm_provider}",
+            )
 
         mcp_subset: dict[str, dict] = {}
         for server_name in agent.mcp_servers:

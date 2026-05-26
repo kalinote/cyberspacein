@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.constants import NanobotLLMProviderEnum
+
 if TYPE_CHECKING:
     from app.models.agent.nanobot import NanobotAgentModel
 
@@ -31,6 +33,10 @@ class NanobotAgentCreateRequestSchema(BaseModel):
         default_factory=dict,
         description="LLM 生成参数（temperature / max_tokens / reasoning_effort 等），透传给 provider",
     )
+    llm_provider: NanobotLLMProviderEnum = Field(
+        default=NanobotLLMProviderEnum.OPENAI_COMPAT,
+        description="LLM 兼容提供商",
+    )
     agent_builtin_prompt_ids: list[str] = Field(
         default_factory=list,
         description="AGENT 内置提示词文档 ID 列表，按顺序拼入 system prompt",
@@ -48,6 +54,10 @@ class NanobotAgentUpdateRequestSchema(BaseModel):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的 MCP 服务名列表")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数")
+    llm_provider: NanobotLLMProviderEnum = Field(
+        default=NanobotLLMProviderEnum.OPENAI_COMPAT,
+        description="LLM 兼容提供商",
+    )
     agent_builtin_prompt_ids: list[str] = Field(
         default_factory=list,
         description="AGENT 内置提示词文档 ID 列表",
@@ -67,6 +77,10 @@ class NanobotAgentSchema(BaseModel):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的 MCP 服务名列表")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数")
+    llm_provider: NanobotLLMProviderEnum = Field(
+        default=NanobotLLMProviderEnum.OPENAI_COMPAT,
+        description="LLM 兼容提供商",
+    )
     agent_builtin_prompt_ids: list[str] = Field(
         default_factory=list,
         description="AGENT 内置提示词文档 ID 列表",
@@ -87,6 +101,7 @@ class NanobotAgentSchema(BaseModel):
             skills=list(doc.skills),
             mcp_servers=list(doc.mcp_servers),
             llm_config=dict(doc.llm_config or {}),
+            llm_provider=doc.llm_provider,
             agent_builtin_prompt_ids=list(doc.agent_builtin_prompt_ids or []),
             created_at=doc.created_at,
             updated_at=doc.updated_at,

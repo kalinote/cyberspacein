@@ -286,3 +286,11 @@ class AgentStopReasonEnum(str, Enum):
             return cls(str(value))
         except ValueError:
             return None
+
+class NanobotLLMProviderEnum(str, Enum):
+    """
+    LLM提供商枚举
+    """
+    OPENAI_COMPAT = "openai"
+    ANTHROPIC_COMPAT = "anthropic"
+    

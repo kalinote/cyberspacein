@@ -8,6 +8,7 @@ from pymongo import ASCENDING, DESCENDING, IndexModel
 from app.schemas.constants import (
     NanobotMemoryDocTypeEnum,
     NanobotMessageRoleEnum,
+    NanobotLLMProviderEnum,
     NanobotSessionStatusEnum,
 )
 
@@ -54,6 +55,7 @@ class NanobotAgentModel(Document):
     skills: list[str] = Field(default_factory=list, description="启用的技能列表，⊆ workspace.enabled_skills")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的MCP服务名列表，元素 ∈ workspace.enabled_mcp_servers.keys()")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数（temperature / max_tokens / reasoning_effort 等）")
+    llm_provider: NanobotLLMProviderEnum = Field(default=NanobotLLMProviderEnum.OPENAI_COMPAT, description="LLM 兼容提供商")
     agent_builtin_prompt_ids: list[str] = Field(
         default_factory=list,
         description="绑定的 AGENT 内置提示词文档 ID 列表，按顺序拼入 system prompt；可为空",
