@@ -45,7 +45,7 @@
 -->
 <template>
   <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-8">
-    <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div :class="['relative z-10 mx-auto px-4 sm:px-6 lg:px-8', containerMaxWidth]">
       <el-button 
         type="primary" 
         link 
@@ -151,7 +151,11 @@ const props = defineProps({
   backHandler: {
     type: Function,
     default: null
-  }
+  },
+  containerMaxWidth: {
+    type: String,
+    default: 'max-w-7xl',
+  },
 })
 
 const router = useRouter()

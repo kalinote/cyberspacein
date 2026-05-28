@@ -307,4 +307,21 @@ class ReasoningEffortEnum(str, Enum):
     HIGH = "high"
     XHIGH = "xhigh"
     MAX = "max"
+
+
+class WikiPageStatusEnum(str, Enum):
+    DRAFT = "draft"
+    BUILDING = "building"
+    PUBLISHED = "published"
+
+
+class WikiRevisionChangeTypeEnum(str, Enum):
+    CREATE = "create"
+    META = "meta"
+    MAIN = "main"
+    SECTION = "section"
+    STRUCTURE = "structure"
+    FOOTNOTES = "footnotes"
+    REFERENCES = "references"
+    RESTORE = "restore"
     

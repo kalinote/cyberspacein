@@ -63,7 +63,7 @@ const PURIFY_CONFIG = {
   ],
   ALLOWED_ATTR: [
     'href', 'title', 'target', 'rel', 'id', 'class', 'type', 'disabled', 'checked', 'aria-hidden',
-    'colspan', 'rowspan', 'align', 'style'
+    'colspan', 'rowspan', 'align', 'style', 'data-wiki-target'
   ],
   ALLOW_DATA_ATTR: true
 }

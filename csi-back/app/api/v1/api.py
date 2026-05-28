@@ -14,7 +14,8 @@ from app.api.v1.endpoints import (
     platform,
     search,
     system,
-    timeline
+    timeline,
+    wiki,
 )
 
 api_router = APIRouter()
@@ -33,3 +34,4 @@ api_router.include_router(embedding.router)
 api_router.include_router(timeline.router)
 api_router.include_router(auth.router)
 api_router.include_router(system.router)
+api_router.include_router(wiki.router)

@@ -184,3 +184,26 @@
 .markdown-body .katex-display {
   @apply my-4 overflow-x-auto;
 }
+
+.markdown-body .wiki-cite {
+  @apply inline;
+  font-size: 0.75em;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.markdown-body .wiki-cite-link {
+  @apply text-blue-600 no-underline font-medium transition-colors;
+}
+
+.markdown-body .wiki-cite-link:hover {
+  @apply text-blue-800 underline;
+}
+
+.markdown-body .wiki-cite-link.is-active {
+  @apply text-blue-700 bg-blue-100 rounded px-0.5 underline;
+}
+
+.wiki-ref-highlight {
+  @apply bg-blue-50 ring-1 ring-blue-200 rounded-md transition-colors duration-300;
+}
