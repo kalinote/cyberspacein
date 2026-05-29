@@ -1,16 +1,23 @@
-const STORAGE_KEY = 'article-detail-pane-sizes'
+export const ARTICLE_DETAIL_PANE_STORAGE_KEY = 'article-detail-pane-sizes'
+export const FORUM_DETAIL_PANE_STORAGE_KEY = 'forum-detail-pane-sizes'
 
 export const ARTICLE_DETAIL_PANE_DEFAULTS = {
     horizontal: [18, 52, 30],
     centerVertical: [62, 38],
 }
 
+export const FORUM_DETAIL_PANE_DEFAULTS = {
+    horizontal: [18, 52, 30],
+    centerVertical: [62, 38],
+}
+
 /**
+ * @param {string} storageKey
  * @param {typeof ARTICLE_DETAIL_PANE_DEFAULTS} defaults
  */
-export function loadArticleDetailPaneSizes(defaults = ARTICLE_DETAIL_PANE_DEFAULTS) {
+export function loadPaneSizes(storageKey, defaults = ARTICLE_DETAIL_PANE_DEFAULTS) {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY)
+        const raw = localStorage.getItem(storageKey)
         if (!raw) return { ...defaults }
         const parsed = JSON.parse(raw)
         const horizontal = normalizePaneSizes(parsed.horizontal, defaults.horizontal, 3)
@@ -19,6 +26,20 @@ export function loadArticleDetailPaneSizes(defaults = ARTICLE_DETAIL_PANE_DEFAUL
     } catch {
         return { ...defaults }
     }
+}
+
+/**
+ * @param {typeof ARTICLE_DETAIL_PANE_DEFAULTS} defaults
+ */
+export function loadArticleDetailPaneSizes(defaults = ARTICLE_DETAIL_PANE_DEFAULTS) {
+    return loadPaneSizes(ARTICLE_DETAIL_PANE_STORAGE_KEY, defaults)
+}
+
+/**
+ * @param {typeof FORUM_DETAIL_PANE_DEFAULTS} defaults
+ */
+export function loadForumDetailPaneSizes(defaults = FORUM_DETAIL_PANE_DEFAULTS) {
+    return loadPaneSizes(FORUM_DETAIL_PANE_STORAGE_KEY, defaults)
 }
 
 /**
@@ -38,14 +59,22 @@ function normalizePaneSizes(values, fallback, length) {
 }
 
 /**
+ * @param {string} storageKey
  * @param {{ horizontal: number[], centerVertical: number[] }} sizes
  */
-export function saveArticleDetailPaneSizes(sizes) {
+export function savePaneSizes(storageKey, sizes) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(sizes))
+        localStorage.setItem(storageKey, JSON.stringify(sizes))
     } catch {
         /* 存储不可用时忽略 */
     }
+}
+
+/**
+ * @param {{ horizontal: number[], centerVertical: number[] }} sizes
+ */
+export function saveArticleDetailPaneSizes(sizes) {
+    savePaneSizes(ARTICLE_DETAIL_PANE_STORAGE_KEY, sizes)
 }
 
 /**

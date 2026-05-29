@@ -81,12 +81,13 @@ import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import { useMinLg } from '@/composables/useMinLg'
 import {
     ARTICLE_DETAIL_PANE_DEFAULTS,
-    loadArticleDetailPaneSizes,
-    saveArticleDetailPaneSizes,
+    ARTICLE_DETAIL_PANE_STORAGE_KEY,
+    loadPaneSizes,
+    savePaneSizes,
     paneSizesFromResizedPayload,
 } from '@/utils/useSplitpanesPersistence'
 
-defineProps({
+const props = defineProps({
     sortedMarkings: {
         type: Array,
         default: () => [],
@@ -100,6 +101,14 @@ defineProps({
         type: Boolean,
         default: false,
     },
+    paneStorageKey: {
+        type: String,
+        default: ARTICLE_DETAIL_PANE_STORAGE_KEY,
+    },
+    paneDefaults: {
+        type: Object,
+        default: () => ARTICLE_DETAIL_PANE_DEFAULTS,
+    },
 })
 
 const emit = defineEmits([
@@ -110,14 +119,14 @@ const emit = defineEmits([
 ])
 
 const { isLgUp } = useMinLg()
-const sizes = ref(loadArticleDetailPaneSizes(ARTICLE_DETAIL_PANE_DEFAULTS))
+const sizes = ref(loadPaneSizes(props.paneStorageKey, props.paneDefaults))
 
 let saveTimer = null
 
 function debouncedSave() {
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
-        saveArticleDetailPaneSizes(sizes.value)
+        savePaneSizes(props.paneStorageKey, sizes.value)
     }, 150)
 }
 
