@@ -21,7 +21,7 @@
     <template v-else-if="wiki">
       <DetailPageHeader
         :title="wiki.title"
-        :subtitle="wiki.slug"
+        :subtitle="wikiSubtitle"
         container-max-width="max-w-screen-2xl"
       >
         <template #tags>
@@ -39,7 +39,15 @@
           </el-tag>
         </template>
         <template #extra>
-          <span v-if="wiki.revision" class="text-sm text-gray-500">修订 {{ wiki.revision }}</span>
+          <el-button
+            v-if="wiki.revision"
+            type="primary"
+            link
+            class="text-sm! h-auto! p-0!"
+            @click="revisionHistoryVisible = true"
+          >
+            修订 {{ wiki.revision }}
+          </el-button>
           <span v-if="wiki.lastModified" class="text-sm text-gray-500">
             最后修订 {{ formattedLastModified }}
           </span>
@@ -86,25 +94,23 @@
                 <div v-if="wiki.contentTree" class="space-y-8">
                   <WikiSectionBlock :node="wiki.contentTree" />
 
-                  <section id="notes" class="scroll-mt-24">
-                    <h2 class="text-xl font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4 flex items-center gap-2">
-                      <Icon icon="mdi:note-text-outline" class="text-blue-500" />
-                      注释
-                    </h2>
-                    <ol class="wiki-notes-list">
-                      <li
-                        v-for="note in wiki.footnotes"
-                        :key="note.id"
-                        :id="`note-${note.id}`"
-                        class="wiki-note-item"
-                      >
-                        <span class="wiki-ref-index">{{ note.id }}.</span>
-                        {{ note.text }}
-                      </li>
-                    </ol>
-                  </section>
+                  <WikiFootnotes :footnotes="wiki.footnotes">
+                    <template v-if="editMode" #actions>
+                      <el-button type="primary" link class="p-1!" @click="footnotesEditorVisible = true">
+                        <Icon icon="mdi:pencil-outline" class="text-lg" />
+                        编辑
+                      </el-button>
+                    </template>
+                  </WikiFootnotes>
 
-                  <WikiReferences :references="wiki.references" />
+                  <WikiReferences :references="wiki.references">
+                    <template v-if="editMode" #actions>
+                      <el-button type="primary" link class="p-1!" @click="referencesEditorVisible = true">
+                        <Icon icon="mdi:pencil-outline" class="text-lg" />
+                        编辑
+                      </el-button>
+                    </template>
+                  </WikiReferences>
 
                   <section class="rounded-xl border border-gray-200 bg-gray-50/60 p-4 sm:p-5">
                     <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">标签</p>
@@ -164,6 +170,42 @@
         :infobox="infoboxEditorDraft"
         @save="saveInfobox"
       />
+
+      <WikiFootnotesEditorDialog
+        v-model="footnotesEditorVisible"
+        :items="wiki.footnotes"
+        @apply="applyFootnotes"
+      />
+
+      <WikiReferencesEditorDialog
+        v-model="referencesEditorVisible"
+        :items="wiki.references"
+        @apply="applyReferences"
+      />
+
+      <WikiRevisionHistoryDialog
+        v-model="revisionHistoryVisible"
+        :wiki-id="wiki.id"
+        :current-revision="wiki.revision"
+        @preview="openRevisionPreview"
+        @compare="openRevisionDiff"
+      />
+
+      <WikiRevisionDiffDialog
+        v-model="revisionDiffVisible"
+        :wiki-id="wiki.id"
+        :from-revision="diffFrom"
+        :to-revision="diffTo"
+        @preview="openRevisionPreview"
+      />
+
+      <WikiRevisionPreviewDialog
+        v-model="revisionPreviewVisible"
+        :wiki-id="wiki.id"
+        :revision="revisionPreviewTarget"
+        :current-revision="wiki.revision"
+        @restore="handleRestoreRevision"
+      />
     </template>
   </div>
 </template>
@@ -176,12 +218,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import WikiPageMeta from '@/components/wiki/WikiPageMeta.vue'
+import WikiFootnotes from '@/components/wiki/WikiFootnotes.vue'
+import WikiFootnotesEditorDialog from '@/components/wiki/WikiFootnotesEditorDialog.vue'
 import WikiReferences from '@/components/wiki/WikiReferences.vue'
+import WikiReferencesEditorDialog from '@/components/wiki/WikiReferencesEditorDialog.vue'
 import WikiSectionBlock from '@/components/wiki/WikiSectionBlock.vue'
 import WikiSidebarCard from '@/components/wiki/WikiSidebarCard.vue'
 import WikiToc from '@/components/wiki/WikiToc.vue'
 import WikiTocEditorDialog from '@/components/wiki/WikiTocEditorDialog.vue'
 import WikiInfoboxEditorDialog from '@/components/wiki/WikiInfoboxEditorDialog.vue'
+import WikiRevisionHistoryDialog from '@/components/wiki/WikiRevisionHistoryDialog.vue'
+import WikiRevisionDiffDialog from '@/components/wiki/WikiRevisionDiffDialog.vue'
+import WikiRevisionPreviewDialog from '@/components/wiki/WikiRevisionPreviewDialog.vue'
 import { wikiApi } from '@/api/wiki.js'
 import { normalizeWikiInfobox } from '@/utils/wikiNormalize.js'
 import {
@@ -192,6 +240,9 @@ import {
 import {
   createWikiPersistHandlers,
   isWikiRevisionConflict,
+  persistWikiFootnotes,
+  persistWikiReferences,
+  persistWikiRestoreRevision,
   persistWikiSectionPatch,
   syncWikiTocStructure,
 } from '@/utils/wikiPersist.js'
@@ -222,14 +273,24 @@ const editMode = ref(false)
 const editingContentId = ref(null)
 const contentDraft = ref('')
 const tocEditorVisible = ref(false)
+const footnotesEditorVisible = ref(false)
+const referencesEditorVisible = ref(false)
 const infoboxEditorVisible = ref(false)
 const infoboxEditorSectionId = ref(null)
 /** @type {import('vue').Ref<import('@/types/wiki.js').WikiInfobox|null>} */
 const infoboxEditorDraft = ref(null)
+const revisionHistoryVisible = ref(false)
+const revisionDiffVisible = ref(false)
+const diffFrom = ref(0)
+const diffTo = ref(0)
+const revisionPreviewVisible = ref(false)
+const revisionPreviewTarget = ref(0)
+
+const wikiRouteId = computed(() => String(route.params.id || ''))
 
 const { runWrite } = createWikiPersistHandlers(
   wiki,
-  () => wikiApi.getPageBySlug(String(route.params.slug || '')),
+  () => wikiApi.getPageById(wikiRouteId.value),
   () => refreshSectionObserver()
 )
 
@@ -256,6 +317,12 @@ const formattedLastModified = computed(() => {
   const raw = wiki.value?.lastModified
   if (!raw) return ''
   return formatDateTime(raw, { includeSecond: true }) || raw
+})
+
+const wikiSubtitle = computed(() => {
+  const note = wiki.value?.sourceNote?.trim()
+  if (note) return note
+  return wiki.value?.id || ''
 })
 
 const numberedToc = computed(() =>
@@ -395,6 +462,100 @@ async function applyTocTree(children) {
   }
 }
 
+/**
+ * @param {import('@/types/wiki.js').WikiCitationHealth} health
+ */
+async function warnCitationIssues(health) {
+  const missing = [
+    ...(health.missingRefs || []).map((id) => `[^${id}]`),
+    ...(health.missingFootnotes || []).map((id) => `[^${id}]`),
+  ]
+  if (missing.length > 0) {
+    ElMessage.warning(`正文中仍有未定义的引用：${missing.join('、')}`)
+  }
+}
+
+/** @typedef {import('@/types/wiki.js').WikiFootnote} WikiFootnote */
+
+/**
+ * @param {WikiFootnote[]} items
+ */
+async function applyFootnotes(items) {
+  if (!wiki.value) return
+  try {
+    await runWrite(() => persistWikiFootnotes(wiki.value, items))
+    ElMessage.success('注释已保存')
+    try {
+      const health = await wikiApi.validateCitations(wiki.value.id)
+      await warnCitationIssues(health)
+    } catch {
+      /* ignore validate failure */
+    }
+  } catch (e) {
+    if (isWikiRevisionConflict(e)) {
+      ElMessage.warning('页面已被修改，请重新编辑注释')
+    }
+  }
+}
+
+/** @typedef {import('@/types/wiki.js').WikiReference} WikiReference */
+
+/**
+ * @param {WikiReference[]} items
+ */
+async function applyReferences(items) {
+  if (!wiki.value) return
+  try {
+    await runWrite(() => persistWikiReferences(wiki.value, items))
+    ElMessage.success('参考资料已保存')
+    try {
+      const health = await wikiApi.validateCitations(wiki.value.id)
+      await warnCitationIssues(health)
+    } catch {
+      /* ignore validate failure */
+    }
+  } catch (e) {
+    if (isWikiRevisionConflict(e)) {
+      ElMessage.warning('页面已被修改，请重新编辑参考资料')
+    }
+  }
+}
+
+/**
+ * @param {number} revision
+ */
+function openRevisionPreview(revision) {
+  revisionPreviewTarget.value = revision
+  revisionPreviewVisible.value = true
+}
+
+/**
+ * @param {{ from: number, to: number }} payload
+ */
+function openRevisionDiff(payload) {
+  diffFrom.value = payload.from
+  diffTo.value = payload.to
+  revisionDiffVisible.value = true
+}
+
+/**
+ * @param {number} targetRevision
+ */
+async function handleRestoreRevision(targetRevision) {
+  if (!wiki.value) return
+  try {
+    await runWrite(() => persistWikiRestoreRevision(wiki.value, targetRevision))
+    revisionPreviewVisible.value = false
+    revisionHistoryVisible.value = false
+    ElMessage.success(`已恢复到修订 ${targetRevision}，当前修订号为 ${wiki.value?.revision}`)
+    await refreshSectionObserver()
+  } catch (e) {
+    if (isWikiRevisionConflict(e)) {
+      ElMessage.warning('页面已被他人修改，请关闭预览后重试')
+    }
+  }
+}
+
 provide(WIKI_EDITOR_KEY, {
   editMode,
   editingContentId,
@@ -412,6 +573,11 @@ watch(editMode, (enabled) => {
     clearContentEdit()
     clearInfoboxEditor()
     tocEditorVisible.value = false
+    footnotesEditorVisible.value = false
+    referencesEditorVisible.value = false
+    revisionHistoryVisible.value = false
+    revisionDiffVisible.value = false
+    revisionPreviewVisible.value = false
   }
 })
 
@@ -458,8 +624,13 @@ async function loadWiki() {
   clearContentEdit()
   clearInfoboxEditor()
   tocEditorVisible.value = false
+  footnotesEditorVisible.value = false
+  referencesEditorVisible.value = false
+  revisionHistoryVisible.value = false
+  revisionDiffVisible.value = false
+  revisionPreviewVisible.value = false
   try {
-    wiki.value = await wikiApi.getPageBySlug(String(route.params.slug || ''))
+    wiki.value = await wikiApi.getPageById(wikiRouteId.value)
     await nextTick()
     setupSectionObserver()
   } catch (e) {
@@ -470,7 +641,7 @@ async function loadWiki() {
   }
 }
 
-watch(() => route.params.slug, () => {
+watch(wikiRouteId, () => {
   loadWiki()
 })
 
@@ -483,38 +654,3 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.wiki-notes-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.wiki-note-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: #374151;
-  scroll-margin-top: 6rem;
-  padding: 0.25rem 0.375rem;
-  border-radius: 0.375rem;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.wiki-note-item.wiki-ref-highlight {
-  background-color: #eff6ff;
-  box-shadow: inset 0 0 0 1px #bfdbfe;
-}
-
-.wiki-ref-index {
-  flex-shrink: 0;
-  font-weight: 500;
-  color: #6b7280;
-  min-width: 1.25rem;
-}
-</style>

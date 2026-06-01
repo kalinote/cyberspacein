@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -64,7 +64,6 @@ class WikiCitationHealthSchema(WikiSchemaBase):
 
 
 class WikiPageSnapshotSchema(WikiSchemaBase):
-    slug: str
     title: str
     source_note: str | None = None
     content_tree: WikiContentNodeSchema
@@ -75,7 +74,6 @@ class WikiPageSnapshotSchema(WikiSchemaBase):
 
 
 class WikiPageCreateSchema(WikiSchemaBase):
-    slug: str = Field(min_length=2, max_length=128)
     title: str = Field(min_length=1)
     source_note: str | None = None
     categories: list[str] = Field(default_factory=list)
@@ -129,7 +127,6 @@ class WikiRestoreSchema(WikiMutateBaseSchema):
 
 class WikiPageListItemSchema(WikiSchemaBase):
     id: str
-    slug: str
     title: str
     source_note: str | None = None
     status: WikiPageStatusEnum
@@ -141,7 +138,6 @@ class WikiPageListItemSchema(WikiSchemaBase):
 
 class WikiPageDetailSchema(WikiSchemaBase):
     id: str
-    slug: str
     title: str
     source_note: str | None = None
     last_modified: datetime
@@ -165,7 +161,7 @@ class WikiRevisionListItemSchema(WikiSchemaBase):
 
 
 class WikiRevisionDetailSchema(WikiSchemaBase):
-    page_id: str
+    wiki_id: str
     revision: int
     change_type: WikiRevisionChangeTypeEnum
     target_section: str | None = None
@@ -175,6 +171,79 @@ class WikiRevisionDetailSchema(WikiSchemaBase):
     created_at: datetime
     snapshot: WikiPageSnapshotSchema
     citation_health: WikiCitationHealthSchema
+
+
+WikiTextDiffOp = Literal["equal", "insert", "delete"]
+WikiSectionChangeType = Literal["added", "removed", "modified", "moved"]
+WikiListItemChangeType = Literal["added", "removed", "modified"]
+
+
+class WikiTextDiffHunkSchema(WikiSchemaBase):
+    op: WikiTextDiffOp
+    text: str
+
+
+class WikiScalarFieldChangeSchema(WikiSchemaBase):
+    field: str
+    from_value: Any = None
+    to_value: Any = None
+    hunks: list[WikiTextDiffHunkSchema] | None = None
+
+
+class WikiCategoriesDiffSchema(WikiSchemaBase):
+    added: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+
+
+class WikiSectionDiffSchema(WikiSchemaBase):
+    section: str
+    change: WikiSectionChangeType
+    path_from: list[str] | None = None
+    path_to: list[str] | None = None
+    title_from: str | None = None
+    title_to: str | None = None
+    content_hunks: list[WikiTextDiffHunkSchema] | None = None
+    infobox_changed: bool = False
+    infobox_from: WikiInfoboxSchema | None = None
+    infobox_to: WikiInfoboxSchema | None = None
+
+
+class WikiFootnoteDiffSchema(WikiSchemaBase):
+    id: str
+    change: WikiListItemChangeType
+    from_item: WikiFootnoteSchema | None = None
+    to_item: WikiFootnoteSchema | None = None
+    text_hunks: list[WikiTextDiffHunkSchema] | None = None
+
+
+class WikiReferenceDiffSchema(WikiSchemaBase):
+    id: str
+    change: WikiListItemChangeType
+    from_item: WikiReferenceSchema | None = None
+    to_item: WikiReferenceSchema | None = None
+    text_hunks: list[WikiTextDiffHunkSchema] | None = None
+
+
+class WikiRevisionDiffSummarySchema(WikiSchemaBase):
+    sections_added: int = 0
+    sections_removed: int = 0
+    sections_modified: int = 0
+    sections_moved: int = 0
+    footnotes_changed: int = 0
+    references_changed: int = 0
+    meta_changed: bool = False
+
+
+class WikiRevisionDiffSchema(WikiSchemaBase):
+    wiki_id: str
+    from_revision: int
+    to_revision: int
+    summary: WikiRevisionDiffSummarySchema
+    meta: list[WikiScalarFieldChangeSchema] = Field(default_factory=list)
+    categories: WikiCategoriesDiffSchema | None = None
+    sections: list[WikiSectionDiffSchema] = Field(default_factory=list)
+    footnotes: list[WikiFootnoteDiffSchema] = Field(default_factory=list)
+    references: list[WikiReferenceDiffSchema] = Field(default_factory=list)
 
 
 def _health_to_schema(health) -> WikiCitationHealthSchema:
@@ -203,8 +272,7 @@ def _node_to_schema(node: WikiContentNodeModel) -> WikiContentNodeSchema:
 
 def build_detail_from_parts(
     *,
-    page_id: str,
-    slug: str,
+    wiki_id: str,
     title: str,
     source_note: str | None,
     last_modified: datetime,
@@ -216,8 +284,7 @@ def build_detail_from_parts(
     categories: list[str],
 ) -> WikiPageDetailSchema:
     return WikiPageDetailSchema(
-        id=page_id,
-        slug=slug,
+        id=wiki_id,
         title=title,
         source_note=source_note,
         last_modified=last_modified,
@@ -238,7 +305,6 @@ def build_detail_from_parts(
 def page_to_list_item(page: WikiPageModel) -> WikiPageListItemSchema:
     return WikiPageListItemSchema(
         id=page.id,
-        slug=page.slug,
         title=page.title,
         source_note=page.source_note,
         status=page.status,
@@ -267,7 +333,7 @@ def revision_to_detail(rev: WikiPageRevisionModel) -> WikiRevisionDetailSchema:
     footnotes = list(snap.footnotes)
     references = list(snap.references)
     return WikiRevisionDetailSchema(
-        page_id=rev.page_id,
+        wiki_id=rev.wiki_id,
         revision=rev.revision,
         change_type=rev.change_type,
         target_section=rev.target_section,
@@ -276,7 +342,6 @@ def revision_to_detail(rev: WikiPageRevisionModel) -> WikiRevisionDetailSchema:
         restored_from_revision=rev.restored_from_revision,
         created_at=rev.created_at,
         snapshot=WikiPageSnapshotSchema(
-            slug=snap.slug,
             title=snap.title,
             source_note=snap.source_note,
             content_tree=_node_to_schema(tree),

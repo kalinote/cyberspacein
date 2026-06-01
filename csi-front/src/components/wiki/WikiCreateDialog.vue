@@ -7,13 +7,6 @@
     @closed="onClosed"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="88px" @submit.prevent>
-      <el-form-item label="Slug" prop="slug">
-        <el-input
-          v-model="form.slug"
-          placeholder="如 traveler-genshin（小写字母、数字、连字符）"
-          maxlength="128"
-        />
-      </el-form-item>
       <el-form-item label="标题" prop="title">
         <el-input v-model="form.title" placeholder="页面标题" maxlength="200" />
       </el-form-item>
@@ -60,28 +53,12 @@ const submitting = ref(false)
 const formRef = ref(null)
 
 const form = ref({
-  slug: '',
   title: '',
   sourceNote: '',
   categories: [],
 })
 
-const SLUG_PATTERN = /^[a-z0-9-]{2,128}$/
-
 const rules = {
-  slug: [
-    { required: true, message: '请输入 Slug', trigger: 'blur' },
-    {
-      validator: (_rule, value, callback) => {
-        if (!value || SLUG_PATTERN.test(String(value).trim())) {
-          callback()
-        } else {
-          callback(new Error('Slug 仅支持 2–128 位小写字母、数字与连字符'))
-        }
-      },
-      trigger: 'blur',
-    },
-  ],
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
 }
 
@@ -97,7 +74,7 @@ watch(visible, (val) => {
 })
 
 function onClosed() {
-  form.value = { slug: '', title: '', sourceNote: '', categories: [] }
+  form.value = { title: '', sourceNote: '', categories: [] }
   formRef.value?.resetFields()
 }
 
@@ -112,7 +89,6 @@ async function handleSubmit() {
   submitting.value = true
   try {
     const detail = await wikiApi.createPage({
-      slug: form.value.slug.trim(),
       title: form.value.title.trim(),
       sourceNote: form.value.sourceNote.trim() || undefined,
       categories: form.value.categories?.length ? form.value.categories : undefined,
@@ -120,7 +96,7 @@ async function handleSubmit() {
     visible.value = false
     emit('created', detail)
     ElMessage.success('创建成功')
-    await router.push({ name: 'wiki-detail', params: { slug: detail.slug } })
+    await router.push({ name: 'wiki-detail', params: { id: detail.id } })
   } catch {
     /* 错误由 request 拦截器提示 */
   } finally {

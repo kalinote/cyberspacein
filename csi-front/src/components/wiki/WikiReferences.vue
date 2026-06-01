@@ -1,10 +1,13 @@
 <template>
   <section id="references" class="scroll-mt-24">
-    <h2 class="text-xl font-bold text-gray-900 border-b border-gray-100 pb-2 mb-3 flex items-center gap-2">
-      <Icon icon="mdi:book-open-variant" class="text-blue-500" />
-      参考资料
-    </h2>
-    <ol class="wiki-references-list">
+    <div class="flex items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-3">
+      <h2 class="text-xl font-bold text-gray-900 flex items-center gap-2 m-0">
+        <Icon icon="mdi:book-open-variant" class="text-blue-500" />
+        参考资料
+      </h2>
+      <slot name="actions" />
+    </div>
+    <ol v-if="references.length" class="wiki-references-list">
       <li
         v-for="ref in references"
         :key="ref.id"
@@ -37,6 +40,7 @@
         </p>
       </li>
     </ol>
+    <p v-else class="text-sm text-gray-400 m-0">暂无参考资料</p>
   </section>
 </template>
 

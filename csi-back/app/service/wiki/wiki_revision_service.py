@@ -18,7 +18,6 @@ class WikiRevisionService:
     @staticmethod
     def build_snapshot(page: WikiPageModel) -> WikiPageSnapshotModel:
         return WikiPageSnapshotModel(
-            slug=page.slug,
             title=page.title,
             source_note=page.source_note,
             content_tree=page.content_tree.model_copy(deep=True),
@@ -41,7 +40,7 @@ class WikiRevisionService:
     ) -> WikiPageRevisionModel:
         rev = WikiPageRevisionModel(
             id=generate_id(f"wiki_rev:{page.id}:{page.revision}"),
-            page_id=page.id,
+            wiki_id=page.id,
             revision=page.revision,
             snapshot=cls.build_snapshot(page),
             change_type=change_type,
@@ -55,32 +54,32 @@ class WikiRevisionService:
             await rev.insert()
         except Exception as exc:
             logger.exception(
-                f"Wiki 版本快照写入失败: page_id={page.id} revision={page.revision} err={exc}"
+                f"Wiki 版本快照写入失败: wiki_id={page.id} revision={page.revision} err={exc}"
             )
             raise WikiSnapshotFailedError(f"版本快照写入失败: {exc}") from exc
         return rev
 
     @classmethod
-    async def get_revision(cls, page_id: str, revision: int) -> WikiPageRevisionModel:
+    async def get_revision(cls, wiki_id: str, revision: int) -> WikiPageRevisionModel:
         rev = await WikiPageRevisionModel.find_one(
-            WikiPageRevisionModel.page_id == page_id,
+            WikiPageRevisionModel.wiki_id == wiki_id,
             WikiPageRevisionModel.revision == revision,
         )
         if rev is None:
             raise WikiRevisionNotFoundError(
-                f"历史版本不存在: page_id={page_id} revision={revision}"
+                f"历史版本不存在: wiki_id={wiki_id} revision={revision}"
             )
         return rev
 
     @classmethod
     async def list_revisions(
         cls,
-        page_id: str,
+        wiki_id: str,
         page: int,
         page_size: int,
     ) -> PageResponseSchema[WikiRevisionListItemSchema]:
         query = WikiPageRevisionModel.find(
-            WikiPageRevisionModel.page_id == page_id
+            WikiPageRevisionModel.wiki_id == wiki_id
         ).sort(-WikiPageRevisionModel.revision)
         total = await query.count()
         skip = (page - 1) * page_size
@@ -91,7 +90,7 @@ class WikiRevisionService:
         )
 
     @classmethod
-    async def delete_all_for_page(cls, page_id: str) -> None:
+    async def delete_all_for_page(cls, wiki_id: str) -> None:
         await WikiPageRevisionModel.find(
-            WikiPageRevisionModel.page_id == page_id
+            WikiPageRevisionModel.wiki_id == wiki_id
         ).delete()

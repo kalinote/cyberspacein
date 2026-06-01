@@ -47,7 +47,6 @@
 /**
  * @typedef {Object} WikiPageDetail
  * @property {string} id
- * @property {string} slug
  * @property {string} title
  * @property {string} [sourceNote]
  * @property {string} [lastModified]
@@ -63,7 +62,6 @@
 /**
  * @typedef {Object} WikiPageListItem
  * @property {string} id
- * @property {string} slug
  * @property {string} title
  * @property {string|null} [sourceNote]
  * @property {string} [status]
@@ -71,6 +69,102 @@
  * @property {string} [lastModified]
  * @property {number} [revision]
  * @property {string} [createdAt]
+ */
+
+/**
+ * @typedef {Object} WikiRevisionListItem
+ * @property {number} revision
+ * @property {string} changeType
+ * @property {string|null} [targetSection]
+ * @property {string} changeSummary
+ * @property {string|null} [operator]
+ * @property {number|null} [restoredFromRevision]
+ * @property {string} createdAt
+ */
+
+/**
+ * @typedef {Object} WikiRevisionDetail
+ * @property {string} wikiId
+ * @property {number} revision
+ * @property {string} changeType
+ * @property {string|null} [targetSection]
+ * @property {string} changeSummary
+ * @property {string|null} [operator]
+ * @property {number|null} [restoredFromRevision]
+ * @property {string} createdAt
+ * @property {WikiPageDetail} snapshot
+ * @property {WikiCitationHealth} [citationHealth]
+ */
+
+/**
+ * @typedef {'equal'|'insert'|'delete'} WikiTextDiffOp
+ */
+
+/**
+ * @typedef {Object} WikiTextDiffHunk
+ * @property {WikiTextDiffOp} op
+ * @property {string} text
+ */
+
+/**
+ * @typedef {Object} WikiRevisionDiffSummary
+ * @property {number} sectionsAdded
+ * @property {number} sectionsRemoved
+ * @property {number} sectionsModified
+ * @property {number} sectionsMoved
+ * @property {number} footnotesChanged
+ * @property {number} referencesChanged
+ * @property {boolean} metaChanged
+ */
+
+/**
+ * @typedef {Object} WikiScalarFieldChange
+ * @property {string} field
+ * @property {unknown} fromValue
+ * @property {unknown} toValue
+ * @property {WikiTextDiffHunk[]|null} [hunks]
+ */
+
+/**
+ * @typedef {Object} WikiCategoriesDiff
+ * @property {string[]} added
+ * @property {string[]} removed
+ */
+
+/**
+ * @typedef {Object} WikiSectionDiff
+ * @property {string} section
+ * @property {'added'|'removed'|'modified'|'moved'} change
+ * @property {string[]|null} [pathFrom]
+ * @property {string[]|null} [pathTo]
+ * @property {string|null} [titleFrom]
+ * @property {string|null} [titleTo]
+ * @property {WikiTextDiffHunk[]|null} [contentHunks]
+ * @property {boolean} [infoboxChanged]
+ * @property {WikiInfobox|null} [infoboxFrom]
+ * @property {WikiInfobox|null} [infoboxTo]
+ */
+
+/**
+ * @typedef {Object} WikiCitationItemDiff
+ * @property {string} id
+ * @property {'added'|'removed'|'modified'} change
+ * @property {WikiFootnote|WikiReference|null} [fromItem]
+ * @property {WikiFootnote|WikiReference|null} [toItem]
+ * @property {WikiTextDiffHunk[]|null} [textHunks]
+ */
+
+/**
+ * @typedef {Object} WikiRevisionDiff
+ * @property {string} wikiId
+ * @property {number} fromRevision
+ * @property {number} toRevision
+ * @property {WikiRevisionDiffSummary} summary
+ * @property {WikiScalarFieldChange[]} meta
+ * @property {WikiCategoriesDiff|null} categories
+ * @property {WikiSectionDiff[]} sections
+ * @property {WikiCitationItemDiff[]} footnotes
+ * @property {WikiCitationItemDiff[]} references
  */
 
 export {}

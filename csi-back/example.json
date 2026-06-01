@@ -1,0 +1,28 @@
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": "f3a8c2d19e4b5678901234567890abcd",
+        "title": "旅行者 (原神)",
+        "sourceNote": "知识库条目",
+        "lastModified": "2026-05-29T12:00:00",
+        "revision": 1,
+        "status": "draft",
+        "contentTree": {
+            "section": "main",
+            "title": "",
+            "content": "**旅行者**是米哈游《原神》主角代称……[^1]",
+            "infobox": null,
+            "children": []
+        },
+        "footnotes": [],
+        "references": [],
+        "categories": [],
+        "citationHealth": {
+            "missingRefs": [],
+            "missingFootnotes": [],
+            "orphanReferences": [],
+            "orphanFootnotes": []
+        }
+    }
+}

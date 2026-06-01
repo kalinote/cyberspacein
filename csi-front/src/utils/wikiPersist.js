@@ -5,6 +5,8 @@ import { collectSectionIds } from '@/utils/wikiTree.js'
 /**
  * @typedef {import('@/types/wiki.js').WikiPageDetail} WikiPageDetail
  * @typedef {import('@/types/wiki.js').WikiContentNode} WikiContentNode
+ * @typedef {import('@/types/wiki.js').WikiFootnote} WikiFootnote
+ * @typedef {import('@/types/wiki.js').WikiReference} WikiReference
  */
 
 const WIKI_REVISION_CONFLICT_CODE = 241003
@@ -84,6 +86,51 @@ export async function persistWikiSectionPatch(wiki, sectionId, patch) {
     return wikiApi.updateMain(wiki.id, body)
   }
   return wikiApi.updateSection(wiki.id, sectionId, body)
+}
+
+/**
+ * @param {WikiPageDetail} wiki
+ * @param {WikiFootnote[]} items
+ */
+export async function persistWikiFootnotes(wiki, items) {
+  return wikiApi.putFootnotes(wiki.id, {
+    expectedRevision: wiki.revision,
+    changeSummary: '',
+    items: items.map((item) => ({
+      id: String(item.id),
+      text: String(item.text ?? ''),
+    })),
+  })
+}
+
+/**
+ * @param {WikiPageDetail} wiki
+ * @param {WikiReference[]} items
+ */
+export async function persistWikiReferences(wiki, items) {
+  return wikiApi.putReferences(wiki.id, {
+    expectedRevision: wiki.revision,
+    changeSummary: '',
+    items: items.map((item) => ({
+      id: String(item.id),
+      text: String(item.text ?? ''),
+      url: item.url && String(item.url).trim() !== '' ? String(item.url) : null,
+      entityType: item.entityType ?? null,
+      entityUuid: item.entityUuid ?? null,
+    })),
+  })
+}
+
+/**
+ * @param {WikiPageDetail} wiki
+ * @param {number} targetRevision
+ * @param {string} [changeSummary]
+ */
+export async function persistWikiRestoreRevision(wiki, targetRevision, changeSummary) {
+  return wikiApi.restoreRevision(wiki.id, targetRevision, {
+    expectedRevision: wiki.revision,
+    changeSummary: changeSummary?.trim() || `恢复到第 ${targetRevision} 版`,
+  })
 }
 
 /**

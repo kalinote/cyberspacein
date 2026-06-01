@@ -20,10 +20,6 @@ class WikiRevisionConflictError(WikiError):
     code = 241003
 
 
-class WikiSlugConflictError(WikiError):
-    code = 241004
-
-
 class WikiCannotDeleteMainError(WikiError):
     code = 241005
 

@@ -71,7 +71,7 @@ def _insert_after(
 
 def add_child(
     tree: WikiContentNodeModel,
-    page_id: str,
+    wiki_id: str,
     parent_section: str,
     title: str,
     *,
@@ -79,7 +79,7 @@ def add_child(
 ) -> WikiContentNodeModel:
     parent, _, _ = find_node(tree, parent_section)
     node = WikiContentNodeModel(
-        section=new_section_id(page_id),
+        section=new_section_id(wiki_id),
         title=title,
         content="",
         infobox=None,

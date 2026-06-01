@@ -18,15 +18,16 @@ from app.schemas.wiki import (
     WikiPageDetailSchema,
     WikiPageListItemSchema,
     WikiRevisionDetailSchema,
+    WikiRevisionDiffSchema,
     build_detail_from_parts,
     page_to_list_item,
     revision_to_detail,
     schema_infobox_to_model,
 )
+from app.service.wiki.wiki_revision_diff import build_revision_diff
 from app.service.wiki.exceptions import (
     WikiPageNotFoundError,
     WikiRevisionConflictError,
-    WikiSlugConflictError,
     WikiSnapshotFailedError,
 )
 from app.service.wiki.wiki_citations import validate_citations
@@ -39,21 +40,15 @@ from app.service.wiki.wiki_tree import (
     remove_subtree,
     update_node_fields,
 )
-
-_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+from app.utils.id_lib import generate_id
 
 
 class WikiPageService:
-    @staticmethod
-    def _validate_slug(slug: str) -> None:
-        if not _SLUG_RE.fullmatch(slug) or not (2 <= len(slug) <= 128):
-            raise WikiSlugConflictError("slug 格式非法")
-
     @classmethod
-    async def _get_page_or_404(cls, page_id: str) -> WikiPageModel:
-        page = await WikiPageModel.find_one(WikiPageModel.id == page_id)
+    async def _get_page_or_404(cls, wiki_id: str) -> WikiPageModel:
+        page = await WikiPageModel.find_one(WikiPageModel.id == wiki_id)
         if page is None:
-            raise WikiPageNotFoundError(f"Wiki 页不存在: {page_id}")
+            raise WikiPageNotFoundError(f"Wiki 页不存在: {wiki_id}")
         return page
 
     @classmethod
@@ -66,8 +61,7 @@ class WikiPageService:
     @classmethod
     def _to_detail(cls, page: WikiPageModel) -> WikiPageDetailSchema:
         return build_detail_from_parts(
-            page_id=page.id,
-            slug=page.slug,
+            wiki_id=page.id,
             title=page.title,
             source_note=page.source_note,
             last_modified=page.last_modified,
@@ -114,20 +108,14 @@ class WikiPageService:
     async def create_page(
         cls,
         *,
-        slug: str,
         title: str,
         source_note: str | None = None,
         categories: list[str] | None = None,
     ) -> WikiPageDetailSchema:
-        cls._validate_slug(slug)
-        existing = await WikiPageModel.find_one(WikiPageModel.slug == slug)
-        if existing is not None:
-            raise WikiSlugConflictError(f"slug 已存在: {slug}")
-
         now = datetime.now()
+        wiki_id = generate_id(f"wiki_page:{uuid4()}")
         page = WikiPageModel(
-            id=str(uuid4()),
-            slug=slug,
+            id=wiki_id,
             title=title,
             source_note=source_note,
             content_tree=empty_main_tree(),
@@ -151,15 +139,8 @@ class WikiPageService:
         return cls._to_detail(page)
 
     @classmethod
-    async def get_page_by_id(cls, page_id: str) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
-        return cls._to_detail(page)
-
-    @classmethod
-    async def get_page_by_slug(cls, slug: str) -> WikiPageDetailSchema:
-        page = await WikiPageModel.find_one(WikiPageModel.slug == slug)
-        if page is None:
-            raise WikiPageNotFoundError(f"Wiki 页不存在: slug={slug}")
+    async def get_page(cls, wiki_id: str) -> WikiPageDetailSchema:
+        page = await cls._get_page_or_404(wiki_id)
         return cls._to_detail(page)
 
     @classmethod
@@ -193,12 +174,7 @@ class WikiPageService:
                 pattern = re.compile(re.escape(q.strip()), re.IGNORECASE)
                 regex_filters = [
                     *filters,
-                    {
-                        "$or": [
-                            {"title": pattern},
-                            {"slug": pattern},
-                        ]
-                    },
+                    {"title": pattern},
                 ]
                 query = WikiPageModel.find(*regex_filters)
                 total = await query.count()
@@ -234,15 +210,15 @@ class WikiPageService:
         )
 
     @classmethod
-    async def delete_page(cls, page_id: str) -> None:
-        page = await cls._get_page_or_404(page_id)
+    async def delete_page(cls, wiki_id: str) -> None:
+        page = await cls._get_page_or_404(wiki_id)
         await WikiRevisionService.delete_all_for_page(page.id)
         await page.delete()
 
     @classmethod
     async def patch_meta(
         cls,
-        page_id: str,
+        wiki_id: str,
         *,
         expected_revision: int,
         change_summary: str = "",
@@ -251,7 +227,7 @@ class WikiPageService:
         categories: list[str] | None = None,
         status: WikiPageStatusEnum | None = None,
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         if title is not None:
             page.title = title
@@ -271,7 +247,7 @@ class WikiPageService:
     @classmethod
     async def patch_main(
         cls,
-        page_id: str,
+        wiki_id: str,
         *,
         expected_revision: int,
         change_summary: str = "",
@@ -279,7 +255,7 @@ class WikiPageService:
         infobox: Any = None,
         infobox_set: bool = False,
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         if content is not None:
             page.content_tree.content = content
@@ -296,7 +272,7 @@ class WikiPageService:
     @classmethod
     async def add_section(
         cls,
-        page_id: str,
+        wiki_id: str,
         *,
         expected_revision: int,
         parent_section: str,
@@ -304,7 +280,7 @@ class WikiPageService:
         after_section: str | None = None,
         change_summary: str = "",
     ) -> tuple[WikiPageDetailSchema, str]:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         node = add_child(
             page.content_tree,
@@ -324,7 +300,7 @@ class WikiPageService:
     @classmethod
     async def patch_section(
         cls,
-        page_id: str,
+        wiki_id: str,
         section_id: str,
         *,
         expected_revision: int,
@@ -334,7 +310,7 @@ class WikiPageService:
         infobox: Any = None,
         infobox_set: bool = False,
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         update_node_fields(
             page.content_tree,
@@ -355,7 +331,7 @@ class WikiPageService:
     @classmethod
     async def move_section(
         cls,
-        page_id: str,
+        wiki_id: str,
         section_id: str,
         *,
         expected_revision: int,
@@ -363,7 +339,7 @@ class WikiPageService:
         after_section: str | None = None,
         change_summary: str = "",
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         move_node(
             page.content_tree,
@@ -382,13 +358,13 @@ class WikiPageService:
     @classmethod
     async def delete_section(
         cls,
-        page_id: str,
+        wiki_id: str,
         section_id: str,
         *,
         expected_revision: int,
         change_summary: str = "",
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         remove_subtree(page.content_tree, section_id)
         page = await cls._save_with_revision(
@@ -402,13 +378,13 @@ class WikiPageService:
     @classmethod
     async def put_footnotes(
         cls,
-        page_id: str,
+        wiki_id: str,
         *,
         expected_revision: int,
         items: list[WikiFootnoteModel] | list[dict[str, Any]],
         change_summary: str = "",
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         page.footnotes = [
             i if isinstance(i, WikiFootnoteModel) else WikiFootnoteModel(**i)
@@ -424,13 +400,13 @@ class WikiPageService:
     @classmethod
     async def put_references(
         cls,
-        page_id: str,
+        wiki_id: str,
         *,
         expected_revision: int,
         items: list[WikiReferenceModel] | list[dict[str, Any]],
         change_summary: str = "",
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
         page.references = [
             i if isinstance(i, WikiReferenceModel) else WikiReferenceModel(**i)
@@ -444,8 +420,8 @@ class WikiPageService:
         return cls._to_detail(page)
 
     @classmethod
-    async def validate_citations_only(cls, page_id: str) -> WikiCitationHealthSchema:
-        page = await cls._get_page_or_404(page_id)
+    async def validate_citations_only(cls, wiki_id: str) -> WikiCitationHealthSchema:
+        page = await cls._get_page_or_404(wiki_id)
         health = validate_citations(
             page.content_tree, page.footnotes, page.references
         )
@@ -453,33 +429,50 @@ class WikiPageService:
 
     @classmethod
     async def get_revision_detail(
-        cls, page_id: str, revision: int
+        cls, wiki_id: str, revision: int
     ) -> WikiRevisionDetailSchema:
-        await cls._get_page_or_404(page_id)
-        rev = await WikiRevisionService.get_revision(page_id, revision)
+        await cls._get_page_or_404(wiki_id)
+        rev = await WikiRevisionService.get_revision(wiki_id, revision)
         return revision_to_detail(rev)
 
     @classmethod
+    async def diff_revisions(
+        cls,
+        wiki_id: str,
+        from_revision: int,
+        to_revision: int,
+    ) -> WikiRevisionDiffSchema:
+        await cls._get_page_or_404(wiki_id)
+        rev_from = await WikiRevisionService.get_revision(wiki_id, from_revision)
+        rev_to = await WikiRevisionService.get_revision(wiki_id, to_revision)
+        return build_revision_diff(
+            wiki_id,
+            from_revision,
+            to_revision,
+            rev_from.snapshot,
+            rev_to.snapshot,
+        )
+
+    @classmethod
     async def list_revisions(
-        cls, page_id: str, page: int, page_size: int
+        cls, wiki_id: str, page: int, page_size: int
     ) -> PageResponseSchema:
-        await cls._get_page_or_404(page_id)
-        return await WikiRevisionService.list_revisions(page_id, page, page_size)
+        await cls._get_page_or_404(wiki_id)
+        return await WikiRevisionService.list_revisions(wiki_id, page, page_size)
 
     @classmethod
     async def restore_revision(
         cls,
-        page_id: str,
+        wiki_id: str,
         target_revision: int,
         *,
         expected_revision: int,
         change_summary: str = "",
     ) -> WikiPageDetailSchema:
-        page = await cls._get_page_or_404(page_id)
+        page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
-        rev = await WikiRevisionService.get_revision(page_id, target_revision)
+        rev = await WikiRevisionService.get_revision(wiki_id, target_revision)
         snap = rev.snapshot
-        page.slug = snap.slug
         page.title = snap.title
         page.source_note = snap.source_note
         page.content_tree = snap.content_tree.model_copy(deep=True)

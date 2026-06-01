@@ -208,7 +208,7 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
-      path: '/details/wiki/:slug',
+      path: '/details/wiki/:id',
       name: 'wiki-detail',
       component: WikiDetail,
       meta: { requiresAuth: true }

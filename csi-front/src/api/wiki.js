@@ -1,5 +1,10 @@
 import { request } from '@/utils/request'
-import { normalizeWikiPageDetail } from '@/utils/wikiNormalize.js'
+import {
+  normalizeWikiPageDetail,
+  normalizeWikiRevisionDetail,
+  normalizeWikiRevisionDiff,
+  normalizeWikiRevisionListItem,
+} from '@/utils/wikiNormalize.js'
 
 /**
  * @param {unknown} res
@@ -12,17 +17,105 @@ function unwrapData(res) {
 }
 
 /**
+ * @param {unknown} raw
+ */
+function normalizeWikiListItem(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    id: source.id != null ? String(source.id) : '',
+    title: source.title != null ? String(source.title) : '',
+    sourceNote:
+      source.sourceNote != null
+        ? String(source.sourceNote)
+        : source.source_note != null
+          ? String(source.source_note)
+          : null,
+    status: source.status != null ? String(source.status) : '',
+    categories: Array.isArray(source.categories) ? source.categories.map(String) : [],
+    lastModified:
+      source.lastModified != null
+        ? String(source.lastModified)
+        : source.last_modified != null
+          ? String(source.last_modified)
+          : '',
+    revision: typeof source.revision === 'number' ? source.revision : Number(source.revision) || 0,
+    createdAt:
+      source.createdAt != null
+        ? String(source.createdAt)
+        : source.created_at != null
+          ? String(source.created_at)
+          : '',
+  }
+}
+
+/**
+ * 列表 Query 使用 snake_case（sort_by、page_size 等）。
+ * @param {Record<string, unknown>} [params]
+ */
+export function buildWikiListQuery(params = {}) {
+  /** @type {Record<string, unknown>} */
+  const query = {}
+  if (params.q != null && String(params.q).trim() !== '') query.q = params.q
+  if (params.category != null && String(params.category).trim() !== '') {
+    query.category = params.category
+  }
+  if (params.status != null && String(params.status).trim() !== '') {
+    query.status = params.status
+  }
+  const sortBy = params.sort_by ?? params.sortBy
+  if (sortBy != null && String(sortBy).trim() !== '') query.sort_by = sortBy
+  const sortOrder = params.sort_order ?? params.sortOrder
+  if (sortOrder != null && String(sortOrder).trim() !== '') query.sort_order = sortOrder
+  if (params.page != null) query.page = params.page
+  const pageSize = params.page_size ?? params.pageSize
+  if (pageSize != null) query.page_size = pageSize
+  return query
+}
+
+/**
  * @param {unknown} res
  */
 export function normalizeWikiListResponse(res) {
   const data = unwrapData(res) || {}
+  const items = Array.isArray(data.items) ? data.items.map(normalizeWikiListItem) : []
   return {
-    items: Array.isArray(data.items) ? data.items : [],
+    items,
     pagination: {
       total: data.total ?? 0,
       page: data.page ?? 1,
-      pageSize: data.pageSize ?? 10,
-      totalPages: data.totalPages ?? 0,
+      pageSize: data.page_size ?? data.pageSize ?? 10,
+      totalPages: data.total_pages ?? data.totalPages ?? 0,
+    },
+  }
+}
+
+/**
+ * @param {Record<string, unknown>} [params]
+ */
+export function buildWikiRevisionListQuery(params = {}) {
+  /** @type {Record<string, unknown>} */
+  const query = {}
+  if (params.page != null) query.page = params.page
+  const pageSize = params.page_size ?? params.pageSize
+  if (pageSize != null) query.page_size = pageSize
+  return query
+}
+
+/**
+ * @param {unknown} res
+ */
+export function normalizeWikiRevisionListResponse(res) {
+  const data = unwrapData(res) || {}
+  const items = Array.isArray(data.items)
+    ? data.items.map(normalizeWikiRevisionListItem).sort((a, b) => b.revision - a.revision)
+    : []
+  return {
+    items,
+    pagination: {
+      total: data.total ?? 0,
+      page: data.page ?? 1,
+      pageSize: data.page_size ?? data.pageSize ?? 20,
+      totalPages: data.total_pages ?? data.totalPages ?? 0,
     },
   }
 }
@@ -32,27 +125,19 @@ export const wikiApi = {
    * @param {Record<string, unknown>} [params]
    */
   listPages(params) {
-    return request.get('/wiki/pages', params)
+    return request.get('/wiki/pages', buildWikiListQuery(params))
   },
 
   /**
-   * @param {string} slug
+   * @param {string} wikiId
    */
-  async getPageBySlug(slug) {
-    const res = await request.get(`/wiki/pages/by-slug/${encodeURIComponent(slug)}`)
+  async getPageById(wikiId) {
+    const res = await request.get(`/wiki/pages/${encodeURIComponent(wikiId)}`)
     return normalizeWikiPageDetail(unwrapData(res))
   },
 
   /**
-   * @param {string} pageId
-   */
-  async getPageById(pageId) {
-    const res = await request.get(`/wiki/pages/${encodeURIComponent(pageId)}`)
-    return normalizeWikiPageDetail(unwrapData(res))
-  },
-
-  /**
-   * @param {{ slug: string, title: string, sourceNote?: string, categories?: string[] }} body
+   * @param {{ title: string, sourceNote?: string, categories?: string[] }} body
    */
   async createPage(body) {
     const res = await request.post('/wiki/pages', body)
@@ -125,5 +210,86 @@ export const wikiApi = {
       { params: query }
     )
     return normalizeWikiPageDetail(unwrapData(res))
+  },
+
+  /**
+   * @param {string} pageId
+   * @param {{ expectedRevision: number, changeSummary?: string, items: { id: string, text: string }[] }} body
+   */
+  async putFootnotes(pageId, body) {
+    const res = await request.put(`/wiki/pages/${encodeURIComponent(pageId)}/footnotes`, body)
+    return normalizeWikiPageDetail(unwrapData(res))
+  },
+
+  /**
+   * @param {string} pageId
+   * @param {{ expectedRevision: number, changeSummary?: string, items: import('@/types/wiki.js').WikiReference[] }} body
+   */
+  async putReferences(pageId, body) {
+    const res = await request.put(`/wiki/pages/${encodeURIComponent(pageId)}/references`, body)
+    return normalizeWikiPageDetail(unwrapData(res))
+  },
+
+  /**
+   * @param {string} pageId
+   */
+  async validateCitations(pageId) {
+    const res = await request.get(
+      `/wiki/pages/${encodeURIComponent(pageId)}/citations/validate`
+    )
+    const data = unwrapData(res) || {}
+    return {
+      missingRefs: data.missingRefs ?? data.missing_refs ?? [],
+      missingFootnotes: data.missingFootnotes ?? data.missing_footnotes ?? [],
+      orphanReferences: data.orphanReferences ?? data.orphan_references ?? [],
+      orphanFootnotes: data.orphanFootnotes ?? data.orphan_footnotes ?? [],
+    }
+  },
+
+  /**
+   * @param {string} wikiId
+   * @param {Record<string, unknown>} [params]
+   */
+  listRevisions(wikiId, params) {
+    return request.get(
+      `/wiki/pages/${encodeURIComponent(wikiId)}/revisions`,
+      buildWikiRevisionListQuery(params)
+    )
+  },
+
+  /**
+   * @param {string} wikiId
+   * @param {number} revision
+   */
+  async getRevision(wikiId, revision) {
+    const res = await request.get(
+      `/wiki/pages/${encodeURIComponent(wikiId)}/revisions/${revision}`
+    )
+    return normalizeWikiRevisionDetail(unwrapData(res))
+  },
+
+  /**
+   * @param {string} wikiId
+   * @param {number} targetRevision
+   * @param {{ expectedRevision: number, changeSummary?: string }} body
+   */
+  async restoreRevision(wikiId, targetRevision, body) {
+    const res = await request.post(
+      `/wiki/pages/${encodeURIComponent(wikiId)}/revisions/${targetRevision}/restore`,
+      body
+    )
+    return normalizeWikiPageDetail(unwrapData(res))
+  },
+
+  /**
+   * @param {string} wikiId
+   * @param {{ from: number, to: number }} params
+   */
+  async getRevisionDiff(wikiId, params) {
+    const res = await request.get(
+      `/wiki/pages/${encodeURIComponent(wikiId)}/revisions/diff`,
+      { from: params.from, to: params.to }
+    )
+    return normalizeWikiRevisionDiff(unwrapData(res))
   },
 }

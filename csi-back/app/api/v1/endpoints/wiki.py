@@ -17,6 +17,7 @@ from app.schemas.wiki import (
     WikiReferencesPutSchema,
     WikiRestoreSchema,
     WikiRevisionDetailSchema,
+    WikiRevisionDiffSchema,
     WikiRevisionListItemSchema,
     WikiSectionCreateSchema,
     WikiSectionMoveSchema,
@@ -74,7 +75,6 @@ async def list_wiki_pages(
 async def create_wiki_page(data: WikiPageCreateSchema):
     try:
         detail = await WikiPageService.create_page(
-            slug=data.slug,
             title=data.title,
             source_note=data.source_note,
             categories=data.categories,
@@ -88,43 +88,30 @@ async def create_wiki_page(data: WikiPageCreateSchema):
 
 
 @router.get(
-    "/pages/by-slug/{slug}",
-    response_model=ApiResponseSchema[WikiPageDetailSchema],
-    summary="按 slug 获取 Wiki 页",
-)
-async def get_wiki_page_by_slug(slug: str = Path(..., description="slug")):
-    try:
-        detail = await WikiPageService.get_page_by_slug(slug)
-        return ApiResponseSchema.success(data=detail)
-    except WikiError as exc:
-        return _wiki_error(exc)
-
-
-@router.get(
-    "/pages/{page_id}",
+    "/pages/{wiki_id}",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="获取 Wiki 页详情",
 )
-async def get_wiki_page(page_id: str = Path(..., description="页面 ID")):
+async def get_wiki_page(wiki_id: str = Path(..., description="Wiki 页 ID（32 位 hex）")):
     try:
-        detail = await WikiPageService.get_page_by_id(page_id)
+        detail = await WikiPageService.get_page(wiki_id)
         return ApiResponseSchema.success(data=detail)
     except WikiError as exc:
         return _wiki_error(exc)
 
 
 @router.patch(
-    "/pages/{page_id}/meta",
+    "/pages/{wiki_id}/meta",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="更新 Wiki 元数据",
 )
 async def patch_wiki_meta(
-    page_id: str,
+    wiki_id: str,
     data: WikiPageMetaPatchSchema,
 ):
     try:
         detail = await WikiPageService.patch_meta(
-            page_id,
+            wiki_id,
             expected_revision=data.expected_revision,
             change_summary=data.change_summary,
             title=data.title,
@@ -138,28 +125,28 @@ async def patch_wiki_meta(
 
 
 @router.delete(
-    "/pages/{page_id}",
+    "/pages/{wiki_id}",
     response_model=ApiResponseSchema[None],
     summary="删除整个 Wiki 页",
 )
-async def delete_wiki_page(page_id: str = Path(..., description="页面 ID")):
+async def delete_wiki_page(wiki_id: str = Path(..., description="页面 ID")):
     try:
-        await WikiPageService.delete_page(page_id)
+        await WikiPageService.delete_page(wiki_id)
         return ApiResponseSchema.success(data=None)
     except WikiError as exc:
         return _wiki_error(exc)
 
 
 @router.patch(
-    "/pages/{page_id}/main",
+    "/pages/{wiki_id}/main",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="更新导语区 main",
 )
-async def patch_wiki_main(page_id: str, data: WikiMainPatchSchema):
+async def patch_wiki_main(wiki_id: str, data: WikiMainPatchSchema):
     try:
         infobox_set = "infobox" in data.model_fields_set
         detail = await WikiPageService.patch_main(
-            page_id,
+            wiki_id,
             expected_revision=data.expected_revision,
             change_summary=data.change_summary,
             content=data.content,
@@ -172,14 +159,14 @@ async def patch_wiki_main(page_id: str, data: WikiMainPatchSchema):
 
 
 @router.post(
-    "/pages/{page_id}/sections",
+    "/pages/{wiki_id}/sections",
     response_model=ApiResponseSchema[dict[str, Any]],
     summary="新增章节",
 )
-async def create_wiki_section(page_id: str, data: WikiSectionCreateSchema):
+async def create_wiki_section(wiki_id: str, data: WikiSectionCreateSchema):
     try:
         detail, section = await WikiPageService.add_section(
-            page_id,
+            wiki_id,
             expected_revision=data.expected_revision,
             parent_section=data.parent_section,
             title=data.title,
@@ -194,19 +181,19 @@ async def create_wiki_section(page_id: str, data: WikiSectionCreateSchema):
 
 
 @router.patch(
-    "/pages/{page_id}/sections/{section_id}",
+    "/pages/{wiki_id}/sections/{section_id}",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="更新章节",
 )
 async def patch_wiki_section(
-    page_id: str,
+    wiki_id: str,
     section_id: str,
     data: WikiSectionPatchSchema,
 ):
     try:
         infobox_set = "infobox" in data.model_fields_set
         detail = await WikiPageService.patch_section(
-            page_id,
+            wiki_id,
             section_id,
             expected_revision=data.expected_revision,
             change_summary=data.change_summary,
@@ -221,18 +208,18 @@ async def patch_wiki_section(
 
 
 @router.patch(
-    "/pages/{page_id}/sections/{section_id}/move",
+    "/pages/{wiki_id}/sections/{section_id}/move",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="移动章节",
 )
 async def move_wiki_section(
-    page_id: str,
+    wiki_id: str,
     section_id: str,
     data: WikiSectionMoveSchema,
 ):
     try:
         detail = await WikiPageService.move_section(
-            page_id,
+            wiki_id,
             section_id,
             expected_revision=data.expected_revision,
             parent_section=data.parent_section,
@@ -245,12 +232,12 @@ async def move_wiki_section(
 
 
 @router.delete(
-    "/pages/{page_id}/sections/{section_id}",
+    "/pages/{wiki_id}/sections/{section_id}",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="删除章节",
 )
 async def delete_wiki_section(
-    page_id: str,
+    wiki_id: str,
     section_id: str,
     expected_revision: int = Query(
         ...,
@@ -266,7 +253,7 @@ async def delete_wiki_section(
 ):
     try:
         detail = await WikiPageService.delete_section(
-            page_id,
+            wiki_id,
             section_id,
             expected_revision=expected_revision,
             change_summary=change_summary,
@@ -277,15 +264,15 @@ async def delete_wiki_section(
 
 
 @router.put(
-    "/pages/{page_id}/footnotes",
+    "/pages/{wiki_id}/footnotes",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="替换脚注列表",
 )
-async def put_wiki_footnotes(page_id: str, data: WikiFootnotesPutSchema):
+async def put_wiki_footnotes(wiki_id: str, data: WikiFootnotesPutSchema):
     try:
         items = [WikiFootnoteModel.model_validate(i.model_dump()) for i in data.items]
         detail = await WikiPageService.put_footnotes(
-            page_id,
+            wiki_id,
             expected_revision=data.expected_revision,
             items=items,
             change_summary=data.change_summary,
@@ -296,15 +283,15 @@ async def put_wiki_footnotes(page_id: str, data: WikiFootnotesPutSchema):
 
 
 @router.put(
-    "/pages/{page_id}/references",
+    "/pages/{wiki_id}/references",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="替换参考文献列表",
 )
-async def put_wiki_references(page_id: str, data: WikiReferencesPutSchema):
+async def put_wiki_references(wiki_id: str, data: WikiReferencesPutSchema):
     try:
         items = [WikiReferenceModel.model_validate(i.model_dump()) for i in data.items]
         detail = await WikiPageService.put_references(
-            page_id,
+            wiki_id,
             expected_revision=data.expected_revision,
             items=items,
             change_summary=data.change_summary,
@@ -315,63 +302,92 @@ async def put_wiki_references(page_id: str, data: WikiReferencesPutSchema):
 
 
 @router.get(
-    "/pages/{page_id}/citations/validate",
+    "/pages/{wiki_id}/citations/validate",
     response_model=ApiResponseSchema[WikiCitationHealthSchema],
     summary="校验引用与脚注",
 )
-async def validate_wiki_citations(page_id: str):
+async def validate_wiki_citations(wiki_id: str):
     try:
-        health = await WikiPageService.validate_citations_only(page_id)
+        health = await WikiPageService.validate_citations_only(wiki_id)
         return ApiResponseSchema.success(data=health)
     except WikiError as exc:
         return _wiki_error(exc)
 
 
 @router.get(
-    "/pages/{page_id}/revisions",
+    "/pages/{wiki_id}/revisions",
     response_model=PageResponseSchema[WikiRevisionListItemSchema],
     summary="版本历史列表",
 )
 async def list_wiki_revisions(
-    page_id: str,
+    wiki_id: str,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
     try:
-        return await WikiPageService.list_revisions(page_id, page, page_size)
+        return await WikiPageService.list_revisions(wiki_id, page, page_size)
     except WikiError as exc:
         return _wiki_error(exc)
 
 
 @router.get(
-    "/pages/{page_id}/revisions/{revision}",
+    "/pages/{wiki_id}/revisions/diff",
+    response_model=ApiResponseSchema[WikiRevisionDiffSchema],
+    summary="对比两个历史版本差异",
+)
+async def diff_wiki_revisions(
+    wiki_id: str = Path(..., description="Wiki 页 ID（32 位 hex）"),
+    from_revision: int = Query(
+        ...,
+        ge=1,
+        alias="from",
+        description="基线修订号",
+    ),
+    to_revision: int = Query(
+        ...,
+        ge=1,
+        alias="to",
+        description="目标修订号",
+    ),
+):
+    try:
+        diff = await WikiPageService.diff_revisions(
+            wiki_id, from_revision, to_revision
+        )
+        return ApiResponseSchema.success(data=diff)
+    except WikiError as exc:
+        return _wiki_error(exc)
+
+
+@router.get(
+    "/pages/{wiki_id}/revisions/{revision}",
     response_model=ApiResponseSchema[WikiRevisionDetailSchema],
     summary="回放指定版本",
 )
 async def get_wiki_revision(
-    page_id: str,
+    wiki_id: str,
     revision: int = Path(..., ge=1),
 ):
     try:
-        detail = await WikiPageService.get_revision_detail(page_id, revision)
+        detail = await WikiPageService.get_revision_detail(wiki_id, revision)
         return ApiResponseSchema.success(data=detail)
     except WikiError as exc:
         return _wiki_error(exc)
 
 
 @router.post(
-    "/pages/{page_id}/revisions/{revision}/restore",
+    "/pages/{wiki_id}/revisions/{revision}/restore",
     response_model=ApiResponseSchema[WikiPageDetailSchema],
     summary="恢复到指定版本",
 )
 async def restore_wiki_revision(
-    page_id: str,
+    wiki_id: str,
     revision: int,
     data: WikiRestoreSchema,
 ):
     try:
         detail = await WikiPageService.restore_revision(
-            page_id,
+            wiki_id,
             revision,
             expected_revision=data.expected_revision,
             change_summary=data.change_summary,

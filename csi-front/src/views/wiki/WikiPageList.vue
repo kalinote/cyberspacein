@@ -15,7 +15,7 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">关键词</label>
             <el-input
               v-model="filters.q"
-              placeholder="搜索标题或 slug"
+              placeholder="搜索标题"
               clearable
               @keyup.enter="applySearch"
             >
@@ -63,7 +63,7 @@
           </el-button>
         </div>
 
-        <div v-loading="loading" element-loading-text="加载中..." class="min-h-[320px]">
+        <div v-loading="loading" element-loading-text="加载中..." class="min-h-80">
           <div
             v-if="!loading && items.length === 0"
             class="flex flex-col items-center justify-center py-16"
@@ -78,14 +78,13 @@
               <el-table-column label="标题" min-width="200">
                 <template #default="{ row }">
                   <router-link
-                    :to="{ name: 'wiki-detail', params: { slug: row.slug } }"
+                    :to="{ name: 'wiki-detail', params: { id: row.id } }"
                     class="text-blue-600 hover:underline font-medium"
                   >
                     {{ row.title }}
                   </router-link>
                 </template>
               </el-table-column>
-              <el-table-column prop="slug" label="Slug" min-width="140" show-overflow-tooltip />
               <el-table-column label="状态" width="100">
                 <template #default="{ row }">
                   <el-tag :type="statusTagType(row.status)" size="small">
@@ -118,7 +117,7 @@
                   <el-button
                     type="primary"
                     link
-                    @click="router.push({ name: 'wiki-detail', params: { slug: row.slug } })"
+                    @click="router.push({ name: 'wiki-detail', params: { id: row.id } })"
                   >
                     查看
                   </el-button>
@@ -233,7 +232,7 @@ function onPageSizeChange() {
 }
 
 /**
- * @param {{ id: string, title: string, slug: string }} row
+ * @param {{ id: string, title: string }} row
  */
 async function handleDelete(row) {
   try {

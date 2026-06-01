@@ -41,7 +41,6 @@ class WikiReferenceModel(BaseModel):
 
 
 class WikiPageSnapshotModel(BaseModel):
-    slug: str = Field(description="URL slug")
     title: str = Field(description="页面标题")
     source_note: str | None = Field(default=None, description="来源说明")
     content_tree: WikiContentNodeModel = Field(description="内容树")
@@ -52,8 +51,7 @@ class WikiPageSnapshotModel(BaseModel):
 
 
 class WikiPageModel(Document):
-    id: str = Field(alias="_id", description="页面 ID")
-    slug: str = Field(description="URL slug，唯一")
+    id: str = Field(alias="_id", description="Wiki 页 ID（32 位 hex）")
     title: str = Field(description="页面标题")
     source_note: str | None = Field(default=None, description="来源说明")
     content_tree: WikiContentNodeModel = Field(description="内容树，根节点 section=main")
@@ -73,7 +71,6 @@ class WikiPageModel(Document):
     class Settings:
         name = "wiki_pages"
         indexes = [
-            IndexModel([("slug", ASCENDING)], unique=True),
             IndexModel([("status", ASCENDING)]),
             IndexModel([("updated_at", DESCENDING)]),
             IndexModel([("title", ASCENDING)]),
@@ -83,7 +80,7 @@ class WikiPageModel(Document):
 
 class WikiPageRevisionModel(Document):
     id: str = Field(alias="_id", description="快照记录 ID")
-    page_id: str = Field(description="所属 Wiki 页 ID")
+    wiki_id: str = Field(description="所属 Wiki 页 ID")
     revision: int = Field(description="与保存后页 revision 一致")
     snapshot: WikiPageSnapshotModel = Field(description="全量内容快照")
     change_type: WikiRevisionChangeTypeEnum = Field(description="变更类型")
@@ -98,6 +95,6 @@ class WikiPageRevisionModel(Document):
     class Settings:
         name = "wiki_page_revisions"
         indexes = [
-            IndexModel([("page_id", ASCENDING), ("revision", ASCENDING)], unique=True),
-            IndexModel([("page_id", ASCENDING), ("created_at", DESCENDING)]),
+            IndexModel([("wiki_id", ASCENDING), ("revision", ASCENDING)], unique=True),
+            IndexModel([("wiki_id", ASCENDING), ("created_at", DESCENDING)]),
         ]
