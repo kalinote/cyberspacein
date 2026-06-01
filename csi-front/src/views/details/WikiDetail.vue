@@ -96,19 +96,31 @@
 
                   <WikiFootnotes :footnotes="wiki.footnotes">
                     <template v-if="editMode" #actions>
-                      <el-button type="primary" link class="p-1!" @click="footnotesEditorVisible = true">
-                        <Icon icon="mdi:pencil-outline" class="text-lg" />
-                        编辑
-                      </el-button>
+                      <div class="flex items-center gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          class="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="编辑注释"
+                          @click="footnotesEditorVisible = true"
+                        >
+                          <Icon icon="mdi:pencil-outline" class="text-lg" />
+                        </button>
+                      </div>
                     </template>
                   </WikiFootnotes>
 
                   <WikiReferences :references="wiki.references">
                     <template v-if="editMode" #actions>
-                      <el-button type="primary" link class="p-1!" @click="referencesEditorVisible = true">
-                        <Icon icon="mdi:pencil-outline" class="text-lg" />
-                        编辑
-                      </el-button>
+                      <div class="flex items-center gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          class="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="编辑参考资料"
+                          @click="referencesEditorVisible = true"
+                        >
+                          <Icon icon="mdi:pencil-outline" class="text-lg" />
+                        </button>
+                      </div>
                     </template>
                   </WikiReferences>
 
