@@ -42,8 +42,10 @@ class WikiReadTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "读取 Wiki 页完整详情（含 contentTree、footnotes、references）。"
-            "footnotes/references 每项为 {id, text, ...}，编辑时须沿用相同字段名。"
+            "读取 Wiki 页完整详情（含 contentTree、footnotes、references、citationHealth）。"
+            "编辑前必读 revision；footnotes.id 为字母 a、b、c…，references.id 为数字 1、2、3。"
+            "正文注释用 [^a][^b]…[^aa]，参考资料用 [^1][^2]…；编辑文献须 search_entities 确认实体，"
+            "url 为 /details/{entityType}/{entityUuid}。"
             "若只需部分字段，请传入 fields 以减小返回体积。"
         )
 

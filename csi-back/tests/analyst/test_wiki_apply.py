@@ -91,6 +91,25 @@ async def test_apply_wiki_edit_patch_meta(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.asyncio
+async def test_apply_wiki_edit_add_section_rejects_section_id() -> None:
+    result, err = await apply_wiki_edit(
+        {
+            "wiki_id": "b" * 32,
+            "operation": "add_section",
+            "expected_revision": 3,
+            "params": {
+                "section_id": "test-section-1",
+                "title": "章节",
+                "parent_section": "main",
+            },
+        },
+    )
+    assert result is None
+    assert err is not None
+    assert "勿传 section_id" in err
+
+
+@pytest.mark.asyncio
 async def test_apply_wiki_edit_add_section(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_add = AsyncMock(return_value=(_detail(revision=4), "sec_new"))
     monkeypatch.setattr(wiki_apply_module.WikiPageService, "add_section", mock_add)
@@ -131,6 +150,75 @@ async def test_apply_wiki_edit_revision_conflict(monkeypatch: pytest.MonkeyPatch
     assert result is None
     assert "241003" in err
     assert "wiki_read" in err
+
+
+@pytest.mark.asyncio
+async def test_validate_footnotes_rejects_numeric_id() -> None:
+    result, err = await apply_wiki_edit(
+        {
+            "wiki_id": "e" * 32,
+            "operation": "put_footnotes",
+            "expected_revision": 1,
+            "params": {"items": [{"id": "1", "text": "注"}]},
+        },
+    )
+    assert result is None
+    assert "须为小写字母" in err
+
+
+@pytest.mark.asyncio
+async def test_validate_references_requires_details_url() -> None:
+    uuid = "a" * 32
+    result, err = await apply_wiki_edit(
+        {
+            "wiki_id": "e" * 32,
+            "operation": "put_references",
+            "expected_revision": 1,
+            "params": {
+                "items": [
+                    {
+                        "id": "1",
+                        "text": "文献",
+                        "entityType": "article",
+                        "entityUuid": uuid,
+                        "url": "https://example.com",
+                    },
+                ],
+            },
+        },
+    )
+    assert result is None
+    assert "/details/article/" in err
+
+
+@pytest.mark.asyncio
+async def test_apply_wiki_edit_put_references_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    uuid = "b" * 32
+    mock_put = AsyncMock(return_value=_detail(revision=5))
+    monkeypatch.setattr(wiki_apply_module.WikiPageService, "put_references", mock_put)
+    result, err = await apply_wiki_edit(
+        {
+            "wiki_id": "f" * 32,
+            "operation": "put_references",
+            "expected_revision": 4,
+            "params": {
+                "items": [
+                    {
+                        "id": "1",
+                        "text": "文献条目",
+                        "entityType": "article",
+                        "entityUuid": uuid,
+                        "url": f"/details/article/{uuid}",
+                    },
+                ],
+            },
+        },
+    )
+    assert err is None
+    assert result["revision"] == 5
+    items = mock_put.await_args.kwargs["items"]
+    assert items[0]["entity_type"] == "article"
+    assert items[0]["entity_uuid"] == uuid
 
 
 @pytest.mark.asyncio

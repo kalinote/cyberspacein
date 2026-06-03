@@ -101,6 +101,9 @@ class SearchEntitiesTool(Tool):
         return (
             "按关键词在 Elasticsearch 中检索实体（仅关键词模式，非语义搜索）。"
             "返回 uuid、entityType、完整标题、正文高亮片段 snippets，不含全文。"
+            "编写 Wiki 参考文献前须用本工具（或 get_entity）确认实体存在；"
+            "wiki_edit put_references 的 entityUuid/entityType 取自本结果，"
+            "url 写为 /details/{entityType}/{uuid}。"
             "需要正文时请用 get_entity。"
         )
 

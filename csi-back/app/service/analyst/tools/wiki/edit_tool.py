@@ -8,7 +8,11 @@ from loguru import logger
 
 from app.service.analyst.context import get_current_session_id
 from app.service.analyst.tools._context import require_agent_id
-from app.service.analyst.utils.wiki_apply import WIKI_EDIT_OPERATIONS, apply_wiki_edit
+from app.service.analyst.utils.wiki_apply import (
+    WIKI_EDIT_OPERATIONS,
+    apply_wiki_edit,
+    validate_wiki_edit_params,
+)
 from app.service.nanobot.agent.tools.base import Tool, tool_parameters
 
 logger = logger.bind(name=__name__)
@@ -35,33 +39,69 @@ _WIKI_INFOBOX_SCHEMA = {
 
 _PARAMS_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "description": "operation 对应的业务参数（不含 wiki_id / expected_revision）",
+    "description": (
+        "operation 对应的业务参数。add_section：title、parent_section（必填），"
+        "可选 after_section、content；勿传 section_id。"
+        "patch_section/move_section：section_id 须来自 wiki_read 的 contentTree.section。"
+    ),
     "properties": {
-        "title": {"type": "string"},
-        "source_note": {"type": "string"},
-        "categories": {"type": "array", "items": {"type": "string"}},
-        "status": {"type": "string", "enum": ["draft", "building", "published"]},
-        "content": {"type": "string"},
+        "title": {"type": "string", "description": "章节标题（add_section）或 patch_section 改标题"},
+        "source_note": {"type": "string", "description": "patch_meta"},
+        "categories": {"type": "array", "items": {"type": "string"}, "description": "patch_meta"},
+        "status": {
+            "type": "string",
+            "enum": ["draft", "building", "published"],
+            "description": "patch_meta",
+        },
+        "content": {
+            "type": "string",
+            "description": (
+                "Markdown 正文。注释用 [^a][^b]…[^aa][^ab]…，参考资料用 [^1][^2][^3]…"
+            ),
+        },
         "infobox": _WIKI_INFOBOX_SCHEMA,
         "infobox_set": {"type": "boolean", "description": "为 true 时应用 infobox（含清空）"},
-        "parent_section": {"type": "string"},
-        "after_section": {"type": "string"},
-        "section_id": {"type": "string"},
+        "parent_section": {
+            "type": "string",
+            "description": "add_section/move_section：父章节 section（新建子节常用 main）",
+        },
+        "after_section": {
+            "type": "string",
+            "description": "add_section/move_section：插入到该兄弟章节之后，可选",
+        },
+        "section_id": {
+            "type": "string",
+            "description": "仅 patch_section/move_section；须为 wiki_read 已有 section，勿自行编造",
+        },
         "items": {
             "type": "array",
             "description": (
-                "整表替换。put_footnotes：每项必填 id、text（勿用 key/content）；"
-                "put_references：每项必填 id、text，可选 url、entityType、entityUuid。"
-                "结构与 wiki_read 返回的 footnotes/references 一致。"
+                "整表替换（勿用 key/content）。put_footnotes：items 每项 {id, text}，"
+                "id 为字母 a、b、c…aa、ab（与正文 [^a] 一致）。"
+                "put_references：items 每项 {id, text, url, entityType, entityUuid}，"
+                "id 为数字 1、2、3（与正文 [^1] 一致）；须先 search_entities 或 get_entity 确认实体，"
+                "entityUuid/entityType 取自检索结果，url 为 /details/{entityType}/{entityUuid}。"
             ),
             "items": {
                 "type": "object",
                 "properties": {
-                    "id": {"type": "string", "description": "脚注/文献标识"},
-                    "text": {"type": "string", "description": "脚注正文或文献显示文本"},
-                    "url": {"type": "string", "description": "仅 put_references"},
-                    "entityType": {"type": "string", "description": "仅 put_references"},
-                    "entityUuid": {"type": "string", "description": "仅 put_references"},
+                    "id": {
+                        "type": "string",
+                        "description": "put_footnotes：字母 a/b/c…aa/ab；put_references：数字 1/2/3",
+                    },
+                    "text": {"type": "string", "description": "脚注正文或文献条目显示文本"},
+                    "url": {
+                        "type": "string",
+                        "description": "put_references：/details/{entityType}/{entityUuid}",
+                    },
+                    "entityType": {
+                        "type": "string",
+                        "description": "put_references：库内实体类型（search_entities 的 entityType）",
+                    },
+                    "entityUuid": {
+                        "type": "string",
+                        "description": "put_references：库内实体 uuid（search_entities 的 uuid）",
+                    },
                 },
             },
         },
@@ -81,8 +121,9 @@ _PARAMS_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": sorted(WIKI_EDIT_OPERATIONS),
             "description": (
-                "编辑操作类型。put_footnotes 时 params.items 每项为 {id, text}；"
-                "put_references 时 params.items 每项至少含 {id, text}。"
+                "编辑操作类型。add_section 仅需 title+parent_section（勿传 section_id）。"
+                "patch_section/move_section 的 section_id 须来自 wiki_read。"
+                "put_footnotes/put_references 见 params.items 与引用规范。"
             ),
         },
         "expected_revision": {
@@ -112,10 +153,13 @@ class WikiEditTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "编辑已有 Wiki 页（meta/main/章节/脚注/参考文献/移动），"
-            "经人工审批后落库。编辑前须 wiki_read 获取 expected_revision；不提供删除。"
-            "put_footnotes/put_references 的 params.items 字段名为 id、text（勿用 key/content），"
-            "与 wiki_read 的 footnotes/references 结构一致。"
+            "编辑已有 Wiki 页（meta/main/章节/脚注/参考文献/移动），经人工审批后落库。"
+            "编辑前须 wiki_read 获取 expected_revision、章节 section 与现有 footnotes/references。"
+            "add_section：title、parent_section，可选 content；勿传 section_id（见 newSectionId）。"
+            "patch_section/move_section：section_id 须来自 wiki_read，不可自编。"
+            "引用：注释正文 [^a][^b]…[^aa]、脚注 id 用字母；参考资料正文 [^1][^2]…、"
+            "文献 id 用数字；文献须对应库内实体（先 search_entities/get_entity），"
+            "entityUuid/entityType 取自检索结果，url 为 /details/{entityType}/{entityUuid}。"
         )
 
     @property
@@ -138,13 +182,17 @@ class WikiEditTool(Tool):
         params = kwargs.get("params")
         if params is not None and not isinstance(params, dict):
             return "[错误] params 必须为对象"
+        params_dict = params if isinstance(params, dict) else {}
+        param_err = validate_wiki_edit_params(operation, params_dict)
+        if param_err:
+            return param_err
 
         payload = {
             "wiki_id": kwargs.get("wiki_id"),
             "operation": operation,
             "expected_revision": kwargs.get("expected_revision"),
             "change_summary": kwargs.get("change_summary") or "",
-            "params": params or {},
+            "params": params_dict,
             "reason": kwargs.get("reason") or "",
         }
 

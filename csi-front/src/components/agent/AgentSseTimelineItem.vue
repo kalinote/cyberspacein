@@ -148,6 +148,10 @@
                 实体：<span class="font-medium">{{ approvalEntityTypeLabel }}</span>
                 <span v-if="approvalEntityUuidShort" class="ml-1 font-mono text-xs opacity-70">{{ approvalEntityUuidShort }}</span>
             </p>
+            <p v-if="approvalWikiCreateTitle" class="mt-2 text-sm" :class="approvalTheme.meta">
+                标题：<span class="font-medium">{{ approvalWikiCreateTitle }}</span>
+            </p>
+            <p v-if="approvalWikiEditLine" class="mt-2 text-sm" :class="approvalTheme.meta">{{ approvalWikiEditLine }}</p>
             <p v-if="approvalModificationCount" class="mt-1 text-xs" :class="approvalTheme.sub">修改项 {{ approvalModificationCount }} 个</p>
             <p v-if="approvalReasonText" class="mt-1 text-sm whitespace-pre-wrap wrap-break-word line-clamp-3" :class="approvalTheme.reason">说明：{{ approvalReasonText }}</p>
             <p v-if="approvalPending" class="mt-2 text-xs" :class="approvalTheme.pendingHint">需要审批，请在审批面板中操作。</p>
@@ -297,6 +301,9 @@ import {
     getApprovalSourceLabel,
     getEntityTypeLabel,
     getModifyEntityPayload,
+    getWikiCreatePayload,
+    getWikiEditOperationLabel,
+    getWikiEditPayload,
     isApprovalAwaitingUserAction,
     truncateUuid,
 } from '@/utils/agentApproval'
@@ -385,6 +392,8 @@ const approvalPending = computed(() => isApprovalAwaitingUserAction(props.item.p
 const approvalSourceLabel = computed(() => getApprovalSourceLabel(props.item.payload?.source))
 
 const modifyEntityPayload = computed(() => getModifyEntityPayload(props.item.payload))
+const wikiCreatePayload = computed(() => getWikiCreatePayload(props.item.payload))
+const wikiEditPayload = computed(() => getWikiEditPayload(props.item.payload))
 
 const approvalEntityTypeLabel = computed(() => {
     const type = modifyEntityPayload.value?.entity_type
@@ -396,12 +405,31 @@ const approvalEntityUuidShort = computed(() => {
     return uuid ? truncateUuid(uuid) : ''
 })
 
+const approvalWikiCreateTitle = computed(() => wikiCreatePayload.value?.title ?? '')
+
+const approvalWikiEditLine = computed(() => {
+    const p = wikiEditPayload.value
+    if (!p) return ''
+    const op = getWikiEditOperationLabel(p.operation)
+    const wikiShort = p.wiki_id ? truncateUuid(p.wiki_id) : ''
+    const rev = p.expected_revision != null ? ` · 修订 ${p.expected_revision}` : ''
+    const parts = [op, wikiShort ? `页面 ${wikiShort}` : ''].filter(Boolean)
+    return parts.join(' · ') + rev
+})
+
 const approvalModificationCount = computed(() => {
     const list = modifyEntityPayload.value?.modifications
     return Array.isArray(list) ? list.length : 0
 })
 
-const approvalReasonText = computed(() => modifyEntityPayload.value?.reason ?? '')
+const approvalReasonText = computed(() => {
+    return (
+        modifyEntityPayload.value?.reason
+        ?? wikiCreatePayload.value?.reason
+        ?? wikiEditPayload.value?.reason
+        ?? ''
+    )
+})
 
 const rejectReasons = computed(() => {
     const r = props.item.payload?.reject_reasons

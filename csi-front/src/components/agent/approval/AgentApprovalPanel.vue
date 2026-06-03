@@ -4,6 +4,14 @@
             v-if="approval.source === APPROVAL_SOURCE_MODIFY_ENTITY"
             :payload="approval.payload"
         />
+        <WikiCreateApprovalBody
+            v-else-if="approval.source === APPROVAL_SOURCE_WIKI_CREATE"
+            :payload="approval.payload"
+        />
+        <WikiEditApprovalBody
+            v-else-if="approval.source === APPROVAL_SOURCE_WIKI_EDIT"
+            :payload="approval.payload"
+        />
         <div v-else class="rounded-lg border border-amber-100 bg-amber-50/40 p-4">
             <p class="text-sm text-amber-900 mb-2">
                 暂未为此来源定制展示：<span class="font-mono">{{ approval.source || '—' }}</span>
@@ -20,7 +28,13 @@
 <script setup>
 import { computed } from 'vue'
 import ModifyEntityApprovalBody from './ModifyEntityApprovalBody.vue'
-import { APPROVAL_SOURCE_MODIFY_ENTITY } from '@/utils/agentApproval'
+import WikiCreateApprovalBody from './WikiCreateApprovalBody.vue'
+import WikiEditApprovalBody from './WikiEditApprovalBody.vue'
+import {
+    APPROVAL_SOURCE_MODIFY_ENTITY,
+    APPROVAL_SOURCE_WIKI_CREATE,
+    APPROVAL_SOURCE_WIKI_EDIT,
+} from '@/utils/agentApproval'
 import { stringifyJsonSafe } from '@/utils/agentSse'
 
 const props = defineProps({
