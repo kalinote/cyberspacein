@@ -30,7 +30,7 @@ def test_route_start_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
     r = client.post(
         "/api/v1/agent/start",
-        json={"agent_id": "a1", "user_prompt": "hi", "extra_context": {"k": "v"}},
+        json={"agent_id": "a1", "user_prompt": "hi", "injection_param": {"k": "v"}},
     )
     assert r.status_code == 200
     body = r.json()
@@ -69,7 +69,7 @@ def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
     monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
     r = client.post(
         "/api/v1/agent/start",
-        json={"agent_id": "a1", "user_prompt": "   ", "extra_context": {"k": "v"}},
+        json={"agent_id": "a1", "user_prompt": "   ", "injection_param": {"k": "v"}},
     )
     assert r.status_code == 200
     body = r.json()
@@ -109,7 +109,7 @@ def test_route_start_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
     r = client.post(
         "/api/v1/agent/start",
-        json={"agent_id": "missing", "user_prompt": "hi", "extra_context": {}},
+        json={"agent_id": "missing", "user_prompt": "hi", "injection_param": {}},
     )
     assert r.status_code == 200
     body = r.json()

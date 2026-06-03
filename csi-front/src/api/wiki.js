@@ -152,6 +152,15 @@ export const wikiApi = {
   },
 
   /**
+   * @param {string} wikiId
+   * @param {{ expectedRevision: number, changeSummary?: string, title?: string, sourceNote?: string, categories?: string[], status?: string }} body
+   */
+  async updateMeta(wikiId, body) {
+    const res = await request.patch(`/wiki/pages/${encodeURIComponent(wikiId)}/meta`, body)
+    return normalizeWikiPageDetail(unwrapData(res))
+  },
+
+  /**
    * @param {string} pageId
    * @param {Record<string, unknown>} body
    */

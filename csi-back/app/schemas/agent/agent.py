@@ -3,8 +3,6 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from app.schemas.constants import EntityType
-
 if TYPE_CHECKING:
     from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 
@@ -79,31 +77,27 @@ class AgentCreateRequestSchema(BaseModel):
     tools: list[str] = Field(default_factory=list, description="工具列表")
 
 
-class StartAgentRequestSchema(BaseModel):
+class AgentRuntimeRequestSchema(BaseModel):
+    """`/agent/start` 与 `/agent/message` 共用请求体。"""
+
     agent_id: str = Field(description="分析引擎ID")
+    session_id: str | None = Field(
+        default=None,
+        description="会话 ID；续聊 `/agent/message` 必填，`/agent/start` 不传",
+    )
     user_prompt: str | None = Field(
         default=None,
-        description="用户本轮输入的 prompt",
+        description="用户本轮 prompt；`/agent/message` 必填，`/agent/start` 可空则回退模板",
     )
-    entity_uuid: str | None = Field(default=None, description="实体UUID（可选业务上下文）")
-    entity_type: EntityType | None = Field(default=None, description="实体类型（可选业务上下文）")
-    extra_context: dict[str, Any] = Field(
-        default_factory=dict, description="其它业务上下文，透传给 AnalystService"
+    injection_param: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Jinja 渲染与业务透传参数（如 entity_uuid、entity_type 等）",
     )
 
 
 class StartAgentResponseSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
     session_id: str = Field(description="本次启动分配的会话ID")
-
-
-class SendAgentMessageRequestSchema(BaseModel):
-    agent_id: str = Field(description="分析引擎ID")
-    session_id: str = Field(description="会话ID", min_length=1)
-    user_prompt: str = Field(description="用户本轮输入的 prompt", min_length=1)
-    extra_context: dict[str, Any] = Field(
-        default_factory=dict, description="Jinja 渲染上下文（可选）"
-    )
 
 
 class SendAgentMessageResponseSchema(BaseModel):

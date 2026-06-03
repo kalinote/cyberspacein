@@ -136,7 +136,10 @@ class NanobotSessionMessagesModel(Document):
 
     # assistant only
     tool_calls: list[dict] = Field(default_factory=list, description="工具调用列表，当消息role为assistant时，为assistant需要调用的工具列表")
-    reasoning_content: str | None = Field(default=None, description="推理内容，一般不需要放到上下文中")
+    reasoning_content: str | None = Field(
+        default=None,
+        description="推理内容；无工具调用时可省略，思考模式且含 tool_calls 时必须回传 API",
+    )
 
     # anthropic only
     thinking_blocks: list[dict] = Field(default_factory=list, description="思考块列表，当消息role为assistant时，为assistant的思考块列表")

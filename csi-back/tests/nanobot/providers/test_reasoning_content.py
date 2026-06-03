@@ -126,3 +126,69 @@ def test_parse_chunks_sdk_reasoning_content_none_when_absent() -> None:
     result = OpenAICompatProvider._parse_chunks(chunks)
 
     assert result.reasoning_content is None
+
+
+def test_parse_chunks_sdk_fallback_reasoning_from_final_message() -> None:
+    """delta 无 reasoning 时从末 chunk 的 message.reasoning_content 读取。"""
+    tc_delta = SimpleNamespace(
+        index=0,
+        id="call_1",
+        type="function",
+        function=SimpleNamespace(name="fn", arguments="{}"),
+    )
+    delta1 = SimpleNamespace(content=None, reasoning_content=None, tool_calls=[tc_delta])
+    choice1 = SimpleNamespace(finish_reason=None, delta=delta1, message=None)
+    delta2 = SimpleNamespace(content=None, reasoning_content=None, tool_calls=None)
+    message = SimpleNamespace(
+        content="",
+        reasoning_content="从 message 读取的思考内容",
+        tool_calls=None,
+    )
+    choice2 = SimpleNamespace(finish_reason="tool_calls", delta=delta2, message=message)
+    chunks = [
+        SimpleNamespace(choices=[choice1], usage=None),
+        SimpleNamespace(choices=[choice2], usage=None),
+    ]
+
+    result = OpenAICompatProvider._parse_chunks(chunks)
+
+    assert len(result.tool_calls) == 1
+    assert result.reasoning_content == "从 message 读取的思考内容"
+
+
+def test_parse_chunks_dict_fallback_reasoning_from_final_message() -> None:
+    """dict 流式 chunk 在 delta 无 reasoning 时从 message 字段 fallback。"""
+    chunks = [
+        {
+            "choices": [{
+                "finish_reason": None,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_1",
+                        "function": {"name": "fn", "arguments": "{}"},
+                    }],
+                },
+            }],
+        },
+        {
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "delta": {},
+                "message": {
+                    "content": "",
+                    "reasoning_content": "dict message 推理",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "fn", "arguments": "{}"},
+                    }],
+                },
+            }],
+        },
+    ]
+
+    result = OpenAICompatProvider._parse_chunks(chunks)
+
+    assert len(result.tool_calls) == 1
+    assert result.reasoning_content == "dict message 推理"

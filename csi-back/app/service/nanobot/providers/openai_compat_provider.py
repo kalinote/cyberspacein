@@ -291,6 +291,12 @@ class OpenAICompatProvider(LLMProvider):
                     clean["content"] = None
             if "tool_call_id" in clean and clean["tool_call_id"]:
                 clean["tool_call_id"] = map_id(clean["tool_call_id"])
+            if (
+                clean.get("role") == "assistant"
+                and clean.get("tool_calls")
+                and "reasoning_content" not in clean
+            ):
+                clean["reasoning_content"] = ""
         return self._enforce_role_alternation(sanitized)
 
     # ------------------------------------------------------------------
@@ -705,6 +711,31 @@ class OpenAICompatProvider(LLMProvider):
         )
 
     @classmethod
+    def _reasoning_from_chunk_message(cls, chunk: Any) -> str | None:
+        chunk_map = cls._maybe_mapping(chunk)
+        if chunk_map is not None:
+            choices = chunk_map.get("choices") or []
+            if not choices:
+                return None
+            choice = cls._maybe_mapping(choices[0]) or {}
+            msg = cls._maybe_mapping(choice.get("message")) or {}
+            rc = msg.get("reasoning_content")
+            if not rc:
+                rc = cls._extract_text_content(msg.get("reasoning"))
+            return rc if isinstance(rc, str) and rc else None
+        choices = getattr(chunk, "choices", None)
+        if choices:
+            choice = choices[0]
+            msg = getattr(choice, "message", None)
+            if msg is not None:
+                rc = getattr(msg, "reasoning_content", None)
+                if not rc:
+                    rc = getattr(msg, "reasoning", None)
+                if rc:
+                    return str(rc)
+        return None
+
+    @classmethod
     def _parse_chunks(cls, chunks: list[Any]) -> LLMResponse:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -788,6 +819,13 @@ class OpenAICompatProvider(LLMProvider):
                     reasoning_parts.append(reasoning)
             for tc in (delta.tool_calls or []) if delta else []:
                 _accum_tc(tc, getattr(tc, "index", 0))
+
+        if not reasoning_parts and tc_bufs and chunks:
+            for chunk in reversed(chunks):
+                fallback = cls._reasoning_from_chunk_message(chunk)
+                if fallback:
+                    reasoning_parts.append(fallback)
+                    break
 
         return LLMResponse(
             content="".join(content_parts) or None,

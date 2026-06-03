@@ -112,7 +112,7 @@
               </el-table-column>
               <el-table-column prop="lastModified" label="最后修改" width="170" />
               <el-table-column prop="revision" label="修订" width="72" align="center" />
-              <el-table-column label="操作" width="140" fixed="right">
+              <el-table-column label="操作" width="200" fixed="right">
                 <template #default="{ row }">
                   <el-button
                     type="primary"
@@ -121,6 +121,7 @@
                   >
                     查看
                   </el-button>
+                  <el-button type="primary" link @click="openEditMeta(row)">编辑</el-button>
                   <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
                 </template>
               </el-table-column>
@@ -143,6 +144,11 @@
     </div>
 
     <WikiCreateDialog v-model="createDialogVisible" @created="fetchList" />
+    <WikiEditMetaDialog
+      v-model="editDialogVisible"
+      :row="editRow"
+      @updated="fetchList"
+    />
   </div>
 </template>
 
@@ -154,6 +160,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import WikiCreateDialog from '@/components/wiki/WikiCreateDialog.vue'
+import WikiEditMetaDialog from '@/components/wiki/WikiEditMetaDialog.vue'
 import { wikiApi, normalizeWikiListResponse } from '@/api/wiki.js'
 
 defineOptions({ name: 'WikiPageList' })
@@ -161,6 +168,9 @@ defineOptions({ name: 'WikiPageList' })
 const router = useRouter()
 const loading = ref(false)
 const createDialogVisible = ref(false)
+const editDialogVisible = ref(false)
+/** @type {import('vue').Ref<import('@/types/wiki.js').WikiPageListItem|null>} */
+const editRow = ref(null)
 const items = ref([])
 
 const filters = ref({
@@ -229,6 +239,14 @@ function applySearch() {
 function onPageSizeChange() {
   pagination.value.page = 1
   fetchList()
+}
+
+/**
+ * @param {import('@/types/wiki.js').WikiPageListItem} row
+ */
+function openEditMeta(row) {
+  editRow.value = row
+  editDialogVisible.value = true
 }
 
 /**

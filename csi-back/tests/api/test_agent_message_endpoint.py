@@ -37,7 +37,7 @@ def test_route_message_success(monkeypatch: pytest.MonkeyPatch) -> None:
             "agent_id": "a1",
             "session_id": "s1",
             "user_prompt": "你好 {{ k }}",
-            "extra_context": {"k": "v"},
+            "injection_param": {"k": "v"},
         },
     )
     assert r.status_code == 200
@@ -57,7 +57,7 @@ def test_route_message_empty_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
             "agent_id": "a1",
             "session_id": "s1",
             "user_prompt": "   ",
-            "extra_context": {},
+            "injection_param": {},
         },
     )
     assert r.status_code == 200

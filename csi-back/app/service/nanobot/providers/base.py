@@ -390,7 +390,10 @@ class LLMProvider(ABC):
                     prev_has_tools = bool(prev.get("tool_calls"))
                     curr_has_tools = bool(msg.get("tool_calls"))
                     if curr_has_tools:
-                        merged[-1] = dict(msg)
+                        merged_msg = dict(msg)
+                        if "reasoning_content" not in merged_msg and prev.get("reasoning_content") is not None:
+                            merged_msg["reasoning_content"] = prev["reasoning_content"]
+                        merged[-1] = merged_msg
                         continue
                     if prev_has_tools:
                         continue

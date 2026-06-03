@@ -894,9 +894,11 @@ const handleAnalyzeOption = async (option) => {
         analyzing.value = true
         
         const response = await agentApi.startAgent({
-            entity_uuid: articleData.value.uuid,
-            entity_type: articleData.value.entity_type,
             agent_id: option.value,
+            injection_param: {
+                entity_uuid: articleData.value.uuid,
+                entity_type: articleData.value.entity_type,
+            },
             debug: true
         })
         
@@ -964,8 +966,10 @@ function openAnalysisFullscreen() {
         path: `/agent/analysis/${activeSessionId.value}`,
         query: {
             agent_id: activeAgentId.value,
-            entity_uuid: articleData.value?.uuid || '',
-            entity_type: articleData.value?.entity_type || '',
+            injection_param: JSON.stringify({
+                entity_uuid: articleData.value?.uuid || '',
+                entity_type: articleData.value?.entity_type || '',
+            }),
         },
     })
 }

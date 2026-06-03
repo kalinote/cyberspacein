@@ -23,7 +23,7 @@ import {
  * @param {import('vue').MaybeRefOrGetter<string>} [options.agentIdFallback]
  * @param {import('vue').MaybeRefOrGetter<string>} [options.entityUuid]
  * @param {import('vue').MaybeRefOrGetter<string>} [options.entityType]
- * @param {import('vue').MaybeRefOrGetter<string|object>} [options.extraContext]
+ * @param {import('vue').MaybeRefOrGetter<string|object>} [options.injectionParam]
  */
 export function useAgentSessionStream(options = {}) {
     const session = ref(null)
@@ -500,8 +500,8 @@ export function useAgentSessionStream(options = {}) {
         sseConnected.value = false
     }
 
-    function parseExtraContext() {
-        const raw = toValue(options.extraContext)
+    function parseInjectionParam() {
+        const raw = toValue(options.injectionParam)
         if (raw == null) return undefined
         if (typeof raw === 'object') return raw
         const text = String(raw).trim()
@@ -514,8 +514,8 @@ export function useAgentSessionStream(options = {}) {
         }
     }
 
-    function buildMessageExtraContext() {
-        const merged = { ...(parseExtraContext() || {}) }
+    function buildMessageInjectionParam() {
+        const merged = { ...(parseInjectionParam() || {}) }
         if (entityUuid.value) merged.entity_uuid = entityUuid.value
         if (entityType.value) merged.entity_type = entityType.value
         return merged
@@ -527,12 +527,13 @@ export function useAgentSessionStream(options = {}) {
         if (!trimmedPrompt) return
         try {
             sendLoading.value = true
-            const extraContext = buildMessageExtraContext()
+            const injectionParam = buildMessageInjectionParam()
             const res = await agentApi.sendAgentMessage({
                 agent_id: resolvedAgentId.value,
                 session_id: sessionId.value,
                 user_prompt: trimmedPrompt,
-                extra_context: Object.keys(extraContext).length > 0 ? extraContext : {},
+                injection_param:
+                    Object.keys(injectionParam).length > 0 ? injectionParam : {},
             })
             if (res?.code !== 0) {
                 ElMessage.error(res?.message || '发送失败')

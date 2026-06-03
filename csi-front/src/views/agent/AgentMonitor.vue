@@ -49,7 +49,7 @@
                                 class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
                                 @click="router.push({ name: 'agent-session-list' })">
                                 <Icon icon="mdi:clipboard-text-search-outline" />
-                                <span>分析引擎会话管理</span>
+                                <span>分析会话管理</span>
                             </button>
                             <button
                                 class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
@@ -60,7 +60,7 @@
                             <button
                                 class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2">
                                 <Icon icon="mdi:file-document-multiple" />
-                                <span>分析工作管理</span>
+                                <span>【可能需要修改】分析工作管理</span>
                             </button>
                         </div>
                     </div>

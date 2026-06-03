@@ -82,6 +82,7 @@ class WikiPageService:
         target_section: str | None = None,
         change_summary: str = "",
         restored_from_revision: int | None = None,
+        operator: str | None = None,
     ) -> WikiPageModel:
         page.search_blob = build_search_blob(page.title, page.content_tree)
         page.revision += 1
@@ -96,6 +97,7 @@ class WikiPageService:
                 target_section=target_section,
                 change_summary=change_summary,
                 restored_from_revision=restored_from_revision,
+                operator=operator,
             )
         except WikiSnapshotFailedError:
             page.revision -= 1
@@ -111,6 +113,7 @@ class WikiPageService:
         title: str,
         source_note: str | None = None,
         categories: list[str] | None = None,
+        operator: str | None = None,
     ) -> WikiPageDetailSchema:
         now = datetime.now()
         wiki_id = generate_id(f"wiki_page:{uuid4()}")
@@ -125,7 +128,7 @@ class WikiPageService:
             status=WikiPageStatusEnum.DRAFT,
             revision=1,
             search_blob="",
-            created_by=None,
+            created_by=operator,
             last_modified=now,
             created_at=now,
             updated_at=now,
@@ -135,6 +138,7 @@ class WikiPageService:
         await WikiRevisionService.append_snapshot(
             page,
             change_type=WikiRevisionChangeTypeEnum.CREATE,
+            operator=operator,
         )
         return cls._to_detail(page)
 
@@ -226,6 +230,7 @@ class WikiPageService:
         source_note: str | None = None,
         categories: list[str] | None = None,
         status: WikiPageStatusEnum | None = None,
+        operator: str | None = None,
     ) -> WikiPageDetailSchema:
         page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
@@ -241,6 +246,7 @@ class WikiPageService:
             page,
             change_type=WikiRevisionChangeTypeEnum.META,
             change_summary=change_summary,
+            operator=operator,
         )
         return cls._to_detail(page)
 
@@ -254,6 +260,7 @@ class WikiPageService:
         content: str | None = None,
         infobox: Any = None,
         infobox_set: bool = False,
+        operator: str | None = None,
     ) -> WikiPageDetailSchema:
         page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
@@ -266,6 +273,7 @@ class WikiPageService:
             change_type=WikiRevisionChangeTypeEnum.MAIN,
             target_section="main",
             change_summary=change_summary,
+            operator=operator,
         )
         return cls._to_detail(page)
 
@@ -279,6 +287,7 @@ class WikiPageService:
         title: str,
         after_section: str | None = None,
         change_summary: str = "",
+        operator: str | None = None,
     ) -> tuple[WikiPageDetailSchema, str]:
         page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
@@ -294,6 +303,7 @@ class WikiPageService:
             change_type=WikiRevisionChangeTypeEnum.STRUCTURE,
             target_section=node.section,
             change_summary=change_summary,
+            operator=operator,
         )
         return cls._to_detail(page), node.section
 
@@ -309,6 +319,7 @@ class WikiPageService:
         content: str | None = None,
         infobox: Any = None,
         infobox_set: bool = False,
+        operator: str | None = None,
     ) -> WikiPageDetailSchema:
         page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
@@ -325,6 +336,7 @@ class WikiPageService:
             change_type=WikiRevisionChangeTypeEnum.SECTION,
             target_section=section_id,
             change_summary=change_summary,
+            operator=operator,
         )
         return cls._to_detail(page)
 
@@ -338,6 +350,7 @@ class WikiPageService:
         parent_section: str,
         after_section: str | None = None,
         change_summary: str = "",
+        operator: str | None = None,
     ) -> WikiPageDetailSchema:
         page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
@@ -352,6 +365,7 @@ class WikiPageService:
             change_type=WikiRevisionChangeTypeEnum.STRUCTURE,
             target_section=section_id,
             change_summary=change_summary,
+            operator=operator,
         )
         return cls._to_detail(page)
 
@@ -383,6 +397,7 @@ class WikiPageService:
         expected_revision: int,
         items: list[WikiFootnoteModel] | list[dict[str, Any]],
         change_summary: str = "",
+        operator: str | None = None,
     ) -> WikiPageDetailSchema:
         page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
@@ -394,6 +409,7 @@ class WikiPageService:
             page,
             change_type=WikiRevisionChangeTypeEnum.FOOTNOTES,
             change_summary=change_summary,
+            operator=operator,
         )
         return cls._to_detail(page)
 
@@ -405,6 +421,7 @@ class WikiPageService:
         expected_revision: int,
         items: list[WikiReferenceModel] | list[dict[str, Any]],
         change_summary: str = "",
+        operator: str | None = None,
     ) -> WikiPageDetailSchema:
         page = await cls._get_page_or_404(wiki_id)
         cls._check_revision(page, expected_revision)
@@ -416,6 +433,7 @@ class WikiPageService:
             page,
             change_type=WikiRevisionChangeTypeEnum.REFERENCES,
             change_summary=change_summary,
+            operator=operator,
         )
         return cls._to_detail(page)
 

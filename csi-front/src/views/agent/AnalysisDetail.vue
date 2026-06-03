@@ -199,9 +199,27 @@ import { formatDateTime } from '@/utils/action'
 const route = useRoute()
 const sessionId = computed(() => String(route.params.sessionId || ''))
 const agentIdFromQuery = computed(() => (route.query.agent_id ? String(route.query.agent_id) : ''))
-const entityUuid = computed(() => (route.query.entity_uuid ? String(route.query.entity_uuid) : ''))
-const entityType = computed(() => (route.query.entity_type ? String(route.query.entity_type) : ''))
-const extraContextText = computed(() => (route.query.extra_context ? String(route.query.extra_context) : ''))
+const injectionParamText = computed(() =>
+    route.query.injection_param ? String(route.query.injection_param) : ''
+)
+
+const injectionParamPreview = computed(() => {
+    const raw = injectionParamText.value.trim()
+    if (!raw) return null
+    try {
+        const obj = JSON.parse(raw)
+        return obj && typeof obj === 'object' ? obj : null
+    } catch {
+        return null
+    }
+})
+
+const entityUuid = computed(() =>
+    String(injectionParamPreview.value?.entity_uuid ?? '')
+)
+const entityType = computed(() =>
+    String(injectionParamPreview.value?.entity_type ?? '')
+)
 
 const pageLoading = ref(true)
 const pageError = ref('')
@@ -209,9 +227,7 @@ const pageError = ref('')
 const stream = useAgentSessionStream({
     sessionId,
     agentIdFallback: agentIdFromQuery,
-    entityUuid,
-    entityType,
-    extraContext: extraContextText,
+    injectionParam: injectionParamText,
 })
 
 const {

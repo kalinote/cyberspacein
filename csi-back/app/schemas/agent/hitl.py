@@ -13,6 +13,8 @@ class HitlSource:
     """`source` 字段取值：`{行为}:{名称}`。"""
 
     TOOL_MODIFY_ENTITY = "tool:modify_entity"
+    TOOL_WIKI_CREATE = "tool:wiki_create"
+    TOOL_WIKI_EDIT = "tool:wiki_edit"
 
 
 def build_source(behavior: str, name: str) -> str:
@@ -48,3 +50,19 @@ class ModifyEntityHitlPayload(BaseModel):
     entity_uuid: str
     modifications: list[dict[str, Any]]
     reason: str
+
+
+class WikiCreateHitlPayload(BaseModel):
+    title: str
+    source_note: str | None = None
+    categories: list[str] = Field(default_factory=list)
+    reason: str
+
+
+class WikiEditHitlPayload(BaseModel):
+    wiki_id: str
+    operation: str
+    expected_revision: int
+    change_summary: str = ""
+    reason: str
+    params: dict[str, Any] = Field(default_factory=dict)

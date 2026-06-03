@@ -6,11 +6,18 @@ from loguru import logger
 
 from app.service.analyst.tools.get_current_time import GetCurrentTimeTool
 from app.service.analyst.tools.get_entity import GetEntityTool
+from app.service.analyst.tools.search_entities import SearchEntitiesTool
 from app.service.analyst.tools.modify_entity import ModifyEntityTool
 from app.service.analyst.tools.notify_user import NotifyUserTool
 from app.service.analyst.tools.web_fetch import WebFetchTool
 from app.service.analyst.web_runtime import WEB_RUNTIME
 from app.service.analyst.tools.web_search import WebSearchTool
+from app.service.analyst.tools.wiki import (
+    WikiCreateTool,
+    WikiEditTool,
+    WikiListTool,
+    WikiReadTool,
+)
 from app.service.analyst.tools.write_todos import WriteTodosTool
 from app.service.nanobot.agent.tools.base import Tool
 
@@ -19,11 +26,16 @@ logger = logger.bind(name=__name__)
 BUSINESS_TOOL_CLASSES: dict[str, type[Tool]] = {
     "get_current_time": GetCurrentTimeTool,
     "get_entity": GetEntityTool,
+    "search_entities": SearchEntitiesTool,
     "modify_entity": ModifyEntityTool,
     "notify_user": NotifyUserTool,
     "write_todos": WriteTodosTool,
     "web_search": WebSearchTool,
     "web_fetch": WebFetchTool,
+    "wiki_list": WikiListTool,
+    "wiki_read": WikiReadTool,
+    "wiki_create": WikiCreateTool,
+    "wiki_edit": WikiEditTool,
 }
 
 

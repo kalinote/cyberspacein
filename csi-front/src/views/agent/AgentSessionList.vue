@@ -74,11 +74,23 @@
       </div>
 
       <div class="bg-white rounded-2xl shadow-sm border border-gray-200">
-        <div class="p-6 border-b border-gray-200">
-          <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+        <div class="p-6 border-b border-gray-200 flex items-center justify-between gap-4">
+          <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2 shrink-0">
             <Icon icon="mdi:format-list-bulleted" class="text-blue-600" />
             会话列表
           </h2>
+          <div class="w-56 shrink-0">
+            <SplitButton
+              main-button-text="运行分析引擎"
+              loading-text="启动中..."
+              :disabled="analyzing || !runAgentOptions.length"
+              :loading="analyzing"
+              :options="runAgentOptions"
+              main-button-icon="mdi:play-circle-outline"
+              @main-click="handleRunAgentMain"
+              @option-click="handleRunAgentOption"
+            />
+          </div>
         </div>
 
         <div v-loading="loading" element-loading-text="加载中..." class="min-h-48">
@@ -97,7 +109,24 @@
             </el-table-column>
             <el-table-column label="状态" width="120" align="center">
               <template #default="{ row }">
-                <el-tag :type="getAgentSessionStatusTagType(row.status)" size="small">
+                <el-tooltip
+                  v-if="shouldShowStatusErrorTooltip(row)"
+                  :content="row.error_message"
+                  placement="top"
+                >
+                  <el-tag
+                    :type="getAgentSessionStatusTagType(row.status)"
+                    size="small"
+                    class="cursor-help"
+                  >
+                    {{ getAgentSessionStatusLabel(row.status) }}
+                  </el-tag>
+                </el-tooltip>
+                <el-tag
+                  v-else
+                  :type="getAgentSessionStatusTagType(row.status)"
+                  size="small"
+                >
                   {{ getAgentSessionStatusLabel(row.status) }}
                 </el-tag>
               </template>
@@ -116,17 +145,6 @@
             <el-table-column label="结束时间" min-width="160">
               <template #default="{ row }">
                 {{ row.finished_at ? formatDateTime(row.finished_at, { includeSecond: true }) : '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="错误信息" min-width="160" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span
-                  v-if="row.error_message && (row.status === 'failed' || row.status === 'cancelled')"
-                  class="text-red-600 text-sm"
-                >
-                  {{ row.error_message }}
-                </span>
-                <span v-else class="text-gray-400">-</span>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="120" fixed="right" align="center">
@@ -167,15 +185,18 @@
 <script setup>
 defineOptions({ name: 'AgentSessionList' })
 
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
+import SplitButton from '@/components/SplitButton.vue'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
 import { formatDateTime } from '@/utils/action'
 import {
+  AGENT_SESSION_STATUS,
   AGENT_SESSION_STATUS_OPTIONS,
   getAgentSessionStatusLabel,
   getAgentSessionStatusTagType,
@@ -184,8 +205,17 @@ import {
 const router = useRouter()
 
 const loading = ref(false)
+const analyzing = ref(false)
 const sessions = ref([])
 const agentOptions = ref([])
+
+const runAgentOptions = computed(() =>
+  agentOptions.value.map((item) => ({
+    label: item.label,
+    value: item.value,
+    icon: 'mdi:brain',
+  }))
+)
 
 const filters = ref({
   status: '',
@@ -254,6 +284,12 @@ function handlePageSizeChange(pageSize) {
   fetchSessions()
 }
 
+function shouldShowStatusErrorTooltip(row) {
+  return Boolean(
+    row?.error_message?.trim() && row.status === AGENT_SESSION_STATUS.FAILED
+  )
+}
+
 function goToDetail(row) {
   if (!row?.id || !row?.agent_id) return
   router.push({
@@ -261,6 +297,57 @@ function goToDetail(row) {
     params: { sessionId: row.id },
     query: { agent_id: row.agent_id },
   })
+}
+
+function handleRunAgentMain() {
+  if (!runAgentOptions.value.length) {
+    ElMessage.warning('暂无可用的分析引擎')
+    return
+  }
+  ElMessage.info('请点击右侧下拉箭头，选择要运行的分析引擎')
+}
+
+async function handleRunAgentOption(option) {
+  if (!option?.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定要运行「${option.label}」吗？`,
+      '确认运行',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    analyzing.value = true
+    const response = await agentApi.startAgent({
+      agent_id: option.value,
+    })
+
+    if (response.code === 0 && response.data?.agent_id) {
+      const sid = response.data.session_id
+      if (!sid) {
+        ElMessage.error('未返回 session_id，无法进入详情')
+        return
+      }
+      ElMessage.success('分析引擎已启动')
+      router.push({
+        name: 'agent-analysis-detail',
+        params: { sessionId: String(sid) },
+        query: { agent_id: String(response.data.agent_id) },
+      })
+    } else {
+      ElMessage.error(response.message || '启动分析引擎失败')
+    }
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error('启动分析引擎失败:', err)
+      ElMessage.error('启动分析引擎失败，请稍后重试')
+    }
+  } finally {
+    analyzing.value = false
+  }
 }
 
 onMounted(() => {

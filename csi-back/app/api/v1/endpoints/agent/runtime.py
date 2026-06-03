@@ -9,12 +9,11 @@ from loguru import logger
 from app.models.agent.configs import AgentPromptTemplateModel
 from app.models.agent.nanobot import NanobotAgentModel
 from app.schemas.agent.agent import (
+    AgentRuntimeRequestSchema,
     ApproveRequestSchema,
     CancelAgentRequestSchema,
     CancelAgentResponseSchema,
-    SendAgentMessageRequestSchema,
     SendAgentMessageResponseSchema,
-    StartAgentRequestSchema,
     StartAgentResponseSchema,
 )
 from app.schemas.agent.nanobot_agent import AgentServiceError
@@ -39,13 +38,9 @@ router = APIRouter()
         "返回 HTTP 200 且业务码为冲突态（`CONFLICT_STATE`），不会在库中新建本会话。"
     ),
 )
-async def start_agent(data: StartAgentRequestSchema):
+async def start_agent(data: AgentRuntimeRequestSchema):
     try:
-        context = {
-            **data.extra_context,
-            **({"entity_uuid": data.entity_uuid} if data.entity_uuid else {}),
-            **({"entity_type": data.entity_type.value} if data.entity_type else {})
-        }
+        injection_param = dict(data.injection_param)
 
         raw_user_prompt = str(data.user_prompt or "").strip()
         if not raw_user_prompt:
@@ -74,7 +69,9 @@ async def start_agent(data: StartAgentRequestSchema):
                 )
             raw_user_prompt = prompt
 
-        final_user_prompt = render_user_prompt(raw_user_prompt, context).strip()
+        final_user_prompt = render_user_prompt(
+            raw_user_prompt, injection_param
+        ).strip()
         if not final_user_prompt:
             raise AgentServiceError(
                 status_codes.INVALID_ARGUMENT,
@@ -84,7 +81,7 @@ async def start_agent(data: StartAgentRequestSchema):
         session_id = await AnalystService.start_agent(
             agent_id=data.agent_id,
             user_prompt=final_user_prompt,
-            context=context,
+            context=injection_param,
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
@@ -104,10 +101,23 @@ async def start_agent(data: StartAgentRequestSchema):
         "后续仍通过 `/agent/status` 订阅其它事件。"
     ),
 )
-async def send_agent_message(data: SendAgentMessageRequestSchema):
+async def send_agent_message(data: AgentRuntimeRequestSchema):
     try:
+        session_id = str(data.session_id or "").strip()
+        if not session_id:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT, "session_id 不能为空"
+            )
+
+        raw_user_prompt = str(data.user_prompt or "").strip()
+        if not raw_user_prompt:
+            raise AgentServiceError(
+                status_codes.INVALID_ARGUMENT, "user_prompt 不能为空"
+            )
+
+        injection_param = dict(data.injection_param)
         final_user_prompt = render_user_prompt(
-            str(data.user_prompt).strip(), data.extra_context
+            raw_user_prompt, injection_param
         ).strip()
         if not final_user_prompt:
             raise AgentServiceError(
@@ -117,9 +127,9 @@ async def send_agent_message(data: SendAgentMessageRequestSchema):
 
         session_id = await AnalystService.send_message(
             agent_id=data.agent_id,
-            session_id=data.session_id,
+            session_id=session_id,
             user_prompt=final_user_prompt,
-            context=data.extra_context,
+            context=injection_param,
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
