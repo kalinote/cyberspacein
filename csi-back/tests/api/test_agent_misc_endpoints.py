@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 from app.api.v1.endpoints import agent as agent_ep
 import app.api.v1.endpoints.agent.configs_tools as configs_tools_ep
 import app.api.v1.endpoints.agent.runtime as runtime_ep
+import app.models.agent.skill as skill_models
 
 
 def _app() -> TestClient:
@@ -98,6 +99,7 @@ def test_get_statistics_aggregates_counts(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(configs_tools_ep.NanobotMemoryDocsModel, "find", lambda *_a, **_k: _CountQuery(5))
     monkeypatch.setattr(configs_tools_ep.NanobotWorkspaceModel, "find", lambda *_a, **_k: _CountQuery(3))
     monkeypatch.setattr(configs_tools_ep.NanobotAgentModel, "find", lambda *_a, **_k: _CountQuery(4))
+    monkeypatch.setattr(skill_models.NanobotSkillModel, "find", lambda *_a, **_k: _CountQuery(6))
 
     r = client.get("/api/v1/agent/configs/statistics")
     assert r.status_code == 200
@@ -107,6 +109,7 @@ def test_get_statistics_aggregates_counts(monkeypatch: pytest.MonkeyPatch) -> No
         "model_configs": 1,
         "prompt_templates": 2,
         "system_prompts": 5,
+        "skills": 6,
         "workspaces": 3,
         "agents": 4,
         "business_tools": 3,

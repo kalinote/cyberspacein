@@ -26,7 +26,7 @@ class NanobotWorkspaceModel(Document):
     prompt_template_ids: list[str] = Field(default_factory=list, description="可选系统提示词模板ID列表，Agent 只能从中选择一个")
     model_config_ids: list[str] = Field(default_factory=list, description="可选模型提供商配置ID列表，Agent 只能从中选择一个")
     enabled_tools: list[str] = Field(default_factory=list, description="工具白名单，Agent 可用工具必须是该列表的子集")
-    enabled_skills: list[str] = Field(default_factory=list, description="技能白名单，Agent 可用技能必须是该列表的子集")
+    enabled_skills: list[str] = Field(default_factory=list, description="技能白名单（skill_id），Agent 可用技能必须是该列表的子集")
     enabled_mcp_servers: dict[str, dict] = Field(default_factory=dict, description="MCP 服务白名单，key=server_name，value=MCPServerConfig dump")
 
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
@@ -53,7 +53,7 @@ class NanobotAgentModel(Document):
     prompt_template_id: str = Field(description="选定的提示词模板ID，必须 ∈ workspace.prompt_template_ids")
     model_config_id: str = Field(description="选定的模型提供商配置ID，必须 ∈ workspace.model_config_ids")
     tools: list[str] = Field(default_factory=list, description="启用的工具列表，⊆ workspace.enabled_tools")
-    skills: list[str] = Field(default_factory=list, description="启用的技能列表，⊆ workspace.enabled_skills")
+    skills: list[str] = Field(default_factory=list, description="启用的技能 ID 列表，⊆ workspace.enabled_skills")
     mcp_servers: list[str] = Field(default_factory=list, description="启用的MCP服务名列表，元素 ∈ workspace.enabled_mcp_servers.keys()")
     llm_config: dict[str, Any] = Field(default_factory=dict, description="LLM 生成参数（temperature / max_tokens / reasoning_effort 等）")
     reasoning_effort: ReasoningEffortEnum | None = Field(

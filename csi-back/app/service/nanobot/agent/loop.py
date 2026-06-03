@@ -17,7 +17,6 @@ from app.service.nanobot.agent.context import ContextBuilder
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from app.service.nanobot.agent.memory import Consolidator, Dream, MemoryStore
 from app.service.nanobot.agent.runner import AgentRunner, AgentRunSpec
-from app.service.nanobot.agent.skills import BUILTIN_SKILLS_DIR, SkillsLoader
 from app.service.nanobot.agent.subagent import SubagentManager
 from app.service.nanobot.agent.tools.registry import ToolRegistry
 from app.service.nanobot.agent.tools.self import MyTool
@@ -125,7 +124,7 @@ class AgentLoop:
 
     It:
     1. Receives messages from the bus
-    2. Builds context with history, memory, skills
+    2. Builds context with history, memory, always skills
     3. Calls the LLM
     4. Executes tool calls
     5. Sends responses back
@@ -154,7 +153,8 @@ class AgentLoop:
         send_tool_hints: bool = False,
         timezone: str | None = None,
         hooks: list[AgentHook] | None = None,
-        disabled_skills: list[str] | None = None,
+        always_skills_content: str = "",
+        skills_summary: str = "",
         tools_config: ToolsConfig | None = None,
         dream_config: DreamConfig | None = None,
         prompt_repo: Any | None = None,
@@ -212,14 +212,10 @@ class AgentLoop:
         # workspace_id 源自 MemoryStore（已由外层构造时按 workspace 绑定），
         # AgentLoop 不再独立维护，保持单一来源。
         self.workspace_id = memory.workspace_id
-        self.skills = SkillsLoader(
-            workspace,
-            disabled_skills=set(disabled_skills) if disabled_skills else None,
-        )
         self.prompt_repo = _prompt_repo
         self.context = ContextBuilder(
             memory=memory,
-            skills=self.skills,
+            always_skills_content=always_skills_content,
             timezone=timezone,
             prompt_repo=_prompt_repo,
             builtin_prompt_sections=builtin_prompt_sections,
@@ -234,7 +230,7 @@ class AgentLoop:
             prompt_repo=_prompt_repo,
             model=self.model,
             restrict_to_workspace=restrict_to_workspace,
-            disabled_skills=disabled_skills,
+            skills_summary=skills_summary,
         )
         self._mcp_servers = mcp_servers or {}
         self._mcp_stacks: dict[str, AsyncExitStack] = {}

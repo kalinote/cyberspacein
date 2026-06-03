@@ -24,6 +24,7 @@ class FakeAgent:
     llm_config: dict[str, Any] = field(default_factory=dict)
     reasoning_effort: ReasoningEffortEnum | None = None
     tools: list[str] = field(default_factory=lambda: ["notify_user", "write_todos"])
+    skills: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=lambda: ["srv1"])
     agent_builtin_prompt_ids: list[str] = field(default_factory=list)
     updated_at: Any = None
@@ -35,6 +36,7 @@ class FakeAgent:
 @dataclass
 class FakeWorkspace:
     id: str = "w1"
+    enabled_skills: list[str] = field(default_factory=list)
     enabled_mcp_servers: dict[str, dict] = field(default_factory=lambda: {"srv1": {"command": "npx"}, "srv2": {"command": "node"}})
 
 
@@ -47,15 +49,16 @@ class FakeRegistry:
 
 
 class FakeBot:
-    def __init__(self, provider: Any, hooks: list[Any], builtin_prompt_sections: list[str] | None = None) -> None:
+    def __init__(self, **kw: Any) -> None:
         self.loop = SimpleNamespace(
             tools=FakeRegistry(),
             context=SimpleNamespace(
                 extra_system_suffix="",
-                builtin_prompt_sections=list(builtin_prompt_sections or []),
+                builtin_prompt_sections=list(kw.get("builtin_prompt_sections") or []),
+                always_skills_content=kw.get("always_skills_content", ""),
             ),
-            provider=provider,
-            _extra_hooks=list(hooks),
+            provider=kw["provider"],
+            _extra_hooks=list(kw.get("hooks") or []),
         )
 
 
@@ -135,13 +138,25 @@ def _patch_deps(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     )
 
     def _from_components(**kw: Any) -> Any:
-        return FakeBot(
-            provider=kw["provider"],
-            hooks=kw.get("hooks") or [],
-            builtin_prompt_sections=kw.get("builtin_prompt_sections"),
-        )
+        return FakeBot(**kw)
 
     monkeypatch.setattr(service_module.Nanobot, "from_components", staticmethod(_from_components))
+
+    monkeypatch.setattr(
+        service_module.SkillService,
+        "load_always_content",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        service_module.SkillService,
+        "list_enabled_for_agent",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        service_module.SkillService,
+        "build_summary",
+        AsyncMock(return_value=""),
+    )
     yield
 
 

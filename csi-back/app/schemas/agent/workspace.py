@@ -40,7 +40,7 @@ class NanobotWorkspaceCreateRequestSchema(BaseModel):
         description="可选的模型配置ID列表（来自 /agent/configs/models），Agent 只能从中选择一个",
     )
     enabled_tools: list[str] = Field(default_factory=list, description="工具白名单，Agent 可用工具必须是该列表子集")
-    enabled_skills: list[str] = Field(default_factory=list, description="技能白名单，Agent 可用技能必须是该列表子集")
+    enabled_skills: list[str] = Field(default_factory=list, description="技能白名单（skill_id），Agent 可用技能必须是该列表子集")
     enabled_mcp_servers: dict[str, MCPServerConfigSchema] = Field(
         default_factory=dict,
         description="MCP 服务白名单，key=server_name，value=MCPServerConfig；Agent 只能引用这里声明过的 server_name",

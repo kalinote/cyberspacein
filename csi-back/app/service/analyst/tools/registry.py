@@ -18,6 +18,7 @@ from app.service.analyst.tools.wiki import (
     WikiListTool,
     WikiReadTool,
 )
+from app.service.analyst.tools.use_skill import UseSkillTool
 from app.service.analyst.tools.write_todos import WriteTodosTool
 from app.service.nanobot.agent.tools.base import Tool
 
@@ -36,6 +37,7 @@ BUSINESS_TOOL_CLASSES: dict[str, type[Tool]] = {
     "wiki_read": WikiReadTool,
     "wiki_create": WikiCreateTool,
     "wiki_edit": WikiEditTool,
+    "use_skill": UseSkillTool,
 }
 
 

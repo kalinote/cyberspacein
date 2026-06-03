@@ -74,7 +74,7 @@ class SubagentManager:
         prompt_repo: AgentPromptRepository,
         model: str | None = None,
         restrict_to_workspace: bool = False,
-        disabled_skills: list[str] | None = None,
+        skills_summary: str = "",
     ):
         self.provider = provider
         self.workspace = workspace
@@ -83,7 +83,7 @@ class SubagentManager:
         self.model = model or provider.get_default_model()
         self.max_tool_result_chars = max_tool_result_chars
         self.restrict_to_workspace = restrict_to_workspace
-        self.disabled_skills = set(disabled_skills or [])
+        self.skills_summary = skills_summary
         self.runner = AgentRunner(provider, prompt_repo=prompt_repo)
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
         self._task_statuses: dict[str, SubagentStatus] = {}
@@ -259,18 +259,13 @@ class SubagentManager:
 
     async def _build_subagent_prompt(self) -> str:
         from app.service.nanobot.agent.context import ContextBuilder
-        from app.service.nanobot.agent.skills import SkillsLoader
 
         time_ctx = ContextBuilder._build_runtime_context(None, None)
-        skills_summary = SkillsLoader(
-            self.workspace,
-            disabled_skills=self.disabled_skills,
-        ).build_skills_summary()
         return await self._prompt_repo.render_by_name(
             "_subagent_system",
             time_ctx=time_ctx,
             workspace=str(self.workspace),
-            skills_summary=skills_summary or "",
+            skills_summary=self.skills_summary or "",
         )
 
     async def cancel_by_session(self, session_key: str) -> int:

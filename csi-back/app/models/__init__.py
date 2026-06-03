@@ -19,6 +19,7 @@ from app.models.agent.nanobot import (
     NanobotSessionModel,
     NanobotWorkspaceModel,
 )
+from app.models.agent.skill import NanobotSkillFileModel, NanobotSkillModel
 from app.models.agent.sse_event import (
     NanobotAgentSseEventModel,
     NanobotAgentSseEventStateModel,
@@ -51,6 +52,8 @@ def get_all_models() -> List[Type[Document]]:
         NanobotMemoryDocsModel,
         NanobotHistoryModel,
         NanobotHistoryStateModel,
+        NanobotSkillModel,
+        NanobotSkillFileModel,
         NanobotAgentSseEventModel,
         NanobotAgentSseEventStateModel,
         AnnotationModel,

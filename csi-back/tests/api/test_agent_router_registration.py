@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from app.api.v1.endpoints import agent as agent_ep
 
 
-def test_router_registers_all_39_endpoints() -> None:
+def test_router_registers_all_50_endpoints() -> None:
     app = FastAPI()
     app.include_router(agent_ep.router, prefix="/api/v1")
     paths = []
@@ -20,7 +20,16 @@ def test_router_registers_all_39_endpoints() -> None:
             if m in {"HEAD", "OPTIONS"}:
                 continue
             paths.append((m, path))
-    assert len(paths) == 39
+    assert len(paths) == 50
+    assert ("POST", "/api/v1/agent/skills/upload") in paths
+    assert ("POST", "/api/v1/agent/skills") in paths
+    assert ("PUT", "/api/v1/agent/skills/{skill_id}") in paths
+    assert ("DELETE", "/api/v1/agent/skills/{skill_id}") in paths
+    assert ("GET", "/api/v1/agent/skills/{skill_id}/files/content") in paths
+    assert ("PUT", "/api/v1/agent/skills/{skill_id}/files/content") in paths
+    assert ("POST", "/api/v1/agent/skills/{skill_id}/files") in paths
+    assert ("DELETE", "/api/v1/agent/skills/{skill_id}/files") in paths
+    assert ("GET", "/api/v1/agent/configs/skills-list") in paths
     assert ("GET", "/api/v1/agent/configs/filter/agent-prompts") in paths
     assert ("GET", "/api/v1/agent/sessions/{session_id}") in paths
 

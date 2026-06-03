@@ -53,7 +53,13 @@
             <template #icon><Icon icon="mdi:magnify" /></template>
             搜索
           </el-button>
-          <el-button v-if="activeTab !== 'tools'" type="primary" @click="handleAdd">
+          <el-button v-if="activeTab === 'skills'" type="primary" @click="openSkillUploadDialog">
+            <template #icon>
+              <Icon icon="mdi:upload" />
+            </template>
+            上传技能
+          </el-button>
+          <el-button v-else-if="activeTab !== 'tools'" type="primary" @click="handleAdd">
             <template #icon>
               <Icon icon="mdi:plus" />
             </template>
@@ -403,6 +409,72 @@
                 layout="total, sizes, prev, pager, next, jumper"
                 @current-change="handleWorkspacePageChange"
                 @size-change="handleWorkspacePageSizeChange"
+              />
+            </div>
+          </div>
+
+          <div v-else-if="activeTab === 'skills'" class="space-y-4">
+            <div v-loading="skillListLoading" element-loading-text="加载中..." class="min-h-50">
+              <div
+                v-for="item in skillList"
+                :key="item.id"
+                class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex items-start gap-4 flex-1">
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-violet-100">
+                      <Icon icon="mdi:puzzle-outline" class="text-2xl text-violet-600" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-3 mb-2 flex-wrap">
+                        <h3 class="text-lg font-bold text-gray-900">{{ item.name }}</h3>
+                        <el-tag v-if="item.always" size="small" class="border-0" type="warning">始终注入</el-tag>
+                      </div>
+                      <p v-if="item.description" class="text-sm text-gray-600 mb-2">{{ item.description }}</p>
+                      <div class="flex items-center gap-6 text-sm flex-wrap">
+                        <div class="flex items-center gap-2">
+                          <Icon icon="mdi:file-multiple" class="text-blue-500" />
+                          <span class="text-gray-600">文件数:</span>
+                          <span class="text-gray-700">{{ item.file_count ?? 0 }}</span>
+                        </div>
+                        <div v-if="item.updated_at" class="flex items-center gap-2">
+                          <Icon icon="mdi:clock-outline" class="text-gray-500" />
+                          <span class="text-gray-600">更新时间:</span>
+                          <span class="text-gray-700">{{ formatModelDate(item.updated_at) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 ml-4">
+                    <el-button type="primary" link @click="openSkillDetail(item)">
+                      <template #icon><Icon icon="mdi:eye" /></template>
+                      详情
+                    </el-button>
+                    <el-button type="primary" link @click="openSkillEditor(item)">
+                      <template #icon><Icon icon="mdi:pencil" /></template>
+                      编辑
+                    </el-button>
+                    <el-button type="danger" link @click="handleDeleteSkill(item)">
+                      <template #icon><Icon icon="mdi:delete" /></template>
+                      删除
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="!skillListLoading && skillList.length === 0" class="flex flex-col items-center justify-center py-16">
+                <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
+                <p class="text-gray-500">暂无数据</p>
+              </div>
+            </div>
+            <div v-if="!skillListLoading && skillList.length > 0" class="flex justify-center pt-4">
+              <el-pagination
+                v-model:current-page="skillPagination.page"
+                v-model:page-size="skillPagination.pageSize"
+                :page-sizes="[10, 20, 50]"
+                :total="skillPagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="handleSkillPageChange"
+                @size-change="handleSkillPageSizeChange"
               />
             </div>
           </div>
@@ -1080,6 +1152,97 @@
       </template>
     </el-dialog>
 
+    <SkillEditorDialog
+      v-model="skillEditorVisible"
+      :skill-id="skillEditorId"
+      :skill-name="skillEditorName"
+      @saved="onSkillEditorSaved"
+    />
+
+    <el-dialog
+      v-model="skillDetailVisible"
+      title="技能详情"
+      width="720px"
+      :close-on-click-modal="true"
+    >
+      <div v-loading="skillDetailLoading" element-loading-text="加载中..." class="min-h-30">
+        <template v-if="skillDetail">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="技能 ID">
+              <span class="font-mono text-xs">{{ skillDetail.id }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="名称">{{ skillDetail.name }}</el-descriptions-item>
+            <el-descriptions-item label="描述">
+              <span class="whitespace-pre-line">{{ skillDetail.description || '-' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="始终注入">
+              {{ skillDetail.always ? '是' : '否' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="扩展元数据">
+              <pre class="m-0 p-2 bg-gray-50 rounded text-xs max-h-40 overflow-auto">{{ formatSkillMeta(skillDetail.meta) }}</pre>
+            </el-descriptions-item>
+            <el-descriptions-item label="创建时间">
+              {{ skillDetail.created_at ? formatModelDate(skillDetail.created_at) : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="更新时间">
+              {{ skillDetail.updated_at ? formatModelDate(skillDetail.updated_at) : '-' }}
+            </el-descriptions-item>
+          </el-descriptions>
+          <div class="mt-4">
+            <div class="text-sm font-medium text-gray-700 mb-2">文件清单（{{ skillDetailFiles.length }}）</div>
+            <el-table v-if="skillDetailFiles.length" :data="skillDetailFiles" size="small" border max-height="280">
+              <el-table-column prop="path" label="路径" min-width="200">
+                <template #default="{ row }">
+                  <span class="font-mono text-xs">{{ row.path }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="file_type" label="类型" width="120">
+                <template #default="{ row }">
+                  {{ getSkillFileTypeLabel(row.file_type) }}
+                </template>
+              </el-table-column>
+            </el-table>
+            <p v-else class="text-sm text-gray-400">暂无文件</p>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="skillDetailVisible = false">关闭</el-button>
+        <el-button type="primary" :disabled="!skillDetail?.id" @click="openSkillEditorFromDetail">
+          编辑
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="skillUploadDialogVisible"
+      title="上传技能"
+      width="520px"
+      :close-on-click-modal="false"
+      @close="handleSkillUploadDialogClose"
+    >
+      <p class="text-sm text-gray-500 mb-4">仅支持 zip 压缩包，须包含 SKILL.md 及有效 YAML frontmatter，单文件不超过 5MB。</p>
+      <el-upload
+        ref="skillUploadRef"
+        drag
+        accept=".zip"
+        :limit="1"
+        :auto-upload="false"
+        :on-exceed="handleSkillUploadExceed"
+        :before-upload="beforeSkillUpload"
+        :on-change="handleSkillUploadChange"
+      >
+        <Icon icon="mdi:cloud-upload" class="text-5xl text-gray-400 mb-2" />
+        <div class="el-upload__text">将 zip 文件拖到此处，或<em>点击选择</em></div>
+      </el-upload>
+      <template #footer>
+        <el-button @click="handleSkillUploadDialogClose">取消</el-button>
+        <el-button type="primary" :loading="skillUploadLoading" :disabled="!skillUploadFile" @click="handleSkillUploadSubmit">
+          确认上传
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog
       v-model="workspaceDetailVisible"
       title="工作区详情"
@@ -1118,6 +1281,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
+import SkillEditorDialog from '@/components/agent/SkillEditorDialog.vue'
 import { findNavItemByKey } from '@/utils/configCenterNav'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
@@ -1152,6 +1316,7 @@ const engineTabs = [
   { key: 'modelResources', label: '模型资源', icon: 'mdi:server' },
   { key: 'promptTemplates', label: '提示词模板', icon: 'mdi:file-document-edit' },
   { key: 'systemPrompts', label: '系统指令', icon: 'mdi:file-cog-outline' },
+  { key: 'skills', label: '技能', icon: 'mdi:puzzle-outline' },
   { key: 'tools', label: '工具', icon: 'mdi:tools' }
 ]
 
@@ -1252,6 +1417,31 @@ const fetchSystemPromptList = async () => {
   }
 }
 
+const skillList = ref([])
+const skillListLoading = ref(false)
+const skillPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+const skillLoadedOnce = ref(false)
+
+const SKILL_ZIP_MAX_BYTES = 5 * 1024 * 1024
+
+const fetchSkillList = async () => {
+  skillListLoading.value = true
+  try {
+    const result = await getPaginatedData(agentApi.getSkillList, {
+      search: searchKeyword.value.trim() || undefined,
+      page: skillPagination.value.page,
+      page_size: skillPagination.value.pageSize
+    })
+    skillList.value = result.items
+    skillPagination.value = { ...skillPagination.value, ...result.pagination }
+    skillLoadedOnce.value = true
+  } catch (e) {
+    skillList.value = []
+  } finally {
+    skillListLoading.value = false
+  }
+}
+
 const toolsList = ref([])
 const toolsListLoading = ref(false)
 const toolsLoadedOnce = ref(false)
@@ -1321,6 +1511,7 @@ watch(activeTab, (tab) => {
   if (tab === 'promptTemplates' && !promptTemplateLoadedOnce.value) fetchPromptTemplateList()
   if (tab === 'systemPrompts' && !systemPromptLoadedOnce.value) fetchSystemPromptList()
   if (tab === 'workspaces' && !workspaceLoadedOnce.value) fetchWorkspaceList()
+  if (tab === 'skills' && !skillLoadedOnce.value) fetchSkillList()
   if (tab === 'tools' && !toolsLoadedOnce.value) fetchToolsList()
 }, { immediate: true })
 
@@ -1343,6 +1534,7 @@ const statistics = computed(() => ({
   promptTemplates: statisticsData.value.prompt_template_count,
   systemPrompts: systemPromptPagination.value.total ?? 0,
   workspaces: workspacePagination.value.total ?? 0,
+  skills: skillPagination.value.total ?? 0,
   tools: statisticsData.value.tools_count
 }))
 
@@ -1444,6 +1636,20 @@ const handleWorkspaceSearch = () => {
   fetchWorkspaceList()
 }
 
+const handleSkillPageChange = (page) => {
+  skillPagination.value.page = page
+  fetchSkillList()
+}
+const handleSkillPageSizeChange = (pageSize) => {
+  skillPagination.value.pageSize = pageSize
+  skillPagination.value.page = 1
+  fetchSkillList()
+}
+const handleSkillSearch = () => {
+  skillPagination.value.page = 1
+  fetchSkillList()
+}
+
 const handleCurrentTabSearch = () => {
   if (activeTab.value === 'analysisEngines') {
     handleAgentSearch()
@@ -1455,6 +1661,8 @@ const handleCurrentTabSearch = () => {
     handleSystemPromptSearch()
   } else if (activeTab.value === 'workspaces') {
     handleWorkspaceSearch()
+  } else if (activeTab.value === 'skills') {
+    handleSkillSearch()
   }
 }
 
@@ -2072,9 +2280,181 @@ const handleAdd = () => {
     openSystemPromptCreate()
   } else if (activeTab.value === 'workspaces') {
     openWorkspaceCreate()
+  } else if (activeTab.value === 'skills') {
+    openSkillUploadDialog()
   } else {
     ElMessage.info('功能开发中')
   }
+}
+
+const SKILL_FILE_TYPE_LABELS = {
+  skill: '技能主文件',
+  reference: '参考文档',
+  script: '脚本',
+  asset: '资源',
+  other: '其他'
+}
+
+const getSkillFileTypeLabel = (fileType) => SKILL_FILE_TYPE_LABELS[fileType] || fileType || '-'
+
+const formatSkillMeta = (meta) => {
+  if (!meta || typeof meta !== 'object' || !Object.keys(meta).length) return '-'
+  try {
+    return JSON.stringify(meta, null, 2)
+  } catch {
+    return String(meta)
+  }
+}
+
+const skillDetailVisible = ref(false)
+const skillDetail = ref(null)
+const skillDetailLoading = ref(false)
+
+const skillDetailFiles = computed(() => {
+  const files = skillDetail.value?.files
+  return Array.isArray(files) ? files : []
+})
+
+const openSkillDetail = async (item) => {
+  const id = item?.id
+  if (!id) return
+  skillDetailVisible.value = true
+  skillDetail.value = null
+  skillDetailLoading.value = true
+  try {
+    const res = await agentApi.getSkillDetail(id)
+    skillDetail.value = res?.data ?? null
+  } catch (e) {
+    ElMessage.error('获取技能详情失败')
+    skillDetailVisible.value = false
+  } finally {
+    skillDetailLoading.value = false
+  }
+}
+
+const skillEditorVisible = ref(false)
+const skillEditorId = ref('')
+const skillEditorName = ref('')
+
+const openSkillEditor = (item) => {
+  const id = item?.id
+  if (!id) return
+  skillEditorId.value = id
+  skillEditorName.value = item?.name || ''
+  skillEditorVisible.value = true
+}
+
+const openSkillEditorFromDetail = () => {
+  const d = skillDetail.value
+  if (!d?.id) return
+  skillDetailVisible.value = false
+  openSkillEditor({ id: d.id, name: d.name })
+}
+
+const onSkillEditorSaved = () => {
+  fetchSkillList()
+}
+
+const skillUploadDialogVisible = ref(false)
+const skillUploadLoading = ref(false)
+const skillUploadRef = ref(null)
+const skillUploadFile = ref(null)
+
+const validateSkillZipFile = (file) => {
+  const name = (file?.name || '').toLowerCase()
+  if (!name.endsWith('.zip')) {
+    ElMessage.warning('仅支持 zip 压缩包')
+    return false
+  }
+  if (file.size > SKILL_ZIP_MAX_BYTES) {
+    ElMessage.warning('zip 文件不能超过 5MB')
+    return false
+  }
+  return true
+}
+
+const beforeSkillUpload = () => false
+
+const handleSkillUploadChange = (uploadFile) => {
+  const raw = uploadFile?.raw
+  if (!raw) {
+    skillUploadFile.value = null
+    return
+  }
+  if (!validateSkillZipFile(raw)) {
+    skillUploadRef.value?.clearFiles()
+    skillUploadFile.value = null
+    return
+  }
+  skillUploadFile.value = raw
+}
+
+const handleSkillUploadExceed = () => {
+  ElMessage.warning('仅可选择一个 zip 文件，请先移除已选文件')
+}
+
+const openSkillUploadDialog = () => {
+  skillUploadFile.value = null
+  skillUploadDialogVisible.value = true
+}
+
+const handleSkillUploadDialogClose = () => {
+  skillUploadDialogVisible.value = false
+  skillUploadFile.value = null
+  skillUploadRef.value?.clearFiles()
+}
+
+const handleSkillUploadSubmit = async () => {
+  const file = skillUploadFile.value
+  if (!file) {
+    ElMessage.warning('请选择 zip 文件')
+    return
+  }
+  if (!validateSkillZipFile(file)) return
+
+  skillUploadLoading.value = true
+  try {
+    const res = await agentApi.uploadSkill(file)
+    const data = res?.data
+    const total = data?.total ?? 0
+    const names = Array.isArray(data?.skills)
+      ? data.skills.map((s) => s.name).filter(Boolean).join('、')
+      : ''
+    const detail = names ? `：${names}` : ''
+    ElMessage.success(total > 0 ? `成功导入 ${total} 个技能${detail}` : '上传成功')
+    handleSkillUploadDialogClose()
+    skillPagination.value.page = 1
+    await fetchSkillList()
+  } catch (e) {
+    if (e !== false) console.error('上传技能失败:', e)
+  } finally {
+    skillUploadLoading.value = false
+  }
+}
+
+const handleDeleteSkill = (item) => {
+  const id = item?.id
+  const name = item?.name || id
+  if (!id) return
+
+  ElMessageBox.confirm(
+    `确定要删除技能「${name}」吗？若仍被工作区或分析引擎引用将无法删除。`,
+    '确认删除',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+    .then(async () => {
+      await agentApi.deleteSkill(id)
+      ElMessage.success('删除成功')
+      if (skillList.value.length === 1 && skillPagination.value.page > 1) {
+        skillPagination.value.page -= 1
+      }
+      fetchSkillList()
+    })
+    .catch(() => {})
 }
 
 const handleModelDialogClose = () => {

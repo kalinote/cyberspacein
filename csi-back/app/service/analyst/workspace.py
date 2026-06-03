@@ -26,6 +26,7 @@ from app.schemas.agent.workspace import (
     NanobotWorkspaceUpdateRequestSchema,
     WorkspaceServiceError,
 )
+from app.service.analyst.skill_service import SkillService
 from app.service.nanobot.config.schema import MCPServerConfig
 from app.utils.id_lib import generate_id
 
@@ -88,6 +89,7 @@ class WorkspaceService:
             prompt_template_ids=data.prompt_template_ids,
             model_config_ids=data.model_config_ids,
             mcp_servers=data.enabled_mcp_servers,
+            enabled_skills=data.enabled_skills,
         )
 
         name_conflict = await NanobotWorkspaceModel.find_one({"name": data.name})
@@ -137,6 +139,7 @@ class WorkspaceService:
             prompt_template_ids=data.prompt_template_ids,
             model_config_ids=data.model_config_ids,
             mcp_servers=data.enabled_mcp_servers,
+            enabled_skills=data.enabled_skills,
         )
 
         await cls._validate_narrowing_cascade(workspace_id=workspace_id, new_data=data)
@@ -180,8 +183,9 @@ class WorkspaceService:
         prompt_template_ids: list[str],
         model_config_ids: list[str],
         mcp_servers: dict[str, MCPServerConfigSchema],
+        enabled_skills: list[str] | None = None,
     ) -> None:
-        """校验外部资源（模板 / 模型 / MCP 配置）合法性。"""
+        """校验外部资源（模板 / 模型 / MCP / Skill）合法性。"""
         unique_prompt_ids = set(prompt_template_ids)
         if len(unique_prompt_ids) != len(prompt_template_ids):
             raise WorkspaceServiceError(
@@ -232,6 +236,21 @@ class WorkspaceService:
                     status_codes.INVALID_ARGUMENT,
                     f"MCP 服务 {server_name} 配置不合法: {exc}",
                 ) from exc
+
+        skill_ids = list(enabled_skills or [])
+        if len(set(skill_ids)) != len(skill_ids):
+            raise WorkspaceServiceError(
+                status_codes.INVALID_ARGUMENT,
+                "enabled_skills 中存在重复项",
+            )
+        if skill_ids:
+            existing = await SkillService.ensure_skill_ids_exist(skill_ids)
+            missing = set(skill_ids) - existing
+            if missing:
+                raise WorkspaceServiceError(
+                    status_codes.NOT_FOUND,
+                    f"Skill 不存在: {sorted(missing)}",
+                )
 
     @staticmethod
     async def _validate_narrowing_cascade(

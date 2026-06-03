@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from typing import Any
-from unittest.mock import MagicMock
-
 import pytest
 
 import app.service.nanobot.agent.context as context_module
@@ -47,16 +45,12 @@ class FakeMemoryStore:
 
 
 def _builder(mem: FakeMemoryStore, **kw: Any) -> ContextBuilder:
-    repo: AgentPromptRepository | None = kw.get("prompt_repo")
-    if repo is None and kw.get("skills") is not None:
-        repo = AgentPromptRepository()
-        repo._name_cache["_skills_section"] = "# Skills\n\n{{ skills_summary }}"
     return ContextBuilder(
         mem,
-        skills=kw.get("skills"),
+        always_skills_content=kw.get("always_skills_content", ""),
         timezone=kw.get("timezone"),
         extra_system_suffix=kw.get("extra_system_suffix", ""),
-        prompt_repo=repo,
+        prompt_repo=kw.get("prompt_repo"),
         builtin_prompt_sections=kw.get("builtin_prompt_sections", []),
     )
 
@@ -216,20 +210,25 @@ def test_identity_no_workspace_path() -> None:
     assert "workspace_path" not in prompt.lower()
 
 
-def test_skills_none_safely() -> None:
-    cb = _builder(FakeMemoryStore(), skills=None)
+def test_always_skills_empty() -> None:
+    cb = _builder(FakeMemoryStore(), always_skills_content="")
     prompt = cb.build_system_prompt()
     assert "# 激活的 Skills" not in prompt
     assert prompt == ""
 
 
+def test_always_skills_injected() -> None:
+    cb = _builder(FakeMemoryStore(), always_skills_content="### Skill: my\n\nbody")
+    prompt = cb.build_system_prompt()
+    assert "# 激活的 Skills" in prompt
+    assert "body" in prompt
+
+
 def test_skills_summary_not_auto_injected_without_builtin_selection() -> None:
-    skills = MagicMock()
-    skills.get_always_skills.return_value = []
-    skills.build_skills_summary.return_value = "- **demo** — desc"
-    repo = AgentPromptRepository()
-    repo._name_cache["_skills_section"] = "# 技能\n\n{{ skills_summary }}"
-    cb = _builder(FakeMemoryStore(), skills=skills, prompt_repo=repo)
+    cb = _builder(
+        FakeMemoryStore(),
+        builtin_prompt_sections=[],
+    )
     prompt = cb.build_system_prompt()
     assert "# 技能" not in prompt
     assert "demo" not in prompt

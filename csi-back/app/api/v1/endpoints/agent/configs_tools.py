@@ -7,6 +7,8 @@ from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateM
 from app.models.agent.nanobot import NanobotAgentModel, NanobotMemoryDocsModel, NanobotWorkspaceModel
 from app.schemas.agent.agent import ToolDescriptorSchema
 from app.schemas.response import ApiResponseSchema
+from app.schemas.agent.skill import SkillListBriefSchema
+from app.service.analyst.skill_service import SkillService
 from app.service.analyst.tools import BUSINESS_TOOL_CLASSES
 
 logger = logger.bind(name=__name__)
@@ -46,12 +48,35 @@ async def get_agent_tools_list():
     return ApiResponseSchema.success(data=list(BUSINESS_TOOL_CLASSES.keys()))
 
 
+@router.get(
+    "/skills-list",
+    response_model=ApiResponseSchema[list[SkillListBriefSchema]],
+    summary="查询全局 Skill 简要列表",
+)
+async def get_skills_list():
+    docs = await SkillService.list_all_brief()
+    return ApiResponseSchema.success(
+        data=[
+            SkillListBriefSchema(
+                id=doc.id,
+                name=doc.name,
+                description=doc.description,
+                always=doc.always,
+            )
+            for doc in docs
+        ],
+    )
+
+
 @router.get("/statistics", response_model=ApiResponseSchema[dict[str, int]], summary="配置资源数量统计")
 async def get_configs_statistics():
+    from app.models.agent.skill import NanobotSkillModel
+
     data = {
         "model_configs": await AgentModelConfigModel.find().count(),
         "prompt_templates": await AgentPromptTemplateModel.find().count(),
         "system_prompts": await NanobotMemoryDocsModel.find().count(),
+        "skills": await NanobotSkillModel.find().count(),
         "workspaces": await NanobotWorkspaceModel.find().count(),
         "agents": await NanobotAgentModel.find().count(),
         "business_tools": len(BUSINESS_TOOL_CLASSES),

@@ -16,7 +16,7 @@ from .fakes import make_memory_store
 
 
 def _make_builder() -> ContextBuilder:
-    return ContextBuilder(memory=make_memory_store(), skills=None, timezone="UTC")
+    return ContextBuilder(memory=make_memory_store(), always_skills_content="", timezone="UTC")
 
 
 def test_build_user_content_with_no_media_returns_string(tmp_path: Path) -> None:

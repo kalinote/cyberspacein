@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Iterable
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -235,6 +236,11 @@ def _patch_models(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     monkeypatch.setattr(agent_module, "NanobotSessionModel", FakeNanobotSessionModel)
     monkeypatch.setattr(agent_module, "NanobotMemoryDocsModel", FakeNanobotMemoryDocsModel)
     monkeypatch.setattr(agent_module, "generate_id", lambda _: "agent_fixed")
+    monkeypatch.setattr(
+        agent_module.SkillService,
+        "ensure_skill_ids_exist",
+        AsyncMock(side_effect=lambda ids: set(ids or [])),
+    )
     yield
 
 

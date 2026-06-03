@@ -116,5 +116,28 @@ export const agentApi = {
   },
   deleteWorkspace(workspaceId) {
     return request.delete(`/agent/workspaces/${workspaceId}`)
+  },
+
+  getSkillList(params = { page: 1, page_size: 10 }) {
+    return request.get('/agent/skills', params)
+  },
+  uploadSkill(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/agent/skills/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  deleteSkill(skillId) {
+    return request.delete(`/agent/skills/${skillId}`)
+  },
+  getSkillDetail(skillId) {
+    return request.get(`/agent/skills/${skillId}`)
+  },
+  getSkillFileContent(skillId, path) {
+    return request.get(`/agent/skills/${skillId}/files/content`, { path })
+  },
+  updateSkillFileContent(skillId, path, content) {
+    return request.put(`/agent/skills/${skillId}/files/content`, { content }, { params: { path } })
   }
 }

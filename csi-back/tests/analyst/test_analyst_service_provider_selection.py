@@ -22,6 +22,7 @@ class FakeAgent:
     llm_provider: NanobotLLMProviderEnum = NanobotLLMProviderEnum.OPENAI_COMPAT
     reasoning_effort: str | None = None
     tools: list[str] = field(default_factory=list)
+    skills: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     agent_builtin_prompt_ids: list[str] = field(default_factory=list)
     updated_at: Any = None
@@ -33,7 +34,27 @@ class FakeAgent:
 @dataclass
 class FakeWorkspace:
     id: str = "w1"
+    enabled_skills: list[str] = field(default_factory=list)
     enabled_mcp_servers: dict[str, dict] = field(default_factory=dict)
+
+
+@pytest.fixture(autouse=True)
+def _patch_skill_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        service_module.SkillService,
+        "load_always_content",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        service_module.SkillService,
+        "list_enabled_for_agent",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        service_module.SkillService,
+        "build_summary",
+        AsyncMock(return_value=""),
+    )
 
 
 @pytest.mark.asyncio

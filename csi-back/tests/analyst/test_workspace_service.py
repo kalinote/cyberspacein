@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Iterable
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -205,6 +206,11 @@ def _patch_models(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     monkeypatch.setattr(workspace_module, "AgentPromptTemplateModel", FakePromptTemplateModel)
     monkeypatch.setattr(workspace_module, "AgentModelConfigModel", FakeModelConfigModel)
     monkeypatch.setattr(workspace_module, "generate_id", lambda _: "ws_fixed")
+    monkeypatch.setattr(
+        workspace_module.SkillService,
+        "ensure_skill_ids_exist",
+        AsyncMock(side_effect=lambda ids: set(ids or [])),
+    )
     yield
 
 

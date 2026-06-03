@@ -29,6 +29,7 @@ from app.schemas.agent.nanobot_agent import (
     NanobotAgentUpdateRequestSchema,
 )
 from app.schemas.constants import NanobotSessionStatusEnum
+from app.service.analyst.skill_service import SkillService
 from app.utils.id_lib import generate_id
 
 logger = logger.bind(name=__name__)
@@ -111,7 +112,7 @@ class AgentService:
     async def create(cls, data: NanobotAgentCreateRequestSchema) -> NanobotAgentModel:
         """创建 Agent：先查 workspace，再做资源子集校验，最后写库。"""
         workspace = await cls._get_workspace(data.workspace_id)
-        cls._validate_subset(
+        await cls._validate_subset(
             workspace=workspace,
             prompt_template_id=data.prompt_template_id,
             model_config_id=data.model_config_id,
@@ -182,7 +183,7 @@ class AgentService:
                 )
 
         workspace = await cls._get_workspace(doc.workspace_id)
-        cls._validate_subset(
+        await cls._validate_subset(
             workspace=workspace,
             prompt_template_id=data.prompt_template_id,
             model_config_id=data.model_config_id,
@@ -275,7 +276,7 @@ class AgentService:
             )
 
     @staticmethod
-    def _validate_subset(
+    async def _validate_subset(
         *,
         workspace: NanobotWorkspaceModel,
         prompt_template_id: str,
@@ -307,6 +308,12 @@ class AgentService:
         extra_skills = set(skills) - set(workspace.enabled_skills)
         if extra_skills:
             violations.append(f"skills 不在 Workspace 白名单内: {sorted(extra_skills)}")
+
+        if skills:
+            existing = await SkillService.ensure_skill_ids_exist(list(skills))
+            missing = set(skills) - existing
+            if missing:
+                violations.append(f"Skill 不存在: {sorted(missing)}")
 
         if len(set(mcp_servers)) != len(mcp_servers):
             violations.append("mcp_servers 中存在重复项")

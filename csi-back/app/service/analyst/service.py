@@ -63,7 +63,7 @@ from app.service.nanobot.providers.anthropic_provider import AnthropicProvider
 from app.service.nanobot.providers.base import GenerationSettings, LLMProvider
 from app.service.nanobot.providers.openai_compat_provider import OpenAICompatProvider
 from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
-from app.service.nanobot.agent.skills import SkillsLoader
+from app.service.analyst.skill_service import SkillService
 from app.service.nanobot.config.schema import AgentDefaults
 from app.service.nanobot.storage import MongoMemoryBackend, MongoSessionStore
 from app.utils.id_lib import generate_id
@@ -554,14 +554,24 @@ class AnalystService:
             if server_name in (workspace.enabled_mcp_servers or {}):
                 mcp_subset[server_name] = workspace.enabled_mcp_servers[server_name]
 
+        always_skills_content = await SkillService.load_always_content(
+            list(agent.skills or []),
+            list(workspace.enabled_skills or []),
+        )
+        metas = await SkillService.list_enabled_for_agent(
+            list(agent.skills or []),
+            list(workspace.enabled_skills or []),
+        )
+        exclude_always = {m.skill_id for m in metas if m.always}
+        skills_summary = await SkillService.build_summary(
+            list(agent.skills or []),
+            list(workspace.enabled_skills or []),
+            exclude_skill_ids=exclude_always,
+        )
+
         prompt_repo = AgentPromptRepository()
         prompt_ids = list(agent.agent_builtin_prompt_ids)
         if prompt_ids:
-            skills_loader = SkillsLoader(_agent_sandbox_dir(agent.workspace_id, agent.id))
-            always_skills = skills_loader.get_always_skills()
-            skills_summary = skills_loader.build_skills_summary(
-                exclude=set(always_skills),
-            )
             jinja_ctx = await prompt_repo.resolve_builtin_render_context(
                 prompt_ids,
                 channel="cli",
@@ -588,6 +598,8 @@ class AnalystService:
             hooks=default_analyst_hooks(),
             prompt_repo=prompt_repo,
             builtin_prompt_sections=builtin_sections,
+            always_skills_content=always_skills_content,
+            skills_summary=skills_summary,
         )
 
         for tool in build_business_tools(agent.tools):

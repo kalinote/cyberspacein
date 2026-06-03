@@ -5,7 +5,7 @@
 - 记忆类数据（MEMORY / SOUL / USER / 最近 history）通过 `MemorySnapshot` 一次性
   异步预取（`refresh_memory_snapshot`）后缓存，`build_system_prompt` / `build_messages`
   全部保持**同步接口**，直接读快照。
-- `SkillsLoader` 由外部构造并注入（本期只读内置 skills，无 workspace skill）。
+- `always_skills_content` 由装配层预取（Mongo Skill，`always: true` 全文）。
 - Agent 绑定的 AGENT 内置提示词在装配时预渲染为 `builtin_prompt_sections`；
   未在 `agent_builtin_prompt_ids` 中选中的内置模板不会自动注入 system prompt。
 """
@@ -28,7 +28,6 @@ from app.service.nanobot.utils.helpers import (
 if TYPE_CHECKING:
     from app.service.nanobot.agent.memory import MemoryStore
     from app.service.nanobot.agent.prompt_repository import AgentPromptRepository
-    from app.service.nanobot.agent.skills import SkillsLoader
 
 
 @dataclass
@@ -54,14 +53,14 @@ class ContextBuilder:
     def __init__(
         self,
         memory: MemoryStore,
-        skills: SkillsLoader | None = None,
+        always_skills_content: str = "",
         timezone: str | None = None,
         extra_system_suffix: str = "",
         prompt_repo: AgentPromptRepository | None = None,
         builtin_prompt_sections: list[str] | None = None,
     ):
         self.memory = memory
-        self.skills = skills
+        self.always_skills_content = always_skills_content
         self.timezone = timezone
         self.prompt_repo = prompt_repo
         self.builtin_prompt_sections: list[str] = list(builtin_prompt_sections or [])
@@ -92,7 +91,6 @@ class ContextBuilder:
 
     def build_system_prompt(
         self,
-        skill_names: list[str] | None = None,
         channel: str | None = None,
     ) -> str:
         snap = self._snapshot
@@ -109,12 +107,8 @@ class ContextBuilder:
         if snap.memory.strip():
             parts.append(f"# Memory\n\n## Long-term Memory\n{snap.memory}")
 
-        if self.skills is not None:
-            always_skills = self.skills.get_always_skills()
-            if always_skills:
-                always_content = self.skills.load_skills_for_context(always_skills)
-                if always_content:
-                    parts.append(f"# 激活的 Skills\n\n{always_content}")
+        if self.always_skills_content and self.always_skills_content.strip():
+            parts.append(f"# 激活的 Skills\n\n{self.always_skills_content.strip()}")
         if snap.recent_history:
             parts.append(
                 "# Recent History\n\n"
@@ -192,7 +186,6 @@ class ContextBuilder:
         self,
         history: list[dict[str, Any]],
         current_message: str,
-        skill_names: list[str] | None = None,
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
@@ -210,7 +203,7 @@ class ContextBuilder:
             merged = [{"type": "text", "text": runtime_ctx}] + user_content
 
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self.build_system_prompt(skill_names, channel=channel)},
+            {"role": "system", "content": self.build_system_prompt(channel=channel)},
             *history,
         ]
         if messages[-1].get("role") == current_role:

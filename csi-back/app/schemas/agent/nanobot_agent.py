@@ -24,7 +24,7 @@ class NanobotAgentCreateRequestSchema(BaseModel):
         min_length=1,
     )
     tools: list[str] = Field(default_factory=list, description="启用的工具列表，⊆ workspace.enabled_tools")
-    skills: list[str] = Field(default_factory=list, description="启用的技能列表，⊆ workspace.enabled_skills")
+    skills: list[str] = Field(default_factory=list, description="启用的技能 ID 列表，⊆ workspace.enabled_skills")
     mcp_servers: list[str] = Field(
         default_factory=list,
         description="启用的 MCP 服务名列表，元素 ∈ workspace.enabled_mcp_servers.keys()",
