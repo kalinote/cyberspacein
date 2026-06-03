@@ -76,70 +76,86 @@
                         <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
                         <span><span class="text-blue-500">分析引擎</span>列表</span>
                     </h2>
-                    <el-button type="primary" link>
+                    <el-button type="primary" link @click="goToEngineConfig">
                         <template #icon><Icon icon="mdi:arrow-right" /></template>
                         查看全部分析引擎
                     </el-button>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div
-                        v-for="agent in agents"
-                        :key="agent.id"
-                        class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow"
-                    >
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="flex-1">
-                                <h3 class="text-lg font-bold text-gray-900 mb-2">{{ agent.name }}</h3>
-                                <el-tag :type="agent.statusType" size="small">{{ agent.status }}</el-tag>
-                            </div>
-                            <div class="ml-3 shrink-0">
-                                <div :class="['w-12 h-12 rounded-xl flex items-center justify-center', agent.typeBgColor]">
-                                    <Icon :icon="agent.typeIcon" :class="['text-2xl', agent.typeIconColor]" />
+                <div v-loading="agentListLoading" element-loading-text="加载中..." class="min-h-48">
+                    <div v-if="!agentListLoading && agentList.length === 0" class="flex flex-col items-center justify-center py-16">
+                        <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
+                        <p class="text-gray-500">暂无分析引擎</p>
+                    </div>
+                    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div
+                            v-for="item in agentList"
+                            :key="item.id"
+                            class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow"
+                        >
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="flex-1 min-w-0">
+                                    <h3 class="text-lg font-bold text-gray-900 mb-2 truncate">{{ item.name }}</h3>
+                                    <p v-if="item.description" class="text-sm text-gray-600 line-clamp-2">{{ item.description }}</p>
+                                </div>
+                                <div class="ml-3 shrink-0">
+                                    <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-100">
+                                        <Icon icon="mdi:brain" class="text-2xl text-blue-600" />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div class="space-y-3 mb-4">
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="text-gray-500 flex items-center gap-2">
-                                    <Icon icon="mdi:account-circle" class="text-blue-500" />
-                                    人格设定
-                                </span>
-                                <span class="font-medium text-gray-900">{{ agent.personality }}</span>
+                            <div class="space-y-3 mb-4">
+                                <div v-if="item.llm_provider" class="flex items-center justify-between text-sm gap-2">
+                                    <span class="text-gray-500 flex items-center gap-2 shrink-0">
+                                        <Icon icon="mdi:api" class="text-cyan-500" />
+                                        LLM 提供商
+                                    </span>
+                                    <span class="font-medium text-gray-900 truncate">{{ formatLlmProviderLabel(item.llm_provider) }}</span>
+                                </div>
+                                <div v-if="item.llm_config && Object.keys(item.llm_config).length" class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-500 flex items-center gap-2">
+                                        <Icon icon="mdi:cog" class="text-orange-500" />
+                                        LLM 配置
+                                    </span>
+                                    <span class="font-medium text-gray-900">{{ Object.keys(item.llm_config).length }} 项</span>
+                                </div>
+                                <div v-if="item.tools?.length" class="flex items-center justify-between text-sm gap-2">
+                                    <span class="text-gray-500 flex items-center gap-2 shrink-0">
+                                        <Icon icon="mdi:tools" class="text-purple-500" />
+                                        工具
+                                    </span>
+                                    <el-tooltip
+                                        v-if="item.tools.length > 2"
+                                        :content="item.tools.join('、')"
+                                        placement="top"
+                                    >
+                                        <span class="font-medium text-gray-900 truncate cursor-default">
+                                            {{ formatToolsLabel(item.tools) }}
+                                        </span>
+                                    </el-tooltip>
+                                    <span v-else class="font-medium text-gray-900 truncate">
+                                        {{ formatToolsLabel(item.tools) }}
+                                    </span>
+                                </div>
+                                <div v-if="item.updated_at" class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-500 flex items-center gap-2">
+                                        <Icon icon="mdi:clock-outline" class="text-amber-500" />
+                                        更新时间
+                                    </span>
+                                    <span class="font-medium text-gray-900">{{ formatModelDate(item.updated_at) }}</span>
+                                </div>
                             </div>
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="text-gray-500 flex items-center gap-2">
-                                    <Icon icon="mdi:brain" class="text-green-500" />
-                                    分析引擎
-                                </span>
-                                <span class="font-medium text-gray-900">{{ agent.engine }}</span>
-                            </div>
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="text-gray-500 flex items-center gap-2">
-                                    <Icon icon="mdi:file-document-multiple" class="text-purple-500" />
-                                    提示词模板
-                                </span>
-                                <span class="font-medium text-gray-900">{{ agent.templateCount }} 个</span>
-                            </div>
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="text-gray-500 flex items-center gap-2">
-                                    <Icon icon="mdi:calendar" class="text-amber-500" />
-                                    创建时间
-                                </span>
-                                <span class="font-medium text-gray-900">{{ agent.createdAt }}</span>
-                            </div>
-                        </div>
 
-                        <div class="pt-4 border-t border-gray-200">
-                            <div class="flex items-center gap-2">
-                                <el-button type="primary" link size="small" class="flex-1">
-                                    <template #icon><Icon icon="mdi:eye" /></template>
-                                    查看详情
-                                </el-button>
-                                <el-button type="primary" link size="small">
-                                    <template #icon><Icon icon="mdi:pencil" /></template>
-                                    编辑
+                            <div class="pt-4 border-t border-gray-200">
+                                <el-button
+                                    type="primary"
+                                    class="w-full"
+                                    :loading="runningAgentId === item.id"
+                                    @click="handleRunAgent(item)"
+                                >
+                                    <template #icon><Icon icon="mdi:play-circle-outline" /></template>
+                                    运行
                                 </el-button>
                             </div>
                         </div>
@@ -304,95 +320,108 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
+import { agentApi } from '@/api/agent'
+import { getPaginatedData } from '@/utils/request'
+import { formatDateTime } from '@/utils/action'
+import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 
 defineOptions({ name: 'AgentMonitor' })
 
 const router = useRouter()
 const statsTimeRange = ref('week')
-const agents = ref([
-                {
-                    id: 1,
-                    name: '网络安全分析分析引擎',
-                    status: '运行中',
-                    statusType: 'success',
-                    personality: '技术专家',
-                    engine: 'GPT-4 Turbo',
-                    templateCount: 3,
-                    createdAt: '2025-01-05',
-                    typeIcon: 'mdi:shield-check',
-                    typeBgColor: 'bg-blue-100',
-                    typeIconColor: 'text-blue-600'
-                },
-                {
-                    id: 2,
-                    name: '舆情监控分析引擎',
-                    status: '运行中',
-                    statusType: 'success',
-                    personality: '分析师',
-                    engine: 'Claude 3.5',
-                    templateCount: 5,
-                    createdAt: '2025-01-03',
-                    typeIcon: 'mdi:chart-line',
-                    typeBgColor: 'bg-green-100',
-                    typeIconColor: 'text-green-600'
-                },
-                {
-                    id: 3,
-                    name: '情报收集分析引擎',
-                    status: '待启动',
-                    statusType: 'warning',
-                    personality: '研究员',
-                    engine: 'GPT-4 Turbo',
-                    templateCount: 2,
-                    createdAt: '2025-01-07',
-                    typeIcon: 'mdi:database-search',
-                    typeBgColor: 'bg-purple-100',
-                    typeIconColor: 'text-purple-600'
-                },
-                {
-                    id: 4,
-                    name: '数据挖掘分析引擎',
-                    status: '运行中',
-                    statusType: 'success',
-                    personality: '数据科学家',
-                    engine: 'Claude 3.5',
-                    templateCount: 4,
-                    createdAt: '2025-01-04',
-                    typeIcon: 'mdi:chart-box',
-                    typeBgColor: 'bg-amber-100',
-                    typeIconColor: 'text-amber-600'
-                },
-                {
-                    id: 5,
-                    name: '威胁检测分析引擎',
-                    status: '暂停',
-                    statusType: 'info',
-                    personality: '安全专家',
-                    engine: 'GPT-4 Turbo',
-                    templateCount: 6,
-                    createdAt: '2025-01-02',
-                    typeIcon: 'mdi:alert-octagon',
-                    typeBgColor: 'bg-red-100',
-                    typeIconColor: 'text-red-600'
-                },
-                {
-                    id: 6,
-                    name: '内容分析分析引擎',
-                    status: '已完成',
-                    statusType: '',
-                    personality: '编辑',
-                    engine: 'Claude 3.5',
-                    templateCount: 3,
-                    createdAt: '2024-12-28',
-                    typeIcon: 'mdi:text-box-search',
-                    typeBgColor: 'bg-indigo-100',
-                    typeIconColor: 'text-indigo-600'
-                }
-            ])
+const agentList = ref([])
+const agentListLoading = ref(false)
+const runningAgentId = ref(null)
+
+const LLM_PROVIDER_OPTIONS = [
+    { value: 'openai', label: 'OpenAI 兼容' },
+    { value: 'anthropic', label: 'Anthropic Claude 兼容' }
+]
+
+const formatLlmProviderLabel = (value) => {
+    const opt = LLM_PROVIDER_OPTIONS.find((item) => item.value === value)
+    return opt?.label ?? value ?? '-'
+}
+
+const formatModelDate = (dateStr) => formatDateTime(dateStr, { includeSecond: true })
+
+const formatToolsLabel = (tools) => {
+    if (!tools?.length) return '-'
+    if (tools.length <= 2) return tools.join('、')
+    return `${tools.slice(0, 2).join('、')}等${tools.length}个工具`
+}
+
+async function fetchAgentList() {
+    agentListLoading.value = true
+    try {
+        const result = await getPaginatedData(agentApi.getAgentList, {
+            page: 1,
+            page_size: 6
+        })
+        agentList.value = result.items || []
+    } catch {
+        agentList.value = []
+    } finally {
+        agentListLoading.value = false
+    }
+}
+
+function goToEngineConfig() {
+    router.push({ name: 'agent-engine-config' })
+}
+
+async function handleRunAgent(item) {
+    if (!item?.id) return
+    try {
+        await ElMessageBox.confirm(
+            `确定要运行「${item.name}」吗？`,
+            '确认运行',
+            {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }
+        )
+
+        runningAgentId.value = item.id
+        const response = await agentApi.startAgent({
+            agent_id: item.id,
+            auto_approve: getAgentAutoApproveValue()
+        })
+
+        if (response.code === 0 && response.data?.agent_id) {
+            const sid = response.data.session_id
+            if (!sid) {
+                ElMessage.error('未返回 session_id，无法进入详情')
+                return
+            }
+            ElMessage.success('分析引擎已启动')
+            router.push({
+                name: 'agent-analysis-detail',
+                params: { sessionId: String(sid) },
+                query: { agent_id: String(response.data.agent_id) }
+            })
+        } else {
+            ElMessage.error(response.message || '启动分析引擎失败')
+        }
+    } catch (err) {
+        if (err !== 'cancel') {
+            console.error('启动分析引擎失败:', err)
+            ElMessage.error('启动分析引擎失败，请稍后重试')
+        }
+    } finally {
+        runningAgentId.value = null
+    }
+}
+
+onMounted(() => {
+    fetchAgentList()
+})
 const agentStats = ref([
                 {
                     type: '网络安全',
