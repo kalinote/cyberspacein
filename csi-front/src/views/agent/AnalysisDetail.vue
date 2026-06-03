@@ -47,6 +47,7 @@
                                                 class="font-mono">/agent/status</span> 实时展示进度
                                         </p>
                                     </div>
+                                    <AgentAutoApproveSwitch />
                                 </div>
                                 <AgentContinueChatBar
                                     class="mt-4"
@@ -193,6 +194,7 @@ import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
 import AgentRealtimeEventsPanel from '@/components/agent/AgentRealtimeEventsPanel.vue'
 import AgentContinueChatBar from '@/components/agent/AgentContinueChatBar.vue'
 import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
+import AgentAutoApproveSwitch from '@/components/agent/AgentAutoApproveSwitch.vue'
 import { useAgentSessionStream } from '@/composables/useAgentSessionStream'
 import { formatDateTime } from '@/utils/action'
 

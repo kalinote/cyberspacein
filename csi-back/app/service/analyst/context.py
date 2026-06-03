@@ -26,6 +26,9 @@ current_session_id: ContextVar[str | None] = ContextVar("current_session_id", de
 current_task_completion: ContextVar[dict[str, Any] | None] = ContextVar(
     "current_task_completion", default=None
 )
+current_auto_approve_hitl: ContextVar[bool] = ContextVar(
+    "current_auto_approve_hitl", default=False
+)
 
 
 def get_current_agent_id() -> str | None:
@@ -41,3 +44,8 @@ def get_current_session_id() -> str | None:
 def get_current_task_completion() -> dict[str, Any] | None:
     """读取当前 run 内最后一次 `submit_task_result` 写入的快照（权威列表见 session.task_submissions）。"""
     return current_task_completion.get()
+
+
+def get_current_auto_approve_hitl() -> bool:
+    """读取当前 run 是否开启 HITL 自动批准（由 /agent/start 或 /agent/message 的 auto_approve 设置）。"""
+    return current_auto_approve_hitl.get()

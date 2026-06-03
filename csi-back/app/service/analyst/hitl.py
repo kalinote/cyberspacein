@@ -20,6 +20,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.service.analyst.context import get_current_auto_approve_hitl
 from app.models.agent.nanobot import NanobotSessionModel
 from app.models.agent.sse_event import NanobotAgentSseEventModel
 from app.schemas.agent.hitl import validate_source
@@ -216,6 +217,15 @@ class HitlService:
         payload: dict[str, Any],
     ) -> HitlOutcome:
         from app.service.analyst.service import AnalystService
+
+        if get_current_auto_approve_hitl():
+            return HitlOutcome(
+                approved=[{"action": "approve", "auto": True}],
+                rejections=[],
+                resolution="approved",
+                approval_request_id=str(uuid.uuid4()),
+                raw={"auto_approve": True},
+            )
 
         source = validate_source(source)
         session_id = str(session_id or "").strip()

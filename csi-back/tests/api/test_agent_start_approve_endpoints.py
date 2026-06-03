@@ -21,10 +21,11 @@ def _app() -> TestClient:
 def test_route_start_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
         assert agent_id == "a1"
         assert user_prompt == "hi"
         assert context["k"] == "v"
+        assert auto_approve is False
         return "s1"
 
     monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
@@ -58,7 +59,7 @@ def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
         assert query == {"_id": "tpl1"}
         return _FakeTemplate()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
         assert agent_id == "a1"
         assert context["k"] == "v"
         assert user_prompt == "你好 v !字段丢失或不存在!"
@@ -100,10 +101,65 @@ def test_route_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert body["code"] == 0
 
 
+def test_route_start_passes_auto_approve(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _app()
+
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
+        assert agent_id == "a1"
+        assert user_prompt == "hi"
+        assert auto_approve is True
+        return "s1"
+
+    monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
+    r = client.post(
+        "/api/v1/agent/start",
+        json={
+            "agent_id": "a1",
+            "user_prompt": "hi",
+            "injection_param": {},
+            "auto_approve": True,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["code"] == 0
+
+
+def test_route_message_passes_auto_approve(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _app()
+
+    async def _send_message(
+        *,
+        agent_id: str,
+        session_id: str,
+        user_prompt: str,
+        context: dict,
+        auto_approve: bool = False,
+    ):
+        assert agent_id == "a1"
+        assert session_id == "s1"
+        assert user_prompt == "续聊"
+        assert auto_approve is True
+        return "s1"
+
+    monkeypatch.setattr(runtime_ep.AnalystService, "send_message", _send_message)
+    r = client.post(
+        "/api/v1/agent/message",
+        json={
+            "agent_id": "a1",
+            "session_id": "s1",
+            "user_prompt": "续聊",
+            "injection_param": {},
+            "auto_approve": True,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["code"] == 0
+
+
 def test_route_start_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
         raise AgentServiceError(status_codes.NOT_FOUND_AGENT, "Agent 不存在")
 
     monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)

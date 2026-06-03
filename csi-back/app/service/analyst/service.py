@@ -51,6 +51,7 @@ from app.schemas.constants import AgentStopReasonEnum, NanobotLLMProviderEnum, N
 from app.utils import status_codes
 from app.service.analyst.context import (
     current_agent_id,
+    current_auto_approve_hitl,
     current_session_id,
     current_task_completion,
     get_current_task_completion,
@@ -654,6 +655,7 @@ class AnalystService:
         bot: Nanobot,
         user_prompt: str,
         context: dict[str, Any],
+        auto_approve: bool = False,
     ) -> None:
         from app.service.analyst.hitl import HitlService
 
@@ -670,6 +672,7 @@ class AnalystService:
                 bot=bot,
                 user_prompt=user_prompt,
                 context=context,
+                auto_approve=auto_approve,
             ),
             name=f"analyst-run:{agent_id}:{session_id}",
         )
@@ -705,6 +708,7 @@ class AnalystService:
         agent_id: str,
         user_prompt: str,
         context: dict[str, Any] | None = None,
+        auto_approve: bool = False,
     ) -> str:
         """启动 agent 并立即返回 session_id；真正执行在后台 task。"""
         agent = await NanobotAgentModel.find_one({"_id": agent_id})
@@ -738,6 +742,7 @@ class AnalystService:
             bot=bot,
             user_prompt=user_prompt,
             context=context or {},
+            auto_approve=auto_approve,
         )
 
         logger.info(
@@ -782,6 +787,7 @@ class AnalystService:
         session_id: str,
         user_prompt: str,
         context: dict[str, Any] | None = None,
+        auto_approve: bool = False,
     ) -> str:
         """向已结束输出的会话提交用户消息并后台再跑一轮分析。"""
         session_id = str(session_id or "").strip()
@@ -839,6 +845,7 @@ class AnalystService:
             bot=bot,
             user_prompt=user_prompt,
             context=context or {},
+            auto_approve=auto_approve,
         )
 
         logger.info(
@@ -858,11 +865,13 @@ class AnalystService:
         bot: Nanobot,
         user_prompt: str,
         context: dict[str, Any],
+        auto_approve: bool = False,
     ) -> None:
         """后台任务：设 ContextVar → bot.run → 解析结果 → 写回会话 → 广播 SSE。"""
         token_completion = current_task_completion.set(None)
         token_agent = current_agent_id.set(agent_id)
         token_session = current_session_id.set(session_id)
+        token_auto_approve = current_auto_approve_hitl.set(auto_approve)
         final_session_status = NanobotSessionStatusEnum.COMPLETED
         result_payload: dict | None = None
         error_message: str | None = None
@@ -1039,6 +1048,7 @@ class AnalystService:
                 current_session_id.reset(token_session)
                 current_agent_id.reset(token_agent)
                 current_task_completion.reset(token_completion)
+                current_auto_approve_hitl.reset(token_auto_approve)
 
     # ------------------------------------------------------------------
     # 取消 / 暂停

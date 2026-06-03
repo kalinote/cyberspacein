@@ -11,6 +11,7 @@ import pytest
 
 import app.service.analyst.hitl as hitl_module
 import app.service.analyst.service as service_module
+from app.service.analyst.context import current_auto_approve_hitl
 from app.schemas.agent.hitl import HitlSource, validate_source
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.constants import NanobotSessionStatusEnum
@@ -170,3 +171,41 @@ async def test_request_approval_pending_record_on_session(monkeypatch: pytest.Mo
         HitlSource.TOOL_MODIFY_ENTITY,
         {"entity_type": "article", "entity_uuid": "u1", "modifications": [], "reason": "r"},
     )
+
+
+@pytest.mark.asyncio
+async def test_request_approval_auto_approve_silent(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(
+        id="s1",
+        agent_id="a1",
+        status=NanobotSessionStatusEnum.RUNNING,
+    )
+    calls: list[tuple[str, str, Any, bool]] = []
+
+    async def _broadcast(
+        agent_id: str, event: str, data: Any, *, persist: bool = True
+    ) -> None:
+        calls.append((agent_id, event, data, persist))
+
+    monkeypatch.setattr(service_module.AnalystService, "broadcast_sse", _broadcast)
+
+    token = current_auto_approve_hitl.set(True)
+    try:
+        outcome = await HitlService.request_approval(
+            "a1",
+            "s1",
+            HitlSource.TOOL_MODIFY_ENTITY,
+            {"entity_type": "article", "entity_uuid": "u1", "modifications": [], "reason": "r"},
+        )
+    finally:
+        current_auto_approve_hitl.reset(token)
+
+    assert outcome.resolution == "approved"
+    assert outcome.approved == [{"action": "approve", "auto": True}]
+    assert outcome.rejections == []
+    assert outcome.raw == {"auto_approve": True}
+
+    doc = FakeNanobotSessionModel._docs["s1"]
+    assert doc.status == NanobotSessionStatusEnum.RUNNING
+    assert doc.pending_approval is None
+    assert not [c for c in calls if c[1] == "approval_required"]

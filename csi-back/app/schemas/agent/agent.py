@@ -93,6 +93,10 @@ class AgentRuntimeRequestSchema(BaseModel):
         default_factory=dict,
         description="Jinja 渲染与业务透传参数（如 entity_uuid、entity_type 等）",
     )
+    auto_approve: bool = Field(
+        default=False,
+        description="为 true 时，本轮 run 内工具触发的 HITL 自动批准，不等待 /agent/approve",
+    )
 
 
 class StartAgentResponseSchema(BaseModel):

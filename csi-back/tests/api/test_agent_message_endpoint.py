@@ -23,11 +23,19 @@ def _app() -> TestClient:
 def test_route_message_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _send_message(*, agent_id: str, session_id: str, user_prompt: str, context: dict):
+    async def _send_message(
+        *,
+        agent_id: str,
+        session_id: str,
+        user_prompt: str,
+        context: dict,
+        auto_approve: bool = False,
+    ):
         assert agent_id == "a1"
         assert session_id == "s1"
         assert user_prompt == "你好 v"
         assert context == {"k": "v"}
+        assert auto_approve is False
         return "s1"
 
     monkeypatch.setattr(runtime_ep.AnalystService, "send_message", _send_message)

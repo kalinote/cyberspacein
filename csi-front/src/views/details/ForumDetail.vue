@@ -531,6 +531,7 @@ import ArticleDetailInfoPanel from '@/components/detail/ArticleDetailInfoPanel.v
 import ArticleDetailAnalysisPanel from '@/components/detail/ArticleDetailAnalysisPanel.vue'
 import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
 import { useAgentSessionStream } from '@/composables/useAgentSessionStream'
+import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 import { forumApi } from '@/api/forum'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1033,7 +1034,8 @@ const handleAnalyzeOption = async (option) => {
                 entity_uuid: forumData.value.uuid,
                 entity_type: forumData.value.entity_type,
             },
-            debug: true
+            debug: true,
+            auto_approve: getAgentAutoApproveValue(),
         })
 
         if (response.code === 0 && response.data?.agent_id) {

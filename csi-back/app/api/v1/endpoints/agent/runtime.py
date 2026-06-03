@@ -34,6 +34,7 @@ router = APIRouter()
     description=(
         "成功时返回 `data.session_id`。后续 SSE `/agent/status` 会收到 `user_message`（首轮用户输入）与 `status` 等事件；"
         "取消与审批接口均须携带同一 `session_id`。"
+        "请求体 `auto_approve=true` 时，本轮 run 内写操作工具自动批准，无需调用 `/agent/approve`（仅本轮有效）。"
         "当环境变量 `NANOBOT_AGENT_MAX_PARALLEL_SESSIONS` 大于 0 且该 Agent 在库中 `running` 会话数已达上限时，"
         "返回 HTTP 200 且业务码为冲突态（`CONFLICT_STATE`），不会在库中新建本会话。"
     ),
@@ -82,6 +83,7 @@ async def start_agent(data: AgentRuntimeRequestSchema):
             agent_id=data.agent_id,
             user_prompt=final_user_prompt,
             context=injection_param,
+            auto_approve=data.auto_approve,
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
@@ -99,6 +101,7 @@ async def start_agent(data: AgentRuntimeRequestSchema):
         "`running`、`awaiting_approval`、`paused` 等状态返回冲突错误。"
         "成功后会话重新进入 `running`，并通过 SSE 推送 `user_message`（用户本轮输入）与 `status`；"
         "后续仍通过 `/agent/status` 订阅其它事件。"
+        "请求体 `auto_approve=true` 时，本轮 run 内写操作工具自动批准，无需调用 `/agent/approve`（仅本轮有效）。"
     ),
 )
 async def send_agent_message(data: AgentRuntimeRequestSchema):
@@ -130,6 +133,7 @@ async def send_agent_message(data: AgentRuntimeRequestSchema):
             session_id=session_id,
             user_prompt=final_user_prompt,
             context=injection_param,
+            auto_approve=data.auto_approve,
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)

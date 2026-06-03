@@ -8,6 +8,7 @@ import {
     parseAgentSseData,
     stringifyJsonSafe,
 } from '@/utils/agentSse'
+import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 import { getApprovalSourceLabel, isApprovalAwaitingUserAction } from '@/utils/agentApproval'
 import { TODO_ITEM_STATUS } from '@/utils/action'
 import {
@@ -534,6 +535,7 @@ export function useAgentSessionStream(options = {}) {
                 user_prompt: trimmedPrompt,
                 injection_param:
                     Object.keys(injectionParam).length > 0 ? injectionParam : {},
+                auto_approve: getAgentAutoApproveValue(),
             })
             if (res?.code !== 0) {
                 ElMessage.error(res?.message || '发送失败')

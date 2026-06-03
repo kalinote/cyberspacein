@@ -30,6 +30,9 @@
                 :todo-status-icon="todoStatusIcon"
                 :todo-status-icon-color="todoStatusIconColor"
             />
+            <div class="shrink-0 flex justify-end px-3 pt-2 bg-white border-t border-gray-100">
+                <AgentAutoApproveSwitch />
+            </div>
             <AgentContinueChatBar
                 :user-prompt="userPrompt"
                 :send-loading="sendLoading"
@@ -54,6 +57,7 @@ import { Icon } from '@iconify/vue'
 import AgentRealtimeEventsPanel from '@/components/agent/AgentRealtimeEventsPanel.vue'
 import AgentContinueChatBar from '@/components/agent/AgentContinueChatBar.vue'
 import AgentTodosPanel from '@/components/agent/AgentTodosPanel.vue'
+import AgentAutoApproveSwitch from '@/components/agent/AgentAutoApproveSwitch.vue'
 
 defineProps({
     sessionId: {
