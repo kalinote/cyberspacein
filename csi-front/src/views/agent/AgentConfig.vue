@@ -479,6 +479,131 @@
             </div>
           </div>
 
+          <div v-else-if="activeTab === 'sandboxes'" class="space-y-4">
+            <div v-loading="sandboxListLoading" element-loading-text="加载中..." class="min-h-50">
+              <div
+                v-for="sandbox in filteredSandboxList"
+                :key="sandbox.sandbox_id"
+                class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 mb-4"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex items-start gap-4 flex-1">
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-indigo-100">
+                      <Icon icon="mdi:cube-outline" class="text-2xl text-indigo-600" />
+                    </div>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-lg font-bold text-gray-900">
+                          {{ sandbox.display_name || sandbox.name || sandbox.sandbox_id }}
+                        </h3>
+                        <el-tag
+                          size="small"
+                          :type="sandbox.status === ACTION_STATUS.RUNNING ? 'success' : sandbox.status === ACTION_STATUS.STOPPED ? 'info' : 'warning'"
+                          class="border-0"
+                        >
+                          {{ sandbox.status || '未知' }}
+                        </el-tag>
+                        <el-tag
+                          size="small"
+                          :type="getSandboxStatusTagType(sandbox.sandbox_status)"
+                          effect="plain"
+                          class="border-0"
+                        >
+                          {{ sandboxStatusLabel(sandbox.sandbox_status) }}
+                        </el-tag>
+                      </div>
+                      <div class="flex items-center gap-6 text-sm flex-wrap">
+                        <div class="flex items-center gap-2">
+                          <Icon icon="mdi:identifier" class="text-gray-500" />
+                          <span class="text-gray-600">沙盒ID:</span>
+                          <span class="font-mono text-xs text-gray-900">{{ sandbox.sandbox_id }}</span>
+                        </div>
+                        <div v-if="sandbox.image" class="flex items-center gap-2">
+                          <Icon icon="mdi:docker" class="text-blue-500" />
+                          <span class="text-gray-600">镜像:</span>
+                          <span class="font-mono text-xs text-gray-900">{{ sandbox.image }}</span>
+                        </div>
+                        <div v-if="sandbox.host_port" class="flex items-center gap-2">
+                          <Icon icon="mdi:lan" class="text-green-500" />
+                          <span class="text-gray-600">访问端口:</span>
+                          <a
+                            class="font-mono text-xs text-blue-600 hover:text-blue-800 underline"
+                            :href="getSandboxUrl(sandbox.host_port)"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {{ sandbox.host_port }}
+                          </a>
+                        </div>
+                        <div v-if="sandbox.created_at" class="flex items-center gap-2">
+                          <Icon icon="mdi:calendar-clock" class="text-purple-500" />
+                          <span class="text-gray-600">创建时间:</span>
+                          <span class="font-medium text-gray-900">
+                            {{ formatDateTime(sandbox.created_at, { defaultValue: '-' }) }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 ml-4">
+                    <el-button
+                      v-if="sandbox.host_port"
+                      type="primary"
+                      link
+                      @click="handleConnectSandbox(sandbox)"
+                    >
+                      <template #icon>
+                        <Icon icon="mdi:web" />
+                      </template>
+                      浏览器
+                    </el-button>
+                    <el-button
+                      v-if="sandbox.host_port"
+                      type="primary"
+                      link
+                      @click="handleOpenCodeServer(sandbox)"
+                    >
+                      <template #icon>
+                        <Icon icon="mdi:code-braces" />
+                      </template>
+                      Code Server
+                    </el-button>
+                    <el-button type="primary" link @click="handleViewSandbox(sandbox)">
+                      <template #icon>
+                        <Icon icon="mdi:eye" />
+                      </template>
+                      查看
+                    </el-button>
+                    <el-button type="danger" link @click="handleDestroySandbox(sandbox)">
+                      <template #icon>
+                        <Icon icon="mdi:delete" />
+                      </template>
+                      销毁
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div
+                v-if="!sandboxListLoading && filteredSandboxList.length === 0"
+                class="flex flex-col items-center justify-center py-16"
+              >
+                <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
+                <p class="text-gray-500">暂无沙盒容器</p>
+              </div>
+            </div>
+            <div v-if="!searchKeyword && sandboxList.length > 0" class="flex justify-center mt-6">
+              <el-pagination
+                v-model:current-page="sandboxPagination.page"
+                v-model:page-size="sandboxPagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="sandboxPagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="handleSandboxPageChange"
+                @size-change="handleSandboxPageSizeChange"
+              />
+            </div>
+          </div>
+
           <div v-else-if="activeTab === 'tools'" class="space-y-4">
             <div v-loading="toolsListLoading" element-loading-text="加载中..." class="min-h-50">
               <div
@@ -1275,6 +1400,112 @@
         <el-button @click="workspaceDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="createSandboxDialogVisible"
+      title="创建沙盒"
+      width="420px"
+      @open="onCreateSandboxDialogOpen"
+      @closed="onCreateSandboxDialogClosed"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="显示名称">
+          <el-input
+            v-model="createSandboxName"
+            placeholder="用于展示的名称，选填"
+            clearable
+            maxlength="64"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="沙盒类型">
+          <el-select v-model="createSandboxImageType" placeholder="选择类型" class="w-full">
+            <el-option label="All-in-One" value="all-in-one" />
+            <el-option label="Windows" value="windows" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createSandboxDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creatingSandbox" @click="handleCreateSandboxSubmit">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="sandboxDetailDialogVisible"
+      title="沙盒容器详情"
+      width="640px"
+      @close="sandboxDetailData = null"
+    >
+      <div v-loading="sandboxDetailLoading" class="min-h-50">
+        <template v-if="sandboxDetailData">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="沙盒ID">{{ sandboxDetailData.sandbox_id }}</el-descriptions-item>
+            <el-descriptions-item label="显示名称">{{ sandboxDetailData.display_name ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="容器名称">{{ sandboxDetailData.name }}</el-descriptions-item>
+            <el-descriptions-item label="容器状态">{{ sandboxDetailData.status ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="沙盒业务状态">{{ sandboxStatusLabel(sandboxDetailData.sandbox_status) }}</el-descriptions-item>
+            <el-descriptions-item label="镜像">{{ sandboxDetailData.image ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="宿主机端口">
+              {{ sandboxDetailData.host_port ?? '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="创建时间">
+              {{ formatDateTime(sandboxDetailData.created_at, { defaultValue: '-' }) }}
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-divider content-position="left">端口映射</el-divider>
+          <pre class="m-0 p-2 bg-gray-50 rounded text-xs max-h-60 overflow-auto">
+{{ formatJson(sandboxDetailData.ports || {}) }}
+          </pre>
+
+          <el-divider content-position="left">标签</el-divider>
+          <pre class="m-0 p-2 bg-gray-50 rounded text-xs max-h-60 overflow-auto">
+{{ formatJson(sandboxDetailData.labels || {}) }}
+          </pre>
+        </template>
+      </div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="sandboxVncDialogVisible"
+      :title="sandboxVncTitle || '沙盒远程连接'"
+      class="sandbox-vnc-dialog"
+      width="96vw"
+      destroy-on-close
+      :style="{ maxWidth: '1600px' }"
+    >
+      <template #header="{ titleId, titleClass }">
+        <div class="flex items-center justify-between w-full pr-8">
+          <span :id="titleId" :class="titleClass">{{ sandboxVncTitle || '沙盒远程连接' }}</span>
+          <a
+            v-if="sandboxVncUrl"
+            :href="sandboxVncUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-primary hover:underline flex items-center gap-1"
+          >
+            <Icon icon="mdi:open-in-new" class="w-4 h-4" />
+            新窗口打开
+          </a>
+        </div>
+      </template>
+      <div class="flex flex-1 min-h-0 flex-col">
+        <div v-if="sandboxVncUrl" class="flex-1 min-h-0 rounded-lg overflow-hidden bg-black">
+          <iframe
+            :src="sandboxVncUrl"
+            class="w-full h-full border-0 block"
+            allowfullscreen
+            title="noVNC 远程桌面"
+          ></iframe>
+        </div>
+        <div v-else class="w-full h-full flex items-center justify-center text-gray-500 min-h-100">
+          当前没有可用的连接地址。
+        </div>
+      </div>
+    </el-dialog>
 </template>
 
 <script setup>
@@ -1288,7 +1519,7 @@ import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
-import { formatDateTime } from '@/utils/action'
+import { formatDateTime, formatJson, filterByKeyword, ACTION_STATUS } from '@/utils/action'
 import {
   REASONING_EFFORT_STEPS,
   formatReasoningEffortLabel,
@@ -1296,6 +1527,8 @@ import {
   indexToReasoningEffort,
   reasoningEffortToIndex
 } from '@/utils/agent/reasoningEffort'
+
+const SANDBOX_HOST = import.meta.env.VITE_SANDBOX_HOST || '127.0.0.1'
 
 const activeTab = ref('analysisEngines')
 const searchKeyword = ref('')
@@ -1317,7 +1550,8 @@ const engineTabs = [
   { key: 'promptTemplates', label: '提示词模板', icon: 'mdi:file-document-edit' },
   { key: 'systemPrompts', label: '系统指令', icon: 'mdi:file-cog-outline' },
   { key: 'skills', label: '技能', icon: 'mdi:puzzle-outline' },
-  { key: 'tools', label: '工具', icon: 'mdi:tools' }
+  { key: 'tools', label: '工具', icon: 'mdi:tools' },
+  { key: 'sandboxes', label: '沙盒环境', icon: 'mdi:cube-outline' }
 ]
 
 const currentTabMeta = computed(() => findNavItemByKey(engineTabs, activeTab.value))
@@ -1505,6 +1739,205 @@ const fetchWorkspaceList = async () => {
   }
 }
 
+const sandboxList = ref([])
+const sandboxListLoading = ref(false)
+const sandboxPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+const sandboxLoadedOnce = ref(false)
+
+const filteredSandboxList = computed(() =>
+  filterByKeyword(sandboxList.value, ['sandbox_id', 'name', 'display_name', 'status', 'sandbox_status', 'image'], searchKeyword.value)
+)
+
+const getSandboxUrl = (port) => {
+  if (!port) return ''
+  return `http://${SANDBOX_HOST}:${port}`
+}
+
+const getSandboxVncUrl = (port, imageType) => {
+  if (!port) return ''
+  const base = `http://${SANDBOX_HOST}:${port}`
+  const hash = 'autoconnect=true&reconnect=true&shared=true&resize=remote'
+  if (imageType === 'windows') {
+    return `${base}/#${hash}`
+  }
+  return `${base}/vnc/index.html#${hash}`
+}
+
+const getSandboxCodeServerUrl = (port) => {
+  if (!port) return ''
+  return `http://${SANDBOX_HOST}:${port}/code-server/`
+}
+
+const SANDBOX_STATUS_LABELS = {
+  created: '已创建',
+  deployed: '已部署',
+  stopped: '已停止',
+  destroyed: '已销毁'
+}
+const sandboxStatusLabel = (status) => SANDBOX_STATUS_LABELS[status] || status || '-'
+
+const getSandboxStatusTagType = (sandboxStatus) => {
+  const map = { created: 'info', deployed: 'success', stopped: 'warning', destroyed: 'danger' }
+  return map[sandboxStatus] || 'info'
+}
+
+const fetchSandboxList = async () => {
+  sandboxListLoading.value = true
+  try {
+    const result = await getPaginatedData(agentApi.getSandboxList, {
+      page: sandboxPagination.value.page,
+      page_size: sandboxPagination.value.pageSize
+    })
+    sandboxList.value = result.items || []
+    sandboxPagination.value = {
+      ...sandboxPagination.value,
+      total: result.pagination.total ?? 0,
+      page: result.pagination.page ?? 1,
+      pageSize: result.pagination.pageSize ?? sandboxPagination.value.pageSize,
+      totalPages: result.pagination.totalPages ?? 0
+    }
+    sandboxLoadedOnce.value = true
+  } catch {
+    sandboxList.value = []
+  } finally {
+    sandboxListLoading.value = false
+  }
+}
+
+const handleSandboxPageChange = (page) => {
+  sandboxPagination.value.page = page
+  fetchSandboxList()
+}
+
+const handleSandboxPageSizeChange = (pageSize) => {
+  sandboxPagination.value.pageSize = pageSize
+  sandboxPagination.value.page = 1
+  fetchSandboxList()
+}
+
+const creatingSandbox = ref(false)
+const createSandboxDialogVisible = ref(false)
+const createSandboxName = ref('')
+const createSandboxImageType = ref('all-in-one')
+
+const onCreateSandboxDialogOpen = () => {
+  createSandboxName.value = ''
+  createSandboxImageType.value = 'all-in-one'
+}
+
+const onCreateSandboxDialogClosed = () => {
+  createSandboxName.value = ''
+  createSandboxImageType.value = 'all-in-one'
+}
+
+const handleCreateSandbox = () => {
+  createSandboxDialogVisible.value = true
+}
+
+const handleCreateSandboxSubmit = async () => {
+  creatingSandbox.value = true
+  try {
+    const payload = {
+      image_type: createSandboxImageType.value || 'all-in-one'
+    }
+    if (createSandboxName.value.trim()) {
+      payload.name = createSandboxName.value.trim()
+    }
+    const res = await agentApi.createSandbox(payload)
+    if (res.code === 0) {
+      ElMessage.success('创建沙盒容器成功')
+      createSandboxDialogVisible.value = false
+      await fetchSandboxList()
+    } else {
+      ElMessage.error(res.message || '创建沙盒容器失败')
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '创建沙盒容器失败')
+  } finally {
+    creatingSandbox.value = false
+  }
+}
+
+const sandboxDetailDialogVisible = ref(false)
+const sandboxVncDialogVisible = ref(false)
+const sandboxDetailLoading = ref(false)
+const sandboxDetailData = ref(null)
+const sandboxVncUrl = ref('')
+const sandboxVncTitle = ref('')
+
+const handleViewSandbox = async (sandbox) => {
+  if (!sandbox?.sandbox_id) return
+  sandboxDetailDialogVisible.value = true
+  sandboxDetailData.value = null
+  sandboxDetailLoading.value = true
+  try {
+    const res = await agentApi.getSandboxDetail(sandbox.sandbox_id)
+    if (res.code === 0 && res.data) {
+      sandboxDetailData.value = res.data
+    } else {
+      ElMessage.error(res.message || '获取沙盒详情失败')
+      sandboxDetailDialogVisible.value = false
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '获取沙盒详情失败')
+    sandboxDetailDialogVisible.value = false
+  } finally {
+    sandboxDetailLoading.value = false
+  }
+}
+
+const handleConnectSandbox = (sandbox) => {
+  if (!sandbox || !sandbox.host_port) {
+    ElMessage.error('该沙盒未配置宿主机端口，无法连接')
+    return
+  }
+  const url = getSandboxVncUrl(sandbox.host_port, sandbox.image_type)
+  if (!url) {
+    ElMessage.error('无法生成沙盒连接地址')
+    return
+  }
+  sandboxVncUrl.value = url
+  sandboxVncTitle.value = sandbox.display_name || sandbox.name || sandbox.sandbox_id || '沙盒远程连接'
+  sandboxVncDialogVisible.value = true
+}
+
+const handleOpenCodeServer = (sandbox) => {
+  if (!sandbox?.host_port) {
+    ElMessage.error('该沙盒未配置宿主机端口，无法打开 Code Server')
+    return
+  }
+  const url = getSandboxCodeServerUrl(sandbox.host_port)
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+const handleDestroySandbox = (sandbox) => {
+  if (!sandbox?.sandbox_id) return
+  const name = sandbox.display_name || sandbox.name || sandbox.sandbox_id
+  ElMessageBox.confirm(
+    `确定要销毁沙盒「${name}」吗？`,
+    '确认销毁',
+    {
+      confirmButtonText: '确定销毁',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  )
+    .then(async () => {
+      try {
+        const res = await agentApi.destroySandbox(sandbox.sandbox_id)
+        if (res.code === 0) {
+          ElMessage.success('沙盒已销毁')
+          await fetchSandboxList()
+        } else {
+          ElMessage.error(res.message || '销毁沙盒失败')
+        }
+      } catch (error) {
+        ElMessage.error(error?.message || '销毁沙盒失败')
+      }
+    })
+    .catch(() => {})
+}
+
 watch(activeTab, (tab) => {
   if (tab === 'analysisEngines' && !agentLoadedOnce.value) fetchAgentList()
   if (tab === 'modelResources' && !modelLoadedOnce.value) fetchModelList()
@@ -1513,6 +1946,7 @@ watch(activeTab, (tab) => {
   if (tab === 'workspaces' && !workspaceLoadedOnce.value) fetchWorkspaceList()
   if (tab === 'skills' && !skillLoadedOnce.value) fetchSkillList()
   if (tab === 'tools' && !toolsLoadedOnce.value) fetchToolsList()
+  if (tab === 'sandboxes' && !sandboxLoadedOnce.value) fetchSandboxList()
 }, { immediate: true })
 
 onMounted(() => {
@@ -1535,7 +1969,8 @@ const statistics = computed(() => ({
   systemPrompts: systemPromptPagination.value.total ?? 0,
   workspaces: workspacePagination.value.total ?? 0,
   skills: skillPagination.value.total ?? 0,
-  tools: statisticsData.value.tools_count
+  tools: statisticsData.value.tools_count,
+  sandboxes: sandboxPagination.value.total ?? 0
 }))
 
 const getResourceCount = (tabKey) => statistics.value[tabKey] ?? 0
@@ -1663,6 +2098,8 @@ const handleCurrentTabSearch = () => {
     handleWorkspaceSearch()
   } else if (activeTab.value === 'skills') {
     handleSkillSearch()
+  } else if (activeTab.value === 'sandboxes') {
+    searchKeyword.value = searchKeyword.value.trim()
   }
 }
 
@@ -2282,6 +2719,8 @@ const handleAdd = () => {
     openWorkspaceCreate()
   } else if (activeTab.value === 'skills') {
     openSkillUploadDialog()
+  } else if (activeTab.value === 'sandboxes') {
+    handleCreateSandbox()
   } else {
     ElMessage.info('功能开发中')
   }
@@ -2901,3 +3340,19 @@ const handlePromptTemplateSubmit = async () => {
 }
 
 </script>
+
+<style>
+.sandbox-vnc-dialog.el-dialog {
+  --el-dialog-width: 96vw;
+  max-width: 1600px;
+  margin-top: 1vh;
+}
+.sandbox-vnc-dialog .el-dialog__body {
+  padding: 0.75rem;
+  height: 0;
+  min-height: 88vh;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+}
+</style>

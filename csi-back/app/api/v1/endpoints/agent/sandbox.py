@@ -1,9 +1,9 @@
 import asyncio
 from loguru import logger
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 
-from app.schemas.action.sandbox import (
+from app.schemas.agent.sandbox import (
     SandboxBaseInfo,
     SandboxCreateRequest,
     SandboxCreateResponse,

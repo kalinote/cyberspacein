@@ -9,6 +9,7 @@ from app.api.v1.endpoints.agent.runtime import router as runtime_router
 from app.api.v1.endpoints.agent.sessions import router as sessions_router
 from app.api.v1.endpoints.agent.skills import router as skills_router
 from app.api.v1.endpoints.agent.workspaces import router as workspaces_router
+from app.api.v1.endpoints.agent.sandbox import router as sandbox_router
 
 router = APIRouter(
     prefix="/agent",
@@ -24,4 +25,5 @@ router.include_router(workspaces_router)
 router.include_router(agents_router)
 router.include_router(sessions_router)
 router.include_router(runtime_router)
+router.include_router(sandbox_router)
 

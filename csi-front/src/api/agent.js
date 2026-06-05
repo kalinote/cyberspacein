@@ -139,5 +139,18 @@ export const agentApi = {
   },
   updateSkillFileContent(skillId, path, content) {
     return request.put(`/agent/skills/${skillId}/files/content`, { content }, { params: { path } })
+  },
+
+  createSandbox(data = {}) {
+    return request.post('/agent/sandbox/create', data)
+  },
+  getSandboxDetail(sandboxId) {
+    return request.get(`/agent/sandbox/detail/${sandboxId}`)
+  },
+  destroySandbox(sandboxId) {
+    return request.delete(`/agent/sandbox/${sandboxId}`)
+  },
+  getSandboxList(params = { page: 1, page_size: 10 }) {
+    return request.get('/agent/sandbox/list', params)
   }
 }
