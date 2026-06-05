@@ -1,7 +1,14 @@
 import asyncio
+from typing import Union
+
 from loguru import logger
 
-from app.schemas.search import EntitySearchRequestSchema, SearchResultSchema
+from app.schemas.search import (
+    EntityKeywordSearchParams,
+    EntitySearchRequestSchema,
+    EntitySearchToolHitSchema,
+    SearchResultSchema,
+)
 from app.schemas.constants import ALL_INDEX, SearchModeEnum
 from app.schemas.general import PageResponseSchema
 from app.core.config import settings
@@ -18,7 +25,10 @@ def _get_es_total(result: dict) -> int:
     return total["value"] if isinstance(total, dict) else total
 
 
-def build_filter_must(params: EntitySearchRequestSchema) -> list:
+SearchFilterParams = Union[EntitySearchRequestSchema, EntityKeywordSearchParams]
+
+
+def build_filter_must(params: SearchFilterParams) -> list:
     must = []
     if params.platform:
         must.append({"term": {"platform.keyword": params.platform}})
@@ -88,6 +98,159 @@ async def hit_to_search_result(hit: dict) -> SearchResultSchema:
 
 async def hits_to_search_results(hits: list) -> list[SearchResultSchema]:
     return await asyncio.gather(*[hit_to_search_result(h) for h in hits])
+
+
+def _normalize_keywords(keywords: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in keywords or []:
+        kw = str(raw or "").strip()
+        if not kw or kw in seen:
+            continue
+        seen.add(kw)
+        out.append(kw)
+    return out
+
+
+def _single_keyword_should_clause(keyword: str) -> dict:
+    return {
+        "bool": {
+            "should": [
+                {"match": {"title": keyword}},
+                {"match": {"clean_content": keyword}},
+                {"match": {"raw_content": keyword}},
+                {"term": {"keywords": keyword}},
+                {"term": {"author_name": keyword}},
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+
+
+def build_keyword_must_clause(keywords: list[str], mode: str) -> dict | None:
+    normalized = _normalize_keywords(keywords)
+    if not normalized:
+        return None
+    clauses = [_single_keyword_should_clause(kw) for kw in normalized]
+    if str(mode or "and").lower() == "or":
+        return {"bool": {"should": clauses, "minimum_should_match": 1}}
+    return {"bool": {"must": clauses}}
+
+
+def hit_to_tool_search_hit(hit: dict) -> EntitySearchToolHitSchema:
+    source_data = hit.get("_source", {})
+    highlight_data = hit.get("highlight", {})
+    title = str(source_data.get("title") or "")
+    snippets: list[str] = []
+    for fragment in highlight_data.get("clean_content") or []:
+        merged = merge_highlight_tags(fragment)
+        if merged:
+            snippets.append(merged)
+    keywords_hits = 0
+    if highlight_data:
+        for fragments in highlight_data.values():
+            for fragment in fragments:
+                keywords_hits += fragment.count("<em>")
+    return EntitySearchToolHitSchema(
+        uuid=source_data.get("uuid", hit.get("_id", "")),
+        entity_type=source_data.get("entity_type", ""),
+        title=title,
+        snippets=snippets,
+        keywords_hits=keywords_hits,
+    )
+
+
+def hits_to_tool_search_hits(hits: list) -> list[EntitySearchToolHitSchema]:
+    return [hit_to_tool_search_hit(h) for h in hits]
+
+
+def _apply_sort_to_body(body: dict, params: SearchFilterParams) -> None:
+    if params.sort_by == "relevance":
+        return
+    if params.sort_by in ["last_edit_at", "time"]:
+        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
+        body["sort"] = [
+            {"last_edit_at": {"order": sort_order, "missing": "_last"}},
+            {"publish_at": {"order": sort_order, "missing": "_last"}},
+        ]
+    elif params.sort_by == "publish_at":
+        body["sort"] = [{"publish_at": {"order": "desc", "missing": "_last"}}]
+    elif params.sort_by == "crawled_at":
+        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
+        body["sort"] = [{"crawled_at": {"order": sort_order, "missing": "_last"}}]
+    else:
+        body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last"}}]
+
+
+def keyword_list_query_body(
+    params: EntityKeywordSearchParams, from_: int, size: int
+) -> dict:
+    query_must: list = []
+    keyword_clause = build_keyword_must_clause(
+        params.keywords, params.keyword_match_mode
+    )
+    if keyword_clause is not None:
+        query_must.append(keyword_clause)
+    for c in build_filter_must(params):
+        query_must.append(c)
+    body: dict = {
+        "query": {"bool": {"must": query_must if query_must else [{"match_all": {}}]}},
+        "from": from_,
+        "size": size,
+    }
+    if keyword_clause is not None:
+        body["highlight"] = {
+            "pre_tags": ["<em>"],
+            "post_tags": ["</em>"],
+            "fields": {
+                "title": {},
+                "clean_content": {"fragment_size": 200, "number_of_fragments": 3},
+            },
+        }
+    _apply_sort_to_body(body, params)
+    return body
+
+
+async def search_filter_only_tool(
+    es, params: EntityKeywordSearchParams
+) -> PageResponseSchema[EntitySearchToolHitSchema]:
+    filter_must = build_filter_must(params)
+    query = {
+        "bool": {
+            "must": [{"match_all": {}}],
+            "filter": filter_must if filter_must else [],
+        }
+    }
+    from_ = (params.page - 1) * params.page_size
+    query_body: dict = {
+        "query": query,
+        "from": from_,
+        "size": params.page_size,
+    }
+    _apply_sort_to_body(query_body, params)
+    result = await es.search(index=ALL_INDEX, body=query_body)
+    total = _get_es_total(result)
+    hits = result["hits"]["hits"]
+    items = hits_to_tool_search_hits(hits)
+    return PageResponseSchema.create(
+        items=items, total=total, page=params.page, page_size=params.page_size
+    )
+
+
+async def search_entities_keyword(
+    es, params: EntityKeywordSearchParams
+) -> PageResponseSchema[EntitySearchToolHitSchema]:
+    if not _normalize_keywords(params.keywords):
+        return await search_filter_only_tool(es, params)
+    from_ = (params.page - 1) * params.page_size
+    query_body = keyword_list_query_body(params, from_, params.page_size)
+    result = await es.search(index=ALL_INDEX, body=query_body)
+    total = _get_es_total(result)
+    hits = result["hits"]["hits"]
+    items = hits_to_tool_search_hits(hits)
+    return PageResponseSchema.create(
+        items=items, total=total, page=params.page, page_size=params.page_size
+    )
 
 
 async def search_filter_only(es, params: EntitySearchRequestSchema) -> PageResponseSchema[SearchResultSchema]:
@@ -165,19 +328,7 @@ def keyword_query_body(params: EntitySearchRequestSchema, from_: int, size: int)
             "post_tags": ["</em>"],
             "fields": {"title": {}, "clean_content": {"fragment_size": 200, "number_of_fragments": 3}}
         }
-    if params.sort_by == "relevance":
-        pass
-    elif params.sort_by in ["last_edit_at", "time"]:
-        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
-        body["sort"] = [
-            {"last_edit_at": {"order": sort_order, "missing": "_last"}},
-            {"publish_at": {"order": sort_order, "missing": "_last"}}
-        ]
-    elif params.sort_by == "crawled_at":
-        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
-        body["sort"] = [{"crawled_at": {"order": sort_order, "missing": "_last"}}]
-    else:
-        body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last"}}]
+    _apply_sort_to_body(body, params)
     return body
 
 

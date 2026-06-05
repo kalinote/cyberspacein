@@ -35,6 +35,14 @@ const props = defineProps({
   activeTab: {
     type: String,
     default: ''
+  },
+  dataAttribute: {
+    type: String,
+    default: 'data-keyword'
+  },
+  highlightSelector: {
+    type: String,
+    default: '.keyword-highlight'
   }
 })
 
@@ -55,11 +63,12 @@ function calculatePaths() {
   }
   const containerRect = container.getBoundingClientRect()
   const allPaths = []
-  const allHighlights = container.querySelectorAll('.keyword-highlight')
+  const allHighlights = container.querySelectorAll(props.highlightSelector)
+  const attrName = props.dataAttribute
   for (const keyword of props.selectedKeywords) {
     const tagEl = getTagEl(props.keywordTagRefs?.[keyword])
     if (!tagEl) continue
-    const highlights = Array.from(allHighlights).filter((el) => el.getAttribute('data-keyword') === keyword)
+    const highlights = Array.from(allHighlights).filter((el) => el.getAttribute(attrName) === keyword)
     const visibleHighlights = highlights.filter((el) => {
       const r = el.getBoundingClientRect()
       return r.width > 0 && r.height > 0
@@ -102,15 +111,32 @@ watch(() => props.selectedKeywords, updatePaths, { deep: true })
 watch(() => props.keywordTagRefs, updatePaths, { deep: true })
 watch(() => props.keywordColors, updatePaths, { deep: true })
 watch(() => props.activeTab, updatePaths)
+watch(() => props.dataAttribute, updatePaths)
+watch(() => props.highlightSelector, updatePaths)
+
+/** @type {ResizeObserver | null} */
+let layoutObserver = null
 
 onMounted(() => {
   updatePaths()
   window.addEventListener('scroll', scheduleUpdate, true)
   window.addEventListener('resize', scheduleUpdate)
+
+  nextTick(() => {
+    const container = svgRef.value?.closest('.marking-container')
+    if (container) {
+      layoutObserver = new ResizeObserver(scheduleUpdate)
+      layoutObserver.observe(container)
+      const sidebar = container.closest('[data-article-detail-workbench]')?.querySelector('[data-marking-sidebar]')
+      if (sidebar) layoutObserver.observe(sidebar)
+    }
+  })
 })
 
 onUnmounted(() => {
   if (updateTimer) clearTimeout(updateTimer)
+  layoutObserver?.disconnect()
+  layoutObserver = null
   window.removeEventListener('scroll', scheduleUpdate, true)
   window.removeEventListener('resize', scheduleUpdate)
 })

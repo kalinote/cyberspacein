@@ -15,10 +15,13 @@ import ComponentTaskManagement from '../views/action/ComponentTaskManagement.vue
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import AgentConfig from '../views/agent/AgentConfig.vue'
 import AnalysisDetail from '../views/agent/AnalysisDetail.vue'
+import AgentSessionList from '../views/agent/AgentSessionList.vue'
 import TargetManagement from '../views/target/TargetManagement.vue'
 import HighlightTargetList from '../views/target/HighlightTargetList.vue'
+import WikiPageList from '../views/wiki/WikiPageList.vue'
 import ArticleDetail from '../views/details/ArticleDetail.vue'
 import ForumDetail from '../views/details/ForumDetail.vue'
+import WikiDetail from '../views/details/WikiDetail.vue'
 import PlatformList from '../views/platform/PlatformList.vue'
 import SystemConfigHome from '../views/system/SystemConfigHome.vue'
 import UserPermissionManagement from '../views/system/UserPermissionManagement.vue'
@@ -151,6 +154,12 @@ const router = createRouter({
       meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.target.use] }
     },
     {
+      path: '/target/wiki',
+      name: 'wiki-page-list',
+      component: WikiPageList,
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.target.use] }
+    },
+    {
       // 分析引擎
       path: '/agent',
       name: 'agent-monitor',
@@ -165,8 +174,14 @@ const router = createRouter({
       meta: { requiresAuth: true, permissions: [PERM.pages.agent.use] }
     },
     {
+      path: '/agent/sessions',
+      name: 'agent-session-list',
+      component: AgentSessionList,
+      meta: { keepAlive: true, requiresAuth: true, permissions: [PERM.pages.agent.use] }
+    },
+    {
       // 分析详情
-      path: '/agent/analysis/:threadId',
+      path: '/agent/analysis/:sessionId',
       name: 'agent-analysis-detail',
       component: AnalysisDetail,
       meta: { requiresAuth: true, permissions: [PERM.pages.agent.use] }
@@ -190,6 +205,12 @@ const router = createRouter({
       path: '/details/forum/:uuid',
       name: 'forum-detail',
       component: ForumDetail,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/details/wiki/:id',
+      name: 'wiki-detail',
+      component: WikiDetail,
       meta: { requiresAuth: true }
     },
     {

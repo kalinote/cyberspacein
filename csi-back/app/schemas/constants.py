@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import Enum
 
 _ACTION_NODE_TYPE_LABELS = {
@@ -215,3 +217,111 @@ class SandboxStatusEnum(str, Enum):
     DEPLOYED = "deployed"
     STOPPED = "stopped"
     DESTROYED = "destroyed"
+
+
+# nanobot
+class NanobotMessageRoleEnum(str, Enum):
+    """
+    nanobot消息角色枚举
+    """
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+    
+NANOBOT_BUILTIN_WORKSPACE_ID = "__nanobot__"
+
+
+class NanobotMemoryDocTypeEnum(str, Enum):
+    """
+    nanobot记忆类型枚举
+    """
+    MEMORY = "memory"
+    SOUL = "soul"
+    USER = "user"
+    AGENT = "agent"
+
+
+class NanobotAgentStatusEnum(str, Enum):
+    """
+    Agent运行时业务状态枚举
+    """
+    IDLE = "idle"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class NanobotSessionStatusEnum(str, Enum):
+    """单次分析会话（nanobot_sessions）的运行时状态。"""
+
+    IDLE = "idle"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AgentStopReasonEnum(str, Enum):
+    """Agent 推理循环结束原因（AgentRunner → SSE/DB `result.stop_reason`）。"""
+
+    COMPLETED = "completed"
+    TOOL_ERROR = "tool_error"
+    ERROR = "error"
+    EMPTY_FINAL_RESPONSE = "empty_final_response"
+    MAX_ITERATIONS = "max_iterations"
+    AWAITING_APPROVAL = "awaiting_approval"
+
+    @classmethod
+    def coerce(cls, value: str | AgentStopReasonEnum | None) -> AgentStopReasonEnum | None:
+        if value is None:
+            return None
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value))
+        except ValueError:
+            return None
+
+class NanobotLLMProviderEnum(str, Enum):
+    """
+    LLM提供商枚举
+    """
+    OPENAI_COMPAT = "openai"
+    ANTHROPIC_COMPAT = "anthropic"
+
+
+class ReasoningEffortEnum(str, Enum):
+    """
+    推理强度枚举（用于启用/调节模型思考模式）。
+
+    - None（null）表示关闭推理/思考模式。
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+
+
+class WikiPageStatusEnum(str, Enum):
+    DRAFT = "draft"
+    BUILDING = "building"
+    PUBLISHED = "published"
+
+
+class WikiRevisionChangeTypeEnum(str, Enum):
+    CREATE = "create"
+    META = "meta"
+    MAIN = "main"
+    SECTION = "section"
+    STRUCTURE = "structure"
+    FOOTNOTES = "footnotes"
+    REFERENCES = "references"
+    RESTORE = "restore"
+    

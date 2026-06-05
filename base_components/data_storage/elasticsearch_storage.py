@@ -18,10 +18,11 @@ class ElasticsearchStorage:
             if self.username and self.password:
                 self.client = Elasticsearch(
                     hosts=self.hosts,
-                    basic_auth=(self.username, self.password)
+                    basic_auth=(self.username, self.password),
+                    request_timeout=120,
                 )
             else:
-                self.client = Elasticsearch(hosts=self.hosts)
+                self.client = Elasticsearch(hosts=self.hosts,request_timeout=120)
             
             if not self.client.ping():
                 raise ConnectionError("无法连接到Elasticsearch")

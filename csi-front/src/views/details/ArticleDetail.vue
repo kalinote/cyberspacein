@@ -1,5 +1,5 @@
-<template>
-    <div class="min-h-screen bg-gray-50">
+﻿<template>
+    <div class="min-h-screen bg-gray-50 flex flex-col">
         <Header />
 
         <div v-if="loading" class="flex items-center justify-center h-96">
@@ -11,14 +11,15 @@
 
         <div v-else-if="error" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div class="bg-white rounded-xl shadow-sm border border-red-200 p-8 text-center">
-                <Icon icon="mdi:alert-circle" class="text-red-500 text-5xl mb-4" />
+                <Icon icon="mdi:alert-circle" class="block mx-auto text-red-500 text-5xl mb-4" />
                 <h2 class="text-xl font-bold text-gray-900 mb-2">加载失败</h2>
                 <p class="text-gray-600 mb-4">{{ error }}</p>
                 <el-button type="primary" @click="$router.back()">返回</el-button>
             </div>
         </div>
 
-        <template v-else-if="articleData">
+        <div v-else-if="articleData" class="flex flex-col">
+            <div class="snap-start scroll-mt-16">
             <DetailPageHeader
                 :title="articleData.title || '无标题'"
                 :subtitle="articleData.uuid"
@@ -50,95 +51,101 @@
                 </template>
             </DetailPageHeader>
 
-            <section class="py-8 bg-white">
+            <section v-if="articleInfoItems.length || hasArticleInfoTags" class="py-6 bg-white">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 gap-6" :class="(articleData.likes != null && articleData.likes !== -1) ? 'md:grid-cols-5' : 'md:grid-cols-4'">
-                        <div class="bg-linear-to-br from-blue-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:account" class="text-blue-600 text-2xl" />
+                    <div class="rounded-xl border border-gray-200 bg-gray-50/60 p-4 sm:p-5 shadow-sm">
+                        <dl
+                            v-if="articleInfoItems.length"
+                            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-5 gap-y-3.5"
+                        >
+                            <div
+                                v-for="item in articleInfoItems"
+                                :key="item.key"
+                                class="min-w-0"
+                            >
+                                <dt class="text-xs text-gray-500 leading-tight">{{ item.label }}</dt>
+                                <dd
+                                    class="mt-0.5 text-sm font-medium text-gray-900"
+                                    :class="{
+                                        'font-mono text-xs': item.mono,
+                                        'break-all': item.breakAll,
+                                    }"
+                                >
+                                    <router-link
+                                        v-if="item.to"
+                                        :to="item.to"
+                                        class="text-blue-600 hover:text-blue-800 inline-flex items-center gap-0.5 max-w-full"
+                                    >
+                                        <span class="truncate">{{ item.value }}</span>
+                                        <Icon icon="mdi:chevron-right" class="shrink-0 text-base" />
+                                    </router-link>
+                                    <span
+                                        v-else
+                                        class="block truncate"
+                                        :title="item.value"
+                                    >{{ item.value }}</span>
+                                </dd>
                             </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">作者</p>
-                                <p class="text-lg font-bold text-gray-900 truncate">
-                                    {{ articleData.author_name || articleData.author_id || '未知' }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="bg-linear-to-br from-purple-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:web" class="text-purple-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">来源平台</p>
-                                <p class="text-base font-bold text-gray-900 truncate">
-                                    {{ articleData.platform || '未知' }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="bg-linear-to-br from-green-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:calendar" class="text-green-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">发布时间</p>
-                                <p class="text-base font-bold text-gray-900">
-                                    {{ formatDateTime(articleData.publish_at) }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="bg-linear-to-br from-amber-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:clock-outline" class="text-amber-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">采集时间</p>
-                                <p class="text-base font-bold text-gray-900">
-                                    {{ formatDateTime(articleData.crawled_at) }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div v-if="articleData.likes !== null && articleData.likes !== -1" class="bg-linear-to-br from-pink-50 to-white rounded-xl p-5 shadow-sm border border-gray-100 flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
-                                <Icon icon="mdi:thumb-up" class="text-pink-600 text-2xl" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-500">点赞数</p>
-                                <p class="text-2xl font-bold text-gray-900">
-                                    {{ articleData.likes.toLocaleString() }}
-                                </p>
+                        </dl>
+                        <div
+                            v-if="hasArticleInfoTags"
+                            :class="articleInfoItems.length ? 'mt-4 pt-4 border-t border-gray-200' : ''"
+                        >
+                            <p class="text-xs text-gray-500 mb-2">标签</p>
+                            <div class="flex flex-wrap gap-1.5">
+                                <el-tag
+                                    v-for="tag in articleData.tags"
+                                    :key="tag"
+                                    type="info"
+                                    size="small"
+                                >
+                                    {{ tag }}
+                                </el-tag>
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
+            </div>
 
-            <section class="py-12 bg-gray-50">
-                <div class="w-full px-4 sm:px-6 lg:px-8">
-                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                        <MarkingSidebar
-                            :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
-                            :active-marking-id="activeMarkingId"
-                            @update="handleUpdateMarking"
-                            @delete="handleDeleteMarking"
-                            @hover="handleMarkingHover"
-                        />
-                        <div class="lg:col-span-3 space-y-6 relative marking-container">
-                            <MarkingConnector
-                                :markings="getMarkingsByRegion(currentRegion)"
-                                :active-marking-id="activeMarkingId"
-                            />
-                            <KeywordConnector
-                                :selected-keywords="selectedKeywords"
-                                :keyword-tag-refs="keywordTagRefs"
-                                :keyword-colors="keywordColors"
-                                :active-tab="activeTab"
-                            />
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <div class="flex items-center justify-between mb-4">
+            <div class="shrink-0 snap-start snap-always scroll-mt-16 lg:min-h-[calc(100dvh-4rem)]">
+            <section
+                class="shrink-0 py-6 bg-gray-50 flex flex-col overflow-hidden lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:min-h-120"
+            >
+                <div class="w-full h-full min-h-0 px-4 sm:px-6 lg:px-8 flex flex-col">
+                    <ArticleDetailWorkbench
+                        class="flex-1 min-h-0"
+                        :constrain-height="workbenchHeightEnabled"
+                        :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
+                        :active-marking-id="activeMarkingId"
+                        @marking-update="handleUpdateMarking"
+                        @marking-delete="handleDeleteMarking"
+                        @marking-hover="handleMarkingHover"
+                        @pane-resized="handlePaneResized"
+                    >
+                        <template #center-top>
+                            <div class="absolute inset-0 pointer-events-none z-10" aria-hidden="true">
+                                <MarkingConnector
+                                    :markings="getMarkingsByRegion(currentRegion)"
+                                    :active-marking-id="activeMarkingId"
+                                />
+                                <KeywordConnector
+                                    :selected-keywords="selectedKeywords"
+                                    :keyword-tag-refs="keywordTagRefs"
+                                    :keyword-colors="keywordColors"
+                                    :active-tab="activeTab"
+                                />
+                                <KeywordConnector
+                                    :selected-keywords="selectedEntityKeys"
+                                    :keyword-tag-refs="entityTagRefs"
+                                    :keyword-colors="entityColors"
+                                    data-attribute="data-entity"
+                                    highlight-selector=".entity-highlight"
+                                    :active-tab="activeTab"
+                                />
+                            </div>
+                            <div class="flex h-full min-h-0 flex-1 flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <div class="mb-4 flex shrink-0 items-center justify-between">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
                                         <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
                                         文章<span class="text-blue-500">内容</span>
@@ -168,7 +175,7 @@
                                         </el-button>
                                     </div>
                                 </div>
-                                <el-tabs v-model="activeTab" class="article-tabs">
+                                <el-tabs v-model="activeTab" class="article-tabs min-h-0 flex-1 flex flex-col">
                                     <el-tab-pane v-if="articleData.clean_content" label="纯文本内容" name="clean">
                                         <div
                                             ref="cleanContentRef"
@@ -217,11 +224,50 @@
                                             language="html"
                                         />
                                     </el-tab-pane>
+                                    <el-tab-pane v-if="articleData.snapshot" label="页面快照" name="snapshot">
+                                        <div v-if="snapshotLoading" class="flex flex-col items-center justify-center py-16 text-gray-500">
+                                            <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin mb-2" />
+                                            <p>快照加载中...</p>
+                                        </div>
+                                        <div v-else-if="snapshotError" class="flex flex-col items-center justify-center py-16 text-gray-500">
+                                            <Icon icon="mdi:alert-circle-outline" class="text-5xl text-red-400 mb-2" />
+                                            <p class="mb-4 text-center max-w-md">{{ snapshotError }}</p>
+                                            <el-button type="primary" @click="loadSnapshot">重试</el-button>
+                                        </div>
+                                        <div v-else-if="snapshotBlobUrl" class="space-y-2">
+                                            <div class="flex justify-end">
+                                                <el-link
+                                                    :href="snapshotBlobUrl"
+                                                    target="_blank"
+                                                    type="primary"
+                                                    class="text-sm"
+                                                >
+                                                    <template #icon>
+                                                        <Icon icon="mdi:open-in-new" />
+                                                    </template>
+                                                    新窗口打开
+                                                </el-link>
+                                            </div>
+                                            <iframe
+                                                :src="snapshotBlobUrl"
+                                                sandbox="allow-same-origin"
+                                                class="w-full min-h-128 border-0 rounded-lg bg-white ring-1 ring-gray-200"
+                                                title="页面快照"
+                                            />
+                                        </div>
+                                    </el-tab-pane>
                                 </el-tabs>
                             </div>
+                        </template>
 
+                        <template #center-bottom>
+                            <div
+                                class="flex h-full min-h-0 flex-col gap-6"
+                                :class="hasCenterBottomExtraCards ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'"
+                            >
                             <Timeline
-                                v-if="articleData.entity_type && articleData.source_id"
+                                v-if="showArticleTimeline"
+                                :fill-height="!hasCenterBottomExtraCards && workbenchHeightEnabled"
                                 :entity-type="articleData.entity_type"
                                 :source-id="articleData.source_id"
                                 :current-uuid="articleData.uuid"
@@ -230,7 +276,7 @@
                                 :current-last-edit-at="articleData.last_edit_at || ''"
                             />
 
-                            <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.emotion !== null && articleData.emotion !== undefined" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:emoticon-happy-outline" class="text-amber-600 mr-2" />
                                     情感<span class="text-blue-500">分析</span>
@@ -260,7 +306,7 @@
                                 </div>
                             </div>
 
-                            <div v-if="articleData.political_bias && articleData.political_bias.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.political_bias && articleData.political_bias.length > 0" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:scale-balance" class="text-purple-600 mr-2" />
                                     政治<span class="text-blue-500">倾向</span>
@@ -272,7 +318,7 @@
                                 </div>
                             </div>
 
-                            <div v-if="articleData.confidence !== null && articleData.confidence !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.confidence !== null && articleData.confidence !== undefined" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:shield-check" class="text-green-600 mr-2" />
                                     置信<span class="text-blue-500">度</span>
@@ -300,7 +346,7 @@
                                 </div>
                             </div>
 
-                            <div v-if="articleData.subjective_rating !== null && articleData.subjective_rating !== undefined" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div v-if="articleData.subjective_rating !== null && articleData.subjective_rating !== undefined" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
                                     <Icon icon="mdi:star" class="text-amber-600 mr-2" />
                                     主观<span class="text-blue-500">评分</span>
@@ -316,152 +362,68 @@
                                     <span class="text-3xl font-bold text-gray-900">{{ articleData.subjective_rating }}/10</span>
                                 </div>
                             </div>
+                            </div>
+                        </template>
+
+                        <template #right>
+                        <div class="flex min-w-0 gap-0 h-full min-h-0 w-full">
+                            <div
+                                class="flex-1 min-w-0 flex flex-col min-h-0 h-full bg-white rounded-l-xl shadow-sm border border-gray-200 border-r-0 overflow-hidden"
+                            >
+                                <ArticleDetailInfoPanel
+                                    v-show="rightPanel === 'info'"
+                                    :keywords="articleData.keywords"
+                                    :entities="articleData.entities"
+                                    :analyze-options="analyzeOptions"
+                                    :analyzing="analyzing"
+                                    :is-priority-target="isPriorityTarget"
+                                    :selected-keywords="selectedKeywords"
+                                    :keyword-colors="keywordColors"
+                                    :selected-entity-keys="selectedEntityKeys"
+                                    :entity-colors="entityColors"
+                                    :set-keyword-ref="setKeywordRef"
+                                    :set-entity-ref="setEntityRef"
+                                    @analyze-main="handleAnalyze"
+                                    @analyze-option="handleAnalyzeOption"
+                                    @export="handleExport"
+                                    @toggle-priority="togglePriorityTarget"
+                                    @toggle-keyword="toggleKeyword"
+                                    @toggle-entity="toggleEntity"
+                                />
+                                <ArticleDetailAnalysisPanel
+                                    v-show="rightPanel === 'analysis'"
+                                    :session-id="activeSessionId"
+                                    :timeline-items="timelineItems"
+                                    :register-events-scroll-el="registerEventsScrollEl"
+                                    :on-events-scroll="onEventsScroll"
+                                    v-model:user-prompt="userPrompt"
+                                    :send-loading="sendLoading"
+                                    :cancel-loading="cancelLoading"
+                                    :can-send-message="canSendMessage"
+                                    :can-cancel="canCancel"
+                                    :sse-connected="sseConnected"
+                                    :status-label="agentStatusLabel"
+                                    :status-tag-type="agentStatusTagType"
+                                    :todos="todos"
+                                    :todo-status-icon="todoStatusIcon"
+                                    :todo-status-icon-color="todoStatusIconColor"
+                                    @open-fullscreen="openAnalysisFullscreen"
+                                    @send="sendMessage"
+                                    @cancel="cancelAgentTask"
+                                />
+                            </div>
+                            <DetailRightActivityRail
+                                v-model="rightPanel"
+                                :items="rightRailItems"
+                                class="h-full shrink-0"
+                            />
                         </div>
-
-                        <div class="space-y-6">
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    快速<span class="text-blue-500">操作</span>
-                                </h3>
-                                <div class="space-y-3">
-                                    <SplitButton
-                                        :main-button-text="'分析此实体'"
-                                        :loading-text="'分析实体中...'"
-                                        :disabled="analyzing"
-                                        :loading="analyzing"
-                                        :options="analyzeOptions"
-                                        main-button-icon="mdi:brain"
-                                        @main-click="handleAnalyze"
-                                        @option-click="handleAnalyzeOption"
-                                    />
-                                    <button 
-                                        @click="handleExport"
-                                        class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
-                                    >
-                                        <Icon icon="mdi:download" />
-                                        <span>媒体文件本地化</span>
-                                    </button>
-                                    <button 
-                                        @click="togglePriorityTarget"
-                                        :class="[
-                                            'w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2',
-                                            isPriorityTarget 
-                                                ? 'bg-amber-500 hover:bg-amber-600 text-white border-2 border-amber-500' 
-                                                : 'border-2 border-gray-200 text-gray-600 hover:bg-gray-50'
-                                        ]"
-                                    >
-                                        <Icon :icon="isPriorityTarget ? 'mdi:star' : 'mdi:star-outline'" />
-                                        <span>{{ isPriorityTarget ? '取消重点目标' : '设置重点目标' }}</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    文章<span class="text-blue-500">信息</span>
-                                </h3>
-                                <div class="space-y-4">
-                                    <div v-if="articleData.author_name || articleData.author_id">
-                                        <p class="text-sm text-gray-500 mb-1">作者</p>
-                                        <router-link
-                                            v-if="articleData.author_uuid"
-                                            :to="`/user/${articleData.author_uuid}`"
-                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
-                                        >
-                                            {{ articleData.author_name || articleData.author_id }}
-                                        </router-link>
-                                        <p v-else class="font-medium text-gray-900">
-                                            {{ articleData.author_name || articleData.author_id }}
-                                        </p>
-                                    </div>
-                                    <div v-if="articleData.platform">
-                                        <p class="text-sm text-gray-500 mb-1">平台</p>
-                                        <router-link
-                                            v-if="articleData.platform_uuid"
-                                            :to="`/details/platform/${articleData.platform_uuid}`"
-                                            class="font-medium text-blue-600 hover:text-blue-800 underline"
-                                        >
-                                            {{ articleData.platform }}
-                                        </router-link>
-                                        <p v-else class="font-medium text-gray-900">
-                                            {{ articleData.platform }}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div v-if="articleData.keywords && articleData.keywords.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                                    关键词<span class="text-blue-500">提取</span>
-                                </h3>
-                                <div class="flex flex-wrap gap-2">
-                                    <el-tag
-                                        v-for="keyword in articleData.keywords"
-                                        :key="keyword"
-                                        :type="selectedKeywords.includes(keyword) ? 'success' : 'primary'"
-                                        size="large"
-                                        class="cursor-pointer"
-                                        :style="selectedKeywords.includes(keyword) && keywordColors[keyword] ? { borderColor: keywordColors[keyword], backgroundColor: keywordColors[keyword] + '22' } : undefined"
-                                        :ref="(el) => setKeywordRef(keyword, el)"
-                                        @click="toggleKeyword(keyword)"
-                                    >
-                                        {{ keyword }}
-                                    </el-tag>
-                                </div>
-                            </div>
-
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                    元数据<span class="text-blue-500">信息</span>
-                                </h3>
-                                <div class="space-y-4">
-                                    <div v-if="articleData.tags && articleData.tags.length > 0">
-                                        <p class="text-sm text-gray-500 mb-2">标签</p>
-                                        <div class="flex flex-wrap gap-2">
-                                            <el-tag v-for="tag in articleData.tags" :key="tag" type="info" size="small">
-                                                {{ tag }}
-                                            </el-tag>
-                                        </div>
-                                    </div>
-                                    <div v-if="articleData.language">
-                                        <p class="text-sm text-gray-500 mb-1">语言</p>
-                                        <p class="font-medium text-gray-900">{{ articleData.language }}</p>
-                                    </div>
-                                    <div v-if="articleData.entity_type">
-                                        <p class="text-sm text-gray-500 mb-1">实体类型</p>
-                                        <p class="font-medium text-gray-900">{{ articleData.entity_type }}</p>
-                                    </div>
-                                    <div v-if="articleData.data_version">
-                                        <p class="text-sm text-gray-500 mb-1">数据版本</p>
-                                        <p class="font-medium text-gray-900">v{{ articleData.data_version }}</p>
-                                    </div>
-                                    <div v-if="articleData.source_id">
-                                        <p class="text-sm text-gray-500 mb-1">来源ID</p>
-                                        <p class="font-medium text-gray-900 break-all text-sm">{{ articleData.source_id }}</p>
-                                    </div>
-                                    <div v-if="articleData.last_edit_at">
-                                        <p class="text-sm text-gray-500 mb-1">最后编辑</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.last_edit_at) }}</p>
-                                    </div>
-                                    <div v-if="articleData.update_at">
-                                        <p class="text-sm text-gray-500 mb-1">更新时间</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.update_at) }}</p>
-                                    </div>
-                                    <div v-if="articleData.highlighted_at">
-                                        <p class="text-sm text-gray-500 mb-1">标记时间</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ formatDateTime(articleData.highlighted_at) }}</p>
-                                    </div>
-                                    <div v-if="articleData.highlight_reason">
-                                        <p class="text-sm text-gray-500 mb-1">标记理由</p>
-                                        <p class="font-medium text-gray-900 text-sm">{{ articleData.highlight_reason }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                        </template>
+                    </ArticleDetailWorkbench>
                 </div>
             </section>
-        </template>
+            </div>
+        </div>
 
         <el-dialog
             v-model="showHighlightDialog"
@@ -495,6 +457,40 @@
             @style-select="handleStyleSelect"
             @create="handleCreateMarking"
         />
+
+        <el-dialog
+            v-model="showApprovalDialog"
+            :title="approvalDialogTitle"
+            width="760px"
+            :close-on-click-modal="false"
+            :show-close="false"
+            @closed="onApprovalDialogClosed"
+        >
+            <div v-if="pendingApproval">
+                <p class="text-gray-600 mb-4">Agent 请求执行以下操作，请选择批准或拒绝：</p>
+                <AgentApprovalPanel :approval="pendingApproval" />
+                <div v-if="showRejectReason" class="mt-4 pt-4 border-t border-gray-100">
+                    <p class="text-sm text-gray-600 mb-2">拒绝理由（可选）</p>
+                    <el-input
+                        v-model="approvalReason"
+                        type="textarea"
+                        :autosize="{ minRows: 2, maxRows: 4 }"
+                        placeholder="请填写拒绝原因"
+                        resize="none"
+                    />
+                </div>
+            </div>
+            <template #footer>
+                <template v-if="showRejectReason">
+                    <el-button @click="cancelRejectFlow" :disabled="approvalLoading">返回</el-button>
+                    <el-button type="danger" @click="submitApprovalDecision('reject')" :loading="approvalLoading">确认拒绝</el-button>
+                </template>
+                <template v-else>
+                    <el-button type="danger" @click="showRejectReason = true" :loading="approvalLoading">拒绝</el-button>
+                    <el-button type="primary" @click="submitApprovalDecision('approve')" :loading="approvalLoading">批准</el-button>
+                </template>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
@@ -504,13 +500,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
 import DetailPageHeader from '@/components/page-header/DetailPageHeader.vue'
-import SplitButton from '@/components/SplitButton.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
+import ArticleDetailWorkbench from '@/components/detail/ArticleDetailWorkbench.vue'
 import MarkingToolbar from '@/components/marking/MarkingToolbar.vue'
 import MarkingConnector from '@/components/marking/MarkingConnector.vue'
 import KeywordConnector from '@/components/keyword/KeywordConnector.vue'
 import Timeline from '@/components/Timeline.vue'
+import DetailRightActivityRail from '@/components/detail/DetailRightActivityRail.vue'
+import ArticleDetailInfoPanel from '@/components/detail/ArticleDetailInfoPanel.vue'
+import ArticleDetailAnalysisPanel from '@/components/detail/ArticleDetailAnalysisPanel.vue'
+import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
+import { useAgentSessionStream } from '@/composables/useAgentSessionStream'
+import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 import { articleApi } from '@/api/article'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -519,6 +520,11 @@ import { convertRelativeLinks } from '@/utils/linkProcessor'
 import { useMarkingHandler } from '@/composables/useMarkingHandler'
 import { useHighlight } from '@/composables/useHighlight'
 import { useKeywordHighlight } from '@/composables/useKeywordHighlight'
+import { useEntityHighlight } from '@/composables/useEntityHighlight'
+import { hasEntities } from '@/utils/entityDisplay'
+import { loadMhtmlSnapshot, revokeBlobUrl, resolveSnapshotUrl } from '@/utils/mhtmlSnapshot'
+import { useMinLg } from '@/composables/useMinLg'
+import { setDetailPageScrollSnap } from '@/utils/detailPageScrollSnap'
 
 const route = useRoute()
 const router = useRouter()
@@ -527,6 +533,59 @@ const uuid = computed(() => route.params.uuid)
 const articleData = ref(null)
 const loading = ref(false)
 const error = ref(null)
+
+const { isLgUp: workbenchHeightEnabled } = useMinLg()
+
+const rightPanel = ref('info')
+const rightRailItems = [
+    { key: 'info', icon: 'mdi:information-outline', label: '信息栏' },
+    { key: 'analysis', icon: 'mdi:brain', label: '分析框' },
+]
+
+const activeSessionId = ref('')
+const activeAgentId = ref('')
+
+const articleEntityUuid = computed(() => articleData.value?.uuid || '')
+const articleEntityType = computed(() => articleData.value?.entity_type || '')
+
+const agentStream = useAgentSessionStream({
+    sessionId: activeSessionId,
+    agentId: activeAgentId,
+    entityUuid: articleEntityUuid,
+    entityType: articleEntityType,
+})
+
+const {
+    userPrompt,
+    sendLoading,
+    cancelLoading,
+    todos,
+    timelineItems,
+    sseConnected,
+    showApprovalDialog,
+    pendingApproval,
+    approvalReason,
+    showRejectReason,
+    approvalLoading,
+    approvalDialogTitle,
+    registerEventsScrollEl,
+    scrollEventsToBottom,
+    onEventsScroll,
+    statusLabel: agentStatusLabel,
+    statusTagType: agentStatusTagType,
+    canSendMessage,
+    canCancel,
+    todoStatusIcon,
+    todoStatusIconColor,
+    disconnectSSE,
+    startStreamForSession,
+    sendMessage,
+    cancel: cancelAgentTask,
+    cancelRejectFlow,
+    submitApprovalDecision,
+    onApprovalDialogClosed,
+} = agentStream
+
 const activeTab = ref('clean')
 const analyzing = ref(false)
 const editableSafeRawContent = ref('')
@@ -535,22 +594,57 @@ const safeRawEditorRef = ref(null)
 const cleanContentRef = ref(null)
 const renderedContentRef = ref(null)
 const translateContentRef = ref(null)
+const snapshotLoading = ref(false)
+const snapshotError = ref('')
+const snapshotBlobUrl = ref('')
+
+const {
+  selectedEntityKeys,
+  entityTagRefs,
+  entityColors,
+  setEntityRef,
+  toggleEntity,
+  buildEntityHighlightLayer,
+} = useEntityHighlight()
 
 const {
   selectedKeywords,
   keywordTagRefs,
   keywordColors,
-  highlightedCleanContent,
-  highlightedTranslateContent,
   setKeywordRef,
   toggleKeyword,
-  applyRenderedKeywordHighlight
+  applyRenderedKeywordHighlight,
+  getHighlightedPlainText,
 } = useKeywordHighlight({
   getCleanContent: () => articleData.value?.clean_content,
   getTranslateContent: () => articleData.value?.translate_content,
   renderedContentRef,
   activeTab
 })
+
+const entityHighlightLayers = computed(() => {
+  const layer = buildEntityHighlightLayer()
+  return layer ? [layer] : []
+})
+
+const highlightedCleanContent = computed(() =>
+  getHighlightedPlainText(() => articleData.value?.clean_content, entityHighlightLayers.value)
+)
+
+const highlightedTranslateContent = computed(() =>
+  getHighlightedPlainText(() => articleData.value?.translate_content, entityHighlightLayers.value)
+)
+
+function applyContentHighlights() {
+  applyRenderedKeywordHighlight(entityHighlightLayers.value)
+}
+
+function handlePaneResized() {
+    nextTick(() => {
+        rawEditorRef.value?.layout?.()
+        safeRawEditorRef.value?.layout?.()
+    })
+}
 
 const {
     currentRegion,
@@ -594,9 +688,35 @@ const loadAnalyzeOptions = async () => {
     }
 }
 
+function revokeSnapshotBlob() {
+    revokeBlobUrl(snapshotBlobUrl.value)
+    snapshotBlobUrl.value = ''
+}
+
+async function loadSnapshot() {
+    const url = resolveSnapshotUrl(articleData.value?.snapshot)
+    if (!url) {
+        snapshotError.value = '快照地址无效'
+        return
+    }
+    snapshotLoading.value = true
+    snapshotError.value = ''
+    try {
+        const { blobUrl } = await loadMhtmlSnapshot(url)
+        revokeSnapshotBlob()
+        snapshotBlobUrl.value = blobUrl
+    } catch (err) {
+        snapshotError.value = err?.message || '快照加载失败'
+    } finally {
+        snapshotLoading.value = false
+    }
+}
+
 const loadArticleDetail = async () => {
     loading.value = true
     error.value = null
+    revokeSnapshotBlob()
+    snapshotError.value = ''
     
     try {
         const response = await articleApi.getArticleDetail(uuid.value)
@@ -647,6 +767,89 @@ const {
     withDialog: true
 })
 
+const isValidMetric = (value) => value !== null && value !== undefined && value !== -1
+
+const hasArticleInfoTags = computed(() => {
+    const tags = articleData.value?.tags
+    return Array.isArray(tags) && tags.length > 0
+})
+
+const showArticleTimeline = computed(
+    () => Boolean(articleData.value?.entity_type && articleData.value?.source_id),
+)
+
+const hasCenterBottomExtraCards = computed(() => {
+    const d = articleData.value
+    if (!d) return false
+    if (d.emotion !== null && d.emotion !== undefined) return true
+    if (d.political_bias?.length) return true
+    if (d.confidence !== null && d.confidence !== undefined) return true
+    if (d.subjective_rating !== null && d.subjective_rating !== undefined) return true
+    return false
+})
+
+const articleInfoItems = computed(() => {
+    const d = articleData.value
+    if (!d) return []
+
+    /** @type {{ key: string, label: string, value: string, to?: string, mono?: boolean, breakAll?: boolean }[]} */
+    const items = []
+
+    const push = (item) => {
+        if (item.value !== undefined && item.value !== null && item.value !== '') {
+            items.push(item)
+        }
+    }
+
+    push({
+        key: 'author',
+        label: '作者',
+        value: d.author_name || d.author_id || '未知',
+        to: d.author_uuid ? `/user/${d.author_uuid}` : undefined,
+    })
+    push({
+        key: 'platform',
+        label: '来源平台',
+        value: d.platform || '未知',
+        to: d.platform_uuid ? `/details/platform/${d.platform_uuid}` : undefined,
+    })
+    if (d.publish_at) {
+        push({ key: 'publish_at', label: '发布时间', value: formatDateTime(d.publish_at) })
+    }
+    if (d.crawled_at) {
+        push({ key: 'crawled_at', label: '采集时间', value: formatDateTime(d.crawled_at) })
+    }
+    if (isValidMetric(d.likes)) {
+        push({ key: 'likes', label: '点赞', value: d.likes.toLocaleString() })
+    }
+    if (d.language) {
+        push({ key: 'language', label: '语言', value: d.language })
+    }
+    if (d.entity_type) {
+        push({ key: 'entity_type', label: '实体类型', value: d.entity_type })
+    }
+    if (d.data_version) {
+        push({ key: 'data_version', label: '数据版本', value: `v${d.data_version}` })
+    }
+    if (d.source_id) {
+        push({ key: 'source_id', label: '来源ID', value: String(d.source_id), mono: true, breakAll: true })
+    }
+    if (d.last_edit_at) {
+        push({ key: 'last_edit_at', label: '最后编辑', value: formatDateTime(d.last_edit_at) })
+    }
+    if (d.update_at) {
+        push({ key: 'update_at', label: '更新时间', value: formatDateTime(d.update_at) })
+    }
+    if (d.highlighted_at) {
+        push({ key: 'highlighted_at', label: '标记时间', value: formatDateTime(d.highlighted_at) })
+    }
+    if (d.highlight_reason) {
+        push({ key: 'highlight_reason', label: '标记理由', value: d.highlight_reason, breakAll: true })
+    }
+
+    return items
+})
+
 const handleSaveSafeContent = async () => {
     await ElMessageBox.alert('后端接口尚未实现，保存功能暂不可用', '提示', {
         confirmButtonText: '确定',
@@ -692,14 +895,27 @@ const handleAnalyzeOption = async (option) => {
         analyzing.value = true
         
         const response = await agentApi.startAgent({
-            entity_uuid: articleData.value.uuid,
-            entity_type: articleData.value.entity_type,
-            agent_id: option.value
+            agent_id: option.value,
+            injection_param: {
+                entity_uuid: articleData.value.uuid,
+                entity_type: articleData.value.entity_type,
+            },
+            debug: true,
+            auto_approve: getAgentAutoApproveValue(),
         })
         
-        if (response.code === 0 && response.data?.thread_id) {
+        if (response.code === 0 && response.data?.agent_id) {
             ElMessage.success('分析任务已启动')
-            router.push(`/agent/analysis/${response.data.thread_id}`)
+            const sid = response.data.session_id
+            if (!sid) {
+                ElMessage.error('未返回 session_id，无法开始分析')
+                return
+            }
+            activeSessionId.value = String(sid)
+            activeAgentId.value = String(response.data.agent_id)
+            rightPanel.value = 'analysis'
+            syncAgentSessionQuery()
+            await startStreamForSession({ loadDetail: true })
         } else {
             ElMessage.error(response.message || '启动分析任务失败')
         }
@@ -717,11 +933,62 @@ const handleExport = () => {
     ElMessage.info('导出功能开发中')
 }
 
+function syncAgentSessionQuery() {
+    const q = { ...route.query }
+    if (activeSessionId.value) {
+        q.agent_session = activeSessionId.value
+        q.agent_id = activeAgentId.value
+    } else {
+        delete q.agent_session
+        delete q.agent_id
+    }
+    router.replace({ query: q })
+}
+
+function restoreAgentSessionFromQuery() {
+    const sid = route.query.agent_session
+    const aid = route.query.agent_id
+    if (!sid || !aid) return
+    activeSessionId.value = String(sid)
+    activeAgentId.value = String(aid)
+    rightPanel.value = 'analysis'
+    startStreamForSession({ loadDetail: true })
+}
+
+watch(rightPanel, async (panel) => {
+    if (panel === 'analysis') {
+        await nextTick()
+        scrollEventsToBottom(true)
+    }
+})
+
+function openAnalysisFullscreen() {
+    if (!activeSessionId.value) return
+    router.push({
+        path: `/agent/analysis/${activeSessionId.value}`,
+        query: {
+            agent_id: activeAgentId.value,
+            injection_param: JSON.stringify({
+                entity_uuid: articleData.value?.uuid || '',
+                entity_type: articleData.value?.entity_type || '',
+            }),
+        },
+    })
+}
+
 watch(() => route.params.uuid, () => {
+    disconnectSSE()
+    activeSessionId.value = ''
+    activeAgentId.value = ''
+    rightPanel.value = 'info'
+    syncAgentSessionQuery()
     loadArticleDetail()
 }, { immediate: false })
 
 watch(activeTab, async (newTab, oldTab) => {
+    if (newTab === 'snapshot' && !snapshotBlobUrl.value && !snapshotLoading.value) {
+        loadSnapshot()
+    }
     if (newTab === 'raw' && rawEditorRef.value && articleData.value?.raw_content) {
         await nextTick()
         await rawEditorRef.value.formatDocument()
@@ -729,25 +996,45 @@ watch(activeTab, async (newTab, oldTab) => {
     await handleTabChange(newTab, oldTab)
 })
 
-watch([activeTab, selectedKeywords], () => {
-    applyRenderedKeywordHighlight()
+watch([activeTab, selectedKeywords, selectedEntityKeys], () => {
+    applyContentHighlights()
 }, { deep: true })
 watch(editableSafeRawContent, () => {
-    if (activeTab.value === 'rendered') applyRenderedKeywordHighlight()
+    if (activeTab.value === 'rendered') applyContentHighlights()
 })
+
+watch(
+    () => Boolean(articleData.value) && !loading.value,
+    (enabled) => setDetailPageScrollSnap(enabled),
+    { immediate: true },
+)
 
 onMounted(() => {
     loadArticleDetail()
     loadAnalyzeOptions()
     setupEventListeners()
+    restoreAgentSessionFromQuery()
 })
 
 onUnmounted(() => {
+    setDetailPageScrollSnap(false)
+    revokeSnapshotBlob()
     cleanupEventListeners()
+    disconnectSSE()
 })
 </script>
 
 <style scoped>
+:global(html.detail-page-scroll-snap) {
+    scroll-snap-type: y proximity;
+}
+
+@media (min-width: 1024px) {
+    :global(html.detail-page-scroll-snap) {
+        scroll-snap-type: y mandatory;
+    }
+}
+
 .article-content :deep(img) {
     max-width: 100%;
     height: auto;
@@ -782,6 +1069,31 @@ onUnmounted(() => {
     font-family: inherit;
 }
 
+.article-tabs {
+    display: flex;
+    flex-direction: column;
+}
+
+.article-tabs :deep(.el-tabs__header) {
+    flex-shrink: 0;
+}
+
+.article-tabs :deep(.el-tabs__content) {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.article-tabs :deep(.el-tab-pane) {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.article-tabs :deep(.monaco-editor-container) {
+    min-height: 20rem;
+    height: 100%;
+}
+
 .article-tabs :deep(.el-tabs__nav-wrap::after) {
     height: 1px;
 }
@@ -811,15 +1123,6 @@ onUnmounted(() => {
     overflow: visible !important;
 }
 
-.marking-container :deep(.bg-white),
-.marking-container :deep(.rounded-xl) {
-    overflow: visible !important;
-}
-
-.article-tabs :deep(.el-tabs__content),
-.article-tabs :deep(.el-tab-pane) {
-    overflow: visible !important;
-}
 
 .prose pre {
     padding-left: 8px;
@@ -830,6 +1133,11 @@ onUnmounted(() => {
 
 .marking-container :deep(.keyword-highlight) {
     background-color: rgba(59, 130, 246, 0.25);
+    border-radius: 2px;
+}
+
+.marking-container :deep(.entity-highlight) {
+    background-color: rgba(16, 185, 129, 0.25);
     border-radius: 2px;
 }
 </style>

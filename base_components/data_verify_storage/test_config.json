@@ -1,14 +1,14 @@
 {
     "meta": {
-        "node_id": "test_node_001",
-        "action_id": "694251b96d9534925bd9f6f3"
+        "node_id": "test_config",
+        "action_id": "test_config"
     },
     "config": {},
     "inputs": {
         "data_in": {
             "type": "reference",
             "value": [
-                "local_crawl_test"
+                "snapshot_out"
             ]
         }
     },

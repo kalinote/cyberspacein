@@ -32,6 +32,14 @@ const props = defineProps({
 
 const connectionPaths = ref([])
 
+/** @param {Element} container */
+function getMarkingSidebar(container) {
+  const root = container.closest('[data-article-detail-workbench]')
+  const fromWorkbench = root?.querySelector('[data-marking-sidebar]')
+  if (fromWorkbench) return fromWorkbench
+  return container.previousElementSibling
+}
+
 function calculatePath(marking, index) {
   const { spanId, textOffset } = marking.target
   let targetElement = null
@@ -52,7 +60,7 @@ function calculatePath(marking, index) {
 
   const targetRect = targetElement.getBoundingClientRect()
   const containerRect = container.getBoundingClientRect()
-  const sidebar = container.previousElementSibling
+  const sidebar = getMarkingSidebar(container)
   const sidebarRect = sidebar?.getBoundingClientRect()
 
   if (!sidebarRect) return null
@@ -125,17 +133,32 @@ function scheduleUpdate() {
 watch(() => props.markings, updatePaths, { deep: true })
 watch(() => props.activeMarkingId, updatePaths)
 
+/** @type {ResizeObserver | null} */
+let layoutObserver = null
+
 onMounted(() => {
   updatePaths()
-  
+
   window.addEventListener('scroll', scheduleUpdate, true)
   window.addEventListener('resize', scheduleUpdate)
+
+  nextTick(() => {
+    const container = document.querySelector('.marking-container')
+    const sidebar = container ? getMarkingSidebar(container) : null
+    const targets = [container, sidebar].filter(Boolean)
+    if (targets.length) {
+      layoutObserver = new ResizeObserver(scheduleUpdate)
+      targets.forEach((el) => layoutObserver.observe(el))
+    }
+  })
 })
 
 onUnmounted(() => {
   if (updateTimer) {
     clearTimeout(updateTimer)
   }
+  layoutObserver?.disconnect()
+  layoutObserver = null
   window.removeEventListener('scroll', scheduleUpdate, true)
   window.removeEventListener('resize', scheduleUpdate)
 })

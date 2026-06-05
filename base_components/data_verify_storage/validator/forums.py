@@ -44,7 +44,9 @@ FORUMS_SCHEMA = {
     "views": int,
     "is_highlighted": bool,
     "highlighted_at": str,
-    "highlight_reason": str
+    "highlight_reason": str,
+    "snapshot": str,
+    "screenshot": str,
 }
 
 DATE_FIELDS = [

@@ -1,3 +1,27 @@
+# inputs.conditions 条件查询语法（用于 MongoDB / Elasticsearch 查询及 storage_filter 内存过滤）
+#
+# 逻辑组合：
+#   { "$and": [ 条件1, 条件2, ... ] }
+#   { "$or":  [ 条件1, 条件2, ... ] }
+#
+# 单条条件：{ "field": "字段名", "op": "操作符", "value": <值> }
+#   exists / not_exists 无需 value
+#
+# 支持的操作符：
+#   eq        等于
+#   ne        不等于
+#   gt        大于
+#   lt        小于
+#   gte       大于等于
+#   lte       小于等于
+#   in        在列表中（value 为数组）
+#   contains  字符串包含（不区分大小写，MongoDB 为正则）
+#   exists    字段存在（文档中含该字段）
+#   not_exists 字段不存在
+#
+# 示例：筛选 snapshot 字段不存在的文档
+#   { "$and": [ { "field": "snapshot", "op": "not_exists" } ] }
+
 import logging
 import sys
 from typing import List, Dict, Any
@@ -19,6 +43,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 100
+
+_CONDITION_OPS = frozenset([
+    'eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains', 'exists', 'not_exists',
+])
+_CONDITION_OPS_NO_VALUE = frozenset(['exists', 'not_exists'])
 
 
 def get_mongodb_config():
@@ -115,7 +144,7 @@ def _build_elasticsearch_condition(condition: Dict[str, Any]) -> Dict[str, Any]:
         op = condition.get('op', '')
         value = condition.get('value')
         
-        if not field or op not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
+        if not field or op not in _CONDITION_OPS:
             return None
         
         if op == 'eq':
@@ -137,6 +166,10 @@ def _build_elasticsearch_condition(condition: Dict[str, Any]) -> Dict[str, Any]:
                 return {"term": {field: value}}
         elif op == 'contains':
             return {"match": {field: value}}
+        elif op == 'exists':
+            return {"exists": {"field": field}}
+        elif op == 'not_exists':
+            return {"bool": {"must_not": [{"exists": {"field": field}}]}}
     
     return None
 
@@ -175,7 +208,7 @@ def _build_mongodb_condition(condition: Dict[str, Any]) -> Dict[str, Any]:
         op = condition.get('op', '')
         value = condition.get('value')
         
-        if not field or op not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
+        if not field or op not in _CONDITION_OPS:
             return {}
         
         if op == 'eq':
@@ -197,6 +230,10 @@ def _build_mongodb_condition(condition: Dict[str, Any]) -> Dict[str, Any]:
                 return {field: value}
         elif op == 'contains':
             return {field: {"$regex": str(value), "$options": "i"}}
+        elif op == 'exists':
+            return {field: {"$exists": True}}
+        elif op == 'not_exists':
+            return {field: {"$exists": False}}
     
     return {}
 
@@ -225,8 +262,13 @@ def _evaluate_condition(doc: Dict[str, Any], condition: Dict[str, Any]) -> bool:
         op = condition.get('op', '')
         value = condition.get('value')
         
-        if not field or op not in ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains']:
+        if not field or op not in _CONDITION_OPS:
             return True
+        
+        if op in _CONDITION_OPS_NO_VALUE:
+            if op == 'exists':
+                return field in doc
+            return field not in doc
         
         doc_value = doc.get(field)
         

@@ -1,9 +1,7 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
-
-from app.schemas.constants import EntityType
 
 if TYPE_CHECKING:
     from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
@@ -79,86 +77,59 @@ class AgentCreateRequestSchema(BaseModel):
     tools: list[str] = Field(default_factory=list, description="工具列表")
 
 
-class AgentListItemSchema(BaseModel):
-    id: str = Field(description="分析引擎ID")
-    name: str = Field(description="分析引擎名称")
+class AgentRuntimeRequestSchema(BaseModel):
+    """`/agent/start` 与 `/agent/message` 共用请求体。"""
 
-
-class AgentSchema(BaseModel):
-    id: str = Field(description="分析引擎ID")
-    name: str = Field(description="Agent名称")
-    description: str = Field(description="Agent描述")
-    prompt_template_id: str = Field(description="提示词模板id")
-    model_id: str = Field(description="模型配置id")
-    llm_config: dict[str, Any] = Field(description="LLM配置，包括模型、温度等")
-    tools: list[str] = Field(description="工具列表")
-    created_at: datetime = Field(description="创建时间")
-    updated_at: datetime = Field(description="更新时间")
-
-class StartAgentRequestSchema(BaseModel):
-    entity_uuid: str = Field(description="实体UUID")
-    entity_type: EntityType = Field(description="实体类型")
     agent_id: str = Field(description="分析引擎ID")
+    session_id: str | None = Field(
+        default=None,
+        description="会话 ID；续聊 `/agent/message` 必填，`/agent/start` 不传",
+    )
+    user_prompt: str | None = Field(
+        default=None,
+        description="用户本轮 prompt；`/agent/message` 必填，`/agent/start` 可空则回退模板",
+    )
+    injection_param: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Jinja 渲染与业务透传参数（如 entity_uuid、entity_type 等）",
+    )
+    auto_approve: bool = Field(
+        default=False,
+        description="为 true 时，本轮 run 内工具触发的 HITL 自动批准，不等待 /agent/approve",
+    )
 
 
 class StartAgentResponseSchema(BaseModel):
-    thread_id: str = Field(description="会话ID")
+    agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="本次启动分配的会话ID")
 
 
-class ResultPayloadSchema(BaseModel):
-    summary: str = Field(description="任务情况总结")
-    success: bool = Field(description="是否成功")
-    failure_reason: str | None = Field(default=None, description="失败原因")
-
-
-class ResultEventPayloadSchema(BaseModel):
-    """结果回报事件"""
-    thread_id: str = Field(description="会话ID")
-    result: ResultPayloadSchema = Field(description="最终结果")
-
-
-class AgentStatusPayloadSchema(BaseModel):
-    name: str = Field(description="分析会话名称")
-    thread_id: str = Field(description="会话ID")
-    status: str = Field(description="会话状态")
-    meta: dict[str, Any] = Field(default_factory=dict, description="meta信息")
-    steps: list[dict] = Field(default_factory=list, description="执行步骤，人审步骤可含 approval_decision、approval_decision_detail、approved_at、approval_payload")
-    todos: list[dict] = Field(default_factory=list, description="Todo 项")
-    pending_approval: dict | None = Field(default=None, description="当前待审批上下文，重连时恢复审批 UI")
-    updated_at: datetime = Field(description="更新时间")
-    is_running: bool = Field(description="是否正在运行")
-
-
-class ApprovalRequiredPayloadSchema(BaseModel):
-    """审批请求事件"""
-    payload: dict[str, Any] = Field(default_factory=dict, description="审批上下文")
-    thread_id: str = Field(description="会话ID")
-
-
-class SSEEventSchema(BaseModel):
-    type: str = Field(description="事件类型")
-    data: dict[str, Any] = Field(default_factory=dict, description="事件数据")
+class SendAgentMessageResponseSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="续聊使用的会话ID")
 
 
 class ApproveRequestSchema(BaseModel):
-    thread_id: str = Field(description="会话ID")
-    decisions: list[dict] = Field(description="审批决策列表")
+    agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="会话ID", min_length=1)
+    decisions: list[dict] = Field(
+        description="审批决策列表，对应会话当前 pending_approval（与 source 无关，单会话单队列）"
+    )
 
 
-class ApproveResponseSchema(BaseModel):
-    thread_id: str = Field(description="会话ID")
-    status: str = Field(description="操作状态")
+class CancelAgentRequestSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    session_id: str = Field(description="会话ID", min_length=1)
+    reason: str = Field(default="user cancel", description="取消原因，用于审计与 SSE 日志")
 
-class MessageEventPayloadSchema(BaseModel):
-    """消息事件"""
-    thread_id: str = Field(description="会话ID")
-    message: str = Field(description="消息文本")
-    level: Literal["info", "warning", "error"] = Field(default="info", description="消息级别")
-    created_at: datetime = Field(default_factory=datetime.now, description="消息时间")
 
-ALL_EVENT_PAYLOAD_SCHEMAS = [
-    AgentStatusPayloadSchema,
-    ApprovalRequiredPayloadSchema,
-    ResultEventPayloadSchema,
-    MessageEventPayloadSchema
-]
+class CancelAgentResponseSchema(BaseModel):
+    agent_id: str = Field(description="分析引擎ID")
+    cancelled: bool = Field(description="是否真的向后台任务发出了取消请求（任务不在则为 False）")
+
+
+class ToolDescriptorSchema(BaseModel):
+    name: str = Field(description="工具名")
+    description: str = Field(description="工具描述")
+    read_only: bool = Field(description="是否只读")
+    exclusive: bool = Field(description="是否需要独占执行（如涉及审批）")

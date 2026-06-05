@@ -58,6 +58,7 @@ NOT_FOUND_SESSION = build_status_code(StatusCodeSource.HTTP_STANDARD, StatusCode
 NOT_FOUND_MODEL_CONFIG = build_status_code(StatusCodeSource.HTTP_STANDARD, StatusCodeCategory.NOT_FOUND, 6)
 NOT_FOUND_PLATFORM = build_status_code(StatusCodeSource.HTTP_STANDARD, StatusCodeCategory.NOT_FOUND, 7)
 NOT_FOUND_ACCOUNT = build_status_code(StatusCodeSource.HTTP_STANDARD, StatusCodeCategory.NOT_FOUND, 8)
+NOT_FOUND_WORKSPACE = build_status_code(StatusCodeSource.HTTP_STANDARD, StatusCodeCategory.NOT_FOUND, 9)
 
 # 冲突类
 CONFLICT_EXISTS = build_status_code(StatusCodeSource.HTTP_STANDARD, StatusCodeCategory.CONFLICT, 1)

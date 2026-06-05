@@ -1,0 +1,209 @@
+/**
+ * MarkdownViewer 排版样式，根类名 .markdown-body
+ * 由 MarkdownViewer.vue 引入，一般无需单独 import。
+ */
+@reference "tailwindcss";
+
+.markdown-body {
+  @apply text-sm leading-relaxed text-gray-800 wrap-break-word;
+}
+
+.markdown-body > :first-child {
+  @apply mt-0;
+}
+
+.markdown-body > :last-child {
+  @apply mb-0;
+}
+
+.markdown-body h1 {
+  @apply mt-6 mb-4 text-2xl font-bold text-gray-900 border-b border-gray-200 pb-2;
+}
+
+.markdown-body h2 {
+  @apply mt-5 mb-3 text-xl font-bold text-gray-900 border-b border-gray-100 pb-1.5;
+}
+
+.markdown-body h3 {
+  @apply mt-4 mb-2 text-lg font-semibold text-gray-900;
+}
+
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  @apply mt-3 mb-2 text-base font-semibold text-gray-900;
+}
+
+.markdown-body p {
+  @apply my-3;
+}
+
+.markdown-body a {
+  @apply text-blue-600 underline decoration-blue-300/60 underline-offset-2 hover:text-blue-700;
+}
+
+.markdown-body strong {
+  @apply font-semibold text-gray-900;
+}
+
+.markdown-body em {
+  @apply italic;
+}
+
+.markdown-body del,
+.markdown-body s {
+  @apply text-gray-500 line-through;
+}
+
+.markdown-body mark {
+  @apply bg-yellow-100 px-0.5 rounded;
+}
+
+.markdown-body ins {
+  @apply underline decoration-emerald-400;
+}
+
+.markdown-body ul {
+  @apply my-3 list-disc pl-6 space-y-1;
+}
+
+.markdown-body ol {
+  @apply my-3 list-decimal pl-6 space-y-1;
+}
+
+.markdown-body li {
+  @apply my-0.5;
+}
+
+.markdown-body ul.contains-task-list {
+  @apply list-none pl-0;
+}
+
+.markdown-body li.task-list-item {
+  @apply flex items-start gap-2 list-none;
+}
+
+.markdown-body li.task-list-item input[type="checkbox"] {
+  @apply mt-1 shrink-0;
+}
+
+.markdown-body blockquote {
+  @apply my-4 border-l-4 border-gray-300 pl-4 text-gray-600 italic;
+}
+
+.markdown-body hr {
+  @apply my-6 border-gray-200;
+}
+
+.markdown-body code {
+  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[0.85em] text-rose-700;
+}
+
+.markdown-body pre {
+  @apply my-4 overflow-x-auto rounded-lg bg-gray-50 p-4 ring-1 ring-gray-200;
+}
+
+.markdown-body pre code {
+  @apply bg-transparent p-0 text-inherit text-[0.85em];
+}
+
+.markdown-body .table-wrapper,
+.markdown-body table {
+  @apply my-4 block w-full overflow-x-auto;
+}
+
+.markdown-body table {
+  @apply border-collapse text-left;
+}
+
+.markdown-body th,
+.markdown-body td {
+  @apply border border-gray-200 px-3 py-2 align-top;
+}
+
+.markdown-body th {
+  @apply bg-gray-50 font-semibold text-gray-900;
+}
+
+.markdown-body tr:nth-child(even) td {
+  @apply bg-gray-50/50;
+}
+
+.markdown-body dl {
+  @apply my-4;
+}
+
+.markdown-body dt {
+  @apply font-semibold text-gray-900;
+}
+
+.markdown-body dd {
+  @apply ml-4 my-1 text-gray-700;
+}
+
+.markdown-body abbr {
+  @apply cursor-help underline decoration-dotted underline-offset-2;
+}
+
+.markdown-body img {
+  @apply my-4 max-w-full rounded-lg;
+}
+
+.markdown-body .footnotes {
+  @apply mt-8 border-t border-gray-200 pt-4 text-xs text-gray-600;
+}
+
+.markdown-body .footnote-ref a {
+  @apply no-underline text-blue-600;
+}
+
+.markdown-body .markdown-container {
+  @apply my-4 rounded-lg border px-4 py-3;
+}
+
+.markdown-body .markdown-container-tip {
+  @apply border-emerald-200 bg-emerald-50/80 text-emerald-950;
+}
+
+.markdown-body .markdown-container-warning {
+  @apply border-amber-200 bg-amber-50/80 text-amber-950;
+}
+
+.markdown-body .markdown-container-info {
+  @apply border-blue-200 bg-blue-50/80 text-blue-950;
+}
+
+.markdown-body .markdown-container-danger {
+  @apply border-red-200 bg-red-50/80 text-red-950;
+}
+
+.markdown-body .katex-error {
+  @apply text-red-600;
+}
+
+.markdown-body .katex-display {
+  @apply my-4 overflow-x-auto;
+}
+
+.markdown-body .wiki-cite {
+  @apply inline;
+  font-size: 0.75em;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.markdown-body .wiki-cite-link {
+  @apply text-blue-600 no-underline font-medium transition-colors;
+}
+
+.markdown-body .wiki-cite-link:hover {
+  @apply text-blue-800 underline;
+}
+
+.markdown-body .wiki-cite-link.is-active {
+  @apply text-blue-700 bg-blue-100 rounded px-0.5 underline;
+}
+
+.wiki-ref-highlight {
+  @apply bg-blue-50 ring-1 ring-blue-200 rounded-md transition-colors duration-300;
+}

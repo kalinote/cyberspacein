@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     OUT_SERVICE_PROXY: Optional[str] = None
     MAX_LOGO_SIZE: int = 5 * 1024 * 1024
 
+    NANOBOT_AGENT_MAX_PARALLEL_SESSIONS: int = 0
+    NANOBOT_SHUTDOWN_TIMEOUT_S: float = 30.0
+
     EMBEDDING_MODEL: str = "Qwen/Qwen3-Embedding-8B"
     EMBEDDING_MODEL_URL: str = "https://api.siliconflow.cn/v1/embeddings"
     EMBEDDING_MODEL_API_KEY: str = ""

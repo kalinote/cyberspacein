@@ -384,7 +384,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, markRaw } from "vue";
 import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
@@ -584,7 +584,16 @@ async function fetchNewDataStatus() {
 function applyTrendChartOption(labels, values, unit) {
   if (!trendChart.value) return;
   const hasData = labels.length > 0;
+  const showEndpointTrendLine = labels.length > 1 && values.length > 1;
   const manyDayLabels = unit === "day" && labels.length > 20;
+  const endpointSeriesData = showEndpointTrendLine
+    ? labels.map((_, i) => {
+        if (i === 0) return values[0];
+        if (i === labels.length - 1) return values[values.length - 1];
+        return null;
+      })
+    : [];
+  const TREND_SERIES_NAME = "新增数量";
   const option = {
     grid: {
       left: 12,
@@ -619,11 +628,14 @@ function applyTrendChartOption(labels, values, unit) {
     },
     series: [
       {
+        name: TREND_SERIES_NAME,
         data: hasData ? values : [],
         type: "line",
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
+        showSymbol: true,
+        emphasis: { focus: "series", scale: true },
         lineStyle: { width: 3, color: "#3b82f6" },
         itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 },
         areaStyle: {
@@ -631,12 +643,35 @@ function applyTrendChartOption(labels, values, unit) {
             { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
             { offset: 1, color: "rgba(59, 130, 246, 0.05)" }
           ])
-        }
-      }
+        },
+        z: 3
+      },
+      ...(showEndpointTrendLine
+        ? [
+            {
+              name: "首尾趋势线",
+              type: "line",
+              data: endpointSeriesData,
+              connectNulls: true,
+              symbol: "none",
+              silent: true,
+              tooltip: { show: false },
+              emphasis: { disabled: true },
+              lineStyle: {
+                color: "#f59e0b",
+                width: 2,
+                type: "dashed",
+                opacity: 0.9
+              },
+              z: 2
+            }
+          ]
+        : [])
     ],
     tooltip: {
       trigger: "axis",
-      triggerOn: "mousemove|click",
+      triggerOn: "mousemove",
+      confine: true,
       axisPointer: {
         type: "cross",
         snap: true,
@@ -653,10 +688,15 @@ function applyTrendChartOption(labels, values, unit) {
       borderWidth: 1,
       textStyle: { color: "#1f2937" },
       formatter: (params) => {
-        const p = Array.isArray(params) ? params[0] : params;
-        const v = p?.value ?? 0;
+        const list = Array.isArray(params) ? params : [params];
+        const p =
+          list.find((it) => it && it.seriesName === TREND_SERIES_NAME && it.value != null) ??
+          list.find((it) => it && it.value != null) ??
+          list[0];
+        if (!p) return "";
+        const v = p.value;
         const num = Number(v);
-        const label = p?.axisValueLabel ?? p?.name ?? "";
+        const label = p.axisValueLabel ?? p.name ?? "";
         return `${label}<br/>数量（纵坐标）: <b>${Number.isFinite(num) ? num.toLocaleString() : v}</b> 条`;
       }
     }
@@ -797,11 +837,14 @@ function initCharts() {
   nextTick(() => {
     const trendEl = document.getElementById("trend-chart");
     const sourceEl = document.getElementById("source-chart");
-    if (trendEl) trendChart.value = echarts.init(trendEl);
-    if (sourceEl) sourceChart.value = echarts.init(sourceEl);
-    reportChart.value = echarts.init(document.getElementById("report-chart"));
-    securityChart.value = echarts.init(document.getElementById("security-chart"));
-    speedChart.value = echarts.init(document.getElementById("speed-chart"));
+    if (trendEl) trendChart.value = markRaw(echarts.init(trendEl));
+    if (sourceEl) sourceChart.value = markRaw(echarts.init(sourceEl));
+    const reportEl = document.getElementById("report-chart");
+    if (reportEl) reportChart.value = markRaw(echarts.init(reportEl));
+    const securityEl = document.getElementById("security-chart");
+    if (securityEl) securityChart.value = markRaw(echarts.init(securityEl));
+    const speedEl = document.getElementById("speed-chart");
+    if (speedEl) speedChart.value = markRaw(echarts.init(speedEl));
 
     applyTrendChartOption([], [], "day");
     applySourceChartOption();

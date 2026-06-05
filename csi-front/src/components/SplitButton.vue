@@ -65,10 +65,10 @@
 <template>
     <div ref="menuRef" class="relative">
         <div class="flex">
-            <button 
+            <button
                 @click.stop="handleMainClick"
                 :disabled="disabled"
-                class="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-3 rounded-l-lg font-medium transition-colors flex items-center justify-center space-x-2"
+                :class="mainButtonClass"
             >
                 <Icon v-if="mainButtonIcon" :icon="loading ? 'mdi:loading' : mainButtonIcon" :class="{ 'animate-spin': loading }" />
                 <span>{{ loading ? loadingText : mainButtonText }}</span>
@@ -76,7 +76,7 @@
             <button
                 @click.stop="toggleMenu"
                 :disabled="disabled"
-                class="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-3 px-3 rounded-r-lg border-l border-blue-400 transition-colors flex items-center justify-center"
+                :class="dropdownButtonClass"
             >
                 <Icon icon="mdi:chevron-down" :class="{ 'rotate-180': showMenu }" class="transition-transform" />
             </button>
@@ -99,8 +99,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
+
+const PRIMARY_MAIN =
+    'flex-1 text-white font-medium transition-colors flex items-center justify-center gap-1.5 bg-[var(--el-color-primary)] hover:bg-[var(--el-color-primary-light-3)] disabled:bg-[var(--el-color-primary-light-5)] disabled:cursor-not-allowed'
+const PRIMARY_DROPDOWN =
+    'text-white transition-colors flex items-center justify-center bg-[var(--el-color-primary)] hover:bg-[var(--el-color-primary-light-3)] disabled:bg-[var(--el-color-primary-light-5)] disabled:cursor-not-allowed border-l border-[var(--el-color-primary-dark-2)]'
+const LEGACY_MAIN =
+    'flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-3 rounded-l-lg font-medium transition-colors flex items-center justify-center space-x-2'
+const LEGACY_DROPDOWN =
+    'bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-3 px-3 rounded-r-lg border-l border-blue-400 transition-colors flex items-center justify-center'
 
 // Props 定义
 const props = defineProps({
@@ -127,7 +136,29 @@ const props = defineProps({
     mainButtonIcon: {
         type: String,
         default: null
-    }
+    },
+    compact: {
+        type: Boolean,
+        default: false,
+    },
+    elementPrimary: {
+        type: Boolean,
+        default: false,
+    },
+})
+
+const mainButtonClass = computed(() => {
+    const size = props.compact
+        ? 'h-8 text-sm px-3 rounded-l-md'
+        : 'py-3 rounded-l-lg'
+    const base = props.elementPrimary ? PRIMARY_MAIN : LEGACY_MAIN
+    return `${base} ${size}`
+})
+
+const dropdownButtonClass = computed(() => {
+    const size = props.compact ? 'h-8 px-2 rounded-r-md' : 'py-3 px-3 rounded-r-lg'
+    const base = props.elementPrimary ? PRIMARY_DROPDOWN : LEGACY_DROPDOWN
+    return `${base} ${size}`
 })
 
 // Events 定义

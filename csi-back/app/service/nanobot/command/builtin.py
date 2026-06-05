@@ -1,0 +1,125 @@
+"""Built-in slash command handlers.
+
+`/stop` 在 bus 主循环删除后已无处可用（per-agent AgentLoop 不再维护 `_active_tasks`），
+因此不再注册。会话级取消请通过 AnalystService 层的 agent 状态机处理。
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+from app.service.nanobot.bus.events import OutboundMessage
+from app.service.nanobot.command.router import CommandContext, CommandRouter
+from app.service.nanobot.utils.helpers import build_status_content
+
+
+async def cmd_status(ctx: CommandContext) -> OutboundMessage:
+    """Build an outbound status message for a session."""
+    loop = ctx.loop
+    session = ctx.session or await loop._ensure_session(ctx.session_id)
+    ctx_est = 0
+    try:
+        ctx_est, _ = loop.consolidator.estimate_session_prompt_tokens(session)
+    except Exception:
+        pass
+    if ctx_est <= 0:
+        ctx_est = loop._last_usage.get("prompt_tokens", 0)
+    
+    active_tasks = loop._active_tasks.get(ctx.session_id, [])
+    task_count = sum(1 for t in active_tasks if not t.done())
+    try:
+        task_count += loop.subagents.get_running_count_by_session(ctx.session_id)
+    except Exception:
+        pass
+    return OutboundMessage(
+        channel=ctx.msg.channel,
+        chat_id=ctx.msg.chat_id,
+        content=build_status_content(
+            version="", model=loop.model,
+            start_time=loop._start_time, last_usage=loop._last_usage,
+            context_window_tokens=loop.context_window_tokens,
+            session_msg_count=len(session.get_history(max_messages=0)),
+            context_tokens_estimate=ctx_est,
+            active_task_count=task_count,
+            max_completion_tokens=getattr(
+                getattr(loop.provider, "generation", None), "max_tokens", 8192
+            ),
+        ),
+        metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+    )
+
+
+async def cmd_new(ctx: CommandContext) -> OutboundMessage:
+    """Start a fresh session."""
+    loop = ctx.loop
+    session = ctx.session or await loop._ensure_session(ctx.session_id)
+    snapshot = session.messages[session.last_consolidated:]
+    session.clear()
+    await loop.sessions.save(session)
+    await loop.sessions.invalidate(session.id)
+    if snapshot:
+        loop._schedule_background(loop.consolidator.archive(snapshot))
+    return OutboundMessage(
+        channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
+        content="New session started.",
+        metadata=dict(ctx.msg.metadata or {})
+    )
+
+
+async def cmd_dream(ctx: CommandContext) -> OutboundMessage:
+    """Manually trigger a Dream consolidation run."""
+    import time
+
+    loop = ctx.loop
+    msg = ctx.msg
+
+    async def _run_dream():
+        t0 = time.monotonic()
+        try:
+            did_work = await loop.dream.run()
+            elapsed = time.monotonic() - t0
+            if did_work:
+                content = f"Dream completed in {elapsed:.1f}s."
+            else:
+                content = "Dream: nothing to process."
+        except Exception as e:
+            elapsed = time.monotonic() - t0
+            content = f"Dream failed after {elapsed:.1f}s: {e}"
+        await loop.bus.publish_outbound(OutboundMessage(
+            channel=msg.channel, chat_id=msg.chat_id, content=content,
+        ))
+
+    asyncio.create_task(_run_dream())
+    return OutboundMessage(
+        channel=msg.channel, chat_id=msg.chat_id, content="Dreaming...",
+    )
+
+
+async def cmd_help(ctx: CommandContext) -> OutboundMessage:
+    """Return available slash commands."""
+    return OutboundMessage(
+        channel=ctx.msg.channel,
+        chat_id=ctx.msg.chat_id,
+        content=build_help_text(),
+        metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+    )
+
+
+def build_help_text() -> str:
+    """Build canonical help text for slash commands."""
+    lines = [
+        "🐈 nanobot commands:",
+        "/new — Start a new conversation",
+        "/status — Show bot status",
+        "/dream — Manually trigger Dream consolidation",
+        "/help — Show available commands",
+    ]
+    return "\n".join(lines)
+
+
+def register_builtin_commands(router: CommandRouter) -> None:
+    """Register the default set of slash commands."""
+    router.exact("/new", cmd_new)
+    router.exact("/status", cmd_status)
+    router.exact("/dream", cmd_dream)
+    router.exact("/help", cmd_help)

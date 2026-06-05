@@ -9,7 +9,7 @@ alwaysApply: true
 
 - 所有运行、调试、测试必须在 **venv 虚拟环境** 下进行（本项目使用 `.venv`）。
 - 执行任何 Python 相关命令前，先检查虚拟环境是否存在（如 `.venv` 目录或 `python -c "import sys; print(sys.prefix)"` 是否在 venv 内）。
-- 若虚拟环境不存在，先创建：`python -m venv .venv`，再激活并安装依赖（生产：`pip install -r requirements.txt`；本地开发含测试：`pip install -r requirements/requirements-dev.txt`），不得在未激活 venv 的情况下直接执行项目代码。
+- 若虚拟环境不存在，先创建：`python -m venv .venv`，再激活并安装依赖（生产：`pip install .`；本地开发含测试：`pip install -e .[dev]`），不得在未激活 venv 的情况下直接执行项目代码。
 
 ## 依赖管理
 

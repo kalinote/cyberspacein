@@ -533,7 +533,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, markRaw } from "vue";
 import { useRoute } from "vue-router";
 import { Icon } from "@iconify/vue";
 import { ElMessage, ElNotification } from "element-plus";
@@ -658,7 +658,16 @@ async function loadPlatformDetail() {
     function applyTrendChartOption(labels, values, unit) {
         if (!trendChart.value) return;
         const hasData = labels.length > 0;
+        const showEndpointTrendLine = labels.length > 1 && values.length > 1;
         const manyDayLabels = unit === "day" && labels.length > 20;
+        const endpointSeriesData = showEndpointTrendLine
+            ? labels.map((_, i) => {
+                if (i === 0) return values[0];
+                if (i === labels.length - 1) return values[values.length - 1];
+                return null;
+            })
+            : [];
+        const TREND_SERIES_NAME = "新增数量";
         const option = {
             grid: {
                 left: 12,
@@ -693,11 +702,14 @@ async function loadPlatformDetail() {
             },
             series: [
                 {
+                    name: TREND_SERIES_NAME,
                     data: hasData ? values : [],
                     type: "line",
                     smooth: true,
                     symbol: "circle",
                     symbolSize: 6,
+                    showSymbol: true,
+                    emphasis: { focus: "series", scale: true },
                     lineStyle: { width: 3, color: "#3b82f6" },
                     itemStyle: { color: "#3b82f6", borderColor: "#ffffff", borderWidth: 2 },
                     areaStyle: {
@@ -705,12 +717,35 @@ async function loadPlatformDetail() {
                             { offset: 0, color: "rgba(59, 130, 246, 0.3)" },
                             { offset: 1, color: "rgba(59, 130, 246, 0.05)" }
                         ])
-                    }
-                }
+                    },
+                    z: 3
+                },
+                ...(showEndpointTrendLine
+                    ? [
+                        {
+                            name: "首尾趋势线",
+                            type: "line",
+                            data: endpointSeriesData,
+                            connectNulls: true,
+                            symbol: "none",
+                            silent: true,
+                            tooltip: { show: false },
+                            emphasis: { disabled: true },
+                            lineStyle: {
+                                color: "#f59e0b",
+                                width: 2,
+                                type: "dashed",
+                                opacity: 0.9
+                            },
+                            z: 2
+                        }
+                    ]
+                    : [])
             ],
             tooltip: {
                 trigger: "axis",
-                triggerOn: "mousemove|click",
+                triggerOn: "mousemove",
+                confine: true,
                 axisPointer: {
                     type: "cross",
                     snap: true,
@@ -727,10 +762,15 @@ async function loadPlatformDetail() {
                 borderWidth: 1,
                 textStyle: { color: "#1f2937" },
                 formatter: (params) => {
-                    const p = Array.isArray(params) ? params[0] : params;
-                    const v = p?.value ?? 0;
+                    const list = Array.isArray(params) ? params : [params];
+                    const p =
+                        list.find((it) => it && it.seriesName === TREND_SERIES_NAME && it.value != null) ??
+                        list.find((it) => it && it.value != null) ??
+                        list[0];
+                    if (!p) return "";
+                    const v = p.value;
                     const num = Number(v);
-                    const label = p?.axisValueLabel ?? p?.name ?? "";
+                    const label = p.axisValueLabel ?? p.name ?? "";
                     return `${label}<br/>数量（纵坐标）: <b>${Number.isFinite(num) ? num.toLocaleString() : v}</b> 条`;
                 }
             }
@@ -800,7 +840,7 @@ async function loadPlatformDetail() {
         nextTick(() => {
             const chartDom = document.getElementById("platform-detail-trend-chart");
             if (!chartDom) return;
-            trendChart.value = echarts.init(chartDom);
+            trendChart.value = markRaw(echarts.init(chartDom));
             applyTrendChartOption([], [], "day");
             fetchPlatformNewDataStatus();
             handleResize = () => trendChart.value?.resize();

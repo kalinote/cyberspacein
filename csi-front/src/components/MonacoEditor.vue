@@ -96,8 +96,13 @@ watch(() => props.language, (newValue) => {
     }
 })
 
+const layout = () => {
+    editor?.layout()
+}
+
 defineExpose({
-    formatDocument
+    formatDocument,
+    layout,
 })
 </script>
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,37 @@ class EntitySearchRequestSchema(PageParamsSchema):
     end_at: datetime | None = Field(default=None, description="last_edit_at 截止时间（含），用于时间范围过滤")
     sort_by: str | None = Field(default=None, description="排序字段，可选值：crawled_at、last_edit_at、relevance（相关性）")
     sort_order: str | None = Field(default="desc", description="排序方向，可选值：asc、desc，默认为desc")
+
+
+class EntityKeywordSearchParams(PageParamsSchema):
+    """Agent 实体关键词搜索参数（多关键词，仅 keyword 模式）。"""
+
+    keywords: list[str] = Field(default_factory=list, description="关键词列表")
+    keyword_match_mode: Literal["and", "or"] = Field(
+        default="and",
+        description="多关键词匹配：and 须全部命中，or 命中任意一个",
+    )
+    platform: str | None = Field(default=None, description="平台过滤，精确匹配")
+    entity_type: list[str] | None = Field(default=None, description="实体类型过滤")
+    author: str | None = Field(default=None, description="作者名过滤，精确匹配")
+    aigc: bool | None = Field(default=None, description="AIGC内容过滤")
+    nsfw: bool | None = Field(default=None, description="NSFW内容过滤")
+    is_highlighted: bool | None = Field(default=None, description="重点目标过滤")
+    start_at: datetime | None = Field(default=None, description="last_edit_at 起始时间（含）")
+    end_at: datetime | None = Field(default=None, description="last_edit_at 截止时间（含）")
+    sort_by: str | None = Field(default=None, description="排序字段")
+    sort_order: str | None = Field(default="desc", description="排序方向 asc/desc")
+
+
+class EntitySearchToolHitSchema(BaseModel):
+    """Agent 搜索工具精简命中项（不含正文全文）。"""
+
+    uuid: str = Field(description="实体 UUID")
+    entity_type: str = Field(description="实体类型")
+    title: str = Field(description="完整标题（无高亮标签）")
+    snippets: list[str] = Field(default_factory=list, description="正文高亮片段列表")
+    keywords_hits: int = Field(default=0, description="高亮命中次数")
+
 
 class SearchResultSchema(BaseModel):
     """

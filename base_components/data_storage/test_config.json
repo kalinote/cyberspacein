@@ -1,22 +1,30 @@
 {
     "meta": {
-        "node_id": "test_node_001",
-        "action_id": "694251b96d9534925bd9f6f3"
+        "node_id": "snapshot_article",
+        "action_id": "snapshot_article"
     },
     "config": {
-        "target": "file",
-        "target_name": "result.json",
-        "batch_size": 0,
+        "target": "elasticsearch",
+        "target_name": "article",
+        "batch_size": 5000,
         "storage_filter": false
     },
     "inputs": {
-        "data_in": {
-            "type": "reference",
-            "value": [
-                "local_crawl_test"
+        "conditions": {
+            "$and": [
+                {
+                    "field": "snapshot",
+                    "op": "not_exists"
+                }
             ]
         }
     },
     "outputs": {
+        "data_out": {
+            "type": "reference",
+            "value": [
+                "snapshot"
+            ]
+        }
     }
 }
