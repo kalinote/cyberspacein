@@ -365,7 +365,8 @@ RUN set -eux; \
     ln -sf /opt/gem/xdg-settings             /usr/local/bin/xdg-settings; \
     chmod +x /usr/local/bin/aio; \
     find /opt/gem -name '*.sh' -exec chmod +x {} +; \
-    chmod +x /opt/application/run.sh; \
+    mkdir -p /opt/application; \
+    ln -sfn /opt/gem/run.sh /opt/application/run.sh; \
     # supervisord config location expected by run.sh \
     ln -sf /opt/gem/supervisord.conf /etc/supervisord.conf; \
     # node/fnm env for shells; run.sh sources this file under `set -e` \

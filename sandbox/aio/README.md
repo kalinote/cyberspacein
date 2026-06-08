@@ -1,530 +1,287 @@
-# AIO Sandbox - All-in-One Agent Sandbox Environment
+# CSI Sandbox AIO
 
-<p align="center">
-  <img src="./website/docs/public/aio-icon.png" alt="logo" width="200"/>
-</p>
+All-in-One Agent 沙箱环境——在单个 Docker 容器内集成浏览器、终端、文件操作、VSCode Server、Jupyter 与 MCP 服务。
 
-<p align="center">
-  <strong>🌐 Browser | 💻 Terminal | 📁 File | 🔧 VSCode | 📊 Jupyter | 🤖 MCP</strong>
-</p>
+本仓库基于 [agent-infra/sandbox](https://github.com/agent-infra/sandbox) 逆向还原的镜像方案进行二次开发，**不再依赖**官方预构建镜像 `ghcr.io/agent-infra/sandbox`，改为从 `docker/` 目录自建镜像 **`csi-sandbox-aio`**。
 
-<div align="center">
-<p>
-        🌐 <a href="https://sandbox.agent-infra.com/">Website</a>&nbsp&nbsp
-        | &nbsp&nbsp🔌 <a href="https://sandbox.agent-infra.com/api">API</a>&nbsp&nbsp
-        | &nbsp&nbsp📑 <a href="https://arxiv.org/pdf/2509.02544#S2.SS2">Paper</a>&nbsp&nbsp
-        | &nbsp&nbsp🌟 <a href="https://github.com/agent-infra/sandbox/tree/main/examples">Examples</a>&nbsp&nbsp
-        | &nbsp&nbsp📊 <a href="https://github.com/agent-infra/sandbox/tree/main/evaluation">Evaluation</a> &nbsp&nbsp
-</p>
-</div>
+## 功能概览
 
-<p align="center">
-  <a href="https://github.com/agent-infra/sandbox/releases"><img src="https://img.shields.io/github/v/release/agent-infra/sandbox" alt="Release"></a>
-  <a href="https://github.com/agent-infra/sandbox/blob/main/LICENSE"><img src="https://img.shields.io/github/license/agent-infra/sandbox" alt="License"></a>
-  <a href="https://pypi.org/project/agent-sandbox/"><img src="https://img.shields.io/pypi/v/agent-sandbox" alt="PyPI"></a>
-  <a href="https://www.npmjs.com/package/@agent-infra/sandbox"><img src="https://img.shields.io/npm/v/@agent-infra/sandbox" alt="npm"></a>
-</p>
+| 能力 | 说明 |
+|------|------|
+| 浏览器 + VNC | Chrome CDP 自动化、远程桌面 |
+| Shell / 文件 | HTTP API + WebSocket 终端 |
+| VSCode Server | 浏览器内完整 IDE |
+| JupyterLab | 交互式 Python 执行 |
+| MCP Hub | 预置 browser / file / shell / markitdown 等 MCP 服务 |
+| 统一文件系统 | 浏览器下载的文件可直接在 Shell / 文件中访问 |
 
-![](./website/docs/public/images/aio-index.png)
+容器内由 **supervisord** 编排各服务，nginx 在 `:8080` 统一对外暴露网关。
 
-## 🚀 Quick Start
+## 仓库结构
 
-Get up and running in 30 seconds:
-
-```bash
-docker run --security-opt seccomp=unconfined --rm -it -p 8080:8080 ghcr.io/agent-infra/sandbox:latest
+```
+aio/
+├── docker/                 # 镜像构建（Dockerfile + 逆向还原的 context）
+│   ├── Dockerfile
+│   ├── context/
+│   │   ├── python-server/  # 沙箱 HTTP/MCP 后端
+│   │   ├── browser-sdk/
+│   │   ├── repl-servers/
+│   │   ├── aio/              # aio CLI 源码
+│   │   └── rootfs/           # 编排脚本、nginx/supervisord 配置
+│   └── requirements/         # 各 Python 环境的 pip 锁定列表
+├── sdk/python/             # Python SDK（本仓库唯一保留的 SDK）
+├── examples/               # Python 集成示例
+└── evaluation/             # MCP / Agent 评测数据集
 ```
 
-For users in mainland China:
+已移除、不在本仓库维护的内容：官方 `website/` 文档站、JS/Go SDK、`docker-compose.yaml`、Volcengine Provider 示例、根目录 Monorepo 工具链配置。
+
+## 快速开始
+
+### 1. 构建镜像
+
+构建上下文为 `docker/` 目录：
 
 ```bash
-docker run --security-opt seccomp=unconfined --rm -it -p 8080:8080 enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest
+docker build -t csi-sandbox-aio -f docker/Dockerfile docker/
 ```
 
-Use a specific version in the format `agent-infra/sandbox:${version}`, for example, to use version 1.0.0.150:
+首次构建耗时较长（下载 Python/Node/Chrome 等依赖）。建议开启 BuildKit：
 
 ```bash
-docker run --security-opt seccomp=unconfined --rm -it -p 8080:8080 ghcr.io/agent-infra/sandbox:1.0.0.150
-# or users in mainland China
-docker run --security-opt seccomp=unconfined --rm -it -p 8080:8080 enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:1.0.0.150
+export DOCKER_BUILDKIT=1
+docker build -t csi-sandbox-aio -f docker/Dockerfile docker/
 ```
 
-Once running, access the environment at:
-- 📖 **Documentation**: http://localhost:8080/v1/docs
-- 🌐 **VNC Browser**: http://localhost:8080/vnc/index.html?autoconnect=true
-- 💻 **VSCode Server**: http://localhost:8080/code-server/
-- 🤖 **MCP Services**: http://localhost:8080/mcp
+多架构构建可显式指定平台：
 
-## 🎯 What is AIO Sandbox?
+```bash
+docker build --platform linux/amd64 -t csi-sandbox-aio -f docker/Dockerfile docker/
+```
 
-AIO Sandbox is an **all-in-one** agent sandbox environment that combines Browser, Shell, File, MCP operations, and VSCode Server in a single Docker container. Built on cloud-native lightweight sandbox technology, it provides a unified, secure execution environment for AI agents and developers.
+若从 GitHub 下载资源时出现 `curl (56) SSL` 错误，属于网络抖动，重试构建即可；也可在 Dockerfile 的 `curl` 命令上增加 `--retry` 参数。
 
-<p align="center">
-  <img src="website/docs/public/images/aio-sandbox.png" alt="AIO Sandbox Architecture" width="600"/>
-</p>
+### 2. 运行容器
 
-### Why Choose AIO Sandbox?
+```bash
+docker run --rm -d --name csi-sandbox-aio \
+  -p 8080:8080 \
+  --shm-size=2g \
+  --security-opt seccomp=unconfined \
+  csi-sandbox-aio
+```
 
-Traditional sandboxes are **single-purpose** (browser, code, or shell), making file sharing and functional coordination extremely challenging. AIO Sandbox solves this by providing:
+查看启动日志：
 
-- ✅ **Unified File System** - Files downloaded in browser are instantly available in Shell/File operations
-- ✅ **Multiple Interfaces** - VNC, VSCode, Jupyter, and Terminal in one unified environment
-- ✅ **Secure Execution** - Sandboxed Python and Node.js execution with safety guarantees
-- ✅ **Zero Configuration** - Pre-configured MCP servers and development tools ready to use
-- ✅ **Agent-Ready** - MCP-compatible APIs for seamless AI agent integration
+```bash
+docker logs -f csi-sandbox-aio
+```
 
-## 📦 Installation
+### 3. 访问服务
 
-### SDK Installation
+| 入口 | URL |
+|------|-----|
+| 控制台 / 网关 | http://localhost:8080/ |
+| API 文档 (Swagger) | http://localhost:8080/v1/docs |
+| VNC 浏览器 | http://localhost:8080/vnc/index.html?autoconnect=true |
+| VSCode Server | http://localhost:8080/code-server/ |
+| MCP Hub | http://localhost:8080/mcp |
 
-<table>
-<tr>
-<td>
+### 4. 冒烟测试
 
-**Python**
+```bash
+curl -s http://localhost:8080/v1/sandbox
+
+curl -s -X POST http://localhost:8080/v1/shell/exec \
+  -H "Content-Type: application/json" \
+  -d '{"command":"echo hello"}'
+```
+
+## Python SDK
+
+本仓库仅保留 Python SDK，位于 `sdk/python/`。
+
+### 安装
+
+从源码安装（推荐开发时使用）：
+
+```bash
+cd sdk/python
+python -m venv .venv
+source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
+pip install -e .
+```
+
+或从 PyPI 安装上游包（包名仍为 `agent-sandbox`，API 兼容）：
+
 ```bash
 pip install agent-sandbox
 ```
 
-</td>
-<td>
+### 基本用法
 
-**TypeScript/JavaScript**
-```bash
-npm install @agent-infra/sandbox
-```
-
-</td>
-<td>
-
-**Golang**
-```bash
-go get github.com/agent-infra/sandbox-sdk-go
-```
-
-</td>
-</tr>
-</table>
-
-### Basic Usage
-
-<table>
-<tr>
-<td>
-
-**Python Example**
 ```python
 from agent_sandbox import Sandbox
 
-# Initialize client
 client = Sandbox(base_url="http://localhost:8080")
 home_dir = client.sandbox.get_context().home_dir
 
-# Execute shell commands
 result = client.shell.exec_command(command="ls -la")
 print(result.data.output)
 
-# File operations
 content = client.file.read_file(file=f"{home_dir}/.bashrc")
 print(content.data.content)
 
-# Browser automation
 screenshot = client.browser.screenshot()
 ```
 
-</td>
-<td>
+更多示例见 [`examples/`](examples/) 目录。
 
-**TypeScript Example**
-```typescript
-import { Sandbox } from '@agent-infra/sandbox';
+## 本地开发（无 Docker 环境）
 
-// Initialize client
-const sandbox = new Sandbox({ baseURL: 'http://localhost:8080' });
+若开发机为 Windows + VSCode 且本地无 Docker，可将代码同步到有 Docker 的远程 Linux 机器构建测试。
 
-// Execute shell commands
-const result = await sandbox.shell.exec({ command: 'ls -la' });
-console.log(result.output);
+**推荐：VS Code Remote-SSH**
 
-// File operations
-const content = await sandbox.file.read({ path: '/home/gem/.bashrc' });
-console.log(content);
+1. 安装 Remote - SSH 扩展，连接远程开发机
+2. 在远端打开本仓库，于集成终端执行 `docker build` / `docker run`
+3. 通过 SSH 端口转发访问 `localhost:8080`
 
-// Browser automation
-const screenshot = await sandbox.browser.screenshot();
+**备选：Git 推送 + 远端构建**
+
+```powershell
+git push origin <branch>
+ssh user@remote-host "cd ~/workspace/sandbox/aio && git pull && docker build -t csi-sandbox-aio -f docker/Dockerfile docker/"
 ```
 
-</td>
-</tr>
-</table>
-
-## 🌟 Key Features
-
-### 🔗 Unified Environment
-All components run in the same container with a shared filesystem, enabling seamless workflows:
-
-<p align="center">
-  <img src="website/docs/public/images/aio-index.png" alt="Unified Environment" width="600"/>
-</p>
-
-### 🌐 Browser Automation
-Full browser control through multiple interfaces:
-- **VNC** - Visual browser interaction through remote desktop
-- **CDP** - Chrome DevTools Protocol for programmatic control
-- **MCP** - High-level browser automation tools
-
-<p align="center">
-  <img src="website/docs/public/images/browser.png" alt="Browser Automation" width="600"/>
-</p>
-
-### 💻 Development Tools
-Integrated development environment with:
-- **VSCode Server** - Full IDE experience in browser
-- **Jupyter Notebook** - Interactive Python environment
-- **Terminal** - WebSocket-based terminal access
-- **Port Forwarding** - Smart preview for web applications
-
-<p align="center">
-  <img src="website/docs/public/images/code-server.png" alt="VSCode Server" width="600"/>
-</p>
-
-### 🤖 MCP Integration
-Pre-configured Model Context Protocol servers:
-- **Browser** - Web automation and scraping
-- **File** - File system operations
-- **Shell** - Command execution
-- **Markitdown** - Document processing
-
-<p align="center">
-  <img src="website/docs/public/images/mcp.png" alt="MCP Integration" width="600"/>
-</p>
-
-## 📚 Complete Example
-
-Convert a webpage to Markdown with embedded screenshot:
+本地 Windows 可用 `sdk/python/.venv` 中的 SDK 连接远端沙箱：
 
 ```python
-import asyncio
-import base64
-from playwright.async_api import async_playwright
 from agent_sandbox import Sandbox
-
-async def site_to_markdown():
-    # Initialize sandbox client
-    c = Sandbox(base_url="http://localhost:8080")
-    home_dir = c.sandbox.get_context().home_dir
-
-    # Browser: Automation to download HTML
-    async with async_playwright() as p:
-        browser_info = c.browser.get_info().data
-        page = await (await p.chromium.connect_over_cdp(browser_info.cdp_url)).new_page()
-        await page.goto("https://example.com", wait_until="networkidle")
-        html = await page.content()
-        screenshot_b64 = base64.b64encode(await page.screenshot()).decode('utf-8')
-
-    # Jupyter: Convert HTML to markdown in sandbox
-    c.jupyter.execute_code(code=f"""
-from markdownify import markdownify
-html = '''{html}'''
-screenshot_b64 = "{screenshot_b64}"
-
-md = f"{{markdownify(html)}}\\n\\n![Screenshot](data:image/png;base64,{{screenshot_b64}})"
-with open('{home_dir}/site.md', 'w') as f:
-    f.write(md)
-print("Done!")
-""")
-
-    # Shell: List files in sandbox
-    list_result = c.shell.exec_command(command=f"ls -lh {home_dir}")
-    print(f"Files in sandbox: {list_result.data.output}")
-
-    # File: Read the generated markdown
-    return c.file.read_file(file=f"{home_dir}/site.md").data.content
-
-if __name__ == "__main__":
-    result = asyncio.run(site_to_markdown())
-    print(f"Markdown saved successfully!")
+client = Sandbox(base_url="http://<远端IP>:8080")
 ```
 
-<p align="center">
-  <img src="website/docs/public/images/example.png" alt="Example Output" width="600"/>
-</p>
+修改 `docker/context/python-server/` 后需重新 `docker build` 才能生效。
 
-## 🏗️ Architecture
+## 部署
 
+### Docker Run（常用环境变量）
+
+```bash
+docker run -d --name csi-sandbox-aio \
+  -p 8080:8080 \
+  --shm-size=2g \
+  --security-opt seccomp=unconfined \
+  -e WORKSPACE=/home/gem \
+  -e TZ=Asia/Singapore \
+  -e PROXY_SERVER=host.docker.internal:7890 \
+  csi-sandbox-aio
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    🌐 Browser + VNC                        │
-├─────────────────────────────────────────────────────────────┤
-│  💻 VSCode Server  │  🐚 Shell Terminal  │  📁 File Ops   │
-├─────────────────────────────────────────────────────────────┤
-│              🔗 MCP Hub + 🔒 Sandbox Fusion               │
-├─────────────────────────────────────────────────────────────┤
-│         🚀 Preview Proxy + 📊 Service Monitoring          │
-└─────────────────────────────────────────────────────────────┘
-```
 
-## 🛠️ API Reference
-
-### Core APIs
-
-| Endpoint | Description |
-|----------|-------------|
-| `/v1/sandbox` | Get sandbox environment information |
-| `/v1/shell/exec` | Execute shell commands |
-| `/v1/file/read` | Read file contents |
-| `/v1/file/write` | Write file contents |
-| `/v1/browser/screenshot` | Take browser screenshot |
-| `/v1/jupyter/execute` | Execute Jupyter code |
-
-### MCP Servers
-
-| Server | Tools Available |
-|--------|----------------|
-| `browser` | `navigate`, `screenshot`, `click`, `type`, `scroll` |
-| `file` | `read`, `write`, `list`, `search`, `replace` |
-| `shell` | `exec`, `create_session`, `kill` |
-| `markitdown` | `convert`, `extract_text`, `extract_images` |
-
-## 🚢 Deployment
-
-### Docker Compose
+### Docker Compose 示例
 
 ```yaml
-version: '3.8'
 services:
   sandbox:
-    container_name: aio-sandbox
-    image: ghcr.io/agent-infra/sandbox:latest
-    volumes:
-      - /tmp/gem/vite-project:/home/gem/vite-project
+    container_name: csi-sandbox-aio
+    image: csi-sandbox-aio
     security_opt:
       - seccomp:unconfined
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: "unless-stopped"
     shm_size: "2gb"
     ports:
-      - "${HOST_PORT:-8080}:8080"
+      - "8080:8080"
     environment:
-      PROXY_SERVER: ${PROXY_SERVER:-host.docker.internal:7890}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
-      DNS_OVER_HTTPS_TEMPLATES: ${DNS_OVER_HTTPS_TEMPLATES:-}
-      WORKSPACE: ${WORKSPACE:-"/home/gem"}
-      HOMEPAGE: ${HOMEPAGE:-}
-      BROWSER_EXTRA_ARGS: ${BROWSER_EXTRA_ARGS:-}
-      TZ: ${TZ:-Asia/Singapore}
-      WAIT_PORTS: ${WAIT_PORTS:-}
+      WORKSPACE: /home/gem
+      TZ: Asia/Singapore
+    restart: unless-stopped
 ```
 
-### Kubernetes
+### Kubernetes 示例
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: aio-sandbox
+  name: csi-sandbox-aio
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      app: aio-sandbox
+      app: csi-sandbox-aio
   template:
     metadata:
       labels:
-        app: aio-sandbox
+        app: csi-sandbox-aio
     spec:
       containers:
-      - name: aio-sandbox
-        image: ghcr.io/agent-infra/sandbox:latest
-        ports:
-        - containerPort: 8080
-        resources:
-          limits:
-            memory: "2Gi"
-            cpu: "1000m"
+        - name: csi-sandbox-aio
+          image: csi-sandbox-aio:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
 ```
 
-## 🤝 Integration Examples
+## API 参考
 
-### Browser Use Integration
+### 核心 HTTP API
 
-```python
-import asyncio
+| 端点 | 说明 |
+|------|------|
+| `GET /v1/sandbox` | 沙箱环境信息 |
+| `POST /v1/shell/exec` | 执行 Shell 命令 |
+| `GET/POST /v1/file/*` | 文件读写与操作 |
+| `POST /v1/jupyter/execute` | 执行 Jupyter 代码 |
+| `POST /v1/nodejs/execute` | 执行 Node.js 代码 |
+| `POST /v1/browser/*` | 浏览器自动化 |
 
-from agent_sandbox import Sandbox
-from browser_use import Agent, Tools
-from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.llm import ChatOpenAI
+### MCP 服务
 
-sandbox = Sandbox(base_url="http://localhost:8080")
-print("sandbox", sandbox.browser)
-cdp_url = sandbox.browser.get_info().data.cdp_url
+| 服务 | 工具示例 |
+|------|----------|
+| `browser` | navigate, screenshot, click, type |
+| `file` | read, write, list, search |
+| `shell` | exec, create_session |
+| `markitdown` | convert, extract_text |
 
-browser_session = BrowserSession(
-    browser_profile=BrowserProfile(cdp_url=cdp_url, is_local=True)
-)
-tools = Tools()
+完整 API 文档在容器启动后访问 http://localhost:8080/v1/docs 。
 
+## 架构
 
-async def main():
-    agent = Agent(
-        task='Visit https://duckduckgo.com and search for "browser-use founders"',
-        llm=ChatOpenAI(model="gcp-claude4.1-opus"),
-        tools=tools,
-        browser_session=browser_session,
-    )
-
-    await agent.run()
-    await browser_session.kill()
-
-    input("Press Enter to close...")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    浏览器 + VNC (:6080)                      │
+├─────────────────────────────────────────────────────────────┤
+│  VSCode Server  │  Shell 终端  │  文件操作  │  Jupyter     │
+├─────────────────────────────────────────────────────────────┤
+│         python-server (:8091) + MCP Hub (/mcp)              │
+├─────────────────────────────────────────────────────────────┤
+│              nginx 网关 (:8080) + supervisord               │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### LangChain Integration
+容器入口为 `/opt/application/run.sh`（符号链接至 `/opt/gem/run.sh`），由 `run.sh` 初始化环境后启动 supervisord。
 
-```python
-from langchain.tools import BaseTool
-from agent_sandbox import Sandbox
+更详细的镜像重建说明、版本钉扎与服务端口表见 [`docker/README.md`](docker/README.md)。
 
-class SandboxTool(BaseTool):
-    name = "sandbox_execute"
-    description = "Execute commands in AIO Sandbox"
+## 本仓库定制说明
 
-    def _run(self, command: str) -> str:
-        client = Sandbox(base_url="http://localhost:8080")
-        result = client.shell.exec_command(command=command)
-        return result.data.output
-```
+相对上游官方镜像，本仓库已做如下裁剪与改造：
 
-### OpenAI Assistant Integration
+- **自建镜像**：从 `docker/Dockerfile` 构建 `csi-sandbox-aio`，脱离 `ghcr.io/agent-infra/sandbox`
+- **日志去字节化**：`python-server` 移除内网 `bytedlogger` / logid 链路，改用标准库 `logging` 输出到 stdout
+- **裁剪 SDK**：仅保留 `sdk/python/`，移除 JS / Go SDK 及 Volcengine Provider
+- **裁剪示例与工具**：移除 `website/`、`docker-compose.yaml`、根 Monorepo 配置等
 
-```python
-from openai import OpenAI
-from agent_sandbox import Sandbox
-import json
+## 集成示例
 
-client = OpenAI(
-    api_key="your_api_key",
-)
-sandbox = Sandbox(base_url="http://localhost:8080")
+`examples/` 目录包含与 LangChain、OpenAI、Browser Use、Playwright、MiniMax 等框架的集成示例。运行前请先启动 `csi-sandbox-aio` 容器，并将示例中的 `base_url` 指向沙箱地址。
 
+评测数据集与说明见 [`evaluation/`](evaluation/)。
 
-# define a tool to run code in the sandbox
-def run_code(code, lang="python"):
-    if lang == "python":
-        return sandbox.jupyter.execute_code(code=code).data
-    return sandbox.nodejs.execute_nodejs_code(code=code).data
+## 致谢
 
-
-# Use OpenAI
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "calculate 1+1"}],
-    tools=[
-        {
-            "type": "function",
-            "function": {
-                "name": "run_code",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "code": {"type": "string"},
-                        "lang": {"type": "string"},
-                    },
-                },
-            },
-        }
-    ],
-)
-
-
-if response.choices[0].message.tool_calls:
-    args = json.loads(response.choices[0].message.tool_calls[0].function.arguments)
-    print("args", args)
-    result = run_code(**args)
-    print(result['outputs'][0]['text'])
-```
-
-### MiniMax Integration
-
-MiniMax provides an OpenAI-compatible API, so you can use the same `openai` SDK with a different `base_url`:
-
-```python
-from openai import OpenAI
-from agent_sandbox import Sandbox
-import json
-
-client = OpenAI(
-    api_key="your_minimax_api_key",
-    base_url="https://api.minimax.io/v1",
-)
-sandbox = Sandbox(base_url="http://localhost:8080")
-
-
-def run_code(code, lang="python"):
-    if lang == "python":
-        return sandbox.jupyter.execute_code(code=code).data
-    return sandbox.nodejs.execute_code(code=code).data
-
-
-response = client.chat.completions.create(
-    model="MiniMax-M2.7",
-    messages=[{"role": "user", "content": "calculate 1+1"}],
-    tools=[
-        {
-            "type": "function",
-            "function": {
-                "name": "run_code",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "code": {"type": "string"},
-                        "lang": {"type": "string"},
-                    },
-                },
-            },
-        }
-    ],
-    temperature=0.01,  # MiniMax requires temperature > 0
-)
-
-
-if response.choices[0].message.tool_calls:
-    args = json.loads(response.choices[0].message.tool_calls[0].function.arguments)
-    result = run_code(**args)
-    print(result.outputs[0].text)
-```
-
-See the full [minimax-integration example](examples/minimax-integration) for more details.
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## 📄 License
-
-AIO Sandbox is released under the [Apache License 2.0](LICENSE).
-
-## 🙏 Acknowledgments
-
-Built with ❤️ by the Agent Infra team. Special thanks to all contributors and the open-source community.
-
-## 📞 Support
-
-- 📖 [Documentation](https://sandbox.agent-infra.com)
-- 💬 [GitHub Discussions](https://github.com/agent-infra/sandbox/discussions)
-- 🐛 [Issue Tracker](https://github.com/agent-infra/sandbox/issues)
-
----
-
-<p align="center">
-  <strong>Ready to revolutionize your AI development workflow?</strong><br/>
-  <a href="https://github.com/agent-infra/sandbox">⭐ Star us on GitHub</a> •
-  <a href="https://sandbox.agent-infra.com">📚 Read the Docs</a> •
-  <a href="https://github.com/agent-infra/sandbox/issues">🐛 Report Issues</a>
-</p>
+本项目基于 [Agent Infra AIO Sandbox](https://github.com/agent-infra/sandbox) 逆向还原与二次开发，遵循 Apache License 2.0。
