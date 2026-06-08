@@ -20,7 +20,7 @@ def test_router_registers_all_54_endpoints() -> None:
             if m in {"HEAD", "OPTIONS"}:
                 continue
             paths.append((m, path))
-    assert len(paths) == 54
+    assert len(paths) == 55
     assert ("POST", "/api/v1/agent/skills/upload") in paths
     assert ("POST", "/api/v1/agent/skills") in paths
     assert ("PUT", "/api/v1/agent/skills/{skill_id}") in paths
@@ -30,6 +30,7 @@ def test_router_registers_all_54_endpoints() -> None:
     assert ("POST", "/api/v1/agent/skills/{skill_id}/files") in paths
     assert ("DELETE", "/api/v1/agent/skills/{skill_id}/files") in paths
     assert ("GET", "/api/v1/agent/configs/skills-list") in paths
+    assert ("GET", "/api/v1/agent/configs/filter/skills") in paths
     assert ("GET", "/api/v1/agent/configs/filter/agent-prompts") in paths
     assert ("GET", "/api/v1/agent/sessions/{session_id}") in paths
     assert ("POST", "/api/v1/agent/sandbox/create") in paths

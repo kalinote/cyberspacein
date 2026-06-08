@@ -55,6 +55,12 @@ export const agentApi = {
   getToolsListForAgent() {
     return request.get('/agent/configs/tools-list')
   },
+  getSkillsList() {
+    return request.get('/agent/configs/skills-list')
+  },
+  getSkillsListForAgent(workspaceId) {
+    return request.get('/agent/configs/filter/skills', { workspace_id: workspaceId })
+  },
   getModelsList() {
     return request.get('/agent/configs/models-list')
   },

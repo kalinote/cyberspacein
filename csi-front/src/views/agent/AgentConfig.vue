@@ -101,6 +101,11 @@
                           <span class="text-gray-600">工具:</span>
                           <span class="text-gray-700">{{ item.tools.join(', ') }}</span>
                         </div>
+                        <div v-if="item.skills?.length" class="flex items-center gap-2">
+                          <Icon icon="mdi:puzzle-outline" class="text-violet-500" />
+                          <span class="text-gray-600">技能:</span>
+                          <span class="text-gray-700">{{ item.skills.length }} 项</span>
+                        </div>
                         <div v-if="item.updated_at" class="flex items-center gap-2">
                           <Icon icon="mdi:clock-outline" class="text-gray-500" />
                           <span class="text-gray-600">更新时间:</span>
@@ -1136,6 +1141,31 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="技能" prop="skills">
+          <el-select
+            v-model="agentFormData.skills"
+            placeholder="请选择技能（仅工作区白名单，可多选）"
+            class="w-full"
+            multiple
+            filterable
+            clearable
+            :loading="agentWorkspaceDetailLoading || agentSkillsOptionsLoading"
+            :disabled="!agentFormData.workspace_id"
+          >
+            <el-option
+              v-for="s in agentSkillsListOptions"
+              :key="s.id"
+              :label="s.name"
+              :value="s.id"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-gray-900">{{ s.name }}</span>
+                <span class="text-xs text-gray-500 truncate max-w-80">{{ s.description || '' }}</span>
+                <el-tag v-if="s.always" size="small" type="info" class="shrink-0">always</el-tag>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="handleAgentDialogClose">取消</el-button>
@@ -1165,6 +1195,9 @@
             <el-descriptions-item label="提示词模板ID">{{ agentDetail.prompt_template_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="工具">
               {{ Array.isArray(agentDetail.tools) && agentDetail.tools.length ? agentDetail.tools.join(', ') : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="技能">
+              {{ formatSkillIdsDetail(agentDetail.skills) }}
             </el-descriptions-item>
             <el-descriptions-item label="LLM 提供商">
               {{ formatLlmProviderLabel(agentDetail.llm_provider) }}
@@ -1266,6 +1299,30 @@
               <div class="flex items-center justify-between gap-3">
                 <span class="font-mono text-xs text-gray-900">{{ t.name }}</span>
                 <span class="text-xs text-gray-500 truncate max-w-80">{{ t.description || '' }}</span>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="技能白名单" prop="enabled_skills">
+          <el-select
+            v-model="workspaceFormData.enabled_skills"
+            class="w-full"
+            multiple
+            filterable
+            clearable
+            placeholder="选择可用技能（可多选）"
+            :loading="workspaceSkillsOptionsLoading"
+          >
+            <el-option
+              v-for="s in workspaceSkillsOptions"
+              :key="s.id"
+              :label="s.name"
+              :value="s.id"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-gray-900">{{ s.name }}</span>
+                <span class="text-xs text-gray-500 truncate max-w-80">{{ s.description || '' }}</span>
+                <el-tag v-if="s.always" size="small" type="info" class="shrink-0">always</el-tag>
               </div>
             </el-option>
           </el-select>
@@ -1390,6 +1447,9 @@
             </el-descriptions-item>
             <el-descriptions-item label="工具白名单">
               {{ Array.isArray(workspaceDetail.enabled_tools) && workspaceDetail.enabled_tools.length ? workspaceDetail.enabled_tools.join(', ') : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="技能白名单">
+              {{ formatSkillIdsDetail(workspaceDetail.enabled_skills) }}
             </el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ workspaceDetail.created_at ? formatModelDate(workspaceDetail.created_at) : '-' }}</el-descriptions-item>
             <el-descriptions-item label="更新时间">{{ workspaceDetail.updated_at ? formatModelDate(workspaceDetail.updated_at) : '-' }}</el-descriptions-item>
@@ -2134,7 +2194,8 @@ const workspaceFormData = ref({
   description: '',
   model_config_ids: [],
   prompt_template_ids: [],
-  enabled_tools: []
+  enabled_tools: [],
+  enabled_skills: []
 })
 const workspaceFormRules = {
   name: [
@@ -2149,6 +2210,9 @@ const workspaceModelOptionsLoading = ref(false)
 const workspacePromptTemplateOptionsLoading = ref(false)
 const workspaceToolsOptions = ref([])
 const workspaceToolsOptionsLoading = ref(false)
+const workspaceSkillsOptions = ref([])
+const workspaceSkillsOptionsLoading = ref(false)
+const globalSkillsById = ref(new Map())
 
 const workspaceDetailVisible = ref(false)
 const workspaceDetail = ref(null)
@@ -2190,10 +2254,32 @@ const loadWorkspaceDialogOptions = async () => {
       workspaceToolsOptionsLoading.value = false
     }
   }
+
+  if (workspaceSkillsOptions.value.length === 0) {
+    workspaceSkillsOptionsLoading.value = true
+    try {
+      const res = await agentApi.getSkillsList()
+      const list = Array.isArray(res?.data) ? res.data : []
+      workspaceSkillsOptions.value = list
+      globalSkillsById.value = new Map(list.filter((s) => s?.id).map((s) => [s.id, s]))
+    } catch {
+      workspaceSkillsOptions.value = []
+      globalSkillsById.value = new Map()
+    } finally {
+      workspaceSkillsOptionsLoading.value = false
+    }
+  }
 }
 
 const resetWorkspaceForm = () => {
-  workspaceFormData.value = { name: '', description: '', model_config_ids: [], prompt_template_ids: [], enabled_tools: [] }
+  workspaceFormData.value = {
+    name: '',
+    description: '',
+    model_config_ids: [],
+    prompt_template_ids: [],
+    enabled_tools: [],
+    enabled_skills: []
+  }
   workspaceFormRef.value?.resetFields()
 }
 
@@ -2218,7 +2304,8 @@ const agentFormData = ref({
   llm_provider: 'openai',
   reasoning_effort: null,
   llm_config: {},
-  tools: []
+  tools: [],
+  skills: []
 })
 
 const agentReasoningEffortIndex = computed({
@@ -2307,6 +2394,8 @@ const moveAgentBuiltinPrompt = (index, delta) => {
 
 const agentToolsListOptions = ref([])
 const agentToolsOptionsLoading = ref(false)
+const agentSkillsListOptions = ref([])
+const agentSkillsOptionsLoading = ref(false)
 const promptTemplateOptionsForAgent = ref([])
 const agentPromptOptionsLoading = ref(false)
 const modelOptionsForAgent = ref([])
@@ -2352,6 +2441,34 @@ const agentToolsListOptionsFiltered = computed(() => {
   if (!agentFormData.value.workspace_id) return []
   return (agentToolsListOptions.value || []).filter((name) => set.has(name))
 })
+
+const formatSkillIdsDetail = (ids) => {
+  if (!Array.isArray(ids) || !ids.length) return '-'
+  return ids
+    .map((id) => {
+      const skill = globalSkillsById.value.get(id)
+      return skill?.name ? `${skill.name} (${id})` : id
+    })
+    .join(', ')
+}
+
+const loadAgentSkillsOptions = async (workspaceId) => {
+  agentSkillsListOptions.value = []
+  if (!workspaceId) return
+  agentSkillsOptionsLoading.value = true
+  try {
+    const res = await agentApi.getSkillsListForAgent(workspaceId)
+    const list = Array.isArray(res?.data) ? res.data : []
+    agentSkillsListOptions.value = list
+    for (const s of list) {
+      if (s?.id) globalSkillsById.value.set(s.id, s)
+    }
+  } catch {
+    agentSkillsListOptions.value = []
+  } finally {
+    agentSkillsOptionsLoading.value = false
+  }
+}
 
 const loadAgentDialogOptions = async () => {
   if (agentBuiltinPromptOptions.value.length === 0) {
@@ -2427,7 +2544,9 @@ const handleAgentWorkspaceChange = async () => {
   agentFormData.value.prompt_template_id = ''
   agentFormData.value.model_config_id = ''
   agentFormData.value.tools = []
+  agentFormData.value.skills = []
   await loadAgentWorkspaceDetail(workspaceId)
+  await loadAgentSkillsOptions(workspaceId)
 }
 
 const resetAgentForm = () => {
@@ -2441,11 +2560,13 @@ const resetAgentForm = () => {
     llm_provider: 'openai',
     reasoning_effort: null,
     llm_config: {},
-    tools: []
+    tools: [],
+    skills: []
   }
   agentBuiltinPromptPicker.value = ''
   agentFormRef.value?.resetFields()
   agentWorkspaceDetail.value = null
+  agentSkillsListOptions.value = []
 }
 
 const editingAgentId = ref(null)
@@ -2477,7 +2598,8 @@ const handleAgentSubmit = async () => {
       llm_provider: agentFormData.value.llm_provider || 'openai',
       reasoning_effort: agentFormData.value.reasoning_effort ?? null,
       llm_config: agentFormData.value.llm_config || {},
-      tools: agentFormData.value.tools || []
+      tools: agentFormData.value.tools || [],
+      skills: agentFormData.value.skills || []
     }
 
     if (editingAgentId.value) {
@@ -2514,6 +2636,15 @@ const openAgentDetail = async (item) => {
   agentDetailLoading.value = true
   try {
     await loadAgentBuiltinPromptOptions()
+    if (globalSkillsById.value.size === 0) {
+      try {
+        const res = await agentApi.getSkillsList()
+        const list = Array.isArray(res?.data) ? res.data : []
+        globalSkillsById.value = new Map(list.filter((s) => s?.id).map((s) => [s.id, s]))
+      } catch {
+        /* 详情展示回退为 ID */
+      }
+    }
     const res = await agentApi.getAgentDetail(id)
     agentDetail.value = res?.data ?? null
   } catch (e) {
@@ -2547,14 +2678,18 @@ const openAgentEdit = async (item) => {
       llm_provider: d.llm_provider || 'openai',
       reasoning_effort: d.reasoning_effort ?? null,
       llm_config: d.llm_config && typeof d.llm_config === 'object' ? d.llm_config : {},
-      tools: Array.isArray(d.tools) ? d.tools : []
+      tools: Array.isArray(d.tools) ? d.tools : [],
+      skills: Array.isArray(d.skills) ? d.skills : []
     }
     agentBuiltinPromptPicker.value = ''
 
     if (agentFormData.value.workspace_id) {
       await loadAgentWorkspaceDetail(agentFormData.value.workspace_id)
+      await loadAgentSkillsOptions(agentFormData.value.workspace_id)
       const allowedTools = allowedToolNameSet.value
       agentFormData.value.tools = (agentFormData.value.tools || []).filter((t) => allowedTools.has(t))
+      const allowedSkills = new Set(agentSkillsListOptions.value.map((s) => s.id))
+      agentFormData.value.skills = (agentFormData.value.skills || []).filter((id) => allowedSkills.has(id))
       if (agentFormData.value.prompt_template_id && !allowedPromptTemplateIdSet.value.has(agentFormData.value.prompt_template_id)) {
         agentFormData.value.prompt_template_id = ''
       }
@@ -2609,6 +2744,15 @@ const openWorkspaceDetail = async (item) => {
   workspaceDetail.value = null
   workspaceDetailLoading.value = true
   try {
+    if (globalSkillsById.value.size === 0) {
+      try {
+        const skillsRes = await agentApi.getSkillsList()
+        const list = Array.isArray(skillsRes?.data) ? skillsRes.data : []
+        globalSkillsById.value = new Map(list.filter((s) => s?.id).map((s) => [s.id, s]))
+      } catch {
+        /* 详情展示回退为 ID */
+      }
+    }
     const res = await agentApi.getWorkspaceDetail(id)
     workspaceDetail.value = res?.data ?? null
   } catch (e) {
@@ -2636,7 +2780,8 @@ const openWorkspaceEdit = async (item) => {
         description: d.description ?? '',
         model_config_ids: Array.isArray(d.model_config_ids) ? d.model_config_ids : [],
         prompt_template_ids: Array.isArray(d.prompt_template_ids) ? d.prompt_template_ids : [],
-        enabled_tools: Array.isArray(d.enabled_tools) ? d.enabled_tools : []
+        enabled_tools: Array.isArray(d.enabled_tools) ? d.enabled_tools : [],
+        enabled_skills: Array.isArray(d.enabled_skills) ? d.enabled_skills : []
       }
     }
   } catch (e) {
@@ -2658,7 +2803,8 @@ const handleWorkspaceSubmit = async () => {
       description: workspaceFormData.value.description || undefined,
       model_config_ids: workspaceFormData.value.model_config_ids || [],
       prompt_template_ids: workspaceFormData.value.prompt_template_ids || [],
-      enabled_tools: workspaceFormData.value.enabled_tools || []
+      enabled_tools: workspaceFormData.value.enabled_tools || [],
+      enabled_skills: workspaceFormData.value.enabled_skills || []
     }
     if (editingWorkspaceId.value) {
       await agentApi.updateWorkspace(editingWorkspaceId.value, payload)

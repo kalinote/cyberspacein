@@ -1,15 +1,17 @@
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from loguru import logger
 
 from app.models.agent.configs import AgentModelConfigModel, AgentPromptTemplateModel
 from app.models.agent.nanobot import NanobotAgentModel, NanobotMemoryDocsModel, NanobotWorkspaceModel
 from app.schemas.agent.agent import ToolDescriptorSchema
+from app.schemas.agent.workspace import WorkspaceServiceError
 from app.schemas.response import ApiResponseSchema
 from app.schemas.agent.skill import SkillListBriefSchema
 from app.service.analyst.skill_service import SkillService
 from app.service.analyst.tools import BUSINESS_TOOL_CLASSES
+from app.service.analyst.workspace import WorkspaceService
 
 logger = logger.bind(name=__name__)
 
@@ -48,6 +50,18 @@ async def get_agent_tools_list():
     return ApiResponseSchema.success(data=list(BUSINESS_TOOL_CLASSES.keys()))
 
 
+def _to_skill_brief_list(docs) -> list[SkillListBriefSchema]:
+    return [
+        SkillListBriefSchema(
+            id=doc.id,
+            name=doc.name,
+            description=doc.description,
+            always=doc.always,
+        )
+        for doc in docs
+    ]
+
+
 @router.get(
     "/skills-list",
     response_model=ApiResponseSchema[list[SkillListBriefSchema]],
@@ -55,17 +69,23 @@ async def get_agent_tools_list():
 )
 async def get_skills_list():
     docs = await SkillService.list_all_brief()
-    return ApiResponseSchema.success(
-        data=[
-            SkillListBriefSchema(
-                id=doc.id,
-                name=doc.name,
-                description=doc.description,
-                always=doc.always,
-            )
-            for doc in docs
-        ],
-    )
+    return ApiResponseSchema.success(data=_to_skill_brief_list(docs))
+
+
+@router.get(
+    "/filter/skills",
+    response_model=ApiResponseSchema[list[SkillListBriefSchema]],
+    summary="按工作区白名单查询 Skill 简要列表",
+)
+async def get_skills_filter(
+    workspace_id: str = Query(..., description="工作区 ID；仅返回该工作区 enabled_skills 白名单内的 Skill"),
+):
+    try:
+        workspace = await WorkspaceService.get(workspace_id)
+    except WorkspaceServiceError as exc:
+        return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
+    docs = await SkillService.list_brief_by_ids(list(workspace.enabled_skills or []))
+    return ApiResponseSchema.success(data=_to_skill_brief_list(docs))
 
 
 @router.get("/statistics", response_model=ApiResponseSchema[dict[str, int]], summary="配置资源数量统计")

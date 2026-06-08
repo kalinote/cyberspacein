@@ -242,6 +242,15 @@ class SkillService:
         return await NanobotSkillModel.find().sort(NanobotSkillModel.name).to_list()
 
     @classmethod
+    async def list_brief_by_ids(cls, skill_ids: list[str]) -> list[NanobotSkillModel]:
+        ordered_ids = list(dict.fromkeys(skill_ids or []))
+        if not ordered_ids:
+            return []
+        docs = await NanobotSkillModel.find({"_id": {"$in": ordered_ids}}).to_list()
+        by_id = {doc.id: doc for doc in docs}
+        return [by_id[sid] for sid in ordered_ids if sid in by_id]
+
+    @classmethod
     async def list_files(cls, skill_id: str) -> list[NanobotSkillFileModel]:
         return await NanobotSkillFileModel.find(
             NanobotSkillFileModel.skill_id == skill_id,

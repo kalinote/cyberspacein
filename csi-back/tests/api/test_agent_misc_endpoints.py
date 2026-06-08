@@ -13,6 +13,7 @@ from app.api.v1.endpoints import agent as agent_ep
 import app.api.v1.endpoints.agent.configs_tools as configs_tools_ep
 import app.api.v1.endpoints.agent.runtime as runtime_ep
 import app.models.agent.skill as skill_models
+import app.utils.status_codes as status_codes
 
 
 def _app() -> TestClient:
@@ -89,6 +90,85 @@ def test_get_tools_instance_failure_skipped(monkeypatch: pytest.MonkeyPatch) -> 
     body = r.json()
     assert body["code"] == 0
     assert [x["name"] for x in body["data"]] == ["good"]
+
+
+def test_get_skills_list_returns_brief_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _app()
+
+    class _Skill:
+        def __init__(self, *, id: str, name: str, description: str, always: bool) -> None:
+            self.id = id
+            self.name = name
+            self.description = description
+            self.always = always
+
+    async def _list_all_brief():
+        return [
+            _Skill(id="s1", name="alpha", description="desc-a", always=True),
+            _Skill(id="s2", name="beta", description="desc-b", always=False),
+        ]
+
+    monkeypatch.setattr(configs_tools_ep.SkillService, "list_all_brief", _list_all_brief)
+    r = client.get("/api/v1/agent/configs/skills-list")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == 0
+    assert body["data"] == [
+        {"id": "s1", "name": "alpha", "description": "desc-a", "always": True},
+        {"id": "s2", "name": "beta", "description": "desc-b", "always": False},
+    ]
+
+
+def test_get_skills_filter_by_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _app()
+
+    class _Workspace:
+        enabled_skills = ["s2", "s1"]
+
+    class _Skill:
+        def __init__(self, *, id: str, name: str, description: str, always: bool) -> None:
+            self.id = id
+            self.name = name
+            self.description = description
+            self.always = always
+
+    async def _get(_workspace_id: str):
+        assert _workspace_id == "w1"
+        return _Workspace()
+
+    async def _list_brief_by_ids(skill_ids: list[str]):
+        assert skill_ids == ["s2", "s1"]
+        return [
+            _Skill(id="s2", name="beta", description="desc-b", always=False),
+            _Skill(id="s1", name="alpha", description="desc-a", always=True),
+        ]
+
+    monkeypatch.setattr(configs_tools_ep.WorkspaceService, "get", _get)
+    monkeypatch.setattr(configs_tools_ep.SkillService, "list_brief_by_ids", _list_brief_by_ids)
+    r = client.get("/api/v1/agent/configs/filter/skills", params={"workspace_id": "w1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == 0
+    assert body["data"] == [
+        {"id": "s2", "name": "beta", "description": "desc-b", "always": False},
+        {"id": "s1", "name": "alpha", "description": "desc-a", "always": True},
+    ]
+
+
+def test_get_skills_filter_workspace_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.schemas.agent.workspace import WorkspaceServiceError
+
+    client = _app()
+
+    async def _get(_workspace_id: str):
+        raise WorkspaceServiceError(status_codes.NOT_FOUND_WORKSPACE, "工作区不存在")
+
+    monkeypatch.setattr(configs_tools_ep.WorkspaceService, "get", _get)
+    r = client.get("/api/v1/agent/configs/filter/skills", params={"workspace_id": "missing"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == status_codes.NOT_FOUND_WORKSPACE
+    assert "工作区不存在" in body["message"]
 
 
 def test_get_statistics_aggregates_counts(monkeypatch: pytest.MonkeyPatch) -> None:
