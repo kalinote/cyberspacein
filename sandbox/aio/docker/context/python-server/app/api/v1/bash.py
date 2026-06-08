@@ -12,11 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from app.core.exceptions import BadRequestException, ResourceNotFoundException
-from app.logging.websocket import (
-    bind_websocket_logid,
-    log_websocket_event,
-    restore_logid,
-)
+from app.logging.websocket import log_websocket_event
 from app.utils import validate_cwd
 from app.core.service_container import services
 from app.models.bash import (
@@ -266,7 +262,6 @@ async def websocket(
     - Server -> Client: {"type": "command_done", "data": {"exit_code": 0, "command_id": "..."}}
     """
     manager = get_bash_manager()
-    ws_logid, previous_logid = bind_websocket_logid(websocket)
     session = None
     created_by_ws = False
 
@@ -290,7 +285,6 @@ async def websocket(
             websocket=websocket,
             route='/v1/bash/ws',
             session_id=session_id,
-            logid=ws_logid,
             details={'new_session': created_by_ws},
         )
 
@@ -372,7 +366,6 @@ async def websocket(
             websocket=websocket,
             route='/v1/bash/ws',
             session_id=session_id,
-            logid=ws_logid,
             details={'new_session': created_by_ws},
         )
     except Exception as e:
@@ -383,7 +376,6 @@ async def websocket(
             route='/v1/bash/ws',
             session_id=session_id,
             level=logging.ERROR,
-            logid=ws_logid,
             details={
                 'new_session': created_by_ws,
                 'error': {
@@ -403,4 +395,3 @@ async def websocket(
                 await manager.close_session(session.id)
             except Exception:
                 pass
-        restore_logid(previous_logid)

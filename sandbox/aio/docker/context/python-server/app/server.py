@@ -399,7 +399,6 @@ def create_app() -> 'FastAPI':
 
     from app.middleware.request_logging import RequestLoggingMiddleware
     from app.middleware.slash_normalizer import SlashNormalizerMiddleware
-    from app.logger import _is_sandboxd_env
 
     app = FastAPI(
         version=os.environ.get('IMAGE_VERSION', '1.7.3'),
@@ -418,11 +417,6 @@ def create_app() -> 'FastAPI':
         allow_methods=['*'],
         allow_headers=['*'],
     )
-    # LogID middleware for internal sandboxd request tracing.
-    if _is_sandboxd_env():
-        from app.middleware.logid import LogIDMiddleware
-
-        app.add_middleware(LogIDMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
 
     # Mount MCP - use middleware to handle /mcp without trailing slash

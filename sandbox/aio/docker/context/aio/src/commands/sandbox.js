@@ -8,20 +8,7 @@ import { getClient } from "../index.js";
 import { detectFormat, printResponse } from "../output.js";
 import { ContainerProvider } from "../providers/container.js";
 export var IS_SANDBOX_BUILD = true ? true : false;
-export function getProviderFromContext(flagOverrides) {
-  const ctx = resolveContext(flagOverrides ?? {});
-  if (ctx.provider === "aipaas") {
-    if (!ctx.psm) {
-      throw new Error("PSM is required for aipaas provider. Run: aio use <psm>");
-    }
-    return new (void 0)({
-      psm: ctx.psm,
-      region: ctx.region?.toUpperCase() ?? "CN"
-    });
-  }
-  if (ctx.provider === "boxlite") {
-    return new (void 0)({ region: ctx.region?.toLowerCase() });
-  }
+export function getProviderFromContext() {
   return ContainerProvider.detect();
 }
 export function createSandboxCommand(getClient2, getOpts, in_sandbox2, overrides = {}) {
@@ -43,7 +30,7 @@ export function createSandboxCommand(getClient2, getOpts, in_sandbox2, overrides
     runLocalObserve: overrides.runLocalObserve
   });
   if (!IS_SANDBOX_BUILD && !in_sandbox2) {
-    sandbox.command("create").description("Create and start a new sandbox container").argument("[name]", "Sandbox name", "default").option("--port <port>", "Host port to map (local only)", (v) => parseInt(v, 10), 8080).option("--image <image>", "Container image", "sandbox:latest").option("--cpus <cpus>", "CPU limit (e.g. 2)").option("--memory <mem>", "Memory limit (e.g. 4g)").option("--shm-size <size>", "Shared memory size", "4g").option("-e, --env <key=value...>", "Environment variables").option("-v, --volume <src:dst...>", "Volume mounts (local only)").option("--ttl <seconds>", "Session TTL in seconds (aipaas only)", (v) => parseInt(v, 10)).action(async (name, opts) => {
+    sandbox.command("create").description("Create and start a new sandbox container").argument("[name]", "Sandbox name", "default").option("--port <port>", "Host port to map (local only)", (v) => parseInt(v, 10), 8080).option("--image <image>", "Container image", "sandbox:latest").option("--cpus <cpus>", "CPU limit (e.g. 2)").option("--memory <mem>", "Memory limit (e.g. 4g)").option("--shm-size <size>", "Shared memory size", "4g").option("-e, --env <key=value...>", "Environment variables").option("-v, --volume <src:dst...>", "Volume mounts (local only)").action(async (name, opts) => {
       try {
         const provider = getProviderFromContext(getOpts());
         const ctx = resolveContext(getOpts());
@@ -63,8 +50,7 @@ export function createSandboxCommand(getClient2, getOpts, in_sandbox2, overrides
           memory: opts.memory,
           shmSize: opts.shmSize,
           env: Object.keys(env2).length > 0 ? env2 : void 0,
-          volumes: opts.volume,
-          ttl: opts.ttl
+          volumes: opts.volume
         });
         console.log(source_default.green(`Sandbox '${instance.name}' created (${ctx.provider})`));
         console.log(source_default.dim(`  ID:     ${instance.id}`));

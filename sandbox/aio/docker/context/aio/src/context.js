@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 export var AIO_DIR = join(homedir(), ".aio");
@@ -7,7 +7,11 @@ export var DEFAULT_CONTEXT = { provider: "local" };
 export function loadContext() {
   try {
     const raw = readFileSync(CONTEXT_FILE, "utf-8");
-    return { ...DEFAULT_CONTEXT, ...JSON.parse(raw) };
+    const saved = JSON.parse(raw);
+    return {
+      provider: "local",
+      apiUrl: saved.apiUrl
+    };
   } catch {
     return DEFAULT_CONTEXT;
   }
@@ -15,11 +19,7 @@ export function loadContext() {
 export function resolveContext(flags) {
   const saved = loadContext();
   return {
-    provider: flags.provider ?? saved.provider,
-    apiUrl: flags.apiUrl ?? saved.apiUrl,
-    psm: flags.psm ?? saved.psm,
-    region: flags.region ?? saved.region,
-    session: flags.session ?? saved.session
+    provider: "local",
+    apiUrl: flags.apiUrl ?? saved.apiUrl
   };
 }
-

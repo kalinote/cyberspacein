@@ -12,9 +12,6 @@ from starlette.datastructures import Headers, QueryParams
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.logging.sanitizer import sanitize_for_logging, short_sha256
-from app.middleware.logid import LOGID_HEADER
-from vendors.bytedlogger import get_logid
-from vendors.bytedlogger._runtime import generate_logid
 
 _CAPTURE_CONTENT_TYPES = (
     "application/json",
@@ -150,10 +147,6 @@ class RequestLoggingMiddleware:
         async def replay_receive() -> Message:
             if replay_messages:
                 return replay_messages.pop(0)
-            # After replaying the captured request body, delegate back to the
-            # original receive() so streaming responses can still observe
-            # client disconnect events instead of spinning on synthetic
-            # empty http.request messages forever.
             return await receive()
 
         return summary, replay_receive
@@ -171,13 +164,6 @@ class RequestLoggingMiddleware:
     ) -> None:
         route = scope.get("route")
         handler = scope.get("endpoint")
-        context_logid = get_logid()
-        logid = (
-            response_headers.get(LOGID_HEADER)
-            or response_headers.get(LOGID_HEADER.lower())
-            or headers.get(LOGID_HEADER)
-            or (context_logid if context_logid != "-" else None)
-        )
 
         query = QueryParams(scope["query_string"].decode("utf-8", errors="replace"))
         query_data = {
@@ -186,7 +172,6 @@ class RequestLoggingMiddleware:
         }
         path_params = scope.get("path_params") or {}
 
-        record_logid = logid or generate_logid()
         include_bulky_preview = exc is not None or status_code >= 400
 
         log_entry: dict[str, Any] = {
@@ -197,7 +182,6 @@ class RequestLoggingMiddleware:
             "handler": getattr(handler, "__name__", None),
             "status": status_code,
             "duration_ms": duration_ms,
-            "logid": record_logid,
             "client_ip": scope.get("client", ("-", 0))[0],
             "query": sanitize_for_logging(query_data, field_name="query"),
             "path_params": sanitize_for_logging(path_params, field_name="path_params"),
@@ -218,18 +202,7 @@ class RequestLoggingMiddleware:
             }
 
         message = f"HTTP_REQUEST {json.dumps(log_entry, ensure_ascii=False, sort_keys=True)}"
-        self.logger.info(
-            message,
-            extra={
-                "tags": {
-                    "_logid": record_logid,
-                    "http_method": scope["method"],
-                    "http_path": scope["path"],
-                    "http_route": getattr(route, "path", scope["path"]) or scope["path"],
-                    "http_status": str(status_code),
-                }
-            },
-        )
+        self.logger.info(message)
 
     def _log_send_failure(
         self,
@@ -242,14 +215,6 @@ class RequestLoggingMiddleware:
         exc: Exception,
     ) -> None:
         route = scope.get("route")
-        context_logid = get_logid()
-        record_logid = (
-            response_headers.get(LOGID_HEADER)
-            or response_headers.get(LOGID_HEADER.lower())
-            or request_headers.get(LOGID_HEADER)
-            or (context_logid if context_logid != "-" else None)
-            or generate_logid()
-        )
 
         body = message.get("body", b"")
         if isinstance(body, bytes):
@@ -263,7 +228,6 @@ class RequestLoggingMiddleware:
             "path": scope["path"],
             "route": getattr(route, "path", None),
             "status": status_code,
-            "logid": record_logid,
             "response": {
                 "content_type": response_headers.get("content-type"),
                 "content_length": _parse_content_length(
@@ -283,15 +247,6 @@ class RequestLoggingMiddleware:
         self.logger.error(
             "HTTP_RESPONSE_SEND_FAILURE %s",
             json.dumps(payload, ensure_ascii=False, sort_keys=True),
-            extra={
-                "tags": {
-                    "_logid": record_logid,
-                    "http_method": scope["method"],
-                    "http_path": scope["path"],
-                    "http_route": getattr(route, "path", scope["path"]) or scope["path"],
-                    "http_status": str(status_code),
-                }
-            },
         )
 
     def _build_request_log_summary(

@@ -43,7 +43,6 @@ ARG CHROME_DEB_VERSION=139.0.7258.127-1
 # Chromium (the same fallback the recovered /opt/gem/browser-ctl.sh uses). This
 # is its build number.
 ARG PLAYWRIGHT_CHROMIUM_BUILD=1194
-ARG VE_VERSION=1.0.43
 
 # uv binary (used to provision the python-build-standalone interpreters and to
 # build the recovered in-house wheels). Pulled from the official image.
@@ -91,21 +90,6 @@ RUN set -eux; \
     cp node_modules/clipboard/dist/clipboard.min.js               "$D/clipboard@2.0.11/clipboard.min.js"; \
     cp node_modules/@agent-infra/browser-ui/dist/bundle/index.js              "$D/agent-infra-browser-ui@0.2.2/index.js"; \
     cp node_modules/@agent-infra/browser-ui/dist/bundle/index.js.LICENSE.txt  "$D/agent-infra-browser-ui@0.2.2/index.js.LICENSE.txt"
-
-# -----------------------------------------------------------------------------
-# `ve` (volcengine CLI) — built from public Go source. The recovered binary's
-# Go buildinfo identifies it exactly as github.com/volcengine/volcengine-cli
-# (deps cobra/pflag/uuid/volc-sdk-golang/volcengine-go-sdk). goreleaser builds
-# it CGO-free as a static `ve`; we reproduce that. (Off the sandbox boot path —
-# a Volcengine cloud CLI used only with IAM credentials.)
-# -----------------------------------------------------------------------------
-FROM golang:1.23-bookworm AS ve-build
-ARG VE_VERSION=1.0.43
-ARG TARGETARCH
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
-RUN go install -trimpath -ldflags "-s -w -X main.version=${VE_VERSION}" \
-      github.com/volcengine/volcengine-cli@v${VE_VERSION}
-# -> /go/bin/volcengine-cli
 
 # =============================================================================
 # Final image
@@ -347,15 +331,11 @@ RUN export PATH="/opt/nodejs/22/bin:$PATH" \
 # 13. Orchestration layer (recovered verbatim — these *are* the source: shell
 #     scripts + config): /opt/gem (run.sh, supervisord & nginx configs,
 #     browser/jupyter/code-server launchers), /opt/application (entrypoint),
-#     static UIs, skills, and the `ve` dispatch wrapper. The two compiled CLIs
-#     (`aio`, `ve`) are built from source in the stages above and dropped in next.
+#     static UIs, skills. The `aio` CLI is built from source in the stage above.
 # -----------------------------------------------------------------------------
 COPY context/rootfs/ /
 # the re-authored aio CLI, built from source in the aio-build stage
 COPY --from=aio-build /build/aio/dist/aio.js /usr/local/bin/aio
-# volcengine CLI, built from source in the ve-build stage (the recovered `ve`
-# dispatch wrapper execs linux_${arch}_ve based on `uname -m`).
-COPY --from=ve-build /go/bin/volcengine-cli /usr/local/bin/linux_${TARGETARCH}_ve
 # static web assets (xterm, swagger-ui, clipboard, browser-ui) fetched from
 # pinned npm in the static-assets stage instead of vendored into git.
 COPY --from=static-assets /out/ /
@@ -383,7 +363,7 @@ RUN set -eux; \
     # in-house CLIs (copied via rootfs) + wrapper wiring \
     ln -sf /opt/gem/agent-browser-wrapper.sh /usr/local/bin/agent-browser; \
     ln -sf /opt/gem/xdg-settings             /usr/local/bin/xdg-settings; \
-    chmod +x /usr/local/bin/aio /usr/local/bin/ve /usr/local/bin/linux_${TARGETARCH}_ve; \
+    chmod +x /usr/local/bin/aio; \
     find /opt/gem -name '*.sh' -exec chmod +x {} +; \
     chmod +x /opt/application/run.sh; \
     # supervisord config location expected by run.sh \

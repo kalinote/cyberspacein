@@ -17,11 +17,7 @@ from fastapi.responses import Response as FastAPIResponse, StreamingResponse
 from app.core.exceptions import BadRequestException, ResourceNotFoundException
 from app.core.service_container import services
 from app.logging.sanitizer import sanitize_for_logging
-from app.logging.websocket import (
-    bind_websocket_logid,
-    log_websocket_event,
-    restore_logid,
-)
+from app.logging.websocket import log_websocket_event
 from app.models.shell import (
     ActiveShellSessionsResult,
     BashCommandStatus,
@@ -877,7 +873,6 @@ async def websocket_shell_endpoint(
     """
     WebSocket endpoint for interactive shell terminal
     """
-    ws_logid, previous_logid = bind_websocket_logid(websocket)
     session = None
     is_new_session = False
     subscriber_id = None
@@ -902,7 +897,6 @@ async def websocket_shell_endpoint(
                     websocket=websocket,
                     route='/v1/shell/ws',
                     session_id=session_id,
-                    logid=ws_logid,
                     details={'reason': 'session_not_found'},
                 )
                 error_message = {'type': 'error', 'data': 'Session not found'}
@@ -917,7 +911,6 @@ async def websocket_shell_endpoint(
                 websocket=websocket,
                 route='/v1/shell/ws',
                 session_id=session_id,
-                logid=ws_logid,
                 details={'reason': 'session_inactive'},
             )
             error_message = {'type': 'error', 'data': 'Session is not active'}
@@ -931,7 +924,6 @@ async def websocket_shell_endpoint(
             websocket=websocket,
             route='/v1/shell/ws',
             session_id=session_id,
-            logid=ws_logid,
             details={'new_session': is_new_session},
         )
 
@@ -946,7 +938,6 @@ async def websocket_shell_endpoint(
                 websocket=websocket,
                 route='/v1/shell/ws',
                 session_id=session_id,
-                logid=ws_logid,
                 details={'reason': 'duplicate_websocket_connection'},
             )
             error_message = {
@@ -1022,7 +1013,6 @@ async def websocket_shell_endpoint(
             websocket=websocket,
             route='/v1/shell/ws',
             session_id=session_id,
-            logid=ws_logid,
             details={'new_session': is_new_session},
         )
     except Exception as e:
@@ -1033,7 +1023,6 @@ async def websocket_shell_endpoint(
             route='/v1/shell/ws',
             session_id=session_id,
             level=logging.ERROR,
-            logid=ws_logid,
             details={
                 'new_session': is_new_session,
                 'error': {
@@ -1052,4 +1041,3 @@ async def websocket_shell_endpoint(
             except RuntimeError:
                 # WebSocket已经关闭，忽略错误
                 pass
-        restore_logid(previous_logid)

@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 from app.logging.sanitizer import sanitize_for_logging
-from vendors.bytedlogger import get_logid
 
 
 def _normalize_status(status: Any) -> Any:
@@ -26,7 +25,6 @@ def log_execution_event(
     details: dict[str, Any] | None = None,
     level: int = logging.INFO,
 ) -> None:
-    logid = get_logid() or '-'
     normalized_status = _normalize_status(status)
 
     payload: dict[str, Any] = {
@@ -35,7 +33,6 @@ def log_execution_event(
         'operation': operation,
         'phase': phase,
         'status': normalized_status,
-        'logid': logid,
     }
 
     if session_id is not None:
@@ -57,13 +54,4 @@ def log_execution_event(
         level,
         'EXECUTION_EVENT %s',
         json.dumps(payload, ensure_ascii=False, sort_keys=True),
-        extra={
-            'tags': {
-                '_logid': logid,
-                'execution_component': component,
-                'execution_operation': operation,
-                'execution_phase': phase,
-                'execution_status': str(normalized_status),
-            }
-        },
     )
