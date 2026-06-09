@@ -97,6 +97,13 @@ class AgentRuntimeRequestSchema(BaseModel):
         default=False,
         description="为 true 时，本轮 run 内工具触发的 HITL 自动批准，不等待 /agent/approve",
     )
+    merge_user_prompts: bool = Field(
+        default=False,
+        description=(
+            "仅 `/agent/start` 有效；为 true 时合并提示词模板 user_prompt（前）与请求 user_prompt（后），"
+            "两段之间空一行，且请求 user_prompt 必填"
+        ),
+    )
 
 
 class StartAgentResponseSchema(BaseModel):

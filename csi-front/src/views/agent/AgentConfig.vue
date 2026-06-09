@@ -1530,19 +1530,19 @@
     </el-dialog>
 
     <el-dialog
-      v-model="sandboxVncDialogVisible"
-      :title="sandboxVncTitle || '沙盒远程连接'"
-      class="sandbox-vnc-dialog"
+      v-model="sandboxBrowserDialogVisible"
+      :title="sandboxBrowserTitle || '沙盒浏览器'"
+      class="sandbox-browser-dialog"
       width="96vw"
       destroy-on-close
       :style="{ maxWidth: '1600px' }"
     >
       <template #header="{ titleId, titleClass }">
         <div class="flex items-center justify-between w-full pr-8">
-          <span :id="titleId" :class="titleClass">{{ sandboxVncTitle || '沙盒远程连接' }}</span>
+          <span :id="titleId" :class="titleClass">{{ sandboxBrowserTitle || '沙盒浏览器' }}</span>
           <a
-            v-if="sandboxVncUrl"
-            :href="sandboxVncUrl"
+            v-if="sandboxBrowserUrl"
+            :href="sandboxBrowserUrl"
             target="_blank"
             rel="noopener noreferrer"
             class="text-sm text-primary hover:underline flex items-center gap-1"
@@ -1553,12 +1553,12 @@
         </div>
       </template>
       <div class="flex flex-1 min-h-0 flex-col">
-        <div v-if="sandboxVncUrl" class="flex-1 min-h-0 rounded-lg overflow-hidden bg-black">
+        <div v-if="sandboxBrowserUrl" class="flex-1 min-h-0 rounded-lg overflow-hidden bg-black">
           <iframe
-            :src="sandboxVncUrl"
+            :src="sandboxBrowserUrl"
             class="w-full h-full border-0 block"
             allowfullscreen
-            title="noVNC 远程桌面"
+            title="沙盒浏览器"
           ></iframe>
         </div>
         <div v-else class="w-full h-full flex items-center justify-center text-gray-500 min-h-100">
@@ -1813,14 +1813,9 @@ const getSandboxUrl = (port) => {
   return `http://${SANDBOX_HOST}:${port}`
 }
 
-const getSandboxVncUrl = (port, imageType) => {
+const getSandboxBrowserUrl = (port) => {
   if (!port) return ''
-  const base = `http://${SANDBOX_HOST}:${port}`
-  const hash = 'autoconnect=true&reconnect=true&shared=true&resize=remote'
-  if (imageType === 'windows') {
-    return `${base}/#${hash}`
-  }
-  return `${base}/vnc/index.html#${hash}`
+  return `http://${SANDBOX_HOST}:${port}/browser-ui`
 }
 
 const getSandboxCodeServerUrl = (port) => {
@@ -1919,11 +1914,11 @@ const handleCreateSandboxSubmit = async () => {
 }
 
 const sandboxDetailDialogVisible = ref(false)
-const sandboxVncDialogVisible = ref(false)
+const sandboxBrowserDialogVisible = ref(false)
 const sandboxDetailLoading = ref(false)
 const sandboxDetailData = ref(null)
-const sandboxVncUrl = ref('')
-const sandboxVncTitle = ref('')
+const sandboxBrowserUrl = ref('')
+const sandboxBrowserTitle = ref('')
 
 const handleViewSandbox = async (sandbox) => {
   if (!sandbox?.sandbox_id) return
@@ -1951,14 +1946,14 @@ const handleConnectSandbox = (sandbox) => {
     ElMessage.error('该沙盒未配置宿主机端口，无法连接')
     return
   }
-  const url = getSandboxVncUrl(sandbox.host_port, sandbox.image_type)
+  const url = getSandboxBrowserUrl(sandbox.host_port)
   if (!url) {
     ElMessage.error('无法生成沙盒连接地址')
     return
   }
-  sandboxVncUrl.value = url
-  sandboxVncTitle.value = sandbox.display_name || sandbox.name || sandbox.sandbox_id || '沙盒远程连接'
-  sandboxVncDialogVisible.value = true
+  sandboxBrowserUrl.value = url
+  sandboxBrowserTitle.value = sandbox.display_name || sandbox.name || sandbox.sandbox_id || '沙盒浏览器'
+  sandboxBrowserDialogVisible.value = true
 }
 
 const handleOpenCodeServer = (sandbox) => {
@@ -3488,12 +3483,12 @@ const handlePromptTemplateSubmit = async () => {
 </script>
 
 <style>
-.sandbox-vnc-dialog.el-dialog {
+.sandbox-browser-dialog.el-dialog {
   --el-dialog-width: 96vw;
   max-width: 1600px;
   margin-top: 1vh;
 }
-.sandbox-vnc-dialog .el-dialog__body {
+.sandbox-browser-dialog .el-dialog__body {
   padding: 0.75rem;
   height: 0;
   min-height: 88vh;

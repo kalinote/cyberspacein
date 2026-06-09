@@ -148,15 +148,15 @@
                             </div>
 
                             <div class="pt-4 border-t border-gray-200">
-                                <el-button
-                                    type="primary"
-                                    class="w-full"
-                                    :loading="runningAgentId === item.id"
-                                    @click="handleRunAgent(item)"
-                                >
-                                    <template #icon><Icon icon="mdi:play-circle-outline" /></template>
-                                    运行
-                                </el-button>
+                                <AgentStartButton
+                                    button-text="运行"
+                                    :agent-options="runAgentOptions"
+                                    :preselected-agent-id="item.id"
+                                    icon="mdi:play-circle-outline"
+                                    block
+                                    element-primary
+                                    @started="handleAgentStarted"
+                                />
                             </div>
                         </div>
                     </div>
@@ -320,15 +320,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
+import AgentStartButton from '@/components/agent/AgentStartButton.vue'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
 import { formatDateTime } from '@/utils/action'
-import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 
 defineOptions({ name: 'AgentMonitor' })
 
@@ -336,7 +335,14 @@ const router = useRouter()
 const statsTimeRange = ref('week')
 const agentList = ref([])
 const agentListLoading = ref(false)
-const runningAgentId = ref(null)
+const agentOptions = ref([])
+
+const runAgentOptions = computed(() =>
+    agentOptions.value.map((item) => ({
+        label: item.label,
+        value: item.value,
+    }))
+)
 
 const LLM_PROVIDER_OPTIONS = [
     { value: 'openai', label: 'OpenAI 兼容' },
@@ -375,52 +381,30 @@ function goToEngineConfig() {
     router.push({ name: 'agent-engine-config' })
 }
 
-async function handleRunAgent(item) {
-    if (!item?.id) return
+async function loadAgentOptions() {
     try {
-        await ElMessageBox.confirm(
-            `确定要运行「${item.name}」吗？`,
-            '确认运行',
-            {
-                confirmButtonText: '确定',
-                cancelButtonText: '取消',
-                type: 'warning'
-            }
-        )
-
-        runningAgentId.value = item.id
-        const response = await agentApi.startAgent({
-            agent_id: item.id,
-            auto_approve: getAgentAutoApproveValue()
-        })
-
-        if (response.code === 0 && response.data?.agent_id) {
-            const sid = response.data.session_id
-            if (!sid) {
-                ElMessage.error('未返回 session_id，无法进入详情')
-                return
-            }
-            ElMessage.success('分析引擎已启动')
-            router.push({
-                name: 'agent-analysis-detail',
-                params: { sessionId: String(sid) },
-                query: { agent_id: String(response.data.agent_id) }
-            })
-        } else {
-            ElMessage.error(response.message || '启动分析引擎失败')
-        }
-    } catch (err) {
-        if (err !== 'cancel') {
-            console.error('启动分析引擎失败:', err)
-            ElMessage.error('启动分析引擎失败，请稍后重试')
-        }
-    } finally {
-        runningAgentId.value = null
+        const res = await agentApi.getAgentsConfigList()
+        const list = res?.data || []
+        agentOptions.value = list.map((item) => ({
+            label: item.name,
+            value: item.id,
+        }))
+    } catch {
+        agentOptions.value = []
     }
+}
+
+function handleAgentStarted({ agentId, sessionId }) {
+    router.push({
+        name: 'agent-analysis-detail',
+        params: { sessionId: String(sessionId) },
+        query: { agent_id: String(agentId) },
+    })
 }
 
 onMounted(() => {
     fetchAgentList()
+    loadAgentOptions()
 })
 const agentStats = ref([
                 {

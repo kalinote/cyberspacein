@@ -79,22 +79,17 @@
             <Icon icon="mdi:format-list-bulleted" class="text-blue-600" />
             会话列表
           </h2>
-          <div class="flex items-center gap-3 shrink-0">
-            <AgentAutoApproveSwitch />
-            <div class="w-52 shrink-0">
-              <SplitButton
-                main-button-text="运行分析引擎"
-                loading-text="启动中..."
-                :disabled="analyzing || !runAgentOptions.length"
-                :loading="analyzing"
-                :options="runAgentOptions"
-                main-button-icon="mdi:play-circle-outline"
-                compact
-                element-primary
-                @main-click="handleRunAgentMain"
-                @option-click="handleRunAgentOption"
-              />
-            </div>
+          <div class="shrink-0">
+            <AgentStartButton
+              button-text="运行分析引擎"
+              loading-text="启动中..."
+              :disabled="!runAgentOptions.length"
+              :agent-options="runAgentOptions"
+              icon="mdi:play-circle-outline"
+              compact
+              element-primary
+              @started="handleAgentStarted"
+            />
           </div>
         </div>
 
@@ -193,12 +188,10 @@ defineOptions({ name: 'AgentSessionList' })
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
-import SplitButton from '@/components/SplitButton.vue'
-import AgentAutoApproveSwitch from '@/components/agent/AgentAutoApproveSwitch.vue'
-import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
+import AgentStartButton from '@/components/agent/AgentStartButton.vue'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
 import { formatDateTime } from '@/utils/action'
@@ -212,7 +205,6 @@ import {
 const router = useRouter()
 
 const loading = ref(false)
-const analyzing = ref(false)
 const sessions = ref([])
 const agentOptions = ref([])
 
@@ -306,56 +298,12 @@ function goToDetail(row) {
   })
 }
 
-function handleRunAgentMain() {
-  if (!runAgentOptions.value.length) {
-    ElMessage.warning('暂无可用的分析引擎')
-    return
-  }
-  ElMessage.info('请点击右侧下拉箭头，选择要运行的分析引擎')
-}
-
-async function handleRunAgentOption(option) {
-  if (!option?.value) return
-  try {
-    await ElMessageBox.confirm(
-      `确定要运行「${option.label}」吗？`,
-      '确认运行',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-
-    analyzing.value = true
-    const response = await agentApi.startAgent({
-      agent_id: option.value,
-      auto_approve: getAgentAutoApproveValue(),
-    })
-
-    if (response.code === 0 && response.data?.agent_id) {
-      const sid = response.data.session_id
-      if (!sid) {
-        ElMessage.error('未返回 session_id，无法进入详情')
-        return
-      }
-      ElMessage.success('分析引擎已启动')
-      router.push({
-        name: 'agent-analysis-detail',
-        params: { sessionId: String(sid) },
-        query: { agent_id: String(response.data.agent_id) },
-      })
-    } else {
-      ElMessage.error(response.message || '启动分析引擎失败')
-    }
-  } catch (err) {
-    if (err !== 'cancel') {
-      console.error('启动分析引擎失败:', err)
-      ElMessage.error('启动分析引擎失败，请稍后重试')
-    }
-  } finally {
-    analyzing.value = false
-  }
+function handleAgentStarted({ agentId, sessionId }) {
+  router.push({
+    name: 'agent-analysis-detail',
+    params: { sessionId: String(sessionId) },
+    query: { agent_id: String(agentId) },
+  })
 }
 
 onMounted(() => {

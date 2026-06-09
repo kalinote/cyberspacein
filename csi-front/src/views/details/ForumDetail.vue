@@ -374,7 +374,8 @@
                                         v-show="rightPanel === 'info'"
                                         :keywords="forumData.keywords"
                                         :entities="forumData.entities"
-                                        :analyze-options="analyzeOptions"
+                                        :agent-options="analyzeOptions"
+                                        :default-injection-param="defaultInjectionParam"
                                         :analyzing="analyzing"
                                         :is-priority-target="isPriorityTarget"
                                         :selected-keywords="selectedKeywords"
@@ -383,8 +384,7 @@
                                         :entity-colors="entityColors"
                                         :set-keyword-ref="setKeywordRef"
                                         :set-entity-ref="setEntityRef"
-                                        @analyze-main="handleAnalyze"
-                                        @analyze-option="handleAnalyzeOption"
+                                        @started="handleAgentStarted"
                                         @export="handleExport"
                                         @toggle-priority="togglePriorityTarget"
                                         @toggle-keyword="toggleKeyword"
@@ -531,7 +531,6 @@ import ArticleDetailInfoPanel from '@/components/detail/ArticleDetailInfoPanel.v
 import ArticleDetailAnalysisPanel from '@/components/detail/ArticleDetailAnalysisPanel.vue'
 import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
 import { useAgentSessionStream } from '@/composables/useAgentSessionStream'
-import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 import { forumApi } from '@/api/forum'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -764,6 +763,11 @@ const {
 })
 
 const analyzeOptions = ref([])
+
+const defaultInjectionParam = computed(() => ({
+    entity_uuid: forumData.value?.uuid || '',
+    entity_type: forumData.value?.entity_type || '',
+}))
 
 const loadAnalyzeOptions = async () => {
     try {
@@ -1003,61 +1007,14 @@ const isImageUrl = (url) => {
     return imageExtensions.some(ext => lowerUrl.includes(ext))
 }
 
-const handleAnalyze = async () => {
+async function handleAgentStarted({ agentId, sessionId }) {
     analyzing.value = true
     try {
-        ElMessage.success('分析任务已提交，请稍后刷新页面查看结果')
-    } catch (err) {
-        ElMessage.warning('分析功能暂未开放')
-    } finally {
-        analyzing.value = false
-    }
-}
-
-const handleAnalyzeOption = async (option) => {
-    try {
-        await ElMessageBox.confirm(
-            `确定要执行「${option.label}」分析任务吗？`,
-            '确认分析',
-            {
-                confirmButtonText: '确定',
-                cancelButtonText: '取消',
-                type: 'warning'
-            }
-        )
-
-        analyzing.value = true
-
-        const response = await agentApi.startAgent({
-            agent_id: option.value,
-            injection_param: {
-                entity_uuid: forumData.value.uuid,
-                entity_type: forumData.value.entity_type,
-            },
-            debug: true,
-            auto_approve: getAgentAutoApproveValue(),
-        })
-
-        if (response.code === 0 && response.data?.agent_id) {
-            ElMessage.success('分析任务已启动')
-            const sid = response.data.session_id
-            if (!sid) {
-                ElMessage.error('未返回 session_id，无法开始分析')
-                return
-            }
-            activeSessionId.value = String(sid)
-            activeAgentId.value = String(response.data.agent_id)
-            rightPanel.value = 'analysis'
-            syncAgentSessionQuery()
-            await startStreamForSession({ loadDetail: true })
-        } else {
-            ElMessage.error(response.message || '启动分析任务失败')
-        }
-    } catch (err) {
-        if (err !== 'cancel') {
-            console.error('启动分析任务失败:', err)
-            ElMessage.error('启动分析任务失败，请稍后重试')
-        }
+        activeSessionId.value = String(sessionId)
+        activeAgentId.value = String(agentId)
+        rightPanel.value = 'analysis'
+        syncAgentSessionQuery()
+        await startStreamForSession({ loadDetail: true })
     } finally {
         analyzing.value = false
     }

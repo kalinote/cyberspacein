@@ -12,6 +12,7 @@ from app.service.nanobot.agent.tools.base import Tool, tool_parameters
 
 logger = logger.bind(name=__name__)
 
+# TODO 增加分段读取，防止正文内容被截断导致内容丢失
 
 @tool_parameters({
     "type": "object",

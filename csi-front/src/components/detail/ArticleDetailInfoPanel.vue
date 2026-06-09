@@ -5,15 +5,16 @@
                 快速<span class="text-blue-500">操作</span>
             </h3>
             <div class="space-y-3">
-                <SplitButton
-                    :main-button-text="'分析此实体'"
-                    :loading-text="'分析实体中...'"
+                <AgentStartButton
+                    button-text="分析此实体"
+                    loading-text="分析实体中..."
                     :disabled="analyzing"
                     :loading="analyzing"
-                    :options="analyzeOptions"
-                    main-button-icon="mdi:brain"
-                    @main-click="emit('analyze-main')"
-                    @option-click="emit('analyze-option', $event)"
+                    :agent-options="agentOptions"
+                    :default-injection-param="defaultInjectionParam"
+                    icon="mdi:brain"
+                    block
+                    @started="emit('started', $event)"
                 />
                 <button
                     type="button"
@@ -90,7 +91,7 @@
 
 <script setup>
 import { Icon } from '@iconify/vue'
-import SplitButton from '@/components/SplitButton.vue'
+import AgentStartButton from '@/components/agent/AgentStartButton.vue'
 import EntityMentionPanel from '@/components/entity/EntityMentionPanel.vue'
 import { hasEntities } from '@/utils/entityDisplay'
 
@@ -103,9 +104,13 @@ defineProps({
         type: Object,
         default: null,
     },
-    analyzeOptions: {
+    agentOptions: {
         type: Array,
         default: () => [],
+    },
+    defaultInjectionParam: {
+        type: Object,
+        default: () => ({}),
     },
     analyzing: {
         type: Boolean,
@@ -142,8 +147,7 @@ defineProps({
 })
 
 const emit = defineEmits([
-    'analyze-main',
-    'analyze-option',
+    'started',
     'export',
     'toggle-priority',
     'toggle-keyword',
