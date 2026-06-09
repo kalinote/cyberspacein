@@ -103,6 +103,7 @@ def create_sandbox(display_name: str | None = None, type: SandboxTypeEnum = Sand
                 name=container_name,
                 security_opt=["seccomp=unconfined"],
                 shm_size="2g",
+                # TODO: 动态代理分配
                 environment={
                     "PROXY_SERVER": "http://192.168.31.200:7890",
                 },
