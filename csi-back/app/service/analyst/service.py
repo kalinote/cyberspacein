@@ -5,19 +5,11 @@
    + 绑定的 `AgentModelConfigModel` / `AgentPromptTemplateModel`，组装一个
    per-request 的 `Nanobot` 实例（`build_bot`）。
 2. 在后台 `asyncio.Task` 中执行 `bot.run(user_prompt, session_id=...)`（`run_analysis`）；
-   通过 `ContextVar(current_agent_id / current_session_id)` 让业务工具和 hooks（TODO #20）
-   能访问上下文。
+   通过 `ContextVar(current_agent_id / current_session_id)` 让业务工具和 hooks 能访问上下文。
 3. 统一管理 SSE 订阅（`subscribe` / `unsubscribe` / `broadcast_sse`）；HITL 见 `hitl.py`
    （`submit_approval` 为 API 薄委托）。
 4. 在 run 开始 / 结束 / 异常时把业务状态写回 `NanobotSessionModel`（`status / steps / todos /
    pending_approval / result` 等）。
-
-故意留到后续 TODO 的扩展点：
-- 业务 Hooks（StatusHook / TodosHook / ApprovalHook / ResultHook）→ TODO #20
-- 业务工具（get_entity / modify_entity / notify_user / write_todos）→ TODO #20
-- 工具 `submit_task_result` 写入 session.task_submissions；`run_analysis` 组装最近一轮 SSE/DB result。
-
-这些点都通过显式注释 `TODO(#20)` 等标注在对应位置。
 """
 from __future__ import annotations
 

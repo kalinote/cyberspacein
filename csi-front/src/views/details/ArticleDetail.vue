@@ -19,7 +19,7 @@
         </div>
 
         <div v-else-if="articleData" class="flex flex-col">
-            <div class="snap-start scroll-mt-16">
+            <div>
             <DetailPageHeader
                 :title="articleData.title || '无标题'"
                 :subtitle="articleData.uuid"
@@ -108,7 +108,7 @@
             </section>
             </div>
 
-            <div class="shrink-0 snap-start snap-always scroll-mt-16 lg:min-h-[calc(100dvh-4rem)]">
+            <div class="shrink-0 lg:min-h-[calc(100dvh-4rem)]">
             <section
                 class="shrink-0 py-6 bg-gray-50 flex flex-col overflow-hidden lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:min-h-120"
             >
@@ -523,8 +523,6 @@ import { useEntityHighlight } from '@/composables/useEntityHighlight'
 import { hasEntities } from '@/utils/entityDisplay'
 import { loadMhtmlSnapshot, revokeBlobUrl, resolveSnapshotUrl } from '@/utils/mhtmlSnapshot'
 import { useMinLg } from '@/composables/useMinLg'
-import { setDetailPageScrollSnap } from '@/utils/detailPageScrollSnap'
-
 const route = useRoute()
 const router = useRouter()
 const uuid = computed(() => route.params.uuid)
@@ -960,12 +958,6 @@ watch(editableSafeRawContent, () => {
     if (activeTab.value === 'rendered') applyContentHighlights()
 })
 
-watch(
-    () => Boolean(articleData.value) && !loading.value,
-    (enabled) => setDetailPageScrollSnap(enabled),
-    { immediate: true },
-)
-
 onMounted(() => {
     loadArticleDetail()
     loadAnalyzeOptions()
@@ -974,7 +966,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-    setDetailPageScrollSnap(false)
     revokeSnapshotBlob()
     cleanupEventListeners()
     disconnectSSE()
@@ -982,16 +973,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-:global(html.detail-page-scroll-snap) {
-    scroll-snap-type: y proximity;
-}
-
-@media (min-width: 1024px) {
-    :global(html.detail-page-scroll-snap) {
-        scroll-snap-type: y mandatory;
-    }
-}
-
 .article-content :deep(img) {
     max-width: 100%;
     height: auto;

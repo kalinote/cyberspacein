@@ -19,7 +19,7 @@
         </div>
 
         <div v-else-if="forumData" class="flex flex-col forum-detail-page">
-            <div class="snap-start scroll-mt-16">
+            <div>
             <DetailPageHeader
                 :title="forumData.title || '无标题'"
                 :subtitle="forumData.uuid"
@@ -121,7 +121,7 @@
             </section>
             </div>
 
-            <div class="shrink-0 snap-start snap-always scroll-mt-16 lg:min-h-[calc(100dvh-4rem)]">
+            <div class="shrink-0 lg:min-h-[calc(100dvh-4rem)]">
             <section
                 class="shrink-0 py-6 bg-gray-50 flex flex-col overflow-hidden lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:min-h-120"
             >
@@ -426,7 +426,7 @@
 
             <section
                 v-if="forumData.thread_type === 'thread'"
-                class="shrink-0 bg-gray-50 pb-6 snap-start scroll-mt-16"
+                class="shrink-0 bg-gray-50 pb-6"
             >
                 <div class="w-full px-4 sm:px-6 lg:px-8">
                     <ForumDetailCommentsSection
@@ -545,8 +545,6 @@ import {
     FORUM_DETAIL_PANE_DEFAULTS,
     FORUM_DETAIL_PANE_STORAGE_KEY,
 } from '@/utils/useSplitpanesPersistence'
-import { setDetailPageScrollSnap } from '@/utils/detailPageScrollSnap'
-
 const route = useRoute()
 const router = useRouter()
 const uuid = computed(() => route.params.uuid)
@@ -1099,12 +1097,6 @@ watch(editableSafeRawContent, () => {
     if (activeTab.value === 'rendered') applyContentHighlights()
 })
 
-watch(
-    () => Boolean(forumData.value) && !loading.value,
-    (enabled) => setDetailPageScrollSnap(enabled),
-    { immediate: true },
-)
-
 onMounted(() => {
     loadForumDetail()
     loadAnalyzeOptions()
@@ -1113,23 +1105,12 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-    setDetailPageScrollSnap(false)
     cleanupEventListeners()
     disconnectSSE()
 })
 </script>
 
 <style scoped>
-:global(html.detail-page-scroll-snap) {
-    scroll-snap-type: y proximity;
-}
-
-@media (min-width: 1024px) {
-    :global(html.detail-page-scroll-snap) {
-        scroll-snap-type: y mandatory;
-    }
-}
-
 .forum-content :deep(img) {
     max-width: 100%;
     height: auto;

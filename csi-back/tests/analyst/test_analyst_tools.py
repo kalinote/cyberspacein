@@ -148,6 +148,79 @@ async def test_get_entity_es_exception_returns_error_str(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
+async def test_get_entity_oversize_returns_field_lengths(monkeypatch: pytest.MonkeyPatch) -> None:
+    big_content = "x" * 17000
+
+    class _ES:
+        async def get(self, **kw):
+            return {"_source": {"raw_content": big_content, "title": "短标题"}}
+
+    monkeypatch.setattr("app.db.elasticsearch.get_es", lambda: _ES())
+    out = await tools_module.GetEntityTool().execute(
+        entity_type=EntityType.ARTICLE.value,
+        entity_uuid="1",
+    )
+    assert out.startswith("[错误]")
+    assert "超过工具结果上限" in out
+    assert "raw_content: 原 17000" in out
+    assert "title: 原" in out
+
+
+@pytest.mark.asyncio
+async def test_get_entity_limits_reduces_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    big_content = "a" * 17000
+
+    class _ES:
+        async def get(self, **kw):
+            return {"_source": {"raw_content": big_content, "title": "t"}}
+
+    monkeypatch.setattr("app.db.elasticsearch.get_es", lambda: _ES())
+    out = await tools_module.GetEntityTool().execute(
+        entity_type=EntityType.ARTICLE.value,
+        entity_uuid="1",
+        limits={"raw_content": {"offset": 0, "limit": 100}},
+    )
+    data = json.loads(out)
+    assert data["raw_content"] == "a" * 100
+    assert data["title"] == "t"
+
+
+@pytest.mark.asyncio
+async def test_get_entity_limits_still_oversize_reports_both_lengths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    big_content = "b" * 17000
+
+    class _ES:
+        async def get(self, **kw):
+            return {"_source": {"raw_content": big_content}}
+
+    monkeypatch.setattr("app.db.elasticsearch.get_es", lambda: _ES())
+    out = await tools_module.GetEntityTool().execute(
+        entity_type=EntityType.ARTICLE.value,
+        entity_uuid="1",
+        limits={"raw_content": {"offset": 0, "limit": 17000}},
+    )
+    assert out.startswith("[错误]")
+    assert "raw_content: 原 17000，截取后 17000" in out
+
+
+@pytest.mark.asyncio
+async def test_get_entity_limits_extra_key_no_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _ES:
+        async def get(self, **kw):
+            return {"_source": {"title": "完整标题"}}
+
+    monkeypatch.setattr("app.db.elasticsearch.get_es", lambda: _ES())
+    out = await tools_module.GetEntityTool().execute(
+        entity_type=EntityType.ARTICLE.value,
+        entity_uuid="1",
+        limits={"not_in_source": {"offset": 0, "limit": 10}},
+    )
+    assert json.loads(out) == {"title": "完整标题"}
+
+
+@pytest.mark.asyncio
 async def test_tool_requires_context_var() -> None:
     with pytest.raises(RuntimeError):
         await tools_module.WriteTodosTool().execute(todos=[])

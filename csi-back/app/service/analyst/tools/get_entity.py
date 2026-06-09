@@ -9,10 +9,87 @@ from loguru import logger
 
 from app.schemas.constants import ENTITY_TYPE_INDEX_MAP, EntityType
 from app.service.nanobot.agent.tools.base import Tool, tool_parameters
+from app.service.nanobot.config.schema import AgentDefaults
 
 logger = logger.bind(name=__name__)
 
-# TODO 增加分段读取，防止正文内容被截断导致内容丢失
+_MAX_RESULT_CHARS: int = AgentDefaults().max_tool_result_chars
+
+
+def _field_content_length(value: Any) -> int:
+    if isinstance(value, str):
+        return len(value)
+    return len(json.dumps(value, ensure_ascii=False))
+
+
+def _slice_string(value: str, spec: dict[str, Any] | None) -> str:
+    if not spec or not isinstance(spec, dict):
+        return value
+    offset = spec.get("offset", 0)
+    limit = spec.get("limit")
+    if not isinstance(offset, int) or isinstance(offset, bool):
+        offset = 0
+    offset = max(0, offset)
+    if limit is None:
+        return value[offset:]
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        return value[offset:]
+    limit = max(0, limit)
+    return value[offset : offset + limit]
+
+
+def _apply_field_limits(
+    source: dict[str, Any],
+    limits: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not limits or not isinstance(limits, dict):
+        return dict(source)
+    result = dict(source)
+    for field, spec in limits.items():
+        if field not in result:
+            continue
+        value = result[field]
+        if not isinstance(value, str):
+            continue
+        result[field] = _slice_string(value, spec if isinstance(spec, dict) else None)
+    return result
+
+
+def _compute_field_length_report(
+    source: dict[str, Any],
+    limits: dict[str, Any] | None,
+) -> dict[str, dict[str, int]]:
+    report: dict[str, dict[str, int]] = {}
+    limit_specs = limits if isinstance(limits, dict) else {}
+    for field, value in source.items():
+        entry: dict[str, int] = {"original": _field_content_length(value)}
+        spec = limit_specs.get(field)
+        if spec is not None and isinstance(value, str):
+            limited_value = _slice_string(value, spec if isinstance(spec, dict) else None)
+            entry["limited"] = _field_content_length(limited_value)
+        report[field] = entry
+    return report
+
+
+def _format_oversize_error(
+    total_chars: int,
+    max_chars: int,
+    field_report: dict[str, dict[str, int]],
+) -> str:
+    parts: list[str] = []
+    for field, lengths in field_report.items():
+        original = lengths.get("original", 0)
+        if "limited" in lengths:
+            parts.append(f"{field}: 原 {original}，截取后 {lengths['limited']}")
+        else:
+            parts.append(f"{field}: 原 {original}")
+    field_detail = "；".join(parts)
+    return (
+        f"[错误] 返回内容超过工具结果上限（上限 {max_chars} 字符，当前 {total_chars} 字符）。\n"
+        f"字段长度：{field_detail}。\n"
+        f"建议使用 limits 参数对大字段设置 offset/limit 后重试。"
+    )
+
 
 @tool_parameters({
     "type": "object",
@@ -36,6 +113,22 @@ logger = logger.bind(name=__name__)
                 "避免整篇文档触发工具结果落盘后仅保留短预览而无法看到所需字段内容"
             ),
         },
+        "limits": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "properties": {
+                    "offset": {"type": "integer", "minimum": 0},
+                    "limit": {"type": "integer", "minimum": 0},
+                },
+                "additionalProperties": False,
+            },
+            "description": (
+                "可选。对大字段分段读取：键为顶层字段名，值为 offset/limit。"
+                "未列出的字段返回完整内容；limits 中多出的键忽略。"
+                "仅在触发内容长度上限导致读取失败时推荐使用。"
+            ),
+        },
     },
     "required": ["entity_type", "entity_uuid"],
     "additionalProperties": False,
@@ -52,7 +145,9 @@ class GetEntityTool(Tool):
         return (
             "根据实体类型和 UUID 从 Elasticsearch 获取 `_source`。"
             "默认返回全部字段的 JSON；若只需正文或少数键，务必传入 `fields`"
-            "以控制体积，避免无关字段占用上下文"
+            "以控制体积，避免无关字段占用上下文。"
+            "若返回内容超过工具结果长度上限，将失败并提示各字段长度；"
+            "此时可用 `limits` 对大字段按 offset/limit 分段读取。"
         )
 
     @property
@@ -65,6 +160,8 @@ class GetEntityTool(Tool):
         entity_type = kwargs.get("entity_type")
         entity_uuid = kwargs.get("entity_uuid")
         raw_fields = kwargs.get("fields")
+        raw_limits = kwargs.get("limits")
+        limits = raw_limits if isinstance(raw_limits, dict) else None
         index = ENTITY_TYPE_INDEX_MAP.get(entity_type)
         if index is None:
             return f"[错误] 不支持的实体类型: {entity_type}"
@@ -84,4 +181,9 @@ class GetEntityTool(Tool):
             )
             return f"[错误] 查询实体失败: {exc}"
         source = resp.get("_source") or {}
-        return json.dumps(source, ensure_ascii=False)
+        limited_source = _apply_field_limits(source, limits)
+        payload = json.dumps(limited_source, ensure_ascii=False)
+        if len(payload) > _MAX_RESULT_CHARS:
+            field_report = _compute_field_length_report(source, limits)
+            return _format_oversize_error(len(payload), _MAX_RESULT_CHARS, field_report)
+        return payload

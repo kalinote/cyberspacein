@@ -80,8 +80,6 @@ async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:
     )
 
 
-# TODO: 节点失败需要增加检测任务是否完成(失败)的逻辑
-
 class ActionInstanceService:
     @staticmethod
     def _get_cache_key(cache_type: str, cache_id: str) -> str:
@@ -504,7 +502,6 @@ class ActionInstanceService:
         
         next_nodes = await ActionInstanceService.find_next_node(action.id, node_instance.node_id)
         if not next_nodes:
-            # TODO: 蓝图错误或行动完成，后续添加检查是否所有节点已完成
             if await ActionInstanceService.check_action_finished(action.id):
                 await ActionInstanceService.finish_action(action.id)
                 return True

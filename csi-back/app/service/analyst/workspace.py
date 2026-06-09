@@ -6,7 +6,7 @@
    / `AgentModelConfigModel` 记录；`enabled_mcp_servers` value 必须可被 `MCPServerConfig` 解析。
 3. 白名单收窄级联校验：更新 Workspace 时，如果**收窄**了某字段（去掉了某 tool / skill / mcp / prompt_template /
    model_config），必须确认该 Workspace 下已有的 `NanobotAgentModel` 仍在引用被移除项；一旦存在引用则拒绝更新
-   （保守策略，由 TODO #17 明确）。
+   （保守策略）。
 4. 删除保护：存在关联 Agent 时拒绝删除 Workspace。
 """
 from __future__ import annotations

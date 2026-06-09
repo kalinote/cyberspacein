@@ -6,11 +6,7 @@ from app.schemas.general import DictModelSchema
 
 
 class ActionNodeHandleModel(BaseModel):
-    """
-    行动节点连接点模型
-    
-    TODO: 改成id和relabel
-    """
+    """行动节点连接点模型。"""
     id: str = Field(description="连接点ID")
     relabel: str | None = Field(default=None, description="连接点重命名标签")
     type: Literal["source", "target"] = Field(description="连接点类型")

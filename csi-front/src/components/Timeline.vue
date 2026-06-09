@@ -40,7 +40,7 @@
             <p class="text-gray-500">暂无历史记录</p>
         </div>
 
-        <div v-else class="relative" :class="fillHeight ? 'flex min-h-0 flex-1 flex-col justify-center' : ''">
+        <div v-else ref="timelineBody" class="relative" :class="fillHeight ? 'flex min-h-0 flex-1 flex-col justify-center' : ''">
             <div class="flex items-center gap-3" :class="fillHeight ? 'min-h-0 w-full flex-1' : ''">
                 <button
                     v-if="timelineItems.length > 0"
@@ -84,17 +84,17 @@
                                 v-for="(item, index) in timelineItems"
                                 :key="item.uuid"
                                 class="relative flex flex-col items-center"
-                                style="min-width: 280px; max-width: 280px;"
+                                :style="{ minWidth: cardWidth, maxWidth: cardWidth }"
                             >
                                 <div
                                     @click="handleCardClick(item)"
                                     @contextmenu.prevent="onCardContextMenu($event, item)"
-                                    class="p-4 rounded-lg border-2 transition-all mb-4"
-                                    :class="getCardClass(item)"
-                                    style="width: 280px;"
+                                    class="rounded-lg border-2 transition-all"
+                                    :class="[getCardClass(item), compact ? 'p-2.5 mb-2' : 'p-4 mb-4']"
+                                    :style="{ width: cardWidth }"
                                 >
-                                    <div class="flex items-start justify-between mb-2">
-                                        <h4 class="text-sm font-bold text-gray-900 line-clamp-2 flex-1">
+                                    <div class="flex items-start justify-between" :class="compact ? 'mb-1' : 'mb-2'">
+                                        <h4 class="text-sm font-bold text-gray-900 flex-1" :class="compact ? 'line-clamp-1' : 'line-clamp-2'">
                                             {{ item.title || '无标题' }}
                                         </h4>
                                         <Icon
@@ -109,16 +109,18 @@
                                         />
                                     </div>
 
-                                    <p class="text-sm text-gray-700 line-clamp-3">
+                                    <p class="text-sm text-gray-700" :class="compact ? 'line-clamp-1' : 'line-clamp-3'">
                                         {{ getContentPreview(item.clean_content) }}
                                     </p>
 
-                                    <div v-if="item.uuid === currentUuid" class="mt-3 text-xs text-green-600 font-medium">
-                                        当前页面
-                                    </div>
-                                    <div v-else-if="item.is_highlighted && item.highlight_reason" class="mt-3 text-xs text-red-600 font-medium">
-                                        {{ item.highlight_reason }}
-                                    </div>
+                                    <template v-if="!compact">
+                                        <div v-if="item.uuid === currentUuid" class="mt-3 text-xs text-green-600 font-medium">
+                                            当前页面
+                                        </div>
+                                        <div v-else-if="item.is_highlighted && item.highlight_reason" class="mt-3 text-xs text-red-600 font-medium">
+                                            {{ item.highlight_reason }}
+                                        </div>
+                                    </template>
                                 </div>
 
                                 <div class="relative flex flex-col items-center">
@@ -127,10 +129,10 @@
                                         class="w-4 h-4 rounded-full border-4"
                                         :class="getTimeNodeClass(item)"
                                     ></div>
-                                    <div class="w-0.5 h-6 bg-blue-300"></div>
+                                    <div class="w-0.5 bg-blue-300" :class="compact ? 'h-3' : 'h-6'"></div>
                                     <div 
-                                        class="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap"
-                                        :class="getTimeLabelClass(item)"
+                                        class="rounded-full text-xs font-medium whitespace-nowrap"
+                                        :class="[getTimeLabelClass(item), compact ? 'px-2 py-0.5' : 'px-3 py-1.5']"
                                     >
                                         {{ formatDateTime(item.crawled_at) }}
                                     </div>
@@ -140,17 +142,21 @@
                             <div
                                 v-if="loadingMore"
                                 class="relative flex flex-col items-center"
-                                style="min-width: 280px; max-width: 280px;"
+                                :style="{ minWidth: cardWidth, maxWidth: cardWidth }"
                             >
-                                <div class="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 flex items-center justify-center mb-4" style="width: 280px; height: 120px;">
+                                <div
+                                    class="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 flex items-center justify-center"
+                                    :class="compact ? 'mb-2' : 'mb-4'"
+                                    :style="{ width: cardWidth, height: compact ? '64px' : '120px' }"
+                                >
                                     <Icon icon="mdi:loading" class="text-3xl text-blue-500 animate-spin" />
                                 </div>
                                 <div 
                                     :ref="el => setDotRef(timelineItems.length, el)"
                                     class="w-4 h-4 rounded-full bg-gray-300 border-4 border-white"
                                 ></div>
-                                <div class="w-0.5 h-6 bg-blue-300"></div>
-                                <div class="px-3 py-1.5 rounded-full text-xs font-medium text-gray-500 bg-gray-100">
+                                <div class="w-0.5 bg-blue-300" :class="compact ? 'h-3' : 'h-6'"></div>
+                                <div class="rounded-full text-xs font-medium text-gray-500 bg-gray-100" :class="compact ? 'px-2 py-0.5' : 'px-3 py-1.5'">
                                     加载中...
                                 </div>
                             </div>
@@ -158,20 +164,24 @@
                             <div
                                 v-else-if="hasMore"
                                 class="relative flex flex-col items-center"
-                                style="min-width: 280px; max-width: 280px;"
+                                :style="{ minWidth: cardWidth, maxWidth: cardWidth }"
                             >
-                                <div class="p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400 mb-4" style="width: 280px; height: 120px;">
+                                <div
+                                    class="p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400"
+                                    :class="compact ? 'mb-2' : 'mb-4'"
+                                    :style="{ width: cardWidth, height: compact ? '64px' : '120px' }"
+                                >
                                     <div class="text-center">
-                                        <Icon icon="mdi:arrow-right" class="text-2xl mb-1" />
-                                        <p class="text-xs">向右滚动加载更多</p>
+                                        <Icon icon="mdi:arrow-right" :class="compact ? 'text-xl' : 'text-2xl mb-1'" />
+                                        <p v-if="!compact" class="text-xs">向右滚动加载更多</p>
                                     </div>
                                 </div>
                                 <div 
                                     :ref="el => setDotRef(timelineItems.length, el)"
                                     class="w-4 h-4 rounded-full bg-gray-200 border-4 border-white"
                                 ></div>
-                                <div class="w-0.5 h-6 bg-blue-300"></div>
-                                <div class="px-3 py-1.5 rounded-full text-xs font-medium text-gray-400 bg-gray-100">
+                                <div class="w-0.5 bg-blue-300" :class="compact ? 'h-3' : 'h-6'"></div>
+                                <div class="rounded-full text-xs font-medium text-gray-400 bg-gray-100" :class="compact ? 'px-2 py-0.5' : 'px-3 py-1.5'">
                                     更多记录
                                 </div>
                             </div>
@@ -296,6 +306,11 @@ const linePath = ref('')
 const svgWidth = ref(0)
 const svgHeight = ref(0)
 const dotElements = ref({})
+
+const timelineBody = ref(null)
+const compact = ref(false)
+const COMPACT_HEIGHT_THRESHOLD = 260
+const cardWidth = computed(() => (compact.value ? '220px' : '280px'))
 const gradientId = ref(`timeline-gradient-${Math.random().toString(36).substr(2, 9)}`)
 const contextMenu = ref({ visible: false, x: 0, y: 0, item: null })
 const diffDialog = ref({ visible: false, loading: false, original: '', modified: '', originalUuid: '', modifiedUuid: '' })
@@ -349,9 +364,30 @@ const updateLinePath = () => {
     linePath.value = d
 }
 
+const updateCompact = () => {
+    const el = timelineBody.value
+    if (!el) return
+    const height = el.clientHeight
+    if (!props.fillHeight || height <= 0) {
+        compact.value = false
+        return
+    }
+    compact.value = height < COMPACT_HEIGHT_THRESHOLD
+}
+
+const ensureObserving = () => {
+    if (!resizeObserver) return
+    if (timelineContent.value) resizeObserver.observe(timelineContent.value)
+    if (timelineBody.value) resizeObserver.observe(timelineBody.value)
+}
+
 const scheduleLineUpdate = () => {
     nextTick(() => {
-        requestAnimationFrame(updateLinePath)
+        ensureObserving()
+        requestAnimationFrame(() => {
+            updateCompact()
+            updateLinePath()
+        })
     })
 }
 
@@ -553,15 +589,17 @@ watch([() => props.entityType, () => props.sourceId], () => {
     loadTimeline()
 })
 
+watch(() => props.fillHeight, () => {
+    scheduleLineUpdate()
+})
+
 onMounted(() => {
     loadTimeline()
 
     resizeObserver = new ResizeObserver(() => {
         scheduleLineUpdate()
     })
-    if (timelineContent.value) {
-        resizeObserver.observe(timelineContent.value)
-    }
+    ensureObserving()
     document.addEventListener('click', closeContextMenu)
 })
 

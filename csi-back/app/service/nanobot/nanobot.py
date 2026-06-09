@@ -6,7 +6,7 @@
   与 `Config` schema，整套老式"Workspace 即目录"的假设在新架构下不再成立。
 - 新增 `from_components(...)`：按业务层已经就位的"组件"（LLMProvider、
   MemoryBackend、SessionStore、workspace 沙箱路径等）装配一个 `Nanobot`。
-  通常由 `AnalystService.build_bot(agent_id)`（TODO #19）调用，调用方负责：
+  通常由 `AnalystService.build_bot` 调用，调用方负责：
     * 按 `agent_id` / `workspace_id` 查询 Workspace/Agent 配置；
     * 根据 Agent 绑定的 `AgentModelConfigModel` 构建 `LLMProvider`；
     * 提供 Mongo 实现的 `MemoryBackend` / `SessionStore`；
@@ -114,8 +114,7 @@ class Nanobot:
         memory = MemoryStore(backend=memory_backend, workspace_id=workspace_id)
         sessions = SessionManager(store=session_store)
         # MessageBus 暂时保留：AgentLoop._process_message 还需要 bus.publish_outbound
-        # 来发 progress / retry_wait / stream 事件。后续若改成直接走 hooks
-        # (TODO #20) 可同步移除。
+        # 来发 progress / retry_wait / stream 事件。后续若事件完全改走 hooks 可同步移除。
         bus = MessageBus()
         loop = AgentLoop(
             bus=bus,
