@@ -17,7 +17,21 @@
 #                            is just a flattened google-chrome-stable .deb).
 #
 # Build context root is this `docker/` directory:
-#     docker build -t aio-sandbox -f docker/Dockerfile docker/
+#     docker build -t csi-sandbox-aio -f docker/Dockerfile docker/
+#
+# 仅构建期使用代理（不会写入最终镜像、不出现在 docker history）：
+# 利用 Docker 预定义的代理 build-arg，它们会自动注入到每个 RUN 作为环境变量，
+# curl / npm / pip 等据此走代理；容器启动后默认不带任何代理。
+# 建议大小写一并传入，覆盖所有下载工具：
+#     docker build -t csi-sandbox-aio -f docker/Dockerfile docker/ \
+#       --build-arg HTTP_PROXY=http://192.168.x.x:7890 \
+#       --build-arg HTTPS_PROXY=http://192.168.x.x:7890 \
+#       --build-arg http_proxy=http://192.168.x.x:7890 \
+#       --build-arg https_proxy=http://192.168.x.x:7890 \
+#       --build-arg NO_PROXY=localhost,127.0.0.1 \
+#       --build-arg no_proxy=localhost,127.0.0.1
+#
+# 运行期代理与构建期完全无关，按需用 -e PROXY_SERVER=host:port 启动即可。
 #
 # See ./README.md for the full reconstruction notes and known caveats.
 # -----------------------------------------------------------------------------
@@ -34,6 +48,7 @@ ARG BUN_VERSION=1.3.3
 ARG MCP_SERVER_BROWSER_VERSION=1.2.29
 ARG AGENT_BROWSER_VERSION=0.22.3
 ARG CHROME_DEVTOOLS_MCP_VERSION=0.9.0
+ARG OPENCODE_VERSION=1.16.2
 ARG CODE_SERVER_VERSION=4.104.0
 ARG NOVNC_VERSION=1.4.0
 ARG WEBSOCAT_VERSION=1.13.0
@@ -106,6 +121,7 @@ ARG BUN_VERSION
 ARG MCP_SERVER_BROWSER_VERSION
 ARG AGENT_BROWSER_VERSION
 ARG CHROME_DEVTOOLS_MCP_VERSION
+ARG OPENCODE_VERSION
 ARG CODE_SERVER_VERSION
 ARG NOVNC_VERSION
 ARG WEBSOCAT_VERSION
@@ -124,7 +140,12 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #    Curated from `apt-mark showmanual` on the live image (minus base/priority
 #    packages that ship with ubuntu:22.04). Grouped by purpose.
 # -----------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN if [ -n "${HTTP_PROXY:-}" ]; then \
+      printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' \
+        "$HTTP_PROXY" "${HTTPS_PROXY:-$HTTP_PROXY}" \
+        > /etc/apt/apt.conf.d/90-docker-proxy; \
+    fi \
+    && apt-get update && apt-get install -y --no-install-recommends \
       # --- toolchain / build deps (native python & node module builds) ---
       build-essential gcc make cmake ninja-build meson pkg-config gettext gawk \
       libffi-dev libcairo2-dev libpango1.0-dev freeglut3-dev python3-dev \
@@ -159,7 +180,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       xfonts-intl-chinese \
       # --- locales / timezone ---
       locales tzdata \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # 清理仅构建期使用的 apt 代理配置，避免残留到最终镜像 \
+    && rm -f /etc/apt/apt.conf.d/90-docker-proxy
 
 # -----------------------------------------------------------------------------
 # 2. Locale
@@ -200,7 +223,7 @@ RUN uv python install ${PY311_VERSION} ${PY312_VERSION} \
 # -----------------------------------------------------------------------------
 ENV FNM_DIR=/opt/fnm
 RUN FNM_ASSET="$(case ${TARGETARCH} in arm64) echo fnm-arm64.zip;; *) echo fnm-linux.zip;; esac)" \
-    && curl -fsSL -o /tmp/fnm.zip \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/fnm.zip \
       "https://github.com/Schniz/fnm/releases/download/v${FNM_VERSION}/${FNM_ASSET}" \
     && unzip -o /tmp/fnm.zip -d /tmp/fnm && install -m755 /tmp/fnm/fnm /usr/local/bin/fnm \
     && rm -rf /tmp/fnm.zip /tmp/fnm \
@@ -214,6 +237,7 @@ RUN FNM_ASSET="$(case ${TARGETARCH} in arm64) echo fnm-arm64.zip;; *) echo fnm-l
 # 7. Global npm packages (installed into node 22) + agent-browser rename
 #    `agent-browser` is renamed to `agent-browser-real` so the recovered
 #    /opt/gem/agent-browser-wrapper.sh can inject the shared-CDP flag.
+#    `opencode-ai` provides the `opencode` CLI used by the dashboard terminal tab.
 # -----------------------------------------------------------------------------
 # (`node` is not yet on PATH here — the /usr/local/bin/node symlinks are wired
 #  up in §14 — so put node 22's bin on PATH for this RUN; npm's shebang is
@@ -225,20 +249,21 @@ RUN export PATH="/opt/nodejs/22/bin:$PATH" \
       @agent-infra/mcp-server-browser@${MCP_SERVER_BROWSER_VERSION} \
       agent-browser@${AGENT_BROWSER_VERSION} \
       chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION} \
+      opencode-ai@${OPENCODE_VERSION} \
     && mv /opt/nodejs/22/bin/agent-browser /opt/nodejs/22/bin/agent-browser-real
 
 # -----------------------------------------------------------------------------
 # 8. code-server, noVNC, websocat, gost
 # -----------------------------------------------------------------------------
 RUN RUSTARCH="$(case ${TARGETARCH} in arm64) echo aarch64;; *) echo x86_64;; esac)" \
-    && curl -fsSL -o /tmp/code-server.tar.gz \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/code-server.tar.gz \
       "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-${TARGETARCH}.tar.gz" \
     && mkdir -p /usr/local/code-server-${CODE_SERVER_VERSION} \
     && tar -xzf /tmp/code-server.tar.gz -C /usr/local/code-server-${CODE_SERVER_VERSION} --strip-components=1 \
     && ln -sf /usr/local/code-server-${CODE_SERVER_VERSION}/bin/code-server /usr/bin/code-server \
     && rm -f /tmp/code-server.tar.gz \
     # noVNC (static web client)
-    && curl -fsSL -o /tmp/novnc.tar.gz \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/novnc.tar.gz \
       "https://github.com/novnc/noVNC/archive/refs/tags/v${NOVNC_VERSION}.tar.gz" \
     && mkdir -p /opt/novnc \
     && tar -xzf /tmp/novnc.tar.gz -C /opt/novnc --strip-components=1 \
@@ -248,11 +273,11 @@ RUN RUSTARCH="$(case ${TARGETARCH} in arm64) echo aarch64;; *) echo x86_64;; esa
     && cp /opt/novnc/vnc.html /opt/novnc/index.html \
     && rm -f /tmp/novnc.tar.gz \
     # websocat (VNC websocket bridge)
-    && curl -fsSL -o /usr/local/bin/websocat \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /usr/local/bin/websocat \
       "https://github.com/vi/websocat/releases/download/v${WEBSOCAT_VERSION}/websocat.${RUSTARCH}-unknown-linux-musl" \
     && chmod +x /usr/local/bin/websocat \
     # gost (proxy tunnel, used when PROXY_SERVER is set)
-    && curl -fsSL -o /tmp/gost.tar.gz \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/gost.tar.gz \
       "https://github.com/go-gost/gost/releases/download/v${GOST_VERSION}/gost_${GOST_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && tar -xzf /tmp/gost.tar.gz -C /usr/local/bin gost \
     && chmod +x /usr/local/bin/gost && rm -f /tmp/gost.tar.gz
@@ -268,14 +293,14 @@ RUN set -eux; \
     mkdir -p /opt/browser; \
     case "${TARGETARCH}" in \
       arm64) \
-        curl -fsSL -o /tmp/chromium.zip \
+        curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/chromium.zip \
           "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${PLAYWRIGHT_CHROMIUM_BUILD}/chromium-linux-arm64.zip"; \
         unzip -q /tmp/chromium.zip -d /tmp/cr; \
         cp -a /tmp/cr/chrome-linux/. /opt/browser/; \
         rm -rf /tmp/chromium.zip /tmp/cr; \
         ;; \
       *) \
-        curl -fsSL -o /tmp/chrome.deb \
+        curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/chrome.deb \
           "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_DEB_VERSION}_amd64.deb"; \
         dpkg-deb -x /tmp/chrome.deb /tmp/chrome-x; \
         cp -a /tmp/chrome-x/opt/google/chrome/. /opt/browser/; \
@@ -350,7 +375,7 @@ RUN set -eux; \
       ln -sf /opt/nodejs/$n/bin/npm  /usr/local/bin/npm$n; \
       ln -sf /opt/nodejs/$n/bin/npx  /usr/local/bin/npx$n; \
     done; \
-    for b in node npm npx corepack yarn yarnpkg bun bunx \
+    for b in node npm npx corepack yarn yarnpkg bun bunx opencode \
              mcp-server-browser chrome-devtools-mcp agent-browser-real; do \
       ln -sf /opt/nodejs/22/bin/$b /usr/local/bin/$b; \
     done; \
