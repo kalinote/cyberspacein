@@ -45,4 +45,11 @@ def render_user_prompt(template_text: str, context: dict[str, Any] | None) -> st
     return _ENV.from_string(template_text or "").render(**top_level)
 
 
-__all__ = ["render_user_prompt"]
+def merge_rendered_user_prompts(template_text: str, request_text: str) -> str:
+    """合并两段已渲染的用户提示词，模板在前、请求在后，中间空一行。"""
+    tpl = (template_text or "").strip()
+    req = (request_text or "").strip()
+    return f"{tpl}\n\n{req}"
+
+
+__all__ = ["merge_rendered_user_prompts", "render_user_prompt"]

@@ -19,12 +19,37 @@ from app.schemas.agent.agent import (
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.response import ApiResponseSchema
 from app.service.analyst.service import AnalystService
-from app.utils.jinja_injection import render_user_prompt
+from app.utils.jinja_injection import merge_rendered_user_prompts, render_user_prompt
 import app.utils.status_codes as status_codes
 
 logger = logger.bind(name=__name__)
 
 router = APIRouter()
+
+
+async def _fetch_agent_template_user_prompt(agent_id: str) -> str:
+    agent = await NanobotAgentModel.find_one({"_id": agent_id})
+    if not agent:
+        raise AgentServiceError(
+            status_codes.NOT_FOUND_AGENT,
+            f"Agent 不存在: {agent_id}",
+        )
+
+    tpl = await AgentPromptTemplateModel.find_one({"_id": agent.prompt_template_id})
+    if not tpl:
+        raise AgentServiceError(
+            status_codes.NOT_FOUND_TEMPLATE,
+            f"Agent 绑定的提示词模板不存在: {agent.prompt_template_id}",
+        )
+
+    prompt = str(tpl.user_prompt or "").strip()
+    if not prompt:
+        raise AgentServiceError(
+            status_codes.INVALID_ARGUMENT,
+            "该 Agent 的提示词模板默认 user_prompt 为空",
+            data={"prompt_template_id": agent.prompt_template_id},
+        )
+    return prompt
 
 
 @router.post(
@@ -35,6 +60,8 @@ router = APIRouter()
         "成功时返回 `data.session_id`。后续 SSE `/agent/status` 会收到 `user_message`（首轮用户输入）与 `status` 等事件；"
         "取消与审批接口均须携带同一 `session_id`。"
         "请求体 `auto_approve=true` 时，本轮 run 内写操作工具自动批准，无需调用 `/agent/approve`（仅本轮有效）。"
+        "请求体 `merge_user_prompts=true` 时，将提示词模板 user_prompt（前）与请求 user_prompt（后）分别 Jinja 渲染后合并，"
+        "两段之间空一行，且请求 `user_prompt` 必填。"
         "当环境变量 `NANOBOT_AGENT_MAX_PARALLEL_SESSIONS` 大于 0 且该 Agent 在库中 `running` 会话数已达上限时，"
         "返回 HTTP 200 且业务码为冲突态（`CONFLICT_STATE`），不会在库中新建本会话。"
     ),
@@ -42,42 +69,48 @@ router = APIRouter()
 async def start_agent(data: AgentRuntimeRequestSchema):
     try:
         injection_param = dict(data.injection_param)
+        request_user_prompt = str(data.user_prompt or "").strip()
 
-        raw_user_prompt = str(data.user_prompt or "").strip()
-        if not raw_user_prompt:
-            agent = await NanobotAgentModel.find_one({"_id": data.agent_id})
-            if not agent:
-                raise AgentServiceError(
-                    status_codes.NOT_FOUND_AGENT,
-                    f"Agent 不存在: {data.agent_id}",
-                )
-
-            tpl = await AgentPromptTemplateModel.find_one(
-                {"_id": agent.prompt_template_id}
-            )
-            if not tpl:
-                raise AgentServiceError(
-                    status_codes.NOT_FOUND_TEMPLATE,
-                    f"Agent 绑定的提示词模板不存在: {agent.prompt_template_id}",
-                )
-
-            prompt = str(tpl.user_prompt or "").strip()
-            if not prompt:
+        if data.merge_user_prompts:
+            if not request_user_prompt:
                 raise AgentServiceError(
                     status_codes.INVALID_ARGUMENT,
-                    "该 Agent 的提示词模板默认 user_prompt 为空",
-                    data={"prompt_template_id": agent.prompt_template_id},
+                    "merge_user_prompts 启用时 user_prompt 不能为空",
                 )
-            raw_user_prompt = prompt
-
-        final_user_prompt = render_user_prompt(
-            raw_user_prompt, injection_param
-        ).strip()
-        if not final_user_prompt:
-            raise AgentServiceError(
-                status_codes.INVALID_ARGUMENT,
-                "用户提示词为空，且模板渲染后仍为空",
+            tpl_user_prompt = await _fetch_agent_template_user_prompt(data.agent_id)
+            rendered_tpl = render_user_prompt(
+                tpl_user_prompt, injection_param
+            ).strip()
+            rendered_req = render_user_prompt(
+                request_user_prompt, injection_param
+            ).strip()
+            if not rendered_tpl:
+                raise AgentServiceError(
+                    status_codes.INVALID_ARGUMENT,
+                    "提示词模板 user_prompt 渲染后为空",
+                )
+            if not rendered_req:
+                raise AgentServiceError(
+                    status_codes.INVALID_ARGUMENT,
+                    "用户提示词渲染后为空",
+                )
+            final_user_prompt = merge_rendered_user_prompts(
+                rendered_tpl, rendered_req
             )
+        else:
+            raw_user_prompt = request_user_prompt
+            if not raw_user_prompt:
+                raw_user_prompt = await _fetch_agent_template_user_prompt(
+                    data.agent_id
+                )
+            final_user_prompt = render_user_prompt(
+                raw_user_prompt, injection_param
+            ).strip()
+            if not final_user_prompt:
+                raise AgentServiceError(
+                    status_codes.INVALID_ARGUMENT,
+                    "用户提示词为空，且模板渲染后仍为空",
+                )
 
         session_id = await AnalystService.start_agent(
             agent_id=data.agent_id,
@@ -143,7 +176,7 @@ async def send_agent_message(data: AgentRuntimeRequestSchema):
         )
     )
 
-
+# TODO: SSE接口增加分页拉取(滚动)防止内容过多导致前端卡死
 @router.get("/status", summary="订阅指定会话的状态事件流（SSE）")
 async def get_agent_status(
     request: Request,

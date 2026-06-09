@@ -40,6 +40,68 @@ def test_route_start_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert body["data"]["session_id"] == "s1"
 
 
+def test_route_start_merge_user_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _app()
+
+    class _FakeAgent:
+        prompt_template_id = "tpl1"
+
+    class _FakeTemplate:
+        user_prompt = "模板任务 {{ k }}"
+
+    async def _agent_find_one(query: dict):
+        assert query == {"_id": "a1"}
+        return _FakeAgent()
+
+    async def _tpl_find_one(query: dict):
+        assert query == {"_id": "tpl1"}
+        return _FakeTemplate()
+
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
+        assert agent_id == "a1"
+        assert context["k"] == "v"
+        assert user_prompt == "模板任务 v\n\n补充说明 v"
+        return "s-merge"
+
+    monkeypatch.setattr(runtime_ep.NanobotAgentModel, "find_one", _agent_find_one)
+    monkeypatch.setattr(runtime_ep.AgentPromptTemplateModel, "find_one", _tpl_find_one)
+    monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
+    r = client.post(
+        "/api/v1/agent/start",
+        json={
+            "agent_id": "a1",
+            "user_prompt": "补充说明 {{ k }}",
+            "injection_param": {"k": "v"},
+            "merge_user_prompts": True,
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == 0
+    assert body["data"]["session_id"] == "s-merge"
+
+
+def test_route_start_merge_user_prompts_requires_user_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _app()
+    r = client.post(
+        "/api/v1/agent/start",
+        json={
+            "agent_id": "a1",
+            "user_prompt": "   ",
+            "injection_param": {},
+            "merge_user_prompts": True,
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["code"] == status_codes.INVALID_ARGUMENT
+    assert "merge_user_prompts" in body["message"]
+
+
 def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
