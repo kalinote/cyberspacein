@@ -176,14 +176,27 @@ async def send_agent_message(data: AgentRuntimeRequestSchema):
         )
     )
 
-# TODO: SSE接口增加分页拉取(滚动)防止内容过多导致前端卡死
-@router.get("/status", summary="订阅指定会话的状态事件流（SSE）")
+@router.get(
+    "/status",
+    summary="订阅指定会话的状态事件流（SSE）",
+    description=(
+        "默认全量回放历史事件后持续推送实时事件。"
+        "可选 `limit`/`offset` 仅影响历史回放：`limit` 限制回放条数（从最新起算），"
+        "`offset` 从最新事件起跳过条数；实时新事件不受分页参数影响。"
+    ),
+)
 async def get_agent_status(
     request: Request,
     agent_id: str = Query(..., description="分析引擎ID"),
     session_id: str = Query(..., description="会话ID"),
+    limit: int | None = Query(
+        None, ge=1, description="回放条数上限；仅影响历史回放，不传则全量"
+    ),
+    offset: int = Query(0, ge=0, description="从最新事件起跳过条数；仅影响历史回放"),
 ):
-    queue = await AnalystService.subscribe(agent_id, session_id)
+    queue = await AnalystService.subscribe(
+        agent_id, session_id, limit=limit, offset=offset
+    )
 
     async def event_stream():
         try:

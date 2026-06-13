@@ -396,6 +396,8 @@
                                     :timeline-items="timelineItems"
                                     :register-events-scroll-el="registerEventsScrollEl"
                                     :on-events-scroll="onEventsScroll"
+                                    :history-loading="historyLoading"
+                                    :has-more-history="hasMoreHistory"
                                     v-model:user-prompt="userPrompt"
                                     :send-loading="sendLoading"
                                     :cancel-loading="cancelLoading"
@@ -558,6 +560,8 @@ const {
     cancelLoading,
     todos,
     timelineItems,
+    hasMoreHistory,
+    historyLoading,
     sseConnected,
     showApprovalDialog,
     pendingApproval,

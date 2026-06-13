@@ -111,6 +111,8 @@
                                 :timeline-items="timelineItems"
                                 :register-events-scroll-el="registerEventsScrollEl"
                                 :on-events-scroll="onEventsScroll"
+                                :history-loading="historyLoading"
+                                :has-more-history="hasMoreHistory"
                                 scroll-class="border-t border-gray-100"
                             />
                         </div>
@@ -240,6 +242,8 @@ const {
     cancelLoading,
     todos,
     timelineItems,
+    hasMoreHistory,
+    historyLoading,
     sseConnected,
     showApprovalDialog,
     pendingApproval,

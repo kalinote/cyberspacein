@@ -63,7 +63,6 @@ from app.utils.id_lib import generate_id
 
 logger = logger.bind(name=__name__)
 
-
 _SANDBOX_ROOT: Path = Path(tempfile.gettempdir()) / "csi_nanobot"
 
 
@@ -355,8 +354,151 @@ class AnalystService:
     # SSE：订阅 / 取消 / 广播
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _slice_replay_events(
+        events: list[Any], *, limit: int | None, offset: int
+    ) -> list[Any]:
+        n = len(events)
+        if offset == 0 and limit is None:
+            return events
+        if limit is None:
+            return events[: max(0, n - offset)]
+        start = max(0, n - offset - limit)
+        end = max(0, n - offset)
+        return events[start:end]
+
     @classmethod
-    async def subscribe(cls, agent_id: str, session_id: str) -> asyncio.Queue:
+    async def _load_replay_events(
+        cls,
+        agent_id: str,
+        session_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[NanobotAgentSseEventModel]:
+        filt = {"agent_id": agent_id, "session_id": session_id}
+        if offset == 0 and limit is None:
+            return await NanobotAgentSseEventModel.find(filt).sort("+seq").to_list()
+
+        total = await NanobotAgentSseEventModel.find(filt).count()
+        if limit is None:
+            take = max(0, total - offset)
+            if take == 0:
+                return []
+            return await NanobotAgentSseEventModel.find(filt).sort("+seq").limit(take).to_list()
+
+        skip = max(0, total - offset - limit)
+        take = max(0, min(limit, total - offset))
+        if take == 0:
+            return []
+        return (
+            await NanobotAgentSseEventModel.find(filt)
+            .sort("+seq")
+            .skip(skip)
+            .limit(take)
+            .to_list()
+        )
+
+    @classmethod
+    async def _build_session_fallback_replay(
+        cls,
+        agent_id: str,
+        session_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """SSE 事件库为空时，从 NanobotSessionModel 合成可回放事件（如 TTL 过期后的旧会话）。"""
+        session = await NanobotSessionModel.find_one({"_id": session_id})
+        if session is None:
+            return []
+
+        aid = str(session.agent_id or agent_id)
+        sid = str(session.id)
+        status_val = (
+            session.status.value
+            if hasattr(session.status, "value")
+            else str(session.status or "unknown")
+        )
+        payloads: list[dict[str, Any]] = []
+        seq = 0
+
+        def add(event: str, data: dict[str, Any]) -> None:
+            nonlocal seq
+            seq += 1
+            payloads.append({"event": event, "data": data, "id": seq})
+
+        prompt = str(session.user_prompt or "").strip()
+        if prompt:
+            add(
+                "user_message",
+                {"agent_id": aid, "session_id": sid, "content": prompt},
+            )
+
+        add("status", {"agent_id": aid, "session_id": sid, "status": status_val})
+
+        for i, step in enumerate(list(session.steps or [])):
+            if not isinstance(step, dict):
+                continue
+            add(
+                "step",
+                {
+                    "phase": "after_iteration",
+                    "iteration": step.get("iteration", i),
+                    "session_id": sid,
+                    "step": step,
+                },
+            )
+            content = str(step.get("content") or "").strip()
+            if content:
+                add(
+                    "stream",
+                    {"agent_id": aid, "session_id": sid, "delta": content},
+                )
+                add(
+                    "stream_end",
+                    {"agent_id": aid, "session_id": sid, "resuming": False},
+                )
+
+        if session.todos:
+            add(
+                "todos",
+                {"agent_id": aid, "session_id": sid, "todos": list(session.todos)},
+            )
+
+        if isinstance(session.pending_approval, dict) and session.pending_approval:
+            add(
+                "approval_required",
+                {**session.pending_approval, "agent_id": aid, "session_id": sid},
+            )
+
+        for sub in list(session.task_submissions or []):
+            if isinstance(sub, dict):
+                add("task_submitted", {"agent_id": aid, "session_id": sid, **sub})
+
+        if session.result is not None:
+            add(
+                "result",
+                {
+                    "agent_id": aid,
+                    "session_id": sid,
+                    "status": status_val,
+                    "result": session.result,
+                    "error": session.error_message,
+                },
+            )
+
+        return cls._slice_replay_events(payloads, limit=limit, offset=offset)
+
+    @classmethod
+    async def subscribe(
+        cls,
+        agent_id: str,
+        session_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> asyncio.Queue:
         """前端订阅某次会话的事件流；返回一个 per-subscriber 的 Queue。"""
         session_id = str(session_id or "").strip()
         if not session_id:
@@ -367,15 +509,18 @@ class AnalystService:
         try:
             await cls._flush_stream_buffer(agent_id, session_id)
             await cls._flush_reasoning_stream_buffer(agent_id, session_id)
-            events = (
-                await NanobotAgentSseEventModel.find(
-                    {"agent_id": agent_id, "session_id": session_id}
-                )
-                .sort("+seq")
-                .to_list()
+            events = await cls._load_replay_events(
+                agent_id, session_id, limit=limit, offset=offset
             )
-            for ev in events:
-                queue.put_nowait({"event": ev.event, "data": ev.data, "id": ev.seq})
+            if events:
+                for ev in events:
+                    queue.put_nowait({"event": ev.event, "data": ev.data, "id": ev.seq})
+            else:
+                fallback = await cls._build_session_fallback_replay(
+                    agent_id, session_id, limit=limit, offset=offset
+                )
+                for payload in fallback:
+                    queue.put_nowait(payload)
         except Exception:
             logger.exception(
                 f"回放 SSE 历史失败（已忽略）: agent_id={agent_id} session_id={session_id}"

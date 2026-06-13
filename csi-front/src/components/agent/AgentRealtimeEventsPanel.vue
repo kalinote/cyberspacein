@@ -24,6 +24,15 @@
                 <p class="text-sm font-medium text-gray-500 text-center">{{ emptyText }}</p>
             </div>
             <div v-else class="space-y-2 pt-2">
+                <div v-if="historyLoading" class="text-center text-xs text-gray-400 py-2">
+                    加载更早事件...
+                </div>
+                <div
+                    v-else-if="hasMoreHistory && timelineItems.length"
+                    class="text-center text-xs text-gray-400 py-1"
+                >
+                    向上滚动加载更多
+                </div>
                 <div
                     v-for="ev in timelineItems"
                     :key="ev.id"
@@ -57,6 +66,14 @@ const props = defineProps({
     scrollClass: {
         type: String,
         default: '',
+    },
+    historyLoading: {
+        type: Boolean,
+        default: false,
+    },
+    hasMoreHistory: {
+        type: Boolean,
+        default: false,
     },
     registerEventsScrollEl: {
         type: Function,

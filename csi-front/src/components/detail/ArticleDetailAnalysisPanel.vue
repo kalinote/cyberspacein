@@ -14,6 +14,8 @@
                 :timeline-items="timelineItems"
                 :register-events-scroll-el="registerEventsScrollEl"
                 :on-events-scroll="onEventsScroll"
+                :history-loading="historyLoading"
+                :has-more-history="hasMoreHistory"
                 empty-text="等待事件推送"
             >
                 <template #header-extra>
@@ -75,6 +77,14 @@ defineProps({
     onEventsScroll: {
         type: Function,
         default: undefined,
+    },
+    historyLoading: {
+        type: Boolean,
+        default: false,
+    },
+    hasMoreHistory: {
+        type: Boolean,
+        default: false,
     },
     userPrompt: {
         type: String,

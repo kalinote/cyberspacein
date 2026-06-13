@@ -24,7 +24,13 @@ class _FakeRequest:
 async def test_route_status_sse_event_stream_format(monkeypatch: pytest.MonkeyPatch) -> None:
     queue: asyncio.Queue = asyncio.Queue()
 
-    async def _subscribe(_agent_id: str, _session_id: str) -> asyncio.Queue:
+    async def _subscribe(
+        _agent_id: str,
+        _session_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> asyncio.Queue:
         return queue
 
     async def _unsubscribe(_agent_id: str, _session_id: str, _queue: asyncio.Queue) -> None:
@@ -52,7 +58,13 @@ async def test_route_status_sse_event_stream_format(monkeypatch: pytest.MonkeyPa
 async def test_route_status_sse_keepalive_on_idle(monkeypatch: pytest.MonkeyPatch) -> None:
     queue: asyncio.Queue = asyncio.Queue()
 
-    async def _subscribe(_agent_id: str, _session_id: str) -> asyncio.Queue:
+    async def _subscribe(
+        _agent_id: str,
+        _session_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> asyncio.Queue:
         return queue
 
     async def _unsubscribe(_agent_id: str, _session_id: str, _queue: asyncio.Queue) -> None:
@@ -86,7 +98,13 @@ async def test_route_status_unsubscribes_on_disconnect(monkeypatch: pytest.Monke
     queue: asyncio.Queue = asyncio.Queue()
     calls: list[tuple[str, str, asyncio.Queue]] = []
 
-    async def _subscribe(_agent_id: str, _session_id: str) -> asyncio.Queue:
+    async def _subscribe(
+        _agent_id: str,
+        _session_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> asyncio.Queue:
         return queue
 
     async def _unsubscribe(agent_id: str, session_id: str, q: asyncio.Queue) -> None:
@@ -102,3 +120,35 @@ async def test_route_status_unsubscribes_on_disconnect(monkeypatch: pytest.Monke
         pass
 
     assert calls == [("a1", "s1", queue)]
+
+
+@pytest.mark.asyncio
+async def test_route_status_passes_replay_pagination_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    captured: dict[str, int | None] = {}
+
+    async def _subscribe(
+        _agent_id: str,
+        _session_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> asyncio.Queue:
+        captured["limit"] = limit
+        captured["offset"] = offset
+        return queue
+
+    async def _unsubscribe(_agent_id: str, _session_id: str, _queue: asyncio.Queue) -> None:
+        return None
+
+    monkeypatch.setattr(runtime_ep.AnalystService, "subscribe", _subscribe)
+    monkeypatch.setattr(runtime_ep.AnalystService, "unsubscribe", _unsubscribe)
+
+    req = _FakeRequest(disconnect_after=1)
+    await runtime_ep.get_agent_status(
+        req, agent_id="a1", session_id="s1", limit=50, offset=10
+    )
+
+    assert captured == {"limit": 50, "offset": 10}

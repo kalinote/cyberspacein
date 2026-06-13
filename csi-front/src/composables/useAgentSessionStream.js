@@ -11,11 +11,14 @@ import {
 import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 import { getApprovalSourceLabel, isApprovalAwaitingUserAction } from '@/utils/agentApproval'
 import { TODO_ITEM_STATUS } from '@/utils/action'
+import { fetchReplayBatch } from '@/utils/agentSseReplay'
 import {
     getAgentSessionStatusLabel,
     getAgentSessionStatusTagType,
     isAgentSessionTerminalStatus,
 } from '@/utils/agent/sessionStatus'
+
+const DEFAULT_REPLAY_PAGE_SIZE = 20
 
 /**
  * @param {object} options
@@ -25,6 +28,7 @@ import {
  * @param {import('vue').MaybeRefOrGetter<string>} [options.entityUuid]
  * @param {import('vue').MaybeRefOrGetter<string>} [options.entityType]
  * @param {import('vue').MaybeRefOrGetter<string|object>} [options.injectionParam]
+ * @param {number} [options.replayPageSize]
  */
 export function useAgentSessionStream(options = {}) {
     const session = ref(null)
@@ -39,6 +43,12 @@ export function useAgentSessionStream(options = {}) {
     const todos = ref([])
     const timelineItems = ref([])
 
+    const replayPageSize = Number(options.replayPageSize) > 0 ? Number(options.replayPageSize) : DEFAULT_REPLAY_PAGE_SIZE
+    const historyOffset = ref(0)
+    const hasMoreHistory = ref(true)
+    const historyLoading = ref(false)
+    const replayReadyForPagination = ref(false)
+
     let timelineSeq = 0
     function nextTimelineId() {
         timelineSeq += 1
@@ -48,6 +58,13 @@ export function useAgentSessionStream(options = {}) {
     let eventSource = null
     let retryCount = 0
     const maxRetries = 3
+
+    let initialReplayPending = false
+    let initialReplayCount = 0
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let initialReplayIdleTimer = null
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let loadOlderDebounceTimer = null
 
     const showApprovalDialog = ref(false)
     const pendingApproval = ref(null)
@@ -100,9 +117,11 @@ export function useAgentSessionStream(options = {}) {
         })
     }
 
-    function pushParseErrorTimeline(sseType, raw, error, ts) {
-        timelineItems.value.push({
-            id: nextTimelineId(),
+    function pushParseErrorTimeline(sseType, raw, error, ts, ingestOpts = {}) {
+        const items = ingestOpts.targetItems ?? timelineItems.value
+        const idFn = ingestOpts.nextIdFn ?? nextTimelineId
+        items.push({
+            id: idFn(),
             sseType,
             kind: 'parse_error',
             ts,
@@ -111,9 +130,11 @@ export function useAgentSessionStream(options = {}) {
         })
     }
 
-    function pushParsedTimeline(sseType, ts, payload) {
-        timelineItems.value.push({
-            id: nextTimelineId(),
+    function pushParsedTimeline(sseType, ts, payload, ingestOpts = {}) {
+        const items = ingestOpts.targetItems ?? timelineItems.value
+        const idFn = ingestOpts.nextIdFn ?? nextTimelineId
+        items.push({
+            id: idFn(),
             sseType,
             kind: sseType,
             ts,
@@ -121,11 +142,11 @@ export function useAgentSessionStream(options = {}) {
         })
     }
 
-    function findTimelineApprovalIndex(requestId) {
+    function findTimelineApprovalIndexInItems(items, requestId) {
         const id = requestId != null ? String(requestId) : ''
         if (!id) return -1
-        for (let i = timelineItems.value.length - 1; i >= 0; i--) {
-            const it = timelineItems.value[i]
+        for (let i = items.length - 1; i >= 0; i--) {
+            const it = items[i]
             if (it?.kind === 'approval_required' && it.payload?.approval_request_id === id) {
                 return i
             }
@@ -151,6 +172,7 @@ export function useAgentSessionStream(options = {}) {
     }
 
     function handleApprovalRequiredEvent(raw) {
+        noteInitialReplayEvent()
         const ts = new Date().toISOString()
         const p = parseAgentSseData(raw)
         if (!p.ok) {
@@ -169,7 +191,7 @@ export function useAgentSessionStream(options = {}) {
             return
         }
 
-        const idx = findTimelineApprovalIndex(requestId)
+        const idx = findTimelineApprovalIndexInItems(timelineItems.value, requestId)
         if (idx >= 0) {
             timelineItems.value[idx].payload = envelope
         } else {
@@ -181,38 +203,186 @@ export function useAgentSessionStream(options = {}) {
         }
     }
 
-    function ingestSseNamedEvent(sseType, raw) {
+    function ingestSseNamedEvent(sseType, raw, ingestOpts = {}) {
+        const items = ingestOpts.targetItems ?? timelineItems.value
+        const idFn = ingestOpts.nextIdFn ?? nextTimelineId
         const ts = new Date().toISOString()
         if (sseType === 'reasoning_stream') {
             const p = parseAgentSseData(raw)
             if (!p.ok) {
-                pushParseErrorTimeline('reasoning_stream', raw, p.error, ts)
+                pushParseErrorTimeline('reasoning_stream', raw, p.error, ts, ingestOpts)
                 return
             }
-            appendReasoningStreamDelta(timelineItems.value, p.value?.delta ?? '', ts, nextTimelineId)
+            appendReasoningStreamDelta(items, p.value?.delta ?? '', ts, idFn)
             return
         }
         if (sseType === 'stream') {
             const p = parseAgentSseData(raw)
             if (!p.ok) {
-                pushParseErrorTimeline('stream', raw, p.error, ts)
+                pushParseErrorTimeline('stream', raw, p.error, ts, ingestOpts)
                 return
             }
-            appendStreamDelta(timelineItems.value, p.value?.delta ?? '', ts, nextTimelineId)
+            appendStreamDelta(items, p.value?.delta ?? '', ts, idFn)
             return
         }
         if (sseType === 'stream_end') {
             const p = parseAgentSseData(raw)
             const payload = p.ok && p.value && typeof p.value === 'object' ? p.value : {}
-            closeStreamInTimeline(timelineItems.value, payload, ts, nextTimelineId)
+            closeStreamInTimeline(items, payload, ts, idFn)
             return
         }
         const p = parseAgentSseData(raw)
         if (!p.ok) {
-            pushParseErrorTimeline(sseType, raw, p.error, ts)
+            pushParseErrorTimeline(sseType, raw, p.error, ts, ingestOpts)
             return
         }
-        pushParsedTimeline(sseType, ts, p.value)
+        pushParsedTimeline(sseType, ts, p.value, ingestOpts)
+    }
+
+    function ingestApprovalRequiredToItems(raw, ingestOpts = {}) {
+        const items = ingestOpts.targetItems ?? timelineItems.value
+        const ts = new Date().toISOString()
+        const p = parseAgentSseData(raw)
+        if (!p.ok) {
+            pushParseErrorTimeline('approval_required', raw, p.error, ts, ingestOpts)
+            return
+        }
+        const envelope = p.value
+        const requestId = envelope?.approval_request_id
+        const idx = findTimelineApprovalIndexInItems(items, requestId)
+        if (idx >= 0) {
+            items[idx].payload = envelope
+        } else {
+            pushParsedTimeline('approval_required', ts, envelope, ingestOpts)
+        }
+    }
+
+    function ingestTodosToItems(raw, ingestOpts = {}) {
+        const items = ingestOpts.targetItems ?? timelineItems.value
+        const idFn = ingestOpts.nextIdFn ?? nextTimelineId
+        const ts = new Date().toISOString()
+        const p = parseAgentSseData(raw)
+        if (!p.ok) {
+            pushParseErrorTimeline('todos', raw, p.error, ts, ingestOpts)
+            return
+        }
+        const list = normalizeTodosPayload(p.value)
+        let completed = 0
+        let inProgress = 0
+        let waiting = 0
+        for (const t of list) {
+            const s = t?.status
+            if (s === TODO_ITEM_STATUS.COMPLETED || s === 'completed') completed++
+            else if (s === TODO_ITEM_STATUS.IN_PROGRESS || s === 'in_progress') inProgress++
+            else waiting++
+        }
+        const total = list.length
+        items.push({
+            id: idFn(),
+            sseType: 'todos',
+            kind: 'todos',
+            ts,
+            payload: p.value,
+            todoCount: total,
+            todoPreview: `共 ${total} 项，已完成 ${completed} 项，正在进行 ${inProgress} 项，等待进行 ${waiting} 项`,
+        })
+    }
+
+    function buildTimelineBatch(events) {
+        const batchItems = []
+        const ingestOpts = {
+            targetItems: batchItems,
+            nextIdFn: nextTimelineId,
+        }
+        for (const ev of events) {
+            if (ev.type === 'todos') {
+                ingestTodosToItems(ev.data, ingestOpts)
+            } else if (ev.type === 'approval_required') {
+                ingestApprovalRequiredToItems(ev.data, ingestOpts)
+            } else {
+                ingestSseNamedEvent(ev.type, ev.data, ingestOpts)
+            }
+        }
+        return batchItems
+    }
+
+    async function prependTimelineBatch(batchItems) {
+        if (!batchItems.length) return
+        const el = eventsScrollEl.value
+        const prevHeight = el?.scrollHeight ?? 0
+        timelineItems.value = [...batchItems, ...timelineItems.value]
+        await nextTick()
+        if (el) {
+            el.scrollTop += el.scrollHeight - prevHeight
+        }
+    }
+
+    function clearInitialReplayTracking() {
+        initialReplayPending = false
+        initialReplayCount = 0
+        replayReadyForPagination.value = false
+        if (initialReplayIdleTimer) {
+            clearTimeout(initialReplayIdleTimer)
+            initialReplayIdleTimer = null
+        }
+    }
+
+    function finalizeInitialReplay() {
+        if (!initialReplayPending) return
+        initialReplayPending = false
+        if (initialReplayIdleTimer) {
+            clearTimeout(initialReplayIdleTimer)
+            initialReplayIdleTimer = null
+        }
+        hasMoreHistory.value = initialReplayCount >= replayPageSize
+        historyOffset.value = replayPageSize
+        replayReadyForPagination.value = true
+    }
+
+    function scheduleInitialReplayFinalize() {
+        if (initialReplayIdleTimer) clearTimeout(initialReplayIdleTimer)
+        initialReplayIdleTimer = setTimeout(finalizeInitialReplay, 400)
+    }
+
+    function startInitialReplayTracking() {
+        clearInitialReplayTracking()
+        initialReplayPending = true
+        initialReplayCount = 0
+        scheduleInitialReplayFinalize()
+    }
+
+    function noteInitialReplayEvent() {
+        if (!initialReplayPending) return
+        initialReplayCount += 1
+        scheduleInitialReplayFinalize()
+    }
+
+    async function loadOlderEvents() {
+        if (!hasMoreHistory.value || historyLoading.value) return
+        if (!resolvedAgentId.value || !sessionId.value) return
+
+        historyLoading.value = true
+        try {
+            const url = agentApi.getAgentStatusUrl(resolvedAgentId.value, sessionId.value, {
+                limit: replayPageSize,
+                offset: historyOffset.value,
+            })
+            const { events } = await fetchReplayBatch(url, { expectedLimit: replayPageSize })
+            if (!events.length) {
+                hasMoreHistory.value = false
+                return
+            }
+            const batchItems = buildTimelineBatch(events)
+            await prependTimelineBatch(batchItems)
+            historyOffset.value += replayPageSize
+            if (events.length < replayPageSize) {
+                hasMoreHistory.value = false
+            }
+        } catch {
+            ElMessage.error('加载历史事件失败')
+        } finally {
+            historyLoading.value = false
+        }
     }
 
     function normalizeTodosPayload(raw) {
@@ -225,10 +395,23 @@ export function useAgentSessionStream(options = {}) {
         return []
     }
 
-    function onEventsScroll() {
+    function updateEventsScrollState() {
         const el = eventsScrollEl.value
         if (!el) return
         isEventsScrollAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
+    }
+
+    function onEventsScroll() {
+        updateEventsScrollState()
+        if (!replayReadyForPagination.value) return
+        const el = eventsScrollEl.value
+        if (!el) return
+        if (el.scrollTop < 80 && hasMoreHistory.value && !historyLoading.value) {
+            if (loadOlderDebounceTimer) clearTimeout(loadOlderDebounceTimer)
+            loadOlderDebounceTimer = setTimeout(() => {
+                loadOlderEvents()
+            }, 300)
+        }
     }
 
     function teardownEventsScrollObserver() {
@@ -251,7 +434,7 @@ export function useAgentSessionStream(options = {}) {
         teardownEventsScrollObserver()
         eventsScrollEl.value = el
         if (!el) return
-        onEventsScroll()
+        updateEventsScrollState()
         scrollEventsToBottom(true)
         const content = el.firstElementChild
         if (content) {
@@ -341,6 +524,7 @@ export function useAgentSessionStream(options = {}) {
     }
 
     function onTodosSse(raw) {
+        noteInitialReplayEvent()
         const ts = new Date().toISOString()
         applyTodosFromSsePayload(raw)
         const p = parseAgentSseData(raw)
@@ -348,26 +532,7 @@ export function useAgentSessionStream(options = {}) {
             pushParseErrorTimeline('todos', raw, p.error, ts)
             return
         }
-        const list = todos.value
-        let completed = 0
-        let inProgress = 0
-        let waiting = 0
-        for (const t of list) {
-            const s = t?.status
-            if (s === TODO_ITEM_STATUS.COMPLETED || s === 'completed') completed++
-            else if (s === TODO_ITEM_STATUS.IN_PROGRESS || s === 'in_progress') inProgress++
-            else waiting++
-        }
-        const total = list.length
-        timelineItems.value.push({
-            id: nextTimelineId(),
-            sseType: 'todos',
-            kind: 'todos',
-            ts,
-            payload: p.value,
-            todoCount: total,
-            todoPreview: `共 ${total} 项，已完成 ${completed} 项，正在进行 ${inProgress} 项，等待进行 ${waiting} 项`,
-        })
+        ingestTodosToItems(raw)
     }
 
     function applyTodosFromSsePayload(raw) {
@@ -410,7 +575,11 @@ export function useAgentSessionStream(options = {}) {
         disconnectSSE()
 
         try {
-            const url = agentApi.getAgentStatusUrl(resolvedAgentId.value, sessionId.value)
+            const url = agentApi.getAgentStatusUrl(resolvedAgentId.value, sessionId.value, {
+                limit: replayPageSize,
+                offset: 0,
+            })
+            startInitialReplayTracking()
             eventSource = new EventSource(url)
 
             eventSource.onopen = () => {
@@ -444,10 +613,12 @@ export function useAgentSessionStream(options = {}) {
             }
 
             eventSource.addEventListener('user_message', (event) => {
+                noteInitialReplayEvent()
                 ingestSseNamedEvent('user_message', event.data ?? '')
             })
 
             eventSource.addEventListener('status', (event) => {
+                noteInitialReplayEvent()
                 const raw = event.data ?? ''
                 ingestSseNamedEvent('status', raw)
                 applyStatusFromSsePayload(raw)
@@ -458,6 +629,7 @@ export function useAgentSessionStream(options = {}) {
             })
 
             eventSource.addEventListener('result', (event) => {
+                noteInitialReplayEvent()
                 const raw = event.data ?? ''
                 ingestSseNamedEvent('result', raw)
                 applyStatusFromSsePayload(raw)
@@ -474,16 +646,19 @@ export function useAgentSessionStream(options = {}) {
             ]
             for (const name of sseNamedEvents) {
                 eventSource.addEventListener(name, (event) => {
+                    noteInitialReplayEvent()
                     ingestSseNamedEvent(name, event.data ?? '')
                 })
             }
             eventSource.addEventListener('reasoning_stream', (event) => {
+                noteInitialReplayEvent()
                 ingestSseNamedEvent('reasoning_stream', event.data ?? '')
             })
             eventSource.addEventListener('approval_required', (event) => {
                 handleApprovalRequiredEvent(event.data ?? '')
             })
             eventSource.onmessage = (event) => {
+                noteInitialReplayEvent()
                 ingestSseNamedEvent('message', event.data ?? '')
             }
         } catch (e) {
@@ -616,6 +791,14 @@ export function useAgentSessionStream(options = {}) {
         timelineSeq = 0
         todos.value = []
         sessionRuntimeStatus.value = 'unknown'
+        historyOffset.value = 0
+        hasMoreHistory.value = true
+        historyLoading.value = false
+        clearInitialReplayTracking()
+        if (loadOlderDebounceTimer) {
+            clearTimeout(loadOlderDebounceTimer)
+            loadOlderDebounceTimer = null
+        }
         clearApprovalDialogState()
     }
 
@@ -662,6 +845,8 @@ export function useAgentSessionStream(options = {}) {
         cancelLoading,
         todos,
         timelineItems,
+        hasMoreHistory,
+        historyLoading,
         showApprovalDialog,
         pendingApproval,
         approvalReason,
