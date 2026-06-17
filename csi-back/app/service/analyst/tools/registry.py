@@ -10,7 +10,6 @@ from app.service.analyst.tools.search_entities import SearchEntitiesTool
 from app.service.analyst.tools.modify_entity import ModifyEntityTool
 from app.service.analyst.tools.notify_user import NotifyUserTool
 from app.service.analyst.tools.web_fetch import WebFetchTool
-from app.service.analyst.web_runtime import WEB_RUNTIME
 from app.service.analyst.tools.web_search import WebSearchTool
 from app.service.analyst.tools.wiki import (
     WikiCreateTool,
@@ -48,12 +47,6 @@ def build_business_tools(enabled_names: list[str]) -> list[Tool]:
         cls = BUSINESS_TOOL_CLASSES.get(name)
         if cls is None:
             logger.warning(f"未知业务工具名，已忽略: {name}")
-            continue
-        if name == "web_search":
-            tools.append(cls(config=WEB_RUNTIME.search, proxy=WEB_RUNTIME.proxy))
-            continue
-        if name == "web_fetch":
-            tools.append(cls(proxy=WEB_RUNTIME.proxy))
             continue
         tools.append(cls())
     return tools

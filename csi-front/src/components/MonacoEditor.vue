@@ -29,7 +29,7 @@ const containerStyle = computed(() => ({
     minHeight: `${props.minHeight}px`
 }))
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'ready'])
 
 const editorContainer = ref(null)
 let editor = null
@@ -70,6 +70,8 @@ onMounted(async () => {
         const value = editor.getValue()
         emit('update:modelValue', value)
     })
+
+    emit('ready')
 })
 
 onBeforeUnmount(() => {
@@ -103,6 +105,7 @@ const layout = () => {
 defineExpose({
     formatDocument,
     layout,
+    getEditor: () => editor,
 })
 </script>
 

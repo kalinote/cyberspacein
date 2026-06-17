@@ -732,7 +732,10 @@
     <el-dialog
       v-model="promptTemplateDialogVisible"
       :title="editingPromptTemplateId ? '编辑提示词模板' : '新增提示词模板'"
-      width="960px"
+      width="96%"
+      top="2vh"
+      class="prompt-template-dialog"
+      destroy-on-close
       :close-on-click-modal="false"
       @close="handlePromptTemplateDialogClose"
     >
@@ -754,24 +757,22 @@
             clearable
           />
         </el-form-item>
-        <el-tabs v-model="promptTemplateActiveTab">
+        <el-tabs v-model="promptTemplateActiveTab" class="prompt-template-tabs">
           <el-tab-pane label="系统提示词" name="system_prompt">
-            <el-form-item label="系统提示词" prop="system_prompt">
-              <MonacoEditor
+            <el-form-item label="系统提示词" prop="system_prompt" class="prompt-template-editor-item">
+              <MarkdownPromptField
                 v-model="promptTemplateFormData.system_prompt"
-                language="markdown"
-                :read-only="false"
-                :min-height="560"
+                layout="toggle"
+                :min-height="640"
               />
             </el-form-item>
           </el-tab-pane>
           <el-tab-pane label="用户提示词" name="user_prompt">
-            <el-form-item label="用户提示词" prop="user_prompt">
-              <MonacoEditor
+            <el-form-item label="用户提示词" prop="user_prompt" class="prompt-template-editor-item">
+              <MarkdownPromptField
                 v-model="promptTemplateFormData.user_prompt"
-                language="markdown"
-                :read-only="false"
-                :min-height="560"
+                layout="toggle"
+                :min-height="640"
               />
             </el-form-item>
           </el-tab-pane>
@@ -1575,6 +1576,7 @@ import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
 import SkillEditorDialog from '@/components/agent/SkillEditorDialog.vue'
 import { findNavItemByKey } from '@/utils/configCenterNav'
 import MonacoEditor from '@/components/MonacoEditor.vue'
+import MarkdownPromptField from '@/components/agent/MarkdownPromptField.vue'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { agentApi } from '@/api/agent'
@@ -3495,5 +3497,24 @@ const handlePromptTemplateSubmit = async () => {
   max-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
+}
+
+.prompt-template-dialog.el-dialog {
+  --el-dialog-width: 96%;
+  max-width: 1800px;
+  margin-bottom: 1vh;
+}
+
+.prompt-template-dialog .el-dialog__body {
+  max-height: calc(98vh - 100px);
+  overflow-y: auto;
+}
+
+.prompt-template-tabs .el-tabs__content {
+  overflow: visible;
+}
+
+.prompt-template-editor-item .el-form-item__content {
+  width: 100%;
 }
 </style>

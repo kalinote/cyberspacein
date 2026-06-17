@@ -9,7 +9,7 @@
 - `modify_entity`    ：经 `HitlService.request_approval` 人工审批；通过后写回 Elasticsearch。
 - `notify_user`      ：SSE `notification` 广播一条消息。
 - `write_todos`      ：写 `NanobotSessionModel.todos` + SSE `todos`；供 LLM 自行拆解任务。
-- `web_search` / `web_fetch` ：联网搜索与页面抓取（运行参数见 `analyst.web_runtime.WEB_RUNTIME`）。
+- `web_search` / `web_fetch` ：DuckDuckGo 联网搜索与页面抓取（抓取运行参数见 `analyst.web_runtime.WEB_RUNTIME`）。
 - `wiki_list` / `wiki_read` / `wiki_create` / `wiki_edit` ：Wiki 专题读写；写/编辑经 HITL 审批。
 - `search_entities` ：多关键词实体检索（仅 keyword），返回高亮片段不含正文。
 
@@ -26,9 +26,9 @@ from app.service.analyst.tools.registry import BUSINESS_TOOL_CLASSES, build_busi
 from app.service.analyst.tools.submit_task_result import SubmitTaskResultTool
 from app.service.analyst.tools.web_fetch import WebFetchTool
 from app.service.analyst.web_runtime import (
-    AnalystWebSearchConfig,
     AnalystWebToolsRuntime,
     WEB_RUNTIME,
+    resolve_outbound_proxy,
 )
 from app.service.analyst.tools.web_search import WebSearchTool
 from app.service.analyst.tools.wiki import (
@@ -40,9 +40,9 @@ from app.service.analyst.tools.wiki import (
 from app.service.analyst.tools.write_todos import WriteTodosTool
 
 __all__ = [
-    "AnalystWebSearchConfig",
     "AnalystWebToolsRuntime",
     "WEB_RUNTIME",
+    "resolve_outbound_proxy",
     "GetCurrentTimeTool",
     "GetEntityTool",
     "SearchEntitiesTool",

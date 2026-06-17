@@ -20,7 +20,7 @@ from app.service.analyst.utils.web_helpers import (
     strip_tags,
     validate_url_safe,
 )
-from app.service.analyst.web_runtime import WEB_RUNTIME
+from app.service.analyst.web_runtime import resolve_outbound_proxy
 from app.service.nanobot.agent.tools.base import Tool, tool_parameters
 from app.service.nanobot.agent.tools.schema import (
     IntegerSchema,
@@ -46,9 +46,13 @@ logger = logger.bind(name=__name__)
 class WebFetchTool(Tool):
     """联网抓取工具（外部工具，可在前端选择启用）。"""
 
-    def __init__(self, max_chars: int = 50000, proxy: str | None = None):
+    def __init__(self, max_chars: int = 50000, use_proxy: bool | None = None):
         self.max_chars = max_chars
-        self.proxy = proxy if proxy is not None else WEB_RUNTIME.proxy
+        self._use_proxy = use_proxy
+
+    @property
+    def proxy(self) -> str | None:
+        return resolve_outbound_proxy(self._use_proxy)
 
     @property
     def name(self) -> str:

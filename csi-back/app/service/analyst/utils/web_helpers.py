@@ -6,7 +6,6 @@ import base64
 import html
 import re
 from typing import Any
-from urllib.parse import urlparse
 
 from app.service.analyst.network_security import (
     configure_ssrf_whitelist,
@@ -51,18 +50,6 @@ def strip_tags(text: str) -> str:
 def normalize_text(text: str) -> str:
     text = re.sub(r"[ \t]+", " ", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
-
-
-def validate_url(url: str) -> tuple[bool, str]:
-    try:
-        p = urlparse(url)
-        if p.scheme not in ("http", "https"):
-            return False, f"仅允许 http/https，当前为 '{p.scheme or 'none'}'"
-        if not p.netloc:
-            return False, "缺少域名"
-        return True, ""
-    except Exception as e:
-        return False, str(e)
 
 
 def validate_url_safe(url: str) -> tuple[bool, str]:
