@@ -1,53 +1,122 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.auth.user import UserModel
 
 
 class UserCreateRequest(BaseModel):
-    username: str = Field(description="用户名")
-    password: str = Field(description="密码")
-    display_name: str = Field(description="显示名称")
+    username: str = Field(min_length=1, max_length=128, description="用户名")
+    password: str = Field(min_length=1, description="密码")
+    display_name: str = Field(min_length=1, max_length=128, description="显示名称")
     email: str | None = Field(default=None, description="邮箱")
     remark: str | None = Field(default=None, description="备注")
     enabled: bool = Field(default=True, description="是否启用")
     temporary_account: bool = Field(default=False, description="是否临时账号")
     expired_at: datetime | None = Field(default=None, description="到期时间")
-    groups: list[str] = Field(default_factory=list, description="用户组UUID列表")
+    groups: list[str] = Field(default_factory=list, description="用户组 UUID 列表")
+
+    @field_validator("username", "display_name")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("字段不能为空")
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def normalize_optional_email(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
 
 
-class UserUpdateRequest(BaseModel):
-    display_name: str | None = Field(default=None, description="显示名称")
-    email: str | None = Field(default=None, description="邮箱")
-    remark: str | None = Field(default=None, description="备注")
-    enabled: bool | None = Field(default=None, description="是否启用")
-    temporary_account: bool | None = Field(default=None, description="是否临时账号")
-    expired_at: datetime | None = Field(default=None, description="到期时间")
-    groups: list[str] | None = Field(default=None, description="用户组UUID列表")
-    password: str | None = Field(default=None, description="密码")
+class UserProfileUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=128)
+    email: str | None = None
+    remark: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def strip_optional_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("显示名称不能为空")
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def normalize_optional_email(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
+
+
+class UserGroupUpdateRequest(BaseModel):
+    groups: list[str] = Field(default_factory=list, description="用户组 UUID 列表")
+
+
+class UserPasswordUpdateRequest(BaseModel):
+    password: str = Field(min_length=1, description="新密码")
 
 
 class UserStatusUpdateRequest(BaseModel):
     enabled: bool = Field(description="是否启用")
 
 
-class UserResponse(BaseModel):
-    uuid: str = Field(description="用户ID")
-    create_by: str = Field(description="创建人")
-    create_at: datetime = Field(description="创建时间")
-    update_by: str | None = Field(description="更新人")
-    update_at: datetime | None = Field(description="更新时间")
-    remark: str | None = Field(description="备注")
-    username: str = Field(description="用户名")
-    display_name: str = Field(description="显示名称")
-    email: str | None = Field(description="邮箱")
-    login_ip: str | None = Field(description="最近登录IP")
-    login_date: datetime | None = Field(description="最近登录时间")
-    enabled: bool = Field(description="是否启用")
+class UserExpiryUpdateRequest(BaseModel):
     temporary_account: bool = Field(description="是否临时账号")
-    expired_at: datetime | None = Field(description="到期时间")
-    groups: list[str] = Field(description="用户组UUID列表")
+    expired_at: datetime | None = Field(default=None, description="到期时间")
+
+
+class AssignmentScopeUpdateRequest(BaseModel):
+    restrict_permission_assignment: bool = Field(description="是否限制权限分配范围")
+
+
+class UserListItemResponse(BaseModel):
+    uuid: str
+    username: str
+    display_name: str
+    enabled: bool
+    temporary_account: bool
+    expired_at: datetime | None
+    is_system: bool
+    authorization_version: int
+    create_at: datetime
+
+    @classmethod
+    def from_doc(cls, doc: UserModel) -> "UserListItemResponse":
+        return cls(
+            uuid=doc.id,
+            username=doc.username,
+            display_name=doc.display_name,
+            enabled=doc.enabled,
+            temporary_account=doc.temporary_account,
+            expired_at=doc.expired_at,
+            is_system=doc.is_system,
+            authorization_version=doc.authorization_version,
+            create_at=doc.create_at,
+        )
+
+
+class UserResponse(BaseModel):
+    uuid: str
+    create_by: str
+    create_at: datetime
+    update_by: str | None
+    update_at: datetime | None
+    remark: str | None
+    username: str
+    display_name: str
+    email: str | None
+    login_ip: str | None
+    login_date: datetime | None
+    enabled: bool
+    temporary_account: bool
+    expired_at: datetime | None
+    groups: list[str]
+    is_system: bool
+    restrict_permission_assignment: bool
+    authorization_version: int
 
     @classmethod
     def from_doc(cls, doc: UserModel) -> "UserResponse":
@@ -67,4 +136,12 @@ class UserResponse(BaseModel):
             temporary_account=doc.temporary_account,
             expired_at=doc.expired_at,
             groups=doc.groups,
+            is_system=doc.is_system,
+            restrict_permission_assignment=doc.restrict_permission_assignment,
+            authorization_version=doc.authorization_version,
         )
+
+
+# Compatibility alias for imports outside the permission endpoints. It intentionally
+# exposes profile fields only; sensitive mutations use their dedicated schemas above.
+UserUpdateRequest = UserProfileUpdateRequest

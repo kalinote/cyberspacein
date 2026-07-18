@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.core.route_permissions import authorize_registered_route
 
 from app.api.v1.endpoints import (
     action,
@@ -18,7 +19,7 @@ from app.api.v1.endpoints import (
     wiki,
 )
 
-api_router = APIRouter()
+api_router = APIRouter(dependencies=[Depends(authorize_registered_route)])
 
 api_router.include_router(action.router)
 api_router.include_router(annotation.router)

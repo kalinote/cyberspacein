@@ -15,8 +15,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger("CSI_SDK")
 
 class BaseComponent:
-    def __init__(self, action_node_id: str = None, api_base_url: str = None, 
-                 manual_config: str = None, enable_rabbitmq: bool = False):
+    def __init__(self, action_node_id: str = None, api_base_url: str = None,
+                 component_token: str = None, component_bootstrap: str = None,
+                 manual_config: str = None,
+                 enable_rabbitmq: bool = False):
         """
         初始化 Node 对象，解析参数。
         注意：构造函数中不进行网络请求，网络请求在 __enter__ 或 initialize 中进行。
@@ -33,6 +35,8 @@ class BaseComponent:
         self.api_base_url = (api_base_url or self.args.api_base_url)
         if self.api_base_url:
             self.api_base_url = self.api_base_url.rstrip('/')
+        self.component_token = component_token or self.args.component_token
+        self.component_bootstrap = component_bootstrap or self.args.component_bootstrap
             
         self.manual_config_path = manual_config or self.args.local_config
         
@@ -54,6 +58,8 @@ class BaseComponent:
         parser = argparse.ArgumentParser(description="CSI Base Components SDK (Sync)")
         parser.add_argument('--action-node-id', type=str, help='行动节点ID', default=os.getenv('ACTION_NODE_ID'))
         parser.add_argument('--api-base-url', type=str, help='API基础URL', default=os.getenv('API_BASE_URL'))
+        parser.add_argument('--component-token', type=str, help='行动组件短期凭证', default=os.getenv('COMPONENT_TOKEN'))
+        parser.add_argument('--component-bootstrap', type=str, help='一次性组件凭证交换码', default=None)
         parser.add_argument('--local-config', type=str, help='本地调试配置文件路径', default=None)
         args, _ = parser.parse_known_args()
         return args
@@ -89,6 +95,21 @@ class BaseComponent:
         """
         if self.session is None:
             self.session = requests.Session()
+            if not self.component_token and self.component_bootstrap and self.is_remote:
+                token_url = f"{self.api_base_url}/action/sdk/{self.action_node_id}/token"
+                response = self.session.post(
+                    token_url,
+                    headers={'X-Component-Bootstrap': self.component_bootstrap},
+                    timeout=10,
+                )
+                response.raise_for_status()
+                body = response.json()
+                self.component_token = body.get('data', {}).get('component_token')
+                self.component_bootstrap = None
+                if not self.component_token:
+                    raise RuntimeError("组件短期凭证交换失败")
+            if self.component_token:
+                self.session.headers.update({'Authorization': f'Bearer {self.component_token}'})
         
         if self.is_remote:
             logger.info(f"正在从远程拉取上下文: {self.action_node_id}")
@@ -135,7 +156,7 @@ class BaseComponent:
         if self.is_remote and self._ws_log_client is None:
             from .logging_manager import WebSocketLogClient
             ws_url = self._build_ws_log_url()
-            self._ws_log_client = WebSocketLogClient(ws_url)
+            self._ws_log_client = WebSocketLogClient(ws_url, token=self.component_token)
             self._ws_log_client.connect()
 
     def close(self):

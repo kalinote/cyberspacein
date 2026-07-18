@@ -2,6 +2,7 @@ from datetime import datetime
 
 from beanie import Document
 from pydantic import Field
+from pymongo import ASCENDING, IndexModel
 
 
 class GroupModel(Document):
@@ -11,6 +12,7 @@ class GroupModel(Document):
     remark: str | None = Field(default=None, description="备注")
     enabled: bool = Field(default=True, description="是否启用")
     permissions: list[str] = Field(default_factory=list, description="权限码列表")
+    is_system: bool = Field(default=False, description="是否系统内置权限组")
     is_deleted: bool = Field(default=False, description="是否软删除")
     create_by: str = Field(default="system", description="创建人")
     create_at: datetime = Field(default_factory=datetime.now, description="创建时间")
@@ -21,7 +23,13 @@ class GroupModel(Document):
         name = "auth_groups"
         indexes = [
             "id",
-            "group_name",
+            IndexModel(
+                [("group_name", ASCENDING)],
+                unique=True,
+                partialFilterExpression={"is_deleted": False},
+                name="uq_auth_groups_name_active",
+            ),
             "enabled",
             "is_deleted",
+            "is_system",
         ]

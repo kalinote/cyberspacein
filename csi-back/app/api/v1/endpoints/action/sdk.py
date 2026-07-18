@@ -1,6 +1,7 @@
 from loguru import logger
 from typing import Dict, Any
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Request
+from app.core.security import create_component_token
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.components_task import BaseComponentsTaskConfigModel
@@ -16,6 +17,14 @@ from app.utils.dict_helper import unpack_dict
 logger = logger.bind(name=__name__)
 
 router = APIRouter(prefix="/sdk", tags=["行动SDK"])
+
+
+@router.post("/{node_instance_id}/token", response_model=ApiResponseSchema[Dict[str, str]], summary="交换组件短期凭证")
+async def exchange_component_token(node_instance_id: str, request: Request):
+    context = request.state.component_bootstrap_context
+    return ApiResponseSchema.success(
+        data={"component_token": create_component_token(context.action_id, node_instance_id)}
+    )
 
 
 @router.get("/{node_instance_id}/init", response_model=ApiResponseSchema[ActionNodeConfigInitResponse], summary="获取节点配置初始化")
@@ -100,7 +109,7 @@ async def report_action_node_result(
     result: SDKResultRequest,
     background_tasks: BackgroundTasks
 ):
-    logger.info(f"上报节点结果: {node_instance_id}, {result}")
+    logger.info("上报节点结果: %s", node_instance_id)
     background_tasks.add_task(ActionInstanceService.finish_node, node_instance_id, result)
     return ApiResponseSchema.success()
 
@@ -110,6 +119,6 @@ async def report_action_node_heartbeat(
     node_instance_id: str, data: Dict[str, Any],
     background_tasks: BackgroundTasks
 ):
-    logger.info(f"上报节点心跳: {node_instance_id}, {data}")
+    logger.info("上报节点心跳: %s", node_instance_id)
     background_tasks.add_task(ActionInstanceService.update_progress, node_instance_id, data.get("progress", 0))
     return ApiResponseSchema.success()

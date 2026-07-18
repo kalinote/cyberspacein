@@ -1,7 +1,7 @@
 """app.api.v1.endpoints.auth 路由测试（不启动完整 lifespan，依赖 mock）。"""
 
-from datetime import datetime
-from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI, Request
@@ -56,10 +56,15 @@ def test_login_success_returns_token_and_user(monkeypatch: pytest.MonkeyPatch) -
         create_by="sys",
         create_at=datetime(2024, 1, 1, 0, 0, 0),
         groups=[],
+        authorization_version=3,
+    )
+    session = MagicMock(
+        id="session-1",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
     )
     monkeypatch.setattr(
         "app.api.v1.endpoints.auth.authenticate_user",
-        AsyncMock(return_value=("access-token", user, ["perm.a"])),
+        AsyncMock(return_value=("access-token", user, ["page:overview:access"], session)),
     )
     client = _make_client()
     r = client.post("/api/v1/auth/login", json={"username": "alice", "password": "ok"})
@@ -68,7 +73,9 @@ def test_login_success_returns_token_and_user(monkeypatch: pytest.MonkeyPatch) -
     assert body["code"] == 0
     assert body["data"]["access_token"] == "access-token"
     assert body["data"]["user"]["uuid"] == "u-1"
-    assert body["data"]["permissions"] == ["perm.a"]
+    assert body["data"]["permissions"] == ["page:overview:access"]
+    assert body["data"]["authorization_version"] == 3
+    assert body["data"]["session_id"] == "session-1"
 
 
 def test_me_without_token_returns_unauthorized(monkeypatch: pytest.MonkeyPatch) -> None:

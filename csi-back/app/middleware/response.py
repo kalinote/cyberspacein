@@ -20,6 +20,9 @@ class ResponseMiddleware(BaseHTTPMiddleware):
         response = None
         try:
             response = await call_next(request)
+            authorization_version = getattr(request.state, "authorization_version", None)
+            if isinstance(authorization_version, int):
+                response.headers["X-Authorization-Version"] = str(authorization_version)
             
             exclude_paths = ["/openapi.json", "/docs", "/redoc"]
             if any(request.url.path == path for path in exclude_paths):
@@ -59,14 +62,14 @@ class ResponseMiddleware(BaseHTTPMiddleware):
             
             return response
             
-        except Exception as e:
-            logger.exception(f"响应中间件处理异常: {str(e)}")
+        except Exception:
+            logger.exception("响应中间件处理异常")
             if response is not None:
                 return response
             return JSONResponse(
                 content=ApiResponseSchema.error(
                     code=status_codes.INTERNAL_ERROR,
-                    message=f"服务器内部错误: {str(e)}",
+                    message="服务器内部错误",
                 ).model_dump(),
                 status_code=200
             )

@@ -120,10 +120,10 @@
           </div>
           <div class="flex items-center gap-1 shrink-0">
             <el-button
-              v-if="hasPerm(PERM_USERS.detailView)"
+              v-if="hasPerm(PERM_USERS.detailRead)"
               type="primary"
               link
-              :disabled="!hasAny([PERM_USERS.detailUse, PERM_PAGE_USERS?.detailUse])"
+              :disabled="!hasPerm(PERM_USERS.detailRead)"
               @click="handleViewUser(user)"
             >
               <template #icon>
@@ -132,16 +132,29 @@
               查看
             </el-button>
             <el-button
-              v-if="hasPerm(PERM_USERS.editView)"
+              v-if="hasPerm(PERM_USERS.groupUpdate) && !user.is_system"
               type="primary"
               link
-              :disabled="!hasAny([PERM_USERS.editUse, PERM_PAGE_USERS?.editUse])"
+              :disabled="!hasPerm(PERM_USERS.groupUpdate)"
               @click="handleEditUser(user)"
             >
               <template #icon>
                 <Icon icon="mdi:pencil" />
               </template>
               编辑
+            </el-button>
+            <el-button
+              v-if="hasPerm(PERM_USERS.delete) && !user.is_system"
+              type="danger"
+              link
+              :loading="deletingUserId === user.uuid"
+              :disabled="Boolean(deletingUserId)"
+              @click="handleDeleteUser(user)"
+            >
+              <template #icon>
+                <Icon icon="mdi:delete-outline" />
+              </template>
+              删除
             </el-button>
           </div>
         </div>
@@ -193,17 +206,30 @@
             </div>
           </div>
           <div class="flex items-center gap-1 shrink-0">
-            <el-button v-if="hasPerm(PERM_GROUPS.detailView)" type="primary" link :disabled="!hasPerm(PERM_GROUPS.detailUse)">
+            <el-button v-if="hasPerm(PERM_GROUPS.read)" type="primary" link>
               <template #icon>
                 <Icon icon="mdi:eye" />
               </template>
               查看
             </el-button>
-            <el-button v-if="hasPerm(PERM_GROUPS.editView)" type="primary" link :disabled="!hasPerm(PERM_GROUPS.editUse)" @click="handleEditGroup(group)">
+            <el-button v-if="hasPerm(PERM_GROUPS.update) && !group.is_system" type="primary" link @click="handleEditGroup(group)">
               <template #icon>
                 <Icon icon="mdi:pencil" />
               </template>
               编辑
+            </el-button>
+            <el-button
+              v-if="hasPerm(PERM_GROUPS.delete) && !group.is_system"
+              type="danger"
+              link
+              :loading="deletingGroupId === group.uuid"
+              :disabled="Boolean(deletingGroupId)"
+              @click="handleDeleteGroup(group)"
+            >
+              <template #icon>
+                <Icon icon="mdi:delete-outline" />
+              </template>
+              删除
             </el-button>
           </div>
         </div>
@@ -247,13 +273,13 @@
             <p v-if="perm.desc" class="text-xs text-gray-600 mt-2">{{ perm.desc }}</p>
           </div>
           <div class="flex items-center gap-1 shrink-0">
-            <el-button v-if="hasPerm(PERM_DICT.editView)" type="primary" link :disabled="!hasPerm(PERM_DICT.editUse)" @click="openEditDict(perm)">
+            <el-button v-if="hasPerm(PERM_DICT.update) && !perm.systemReserved" type="primary" link @click="openEditDict(perm)">
               <template #icon>
                 <Icon icon="mdi:pencil" />
               </template>
               编辑
             </el-button>
-            <el-button v-if="hasPerm(PERM_DICT.deleteView)" type="danger" link :disabled="!hasPerm(PERM_DICT.deleteUse)" @click="handleDeleteDict(perm)">
+            <el-button v-if="hasPerm(PERM_DICT.delete) && perm.source === 'placeholder'" type="danger" link @click="handleDeleteDict(perm)">
               <template #icon>
                 <Icon icon="mdi:delete-outline" />
               </template>
@@ -287,10 +313,10 @@
 
     <el-form v-if="dictMode === 'edit' || dictCreateTab === 'single'" ref="dictFormRef" :model="dictForm" :rules="dictRules" label-width="90px">
       <el-form-item label="权限码" prop="permKey">
-        <el-input v-model="dictForm.permKey" :disabled="dictMode === 'edit'" placeholder="例如：system:user:create" />
+        <el-input v-model="dictForm.permKey" :disabled="dictMode === 'edit'" placeholder="例如：operation:custom:resource:read" />
       </el-form-item>
       <el-form-item label="名称" prop="name">
-        <el-input v-model="dictForm.name" placeholder="例如：新增用户" />
+        <el-input v-model="dictForm.name" :disabled="dictMode === 'edit' && dictForm.source === 'standard'" placeholder="例如：新增用户" />
       </el-form-item>
       <el-form-item label="分类" prop="category">
         <el-select
@@ -298,6 +324,7 @@
           filterable
           allow-create
           default-first-option
+          :disabled="dictMode === 'edit' && dictForm.source === 'standard'"
           placeholder="例如：系统配置/用户管理"
           class="w-full!"
         >
@@ -305,10 +332,10 @@
         </el-select>
       </el-form-item>
       <el-form-item label="描述" prop="desc">
-        <el-input v-model="dictForm.desc" type="textarea" :rows="2" placeholder="请输入描述（可选）" />
+        <el-input v-model="dictForm.desc" :disabled="dictMode === 'edit' && dictForm.source === 'standard'" type="textarea" :rows="2" placeholder="请输入描述（可选）" />
       </el-form-item>
       <el-form-item label="标签">
-        <el-select v-model="dictForm.tags" multiple filterable allow-create default-first-option placeholder="例如：可见、可用" class="w-full!">
+        <el-select v-model="dictForm.tags" :disabled="dictMode === 'edit' && dictForm.source === 'standard'" multiple filterable allow-create default-first-option placeholder="例如：可见、可用" class="w-full!">
           <el-option v-for="t in dictTagOptions" :key="t" :label="t" :value="t" />
         </el-select>
       </el-form-item>
@@ -321,8 +348,8 @@
       <div class="flex items-center justify-between">
         <div class="text-xs text-gray-500">每行一条权限码，带 * 的列为必填</div>
         <div class="flex items-center gap-2">
-          <el-button v-if="hasPerm(PERM_DICT.batchAddView)" :disabled="!hasPerm(PERM_DICT.batchAddUse)" @click="handleResetBatchRows">清空全部</el-button>
-          <el-button v-if="hasPerm(PERM_DICT.batchAddView)" type="primary" plain :disabled="!hasPerm(PERM_DICT.batchAddUse)" @click="handleAddBatchRow">新增一行</el-button>
+          <el-button v-if="hasPerm(PERM_DICT.create)" @click="handleResetBatchRows">清空全部</el-button>
+          <el-button v-if="hasPerm(PERM_DICT.create)" type="primary" plain @click="handleAddBatchRow">新增一行</el-button>
         </div>
       </div>
       <div class="max-h-105 overflow-auto border border-gray-200 rounded-lg">
@@ -343,7 +370,7 @@
             <tr v-for="(row, index) in dictBatchRows" :key="row.rowId" class="border-t border-gray-100 align-top">
               <td class="px-3 py-2 text-gray-500">{{ index + 1 }}</td>
               <td class="px-3 py-2">
-                <el-input v-model="row.permKey" :class="{ 'is-error': row.errorFields.permKey }" placeholder="system:user:view" />
+                <el-input v-model="row.permKey" :class="{ 'is-error': row.errorFields.permKey }" placeholder="operation:custom:resource:read" />
               </td>
               <td class="px-3 py-2">
                 <el-input v-model="row.name" :class="{ 'is-error': row.errorFields.name }" placeholder="查看用户" />
@@ -373,7 +400,7 @@
                 <el-switch v-model="row.enabled" />
               </td>
               <td class="px-3 py-2 text-center">
-                <el-button v-if="hasPerm(PERM_DICT.batchAddView)" type="danger" link :disabled="!hasPerm(PERM_DICT.batchAddUse)" @click="handleRemoveBatchRow(index)">删除</el-button>
+                <el-button v-if="hasPerm(PERM_DICT.create)" type="danger" link @click="handleRemoveBatchRow(index)">删除</el-button>
               </td>
             </tr>
           </tbody>
@@ -385,10 +412,10 @@
     <template #footer>
       <el-button @click="dictDialogVisible = false">取消</el-button>
       <el-button
-        v-if="dictCreateTab === 'batch' ? hasPerm(PERM_DICT.batchAddView) : (dictMode === 'edit' ? hasPerm(PERM_DICT.editView) : hasPerm(PERM_DICT.addView))"
+        v-if="dictMode === 'edit' ? hasPerm(PERM_DICT.update) : hasPerm(PERM_DICT.create)"
         type="primary"
         :loading="dictSaving"
-        :disabled="dictCreateTab === 'batch' ? !hasPerm(PERM_DICT.batchAddUse) : (dictMode === 'edit' ? !hasPerm(PERM_DICT.editUse) : !hasPerm(PERM_DICT.addUse))"
+        :disabled="dictMode === 'edit' ? !hasPerm(PERM_DICT.update) : !hasPerm(PERM_DICT.create)"
         @click="handleSaveDict"
       >保存</el-button>
     </template>
@@ -480,7 +507,7 @@
 
     <template #footer>
       <el-button @click="createUserDialogVisible = false">取消</el-button>
-      <el-button v-if="hasPerm(PERM_USERS.addView)" type="primary" :loading="creatingUser" :disabled="!hasPerm(PERM_USERS.addUse)" @click="handleSubmitCreateUser">创建</el-button>
+      <el-button v-if="hasPerm(PERM_USERS.create)" type="primary" :loading="creatingUser" @click="handleSubmitCreateUser">创建</el-button>
     </template>
   </el-dialog>
 
@@ -503,7 +530,7 @@
           <GroupPermissionPicker
             v-model="createGroupForm.permissions"
             :perm-codes="enabledCatalogPermCodes"
-            :disabled="permCodeCatalogLoading || !hasPerm(PERM_GROUPS.addUse)"
+            :disabled="permCodeCatalogLoading || !hasPerm(PERM_GROUPS.create)"
             class="w-full"
           />
         </div>
@@ -512,7 +539,7 @@
 
     <template #footer>
       <el-button @click="createGroupDialogVisible = false">取消</el-button>
-      <el-button v-if="hasPerm(PERM_GROUPS.addView)" type="primary" :loading="creatingGroup" :disabled="!hasPerm(PERM_GROUPS.addUse)" @click="handleSubmitCreateGroup">创建</el-button>
+      <el-button v-if="hasPerm(PERM_GROUPS.create)" type="primary" :loading="creatingGroup" @click="handleSubmitCreateGroup">创建</el-button>
     </template>
   </el-dialog>
 
@@ -538,7 +565,7 @@
           <GroupPermissionPicker
             v-model="editGroupForm.permissions"
             :perm-codes="enabledCatalogPermCodes"
-            :disabled="permCodeCatalogLoading || !hasPerm(PERM_GROUPS.editUse)"
+            :disabled="permCodeCatalogLoading || !hasPerm(PERM_GROUPS.update)"
             class="w-full"
           />
         </div>
@@ -547,7 +574,7 @@
 
     <template #footer>
       <el-button @click="editGroupDialogVisible = false">取消</el-button>
-      <el-button v-if="hasPerm(PERM_GROUPS.editView)" type="primary" :loading="savingEditGroup" :disabled="!hasPerm(PERM_GROUPS.editUse)" @click="handleSaveEditGroup">保存</el-button>
+      <el-button v-if="hasPerm(PERM_GROUPS.update)" type="primary" :loading="savingEditGroup" @click="handleSaveEditGroup">保存</el-button>
     </template>
   </el-dialog>
 </template>
@@ -562,15 +589,14 @@ import { formatDateTime } from '@/utils/action'
 import { PERM } from '@/utils/permissions'
 import { systemApi } from '@/api/system'
 import GroupPermissionPicker from '@/components/system/GroupPermissionPicker.vue'
-import { hasPerm, hasAny } from '@/utils/permissionKit'
+import { hasPerm } from '@/utils/permissionKit'
 
 defineOptions({ name: 'UserPermissionManagement' })
 
 const PERM_TABS = PERM.pages.system.permissions.tabs
-const PERM_USERS = PERM.operations.system.permissions.users
-const PERM_GROUPS = PERM.operations.system.permissions.groups
-const PERM_DICT = PERM.operations.system.permissions.dict
-const PERM_PAGE_USERS = PERM.pages.system.permissions.userManagement?.users
+const PERM_USERS = PERM.operations.system.users
+const PERM_GROUPS = PERM.operations.system.groups
+const PERM_DICT = PERM.operations.system.permissionCodes
 
 const activeTab = ref('users')
 const expandedTabKeys = ref([])
@@ -598,6 +624,8 @@ const groupList = ref([])
 const permCodeList = ref([]) // 权限码字典列表（会被字典搜索影响）
 const permCodeCatalogList = ref([]) // 权限组弹窗目录专用（与字典解耦）
 const permCodeCatalogLoading = ref(false)
+const deletingUserId = ref('')
+const deletingGroupId = ref('')
 
 const editUserDialogVisible = ref(false)
 const editingUser = ref(null)
@@ -605,8 +633,8 @@ const editUserGroupUuids = ref([])
 const savingEditUser = ref(false)
 const userDialogMode = ref('edit')
 
-const canViewEditUserSave = computed(() => userDialogMode.value === 'edit' && hasPerm(PERM_USERS.editView))
-const canUseEditUser = computed(() => hasAny([PERM_USERS.editUse, PERM_PAGE_USERS?.editUse]))
+const canViewEditUserSave = computed(() => userDialogMode.value === 'edit' && hasPerm(PERM_USERS.groupUpdate))
+const canUseEditUser = computed(() => hasPerm(PERM_USERS.groupUpdate))
 const userDialogTitle = computed(() => (userDialogMode.value === 'detail' ? '查看用户' : '编辑用户'))
 
 const editGroupDialogVisible = ref(false)
@@ -689,7 +717,10 @@ function normalizePermCode(row) {
     category: row?.category || '',
     desc: row?.desc || '',
     tags: Array.isArray(row?.tags) ? row.tags : [],
-    enabled: Boolean(row?.enabled)
+    enabled: Boolean(row?.enabled),
+    source: row?.source || 'placeholder',
+    backendEnforced: Boolean(row?.backend_enforced),
+    systemReserved: Boolean(row?.system_reserved)
   }
 }
 
@@ -711,12 +742,17 @@ async function fetchPermCodeCatalog() {
   }
 }
 
-onMounted(async () => {
+async function loadActiveTabData(tab = activeTab.value) {
   try {
-    await Promise.all([fetchGroups(), fetchUsers(), fetchPermCodes(), fetchPermCodeCatalog()])
+    if (tab === 'users' && hasPerm(PERM_USERS.listRead)) await fetchUsers()
+    else if (tab === 'groups' && hasPerm(PERM_GROUPS.read)) await fetchGroups()
+    else if (tab === 'dictionary' && hasPerm(PERM_DICT.read)) await fetchPermCodes()
   } catch {
   }
-})
+}
+
+onMounted(() => loadActiveTabData())
+watch(activeTab, tab => loadActiveTabData(tab))
 
 function formatExpired(dateStr) {
   if (!dateStr) return '永久有效'
@@ -731,10 +767,10 @@ const basePermissionNavItems = [
 
 const permissionNavItems = computed(() =>
   basePermissionNavItems
-    .filter(item => hasPerm(PERM_TABS[item.key]?.view))
+    .filter(item => hasPerm(PERM_TABS[item.key]?.visible))
     .map(item => ({
       ...item,
-      disabled: !hasPerm(PERM_TABS[item.key]?.use)
+      disabled: !hasPerm(PERM_TABS[item.key]?.access)
     }))
 )
 
@@ -747,21 +783,21 @@ watch(permissionNavItems, (items) => {
   activeTab.value = (firstEnabled || items[0]).key
 }, { immediate: true })
 
-const canViewUserList = computed(() => hasAny([PERM_USERS.listView, PERM_PAGE_USERS?.view]))
-const canViewGroupList = computed(() => hasPerm(PERM_GROUPS.listView))
-const canViewDictList = computed(() => hasPerm(PERM_DICT.listView))
+const canViewUserList = computed(() => hasPerm(PERM_USERS.listRead))
+const canViewGroupList = computed(() => hasPerm(PERM_GROUPS.read))
+const canViewDictList = computed(() => hasPerm(PERM_DICT.read))
 
 const canViewCurrentAdd = computed(() => {
-  if (activeTab.value === 'users') return hasPerm(PERM_USERS.addView)
-  if (activeTab.value === 'groups') return hasPerm(PERM_GROUPS.addView)
-  if (activeTab.value === 'dictionary') return hasPerm(PERM_DICT.addView)
+  if (activeTab.value === 'users') return hasPerm(PERM_USERS.create)
+  if (activeTab.value === 'groups') return hasPerm(PERM_GROUPS.create)
+  if (activeTab.value === 'dictionary') return hasPerm(PERM_DICT.create)
   return false
 })
 
 const canUseCurrentAdd = computed(() => {
-  if (activeTab.value === 'users') return hasAny([PERM_USERS.addUse, PERM_PAGE_USERS?.addUse])
-  if (activeTab.value === 'groups') return hasPerm(PERM_GROUPS.addUse)
-  if (activeTab.value === 'dictionary') return hasPerm(PERM_DICT.addUse)
+  if (activeTab.value === 'users') return hasPerm(PERM_USERS.create)
+  if (activeTab.value === 'groups') return hasPerm(PERM_GROUPS.create)
+  if (activeTab.value === 'dictionary') return hasPerm(PERM_DICT.create)
   return false
 })
 
@@ -852,7 +888,9 @@ const dictForm = reactive({
   category: '',
   desc: '',
   tags: [],
-  enabled: true
+  enabled: true,
+  originalEnabled: true,
+  source: 'placeholder'
 })
 
 const dictRules = {
@@ -901,7 +939,7 @@ function resetBatchRowErrors() {
 }
 
 function handleAddBatchRow() {
-  if (!hasPerm(PERM_DICT.batchAddUse)) {
+  if (!hasPerm(PERM_DICT.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -909,7 +947,7 @@ function handleAddBatchRow() {
 }
 
 function handleRemoveBatchRow(index) {
-  if (!hasPerm(PERM_DICT.batchAddUse)) {
+  if (!hasPerm(PERM_DICT.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -920,7 +958,7 @@ function handleRemoveBatchRow(index) {
 }
 
 function handleResetBatchRows() {
-  if (!hasPerm(PERM_DICT.batchAddUse)) {
+  if (!hasPerm(PERM_DICT.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -929,7 +967,7 @@ function handleResetBatchRows() {
 }
 
 function openCreateDict() {
-  if (!hasPerm(PERM_DICT.addUse)) {
+  if (!hasPerm(PERM_DICT.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -943,11 +981,13 @@ function openCreateDict() {
   dictForm.desc = ''
   dictForm.tags = []
   dictForm.enabled = true
+  dictForm.originalEnabled = true
+  dictForm.source = 'placeholder'
   dictDialogVisible.value = true
 }
 
 function openEditDict(row) {
-  if (!hasPerm(PERM_DICT.editUse)) {
+  if (!hasPerm(PERM_DICT.update)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -959,11 +999,13 @@ function openEditDict(row) {
   dictForm.desc = row.desc || ''
   dictForm.tags = Array.isArray(row.tags) ? [...row.tags] : []
   dictForm.enabled = Boolean(row.enabled)
+  dictForm.originalEnabled = Boolean(row.enabled)
+  dictForm.source = row.source || 'placeholder'
   dictDialogVisible.value = true
 }
 
 async function handleDeleteDict(row) {
-  if (!hasPerm(PERM_DICT.deleteUse)) {
+  if (!hasPerm(PERM_DICT.delete)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -985,15 +1027,15 @@ async function handleDeleteDict(row) {
 }
 
 async function handleSaveDict() {
-  if (dictMode.value === 'edit' && !hasPerm(PERM_DICT.editUse)) {
+  if (dictMode.value === 'edit' && !hasPerm(PERM_DICT.update)) {
     ElMessage.warning('暂无操作权限')
     return
   }
-  if (dictMode.value === 'create' && dictCreateTab.value === 'single' && !hasPerm(PERM_DICT.addUse)) {
+  if (dictMode.value === 'create' && dictCreateTab.value === 'single' && !hasPerm(PERM_DICT.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
-  if (dictMode.value === 'create' && dictCreateTab.value === 'batch' && !hasPerm(PERM_DICT.batchAddUse)) {
+  if (dictMode.value === 'create' && dictCreateTab.value === 'batch' && !hasPerm(PERM_DICT.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -1028,13 +1070,25 @@ async function handleSaveDict() {
       return
     }
 
-    await systemApi.updatePermCode(dictForm.uuid, {
-      name,
-      category,
-      desc: desc || undefined,
-      tags,
-      enabled: Boolean(dictForm.enabled)
-    })
+    let impactAcknowledged = false
+    if (dictForm.originalEnabled && !dictForm.enabled) {
+      const impactRes = await systemApi.getPermCodeImpact(dictForm.uuid)
+      const impact = impactRes?.data || {}
+      const message = `禁用后将影响 ${impact.group_count || 0} 个权限组、${impact.user_count || 0} 个用户，是否继续？`
+      await ElMessageBox.confirm(message, '禁用权限确认', { type: 'warning' })
+      impactAcknowledged = true
+    }
+    const payload = dictForm.source === 'standard'
+      ? { enabled: Boolean(dictForm.enabled), impact_acknowledged: impactAcknowledged }
+      : {
+          name,
+          category,
+          desc: desc || undefined,
+          tags,
+          enabled: Boolean(dictForm.enabled),
+          impact_acknowledged: impactAcknowledged
+        }
+    await systemApi.updatePermCode(dictForm.uuid, payload)
     ElMessage.success('保存成功')
     dictDialogVisible.value = false
     await fetchPermCodes({ keyword: String(dictSearchKeyword.value || '').trim() || undefined })
@@ -1189,30 +1243,76 @@ onBeforeUnmount(() => {
   if (dictSearchTimer) clearTimeout(dictSearchTimer)
 })
 
-function handleEditUser(user) {
-  if (!hasAny([PERM_USERS.editUse, PERM_PAGE_USERS?.editUse])) {
+async function handleEditUser(user) {
+  if (!hasPerm(PERM_USERS.groupUpdate)) {
     ElMessage.warning('暂无操作权限')
     return
   }
-  userDialogMode.value = 'edit'
-  editingUser.value = user
-  editUserGroupUuids.value = Array.isArray(user.groups) ? [...user.groups] : []
-  editUserDialogVisible.value = true
+  try {
+    const res = await systemApi.getUser(user.uuid)
+    const detail = res?.data || user
+    userDialogMode.value = 'edit'
+    editingUser.value = detail
+    editUserGroupUuids.value = Array.isArray(detail.groups) ? [...detail.groups] : []
+    editUserDialogVisible.value = true
+  } catch {
+  }
 }
 
-function handleViewUser(user) {
-  if (!hasAny([PERM_USERS.detailUse, PERM_PAGE_USERS?.detailUse])) {
+async function handleViewUser(user) {
+  if (!hasPerm(PERM_USERS.detailRead)) {
     ElMessage.warning('暂无查看权限')
     return
   }
-  userDialogMode.value = 'detail'
-  editingUser.value = user
-  editUserGroupUuids.value = Array.isArray(user.groups) ? [...user.groups] : []
-  editUserDialogVisible.value = true
+  try {
+    const res = await systemApi.getUser(user.uuid)
+    const detail = res?.data || user
+    userDialogMode.value = 'detail'
+    editingUser.value = detail
+    editUserGroupUuids.value = Array.isArray(detail.groups) ? [...detail.groups] : []
+    editUserDialogVisible.value = true
+  } catch {
+  }
+}
+
+async function handleDeleteUser(user) {
+  if (!hasPerm(PERM_USERS.delete)) {
+    ElMessage.warning('暂无操作权限')
+    return
+  }
+  if (user?.is_system) {
+    ElMessage.warning('系统内置账号不可删除')
+    return
+  }
+  if (!user?.uuid || deletingUserId.value) return
+  const userLabel = user.display_name || user.username || user.uuid
+  try {
+    await ElMessageBox.confirm(
+      `确认删除用户“${userLabel}”？删除后账号将被停用，所有活动会话将终止。`,
+      '删除用户',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+
+  deletingUserId.value = user.uuid
+  try {
+    await systemApi.deleteUser(user.uuid)
+    ElMessage.success('用户删除成功')
+    await fetchUsers()
+  } catch {
+  } finally {
+    deletingUserId.value = ''
+  }
 }
 
 function handleEditGroup(group) {
-  if (!hasPerm(PERM_GROUPS.editUse)) {
+  if (!hasPerm(PERM_GROUPS.update)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -1226,8 +1326,44 @@ function handleEditGroup(group) {
   editGroupDialogVisible.value = true
 }
 
-function openCreateUserDialog() {
-  if (!hasAny([PERM_USERS.addUse, PERM_PAGE_USERS?.addUse])) {
+async function handleDeleteGroup(group) {
+  if (!hasPerm(PERM_GROUPS.delete)) {
+    ElMessage.warning('暂无操作权限')
+    return
+  }
+  if (group?.is_system) {
+    ElMessage.warning('系统内置权限组不可删除')
+    return
+  }
+  if (!group?.uuid || deletingGroupId.value) return
+  const groupLabel = group.display_name || group.group_name || group.uuid
+  try {
+    await ElMessageBox.confirm(
+      `确认删除权限组“${groupLabel}”？仅未被用户引用的权限组可以删除。`,
+      '删除权限组',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+
+  deletingGroupId.value = group.uuid
+  try {
+    await systemApi.deleteGroup(group.uuid)
+    ElMessage.success('权限组删除成功')
+    await fetchGroups()
+  } catch {
+  } finally {
+    deletingGroupId.value = ''
+  }
+}
+
+async function openCreateUserDialog() {
+  if (!hasPerm(PERM_USERS.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -1240,11 +1376,12 @@ function openCreateUserDialog() {
   createUserForm.temporary_account = false
   createUserForm.expired_at = ''
   createUserForm.groups = []
+  if (hasPerm(PERM_GROUPS.read)) await fetchGroups().catch(() => {})
   createUserDialogVisible.value = true
 }
 
 function openCreateGroupDialog() {
-  if (!hasPerm(PERM_GROUPS.addUse)) {
+  if (!hasPerm(PERM_GROUPS.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -1258,14 +1395,14 @@ function openCreateGroupDialog() {
 }
 
 async function handleSaveEditUser() {
-  if (!hasAny([PERM_USERS.editUse, PERM_PAGE_USERS?.editUse])) {
+  if (!hasPerm(PERM_USERS.groupUpdate)) {
     ElMessage.warning('暂无操作权限')
     return
   }
   if (!editingUser.value) return
   savingEditUser.value = true
   try {
-    await systemApi.updateUser(editingUser.value.uuid, {
+    await systemApi.updateUserGroups(editingUser.value.uuid, {
       groups: editUserGroupUuids.value
     })
     ElMessage.success('保存成功')
@@ -1278,7 +1415,7 @@ async function handleSaveEditUser() {
 }
 
 async function handleSubmitCreateUser() {
-  if (!hasAny([PERM_USERS.addUse, PERM_PAGE_USERS?.addUse])) {
+  if (!hasPerm(PERM_USERS.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -1310,7 +1447,7 @@ async function handleSubmitCreateUser() {
 }
 
 async function handleSubmitCreateGroup() {
-  if (!hasPerm(PERM_GROUPS.addUse)) {
+  if (!hasPerm(PERM_GROUPS.create)) {
     ElMessage.warning('暂无操作权限')
     return
   }
@@ -1338,7 +1475,7 @@ async function handleSubmitCreateGroup() {
 }
 
 async function handleSaveEditGroup() {
-  if (!hasPerm(PERM_GROUPS.editUse)) {
+  if (!hasPerm(PERM_GROUPS.update)) {
     ElMessage.warning('暂无操作权限')
     return
   }

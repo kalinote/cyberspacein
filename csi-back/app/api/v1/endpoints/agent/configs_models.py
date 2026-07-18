@@ -6,13 +6,21 @@ from fastapi import APIRouter, Depends, Query
 from loguru import logger
 
 from app.models.agent.configs import AgentModelConfigModel
-from app.schemas.agent.agent import AgentModelConfigCreateRequestSchema, AgentModelConfigSchema
+from app.schemas.agent.agent import (
+    AgentModelConfigCreateRequestSchema,
+    AgentModelConfigListItemSchema,
+    AgentModelConfigSchema,
+    AgentModelConfigUpdateRequestSchema,
+)
 from app.schemas.agent.configs import ModelConfigListItemSchema
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.utils.id_lib import generate_id
 import app.utils.status_codes as status_codes
 from app.models.agent.nanobot import NanobotAgentModel, NanobotWorkspaceModel
+from app.dependencies.auth import get_current_user
+from app.models.auth.user import UserModel
+from app.service.auth import has_backend_permissions
 
 logger = logger.bind(name=__name__)
 
@@ -20,7 +28,10 @@ router = APIRouter(prefix="/configs")
 
 
 @router.post("/models", response_model=ApiResponseSchema[AgentModelConfigSchema], summary="新增模型配置")
-async def create_agent_model_config(data: AgentModelConfigCreateRequestSchema):
+async def create_agent_model_config(
+    data: AgentModelConfigCreateRequestSchema,
+    current_user: UserModel = Depends(get_current_user),
+):
     config_id = generate_id(data.name + data.base_url + data.model)
     existing = await AgentModelConfigModel.find_one({"_id": config_id})
     if existing:
@@ -38,10 +49,11 @@ async def create_agent_model_config(data: AgentModelConfigCreateRequestSchema):
     )
     await doc.insert()
     logger.info(f"成功创建模型配置: {config_id} - {data.name}")
-    return ApiResponseSchema.success(data=AgentModelConfigSchema.from_doc(doc))
+    include_secret = await has_backend_permissions(current_user, ["operation:agent:model-secret:read"])
+    return ApiResponseSchema.success(data=AgentModelConfigSchema.from_doc(doc, include_secret=include_secret))
 
 
-@router.get("/models", response_model=PageResponseSchema[AgentModelConfigSchema], summary="查询模型配置列表")
+@router.get("/models", response_model=PageResponseSchema[AgentModelConfigListItemSchema], summary="查询模型配置列表")
 async def get_agent_model_config_list(
     params: PageParamsSchema = Depends(),
     search: Optional[str] = Query(None, description="搜索关键词，模糊匹配名称或描述"),
@@ -57,7 +69,7 @@ async def get_agent_model_config_list(
     query = AgentModelConfigModel.find(query_filters)
     total = await query.count()
     items = await query.skip(skip).limit(params.page_size).to_list()
-    results = [AgentModelConfigSchema.from_doc(m) for m in items]
+    results = [AgentModelConfigListItemSchema.from_doc(m) for m in items]
     return PageResponseSchema.create(results, total, params.page, params.page_size)
 
 
@@ -73,14 +85,18 @@ async def get_agent_models_list():
     response_model=ApiResponseSchema[AgentModelConfigSchema],
     summary="查询模型配置详情",
 )
-async def get_agent_model_config_detail(model_config_id: str):
+async def get_agent_model_config_detail(
+    model_config_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     doc = await AgentModelConfigModel.find_one({"_id": model_config_id})
     if not doc:
         return ApiResponseSchema.error(
             code=status_codes.NOT_FOUND_MODEL_CONFIG,
             message="模型配置不存在",
         )
-    return ApiResponseSchema.success(data=AgentModelConfigSchema.from_doc(doc))
+    include_secret = await has_backend_permissions(current_user, ["operation:agent:model-secret:read"])
+    return ApiResponseSchema.success(data=AgentModelConfigSchema.from_doc(doc, include_secret=include_secret))
 
 
 @router.put(
@@ -90,7 +106,8 @@ async def get_agent_model_config_detail(model_config_id: str):
 )
 async def update_agent_model_config(
     model_config_id: str,
-    data: AgentModelConfigCreateRequestSchema,
+    data: AgentModelConfigUpdateRequestSchema,
+    current_user: UserModel = Depends(get_current_user),
 ):
     doc = await AgentModelConfigModel.find_one({"_id": model_config_id})
     if not doc:
@@ -108,11 +125,13 @@ async def update_agent_model_config(
     doc.name = data.name
     doc.description = data.description
     doc.base_url = data.base_url
-    doc.api_key = data.api_key
+    if data.api_key not in (None, ""):
+        doc.api_key = data.api_key
     doc.model = data.model
     doc.updated_at = datetime.now()
     await doc.save()
-    return ApiResponseSchema.success(data=AgentModelConfigSchema.from_doc(doc))
+    include_secret = await has_backend_permissions(current_user, ["operation:agent:model-secret:read"])
+    return ApiResponseSchema.success(data=AgentModelConfigSchema.from_doc(doc, include_secret=include_secret))
 
 
 @router.delete(

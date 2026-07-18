@@ -18,6 +18,15 @@ class CredentialsSchema(BaseModel):
     extra_fields: dict[str, Any] = Field(default_factory=dict, description="其他登录字段")
 
 
+class CredentialsUpdateSchema(BaseModel):
+    username: str | None = None
+    password: str | None = Field(default=None, description="留空表示不修改")
+    phone: str | None = None
+    email: str | None = None
+    two_fa_secret: str | None = Field(default=None, description="留空表示不修改")
+    extra_fields: dict[str, Any] | None = None
+
+
 class SchedulerSchema(BaseModel):
     is_busy: bool = Field(default=False, description="是否被占用")
     locked_at: datetime | None = Field(default=None, description="锁定时间")
@@ -52,7 +61,7 @@ class AccountCreateRequest(BaseModel):
 class AccountUpdateRequest(BaseModel):
     platform_id: str | None = Field(default=None, description="关联平台表ID")
     account_name: str | None = Field(default=None, description="内部展示用的账号别名")
-    credentials: CredentialsSchema | None = Field(default=None, description="登录凭证")
+    credentials: CredentialsUpdateSchema | None = Field(default=None, description="登录凭证，敏感字段留空不修改")
     scheduler: SchedulerSchema | None = Field(default=None, description="并发与调度控制")
     rate_limit: RateLimitSchema | None = Field(default=None, description="频率限制")
     environment: EnvironmentSchema | None = Field(default=None, description="环境与指纹绑定")
@@ -63,7 +72,7 @@ class AccountResponse(BaseModel):
     platform_id: str = Field(description="关联平台表ID")
     account_name: str = Field(description="内部展示用的账号别名")
     is_deleted: bool = Field(description="是否已删除(软删除)")
-    credentials: CredentialsSchema = Field(description="登录凭证")
+    credentials: CredentialsSchema | None = Field(default=None, description="登录凭证；无敏感读取权限时已脱敏")
     scheduler: SchedulerSchema = Field(description="并发与调度控制")
     rate_limit: RateLimitSchema = Field(description="频率限制")
     environment: EnvironmentSchema = Field(description="环境与指纹绑定")
@@ -73,16 +82,43 @@ class AccountResponse(BaseModel):
     updated_at: datetime = Field(description="更新时间")
 
     @classmethod
-    def from_doc(cls, doc: "AccountModel") -> "AccountResponse":
+    def from_doc(cls, doc: "AccountModel", include_secrets: bool = False) -> "AccountResponse":
+        raw_credentials = doc.credentials.model_dump()
+        if not include_secrets:
+            raw_credentials["password"] = None
+            raw_credentials["two_fa_secret"] = None
+            raw_credentials["extra_fields"] = {}
         return cls(
             id=doc.id,
             platform_id=doc.platform_id,
             account_name=doc.account_name,
             is_deleted=doc.is_deleted,
-            credentials=CredentialsSchema.model_validate(doc.credentials.model_dump()),
+            credentials=CredentialsSchema.model_validate(raw_credentials),
             scheduler=SchedulerSchema.model_validate(doc.scheduler.model_dump()),
             rate_limit=RateLimitSchema.model_validate(doc.rate_limit.model_dump()),
             environment=EnvironmentSchema.model_validate(doc.environment.model_dump()),
+            status=doc.status,
+            status_reason=doc.status_reason,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )
+
+
+class AccountListItemResponse(BaseModel):
+    id: str
+    platform_id: str
+    account_name: str
+    status: AccountStatusEnum
+    status_reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_doc(cls, doc: "AccountModel") -> "AccountListItemResponse":
+        return cls(
+            id=doc.id,
+            platform_id=doc.platform_id,
+            account_name=doc.account_name,
             status=doc.status,
             status_reason=doc.status_reason,
             created_at=doc.created_at,

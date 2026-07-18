@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.auth.group import GroupModel
 
@@ -12,12 +12,30 @@ class GroupCreateRequest(BaseModel):
     enabled: bool = Field(default=True, description="是否启用")
     permissions: list[str] = Field(default_factory=list, description="权限码列表")
 
+    @field_validator("group_name", "display_name")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("字段不能为空")
+        return normalized
+
 
 class GroupUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, description="用户组展示名称")
     remark: str | None = Field(default=None, description="备注")
     enabled: bool | None = Field(default=None, description="是否启用")
     permissions: list[str] | None = Field(default=None, description="权限码列表")
+
+    @field_validator("display_name")
+    @classmethod
+    def strip_optional_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("展示名称不能为空")
+        return normalized
 
 
 class GroupResponse(BaseModel):
@@ -31,6 +49,7 @@ class GroupResponse(BaseModel):
     display_name: str = Field(description="用户组展示名称")
     enabled: bool = Field(description="是否启用")
     permissions: list[str] = Field(description="权限码列表")
+    is_system: bool = Field(description="是否系统内置权限组")
 
     @classmethod
     def from_doc(cls, doc: GroupModel) -> "GroupResponse":
@@ -45,4 +64,5 @@ class GroupResponse(BaseModel):
             display_name=doc.display_name,
             enabled=doc.enabled,
             permissions=doc.permissions,
+            is_system=doc.is_system,
         )

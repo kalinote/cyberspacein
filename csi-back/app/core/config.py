@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     API_V1_STR: str
     APP_NAME: str
     DEBUG: bool
+    ENVIRONMENT: str = "development"
     
     SERVER_HOST: Optional[str] = None
     SERVER_PORT: Optional[int] = None
@@ -64,7 +65,20 @@ class Settings(BaseSettings):
     VECTOR_NUM_CANDIDATES_MAX: int = 10000
 
     AUTH_SECRET_KEY: str = "please-change-auth-secret-key"
+    AUTH_ISSUER: str = "csi-back"
+    AUTH_AUDIENCE: str = "csi-user-api"
+    COMPONENT_AUTH_AUDIENCE: str = "csi-action-sdk"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    COMPONENT_TOKEN_EXPIRE_MINUTES: int = 30
+    COMPONENT_BOOTSTRAP_EXPIRE_SECONDS: int = 300
+    AUTH_REDIS_NAMESPACE: str = "csi:auth"
+    LOGIN_FAILURE_THRESHOLD: int = 5
+    LOGIN_FAILURE_WINDOW_SECONDS: int = 900
+    LOGIN_LOCK_SECONDS: int = 900
+    LOGIN_RATE_LIMIT_ACCOUNT: int = 10
+    LOGIN_RATE_LIMIT_SOURCE: int = 30
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    TEMPORARY_ACCOUNT_MAX_DAYS: int = 90
     INIT_SYSTEM_USERNAME: str = "system"
     INIT_SYSTEM_PASSWORD: str = "system123456"
     INIT_SYSTEM_DISPLAY_NAME: str = "系统"
@@ -86,6 +100,47 @@ class Settings(BaseSettings):
         host = self.SERVER_HOST or get_local_ip()
         port = self.SERVER_PORT or 8080
         return f"http://{host}:{port}{self.API_V1_STR}"
+
+    @property
+    def normalized_environment(self) -> str:
+        return self.ENVIRONMENT.strip().lower()
+
+    def validate_auth_security(self) -> None:
+        """Validate authentication settings before the application starts."""
+        if self.normalized_environment not in {"development", "test", "production"}:
+            raise RuntimeError("ENVIRONMENT 必须是 development、test 或 production")
+        if self.ACCESS_TOKEN_EXPIRE_MINUTES <= 0:
+            raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES 必须大于 0")
+        if self.COMPONENT_TOKEN_EXPIRE_MINUTES <= 0:
+            raise RuntimeError("COMPONENT_TOKEN_EXPIRE_MINUTES 必须大于 0")
+        if self.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS <= 0:
+            raise RuntimeError("COMPONENT_BOOTSTRAP_EXPIRE_SECONDS 必须大于 0")
+        if not self.AUTH_REDIS_NAMESPACE.strip() or any(char in self.AUTH_REDIS_NAMESPACE for char in "*?[]"):
+            raise RuntimeError("AUTH_REDIS_NAMESPACE 不能为空且不能包含通配符")
+        if self.TEMPORARY_ACCOUNT_MAX_DAYS <= 0:
+            raise RuntimeError("TEMPORARY_ACCOUNT_MAX_DAYS 必须大于 0")
+        positive_fields = {
+            "LOGIN_FAILURE_THRESHOLD": self.LOGIN_FAILURE_THRESHOLD,
+            "LOGIN_FAILURE_WINDOW_SECONDS": self.LOGIN_FAILURE_WINDOW_SECONDS,
+            "LOGIN_LOCK_SECONDS": self.LOGIN_LOCK_SECONDS,
+            "LOGIN_RATE_LIMIT_ACCOUNT": self.LOGIN_RATE_LIMIT_ACCOUNT,
+            "LOGIN_RATE_LIMIT_SOURCE": self.LOGIN_RATE_LIMIT_SOURCE,
+            "LOGIN_RATE_LIMIT_WINDOW_SECONDS": self.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        }
+        invalid = [name for name, value in positive_fields.items() if value <= 0]
+        if invalid:
+            raise RuntimeError(f"认证防护配置必须大于 0: {', '.join(invalid)}")
+        if self.normalized_environment == "production":
+            forbidden_secrets = {
+                "please-change-auth-secret-key",
+                "change-me",
+                "secret",
+            }
+            if len(self.AUTH_SECRET_KEY) < 32 or self.AUTH_SECRET_KEY in forbidden_secrets:
+                raise RuntimeError("生产环境 AUTH_SECRET_KEY 必须是至少 32 位的非默认密钥")
+            forbidden_passwords = {"system123456", "admin123456", "password", "admin"}
+            if len(self.INIT_SYSTEM_PASSWORD) < 12 or self.INIT_SYSTEM_PASSWORD in forbidden_passwords:
+                raise RuntimeError("生产环境 INIT_SYSTEM_PASSWORD 不得使用默认值且至少 12 位")
 
 settings = Settings()
 

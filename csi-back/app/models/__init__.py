@@ -29,6 +29,7 @@ from app.models.search_template import SearchTemplateModel
 from app.models.auth.group import GroupModel
 from app.models.auth.user import UserModel
 from app.models.auth.permission_code import PermissionCodeModel
+from app.models.auth.session import LoginSessionModel
 from app.models.wiki import WikiPageModel, WikiPageRevisionModel
 
 def get_all_models() -> List[Type[Document]]:
@@ -61,6 +62,7 @@ def get_all_models() -> List[Type[Document]]:
         GroupModel,
         UserModel,
         PermissionCodeModel,
+        LoginSessionModel,
         WikiPageModel,
         WikiPageRevisionModel,
     ]

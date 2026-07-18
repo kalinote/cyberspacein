@@ -9,6 +9,8 @@ from starlette.testclient import TestClient
 import app.utils.status_codes as status_codes
 from app.api.v1.endpoints import agent as agent_ep
 import app.api.v1.endpoints.agent.configs_models as models_ep
+from app.dependencies.auth import get_current_user
+from app.models.auth.user import UserModel
 
 
 class FakeModelConfigDoc:
@@ -33,6 +35,14 @@ class FakeModelConfigDoc:
 
 def _app() -> TestClient:
     app = FastAPI()
+    app.dependency_overrides[get_current_user] = lambda: UserModel.model_construct(
+        id="user-1",
+        username="tester",
+        display_name="Tester",
+        password_hash="h",
+        enabled=True,
+        is_system=True,
+    )
     app.include_router(agent_ep.router, prefix="/api/v1")
     return TestClient(app)
 

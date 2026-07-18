@@ -53,13 +53,13 @@
             <template #icon><Icon icon="mdi:magnify" /></template>
             搜索
           </el-button>
-          <el-button v-if="activeTab === 'skills'" type="primary" @click="openSkillUploadDialog">
+          <el-button v-if="activeTab === 'skills' && canCreateCurrentTab" type="primary" @click="openSkillUploadDialog">
             <template #icon>
               <Icon icon="mdi:upload" />
             </template>
             上传技能
           </el-button>
-          <el-button v-else-if="activeTab !== 'tools'" type="primary" @click="handleAdd">
+          <el-button v-else-if="activeTab !== 'tools' && canCreateCurrentTab" type="primary" @click="handleAdd">
             <template #icon>
               <Icon icon="mdi:plus" />
             </template>
@@ -115,15 +115,15 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="openAgentDetail(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.agent.read)" type="primary" link @click="openAgentDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="openAgentEdit(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.agent.update)" type="primary" link @click="openAgentEdit(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleDeleteAgent(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.agent.delete)" type="danger" link @click="handleDeleteAgent(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -191,15 +191,15 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="openModelDetail(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.modelConfig.detailRead)" type="primary" link @click="openModelDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="openModelEdit(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.modelConfig.update)" type="primary" link @click="openModelEdit(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleDeleteModel(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.modelConfig.delete)" type="danger" link @click="handleDeleteModel(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -248,15 +248,15 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="openPromptTemplateDetail(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.promptTemplate.read)" type="primary" link @click="openPromptTemplateDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="openPromptTemplateEdit(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.promptTemplate.update)" type="primary" link @click="openPromptTemplateEdit(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleDeletePromptTemplate(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.promptTemplate.delete)" type="danger" link @click="handleDeletePromptTemplate(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -315,15 +315,15 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="openSystemPromptDetail(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.systemPrompt.read)" type="primary" link @click="openSystemPromptDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="openSystemPromptEdit(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.systemPrompt.update)" type="primary" link @click="openSystemPromptEdit(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleDeleteSystemPrompt(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.systemPrompt.delete)" type="danger" link @click="handleDeleteSystemPrompt(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -385,15 +385,15 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="openWorkspaceDetail(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.workspace.read)" type="primary" link @click="openWorkspaceDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="openWorkspaceEdit(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.workspace.update)" type="primary" link @click="openWorkspaceEdit(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleDeleteWorkspace(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.workspace.delete)" type="danger" link @click="handleDeleteWorkspace(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -451,15 +451,15 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="openSkillDetail(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.skill.read)" type="primary" link @click="openSkillDetail(item)">
                       <template #icon><Icon icon="mdi:eye" /></template>
                       详情
                     </el-button>
-                    <el-button type="primary" link @click="openSkillEditor(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.skill.update)" type="primary" link @click="openSkillEditor(item)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleDeleteSkill(item)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.skill.delete)" type="danger" link @click="handleDeleteSkill(item)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -573,13 +573,13 @@
                       </template>
                       Code Server
                     </el-button>
-                    <el-button type="primary" link @click="handleViewSandbox(sandbox)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.sandbox.read)" type="primary" link @click="handleViewSandbox(sandbox)">
                       <template #icon>
                         <Icon icon="mdi:eye" />
                       </template>
                       查看
                     </el-button>
-                    <el-button type="danger" link @click="handleDestroySandbox(sandbox)">
+                    <el-button v-if="hasPerm(PERM.operations.agent.sandbox.delete)" type="danger" link @click="handleDestroySandbox(sandbox)">
                       <template #icon>
                         <Icon icon="mdi:delete" />
                       </template>
@@ -694,7 +694,7 @@
       </el-form>
       <template #footer>
         <el-button @click="handleModelDialogClose">取消</el-button>
-        <el-button type="primary" :loading="modelSubmitLoading" @click="handleModelSubmit">确定</el-button>
+        <el-button v-if="hasPerm(editingModelId ? PERM.operations.agent.modelConfig.update : PERM.operations.agent.modelConfig.create)" type="primary" :loading="modelSubmitLoading" @click="handleModelSubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -780,7 +780,7 @@
       </el-form>
       <template #footer>
         <el-button @click="handlePromptTemplateDialogClose">取消</el-button>
-        <el-button type="primary" :loading="promptTemplateSubmitLoading" @click="handlePromptTemplateSubmit">确定</el-button>
+        <el-button v-if="hasPerm(editingPromptTemplateId ? PERM.operations.agent.promptTemplate.update : PERM.operations.agent.promptTemplate.create)" type="primary" :loading="promptTemplateSubmitLoading" @click="handlePromptTemplateSubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -897,7 +897,7 @@
       </el-form>
       <template #footer>
         <el-button @click="handleSystemPromptDialogClose">取消</el-button>
-        <el-button type="primary" :loading="systemPromptSubmitLoading" @click="handleSystemPromptSubmit">确定</el-button>
+        <el-button v-if="hasPerm(editingSystemPromptId ? PERM.operations.agent.systemPrompt.update : PERM.operations.agent.systemPrompt.create)" type="primary" :loading="systemPromptSubmitLoading" @click="handleSystemPromptSubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -1170,7 +1170,7 @@
       </el-form>
       <template #footer>
         <el-button @click="handleAgentDialogClose">取消</el-button>
-        <el-button type="primary" :loading="agentSubmitLoading" @click="handleAgentSubmit">确定</el-button>
+        <el-button v-if="hasPerm(editingAgentId ? PERM.operations.agent.agent.update : PERM.operations.agent.agent.create)" type="primary" :loading="agentSubmitLoading" @click="handleAgentSubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -1331,7 +1331,7 @@
       </el-form>
       <template #footer>
         <el-button @click="handleWorkspaceDialogClose">取消</el-button>
-        <el-button type="primary" :loading="workspaceSubmitLoading" @click="handleWorkspaceSubmit">确定</el-button>
+        <el-button v-if="hasPerm(editingWorkspaceId ? PERM.operations.agent.workspace.update : PERM.operations.agent.workspace.create)" type="primary" :loading="workspaceSubmitLoading" @click="handleWorkspaceSubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -1391,7 +1391,7 @@
       </div>
       <template #footer>
         <el-button @click="skillDetailVisible = false">关闭</el-button>
-        <el-button type="primary" :disabled="!skillDetail?.id" @click="openSkillEditorFromDetail">
+        <el-button v-if="hasPerm(PERM.operations.agent.skill.update)" type="primary" :disabled="!skillDetail?.id" @click="openSkillEditorFromDetail">
           编辑
         </el-button>
       </template>
@@ -1420,7 +1420,7 @@
       </el-upload>
       <template #footer>
         <el-button @click="handleSkillUploadDialogClose">取消</el-button>
-        <el-button type="primary" :loading="skillUploadLoading" :disabled="!skillUploadFile" @click="handleSkillUploadSubmit">
+        <el-button v-if="hasPerm(PERM.operations.agent.skill.create)" type="primary" :loading="skillUploadLoading" :disabled="!skillUploadFile" @click="handleSkillUploadSubmit">
           确认上传
         </el-button>
       </template>
@@ -1488,7 +1488,7 @@
       </el-form>
       <template #footer>
         <el-button @click="createSandboxDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creatingSandbox" @click="handleCreateSandboxSubmit">
+        <el-button v-if="hasPerm(PERM.operations.agent.sandbox.create)" type="primary" :loading="creatingSandbox" @click="handleCreateSandboxSubmit">
           确定
         </el-button>
       </template>
@@ -1582,6 +1582,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { agentApi } from '@/api/agent'
 import { getPaginatedData } from '@/utils/request'
 import { formatDateTime, formatJson, filterByKeyword, ACTION_STATUS } from '@/utils/action'
+import { PERM } from '@/utils/permissions'
+import { hasPerm } from '@/utils/permissionKit'
 import {
   REASONING_EFFORT_STEPS,
   formatReasoningEffortLabel,
@@ -1605,7 +1607,39 @@ const formatLlmProviderLabel = (value) => {
   return opt?.label ?? value ?? '-'
 }
 
-const engineTabs = [
+const agentTabPermissions = {
+  workspaces: PERM.pages.agent.config.workspaces,
+  analysisEngines: PERM.pages.agent.config.agents,
+  modelResources: PERM.pages.agent.config.models,
+  promptTemplates: PERM.pages.agent.config.prompts,
+  systemPrompts: PERM.pages.agent.config.systemPrompts,
+  skills: PERM.pages.agent.config.skills,
+  tools: PERM.pages.agent.config.tools,
+  sandboxes: PERM.pages.agent.config.sandboxes
+}
+
+const agentTabReadPermissions = {
+  workspaces: PERM.operations.agent.workspace.read,
+  analysisEngines: PERM.operations.agent.agent.read,
+  modelResources: PERM.operations.agent.modelConfig.listRead,
+  promptTemplates: PERM.operations.agent.promptTemplate.read,
+  systemPrompts: PERM.operations.agent.systemPrompt.read,
+  skills: PERM.operations.agent.skill.read,
+  tools: PERM.operations.agent.tool.read,
+  sandboxes: PERM.operations.agent.sandbox.read
+}
+
+const agentTabCreatePermissions = {
+  workspaces: PERM.operations.agent.workspace.create,
+  analysisEngines: PERM.operations.agent.agent.create,
+  modelResources: PERM.operations.agent.modelConfig.create,
+  promptTemplates: PERM.operations.agent.promptTemplate.create,
+  systemPrompts: PERM.operations.agent.systemPrompt.create,
+  skills: PERM.operations.agent.skill.create,
+  sandboxes: PERM.operations.agent.sandbox.create
+}
+
+const baseEngineTabs = [
   { key: 'workspaces', label: '工作区', icon: 'mdi:view-dashboard-variant' },
   { key: 'analysisEngines', label: '分析引擎', icon: 'mdi:brain' },
   { key: 'modelResources', label: '模型资源', icon: 'mdi:server' },
@@ -1616,7 +1650,20 @@ const engineTabs = [
   { key: 'sandboxes', label: '沙盒环境', icon: 'mdi:cube-outline' }
 ]
 
-const currentTabMeta = computed(() => findNavItemByKey(engineTabs, activeTab.value))
+const engineTabs = computed(() => baseEngineTabs
+  .filter(item => hasPerm(agentTabPermissions[item.key].visible))
+  .map(item => ({
+    ...item,
+    disabled: !hasPerm(agentTabPermissions[item.key].access)
+      || !hasPerm(agentTabReadPermissions[item.key])
+  })))
+
+const canCreateCurrentTab = computed(() => {
+  const code = agentTabCreatePermissions[activeTab.value]
+  return typeof code === 'string' && hasPerm(code)
+})
+
+const currentTabMeta = computed(() => findNavItemByKey(engineTabs.value, activeTab.value))
 const currentTabIcon = computed(() => currentTabMeta.value?.icon ?? 'mdi:help')
 const currentTabLabel = computed(() => currentTabMeta.value?.label ?? '')
 
@@ -1996,6 +2043,7 @@ const handleDestroySandbox = (sandbox) => {
 }
 
 watch(activeTab, (tab) => {
+  if (!hasPerm(agentTabPermissions[tab]?.access)) return
   if (tab === 'analysisEngines' && !agentLoadedOnce.value) fetchAgentList()
   if (tab === 'modelResources' && !modelLoadedOnce.value) fetchModelList()
   if (tab === 'promptTemplates' && !promptTemplateLoadedOnce.value) fetchPromptTemplateList()
@@ -2006,8 +2054,14 @@ watch(activeTab, (tab) => {
   if (tab === 'sandboxes' && !sandboxLoadedOnce.value) fetchSandboxList()
 }, { immediate: true })
 
+watch(engineTabs, (tabs) => {
+  const current = tabs.find(item => item.key === activeTab.value)
+  if (current && !current.disabled) return
+  activeTab.value = tabs.find(item => !item.disabled)?.key || ''
+}, { immediate: true })
+
 onMounted(() => {
-  fetchStatistics()
+  if (hasPerm(PERM.operations.agent.tool.read)) fetchStatistics()
 })
 
 const maskApiKey = (key) => {

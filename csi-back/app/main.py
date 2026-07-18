@@ -31,6 +31,7 @@ logger = logger.bind(name=__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_auth_security()
     await init_mariadb()
     await init_mongodb()
     await init_redis()
@@ -38,6 +39,8 @@ async def lifespan(app: FastAPI):
     await init_rabbitmq()
     await init_cos()
     await init_embedding_client()
+    from app.core.permissions import sync_standard_permissions
+    await sync_standard_permissions()
     await ensure_default_admin()
     from app.service.nanobot.bootstrap import ensure_builtin_agent_prompts
     await ensure_builtin_agent_prompts()
@@ -124,12 +127,12 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.exception(f"未处理的异常: {str(exc)}")
+    logger.exception("未处理的异常")
     return JSONResponse(
         status_code=200,
         content=ApiResponseSchema.error(
             code=status_codes.INTERNAL_ERROR,
-            message="服务器内部错误" if not settings.DEBUG else str(exc),
+            message="服务器内部错误",
             data=None
         ).model_dump()
     )
@@ -137,3 +140,6 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 from app.api.v1 import api as api_v1
 app.include_router(api_v1.api_router, prefix=settings.API_V1_STR)
+
+from app.core.route_permissions import validate_fastapi_routes
+validate_fastapi_routes(app.routes)

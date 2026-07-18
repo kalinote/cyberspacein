@@ -20,7 +20,7 @@ def test_user_update_request_all_optional():
     # 更新请求各字段默认均可为空
     u = UserUpdateRequest()
     assert u.display_name is None
-    assert u.password is None
+    assert not hasattr(u, "password")
 
 
 def test_login_request_minimal():
@@ -63,7 +63,14 @@ def test_login_response_structure():
         temporary_account=False,
         expired_at=None,
         groups=[],
+        is_system=False,
+        restrict_permission_assignment=True,
+        authorization_version=0,
     )
-    lr = LoginResponse(access_token="tok", user=ur, permissions=["a"])
+    now = datetime.now()
+    lr = LoginResponse(
+        access_token="tok", user=ur, permissions=["a"], authorization_version=0,
+        session_id="session-1", session_expires_at=now,
+    )
     assert lr.token_type == "bearer"
     assert lr.permissions == ["a"]

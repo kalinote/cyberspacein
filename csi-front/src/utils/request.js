@@ -1,166 +1,136 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { clearAuth, getAuthState } from '@/stores/auth'
+import { classifyAuthorizationFailure } from '@/utils/authHttpPolicy'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.31.51:8080/api/v1'
-
 const appBase = import.meta.env.BASE_URL || '/'
+
+let permissionRefresher = null
+let permissionRefreshPromise = null
+
+export function registerPermissionRefresher(refresher) {
+  permissionRefresher = typeof refresher === 'function' ? refresher : null
+}
 
 function appPath(path) {
   const base = appBase.endsWith('/') ? appBase.slice(0, -1) : appBase
-  const p = path.startsWith('/') ? path : `/${path}`
-  return `${base}${p}`
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+function makeApiError(message, code, response) {
+  const error = new Error(message)
+  error.code = code
+  error.response = response
+  return error
+}
+
+function isLoginPath() {
+  return (window.location.pathname || '').endsWith('/login')
+}
+
+function handleUnauthorized(message, requestUrl = '') {
+  clearAuth()
+  const isAuthRequest = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/logout')
+  if (!isLoginPath() && !isAuthRequest) window.location.href = appPath('/login')
+  ElMessage.warning(message)
+}
+
+async function refreshAfterPermissionChange(requestUrl = '') {
+  if (!permissionRefresher || requestUrl.includes('/auth/me')) return
+  if (!permissionRefreshPromise) {
+    permissionRefreshPromise = Promise.resolve(permissionRefresher()).finally(() => {
+      permissionRefreshPromise = null
+    })
+  }
+  try { await permissionRefreshPromise } catch { /* 401 handler owns session cleanup */ }
 }
 
 const service = axios.create({
   baseURL,
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  headers: { 'Content-Type': 'application/json' }
 })
 
-service.interceptors.request.use(
-  config => {
-    const token = getAuthState().accessToken
-    if (token) {
-      config.headers = config.headers || {}
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  error => {
-    console.error('请求错误:', error)
-    return Promise.reject(error)
+service.interceptors.request.use(config => {
+  const token = getAuthState().accessToken
+  if (token) {
+    config.headers = config.headers || {}
+    config.headers.Authorization = `Bearer ${token}`
   }
-)
+  return config
+})
 
-service.interceptors.response.use(
-  response => {
-    const res = response.data
-    const code = res?.code
+service.interceptors.response.use(async response => {
+  const res = response.data
+  const code = res?.code
+  const requestUrl = response?.config?.url || ''
+  const serverVersionRaw = response.headers?.['x-authorization-version']
+  const serverVersion = serverVersionRaw == null ? null : Number(serverVersionRaw)
+  const localVersion = getAuthState().authorizationVersion
+  let refreshedForVersion = false
 
-    if (code === 0) return res
+  if (
+    Number.isInteger(serverVersion) &&
+    Number.isInteger(localVersion) &&
+    serverVersion !== localVersion &&
+    !requestUrl.includes('/auth/me')
+  ) {
+    await refreshAfterPermissionChange(requestUrl)
+    refreshedForVersion = true
+  }
 
-    if (typeof code === 'number' && code !== 0) {
-      const codeStr = String(code)
-      const message = res?.message || '请求失败'
-
-      const requestUrl = response?.config?.url || ''
-      const currentPath = window.location.pathname || ''
-      const isLoginRequest = requestUrl.includes('/auth/login')
-      const isLogoutRequest = requestUrl.includes('/auth/logout')
-      const isMeRequest = requestUrl.includes('/auth/me')
-
-      if (codeStr.startsWith('2401')) {
-        clearAuth()
-
-        if (!currentPath.endsWith('/login') && !isLoginRequest && !isLogoutRequest && !isMeRequest) {
-          window.location.href = appPath('/login')
-        }
-        ElMessage.warning(message)
-        return Promise.reject(new Error(message))
-      }
-
-      if (codeStr.startsWith('2403')) {
-        if (!currentPath.endsWith('/403')) {
-          window.location.href = appPath('/403')
-        }
-        ElMessage.warning(message)
-        return Promise.reject(new Error(message))
-      }
-
-      ElMessage.error(message)
-      return Promise.reject(new Error(message))
+  if (code === 0) return res
+  if (typeof code === 'number' && code !== 0) {
+    const message = res?.message || '请求失败'
+    const failureKind = classifyAuthorizationFailure(code, null)
+    if (failureKind === 'unauthorized') {
+      handleUnauthorized(message, requestUrl)
+      throw makeApiError(message, code, response)
     }
-
-    if (Array.isArray(res?.items) && typeof res?.total === 'number') return res
-
-    ElMessage.error(res?.message || '请求失败')
-    return Promise.reject(new Error(res?.message || '请求失败'))
-  },
-  error => {
-    console.error('响应错误:', error)
-    
-    let message = '网络错误，请稍后重试'
-    
-    if (error.response) {
-      switch (error.response.status) {
-        case 400:
-          message = '请求参数错误'
-          break
-        case 401:
-          message = '未授权，请登录'
-          break
-        case 403:
-          message = '拒绝访问'
-          break
-        case 404:
-          message = '请求的资源不存在'
-          break
-        case 500:
-          message = '服务器错误'
-          break
-        case 502:
-          message = '网关错误'
-          break
-        case 503:
-          message = '服务不可用'
-          break
-        case 504:
-          message = '网关超时'
-          break
-        default:
-          message = error.response.data?.message || '请求失败'
-      }
-    } else if (error.request) {
-      message = '网络连接失败，请检查网络'
+    if (failureKind === 'forbidden') {
+      if (!refreshedForVersion) await refreshAfterPermissionChange(requestUrl)
+      ElMessage.warning(message)
+      throw makeApiError(message, code, response)
     }
-    
     ElMessage.error(message)
-    return Promise.reject(error)
+    throw makeApiError(message, code, response)
   }
-)
+  if (Array.isArray(res?.items) && typeof res?.total === 'number') return res
+  const message = res?.message || '请求失败'
+  ElMessage.error(message)
+  throw makeApiError(message, code, response)
+}, async error => {
+  const status = error.response?.status
+  const requestUrl = error.response?.config?.url || error.config?.url || ''
+  const message = error.response?.data?.message || (status === 401
+    ? '登录已失效，请重新登录'
+    : status === 403 ? '无权限执行该操作' : '网络错误，请稍后重试')
+  const failureKind = classifyAuthorizationFailure(null, status)
+  if (failureKind === 'unauthorized') handleUnauthorized(message, requestUrl)
+  else if (failureKind === 'forbidden') {
+    await refreshAfterPermissionChange(requestUrl)
+    ElMessage.warning(message)
+  } else ElMessage.error(message)
+  return Promise.reject(error)
+})
 
 export default service
 
 export const request = {
-  get(url, params, config = {}) {
-    return service.get(url, { params, ...config })
-  },
-  
-  post(url, data, config = {}) {
-    return service.post(url, data, config)
-  },
-  
-  put(url, data, config = {}) {
-    return service.put(url, data, config)
-  },
-  
-  delete(url, config = {}) {
-    return service.delete(url, config)
-  },
-  
-  patch(url, data, config = {}) {
-    return service.patch(url, data, config)
-  }
+  get(url, params, config = {}) { return service.get(url, { params, ...config }) },
+  post(url, data, config = {}) { return service.post(url, data, config) },
+  put(url, data, config = {}) { return service.put(url, data, config) },
+  delete(url, config = {}) { return service.delete(url, config) },
+  patch(url, data, config = {}) { return service.patch(url, data, config) }
 }
 
 export const getPaginatedData = async (apiFunc, params = {}) => {
   try {
     const response = await apiFunc(params)
-
     if (response.code === 0 && response.data) {
       const { items = [], total = 0, page = 1, page_size = 10, total_pages = 1 } = response.data
-      return {
-        items,
-        pagination: {
-          total,
-          page,
-          pageSize: page_size,
-          totalPages: total_pages
-        }
-      }
+      return { items, pagination: { total, page, pageSize: page_size, totalPages: total_pages } }
     }
     if (Array.isArray(response.items) && typeof response.total === 'number') {
       return {
@@ -173,26 +143,8 @@ export const getPaginatedData = async (apiFunc, params = {}) => {
         }
       }
     }
-
-    return {
-      items: [],
-      pagination: {
-        total: 0,
-        page: 1,
-        pageSize: 10,
-        totalPages: 0
-      }
-    }
   } catch (error) {
-    console.error('获取分页数据失败:', error)
-    return {
-      items: [],
-      pagination: {
-        total: 0,
-        page: 1,
-        pageSize: 10,
-        totalPages: 0
-      }
-    }
+    if (import.meta.env.DEV) console.error('获取分页数据失败:', error)
   }
+  return { items: [], pagination: { total: 0, page: 1, pageSize: 10, totalPages: 0 } }
 }

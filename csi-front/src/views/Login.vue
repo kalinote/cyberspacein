@@ -59,7 +59,10 @@ async function handleLogin() {
     setAuth({
       accessToken: payload.access_token,
       user: payload.user,
-      permissions: payload.permissions || []
+      permissions: payload.permissions || [],
+      authorizationVersion: payload.authorization_version,
+      sessionId: payload.session_id,
+      sessionExpiresAt: payload.session_expires_at
     })
 
     const redirect = route.query.redirect

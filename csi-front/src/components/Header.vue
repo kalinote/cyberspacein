@@ -11,18 +11,25 @@
           </div>
 
           <nav class="hidden md:flex ml-10 space-x-8">
-            <router-link to="/" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors" active-class="!text-blue-600 !bg-blue-50">概览</router-link>
+            <router-link
+              v-if="canViewOverview"
+              :to="canAccessOverview ? '/' : route.fullPath"
+              class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors"
+              :class="!canAccessOverview ? 'text-gray-400 bg-gray-50 cursor-not-allowed' : ''"
+              active-class="!text-blue-600 !bg-blue-50"
+              @click="guardNav(canAccessOverview, $event)"
+            >概览</router-link>
             <router-link
               v-if="canViewSearch"
-              :to="canUseSearch ? '/search' : route.fullPath"
+              :to="canAccessSearch ? '/search' : route.fullPath"
               class="font-medium px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/search' ? 'text-blue-600! bg-blue-50!' : '',
-                canUseSearch
+                canAccessSearch
                   ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                   : 'text-gray-400 bg-gray-50 cursor-not-allowed'
               ]"
-              @click="guardNav(canUseSearch, $event)"
+              @click="guardNav(canAccessSearch, $event)"
             >
               检索
             </router-link>
@@ -33,15 +40,15 @@
               @mouseleave="showActionDropdown = false"
             >
               <router-link
-                :to="canUseAction ? '/action' : route.fullPath"
+                :to="canAccessAction ? '/action' : route.fullPath"
                 class="font-medium px-4 py-2 rounded-md transition-colors flex items-center space-x-1"
                 :class="[
                   route.path.startsWith('/action') ? 'text-blue-600! bg-blue-50!' : '',
-                  canUseAction
+                  canAccessAction
                     ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                     : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                 ]"
-                @click="guardNav(canUseAction, $event)"
+                @click="guardNav(canAccessAction, $event)"
               >
                 <span>行动部署</span>
                 <Icon icon="mdi:chevron-down" class="text-sm transition-transform" :class="showActionDropdown ? 'rotate-180' : ''" />
@@ -60,16 +67,16 @@
                 >
                   <router-link
                     v-if="canViewActionTask"
-                    :to="canUseActionTask ? '/action/tasks' : route.fullPath"
+                    :to="canAccessActionTask ? '/action/tasks' : route.fullPath"
                     class="block px-4 py-2 transition-colors"
                     :class="[
                       route.path === '/action/tasks' ? 'text-blue-600 bg-blue-50' : '',
-                      canUseActionTask
+                      canAccessActionTask
                         ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer'
                         : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                     ]"
-                    @click="canUseActionTask ? (showActionDropdown = false) : null"
-                    @click.capture="guardNav(canUseActionTask, $event)"
+                    @click="canAccessActionTask ? (showActionDropdown = false) : null"
+                    @click.capture="guardNav(canAccessActionTask, $event)"
                   >
                     基础组件任务
                   </router-link>
@@ -78,33 +85,32 @@
             </div>
             <router-link
               v-if="canViewTarget"
-              :to="canUseTarget ? '/target' : route.fullPath"
+              :to="canAccessTarget ? '/target' : route.fullPath"
               class="font-medium px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/target' ? 'text-blue-600! bg-blue-50!' : '',
-                canUseTarget
+                canAccessTarget
                   ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                   : 'text-gray-400 bg-gray-50 cursor-not-allowed'
               ]"
-              @click="guardNav(canUseTarget, $event)"
+              @click="guardNav(canAccessTarget, $event)"
             >
               目标管理
             </router-link>
             <router-link
               v-if="canViewAgent"
-              :to="canUseAgent ? '/agent' : route.fullPath"
+              :to="canAccessAgent ? '/agent' : route.fullPath"
               class="font-medium px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/agent' ? 'text-blue-600! bg-blue-50!' : '',
-                canUseAgent
+                canAccessAgent
                   ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                   : 'text-gray-400 bg-gray-50 cursor-not-allowed'
               ]"
-              @click="guardNav(canUseAgent, $event)"
+              @click="guardNav(canAccessAgent, $event)"
             >
               分析引擎
             </router-link>
-            <a href="#" class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors">报告</a>
             <div
               v-if="canViewSystemMenu"
               class="relative"
@@ -112,9 +118,10 @@
               @mouseleave="showSystemDropdown = false"
             >
               <router-link
-                to="/system"
+                :to="canAccessSystemMenu ? '/system' : route.fullPath"
                 class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
                 :class="isSystemNavActive ? 'text-blue-600! bg-blue-50!' : ''"
+                @click="guardNav(canAccessSystemMenu, $event)"
               >
                 <span>系统配置</span>
                 <Icon icon="mdi:chevron-down" class="text-sm transition-transform" :class="showSystemDropdown ? 'rotate-180' : ''" />
@@ -133,31 +140,31 @@
                 >
                   <router-link
                     v-if="canViewAlert"
-                    :to="canUseAlert ? '/alert' : route.fullPath"
+                    :to="canAccessAlert ? '/alert' : route.fullPath"
                     class="block px-4 py-2 transition-colors whitespace-nowrap"
                     :class="[
                       route.path === '/alert' ? 'text-blue-600 bg-blue-50' : '',
-                      canUseAlert
+                      canAccessAlert
                         ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer'
                         : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                     ]"
-                    @click="canUseAlert ? (showSystemDropdown = false) : null"
-                    @click.capture="guardNav(canUseAlert, $event)"
+                    @click="canAccessAlert ? (showSystemDropdown = false) : null"
+                    @click.capture="guardNav(canAccessAlert, $event)"
                   >
                     告警信息
                   </router-link>
                   <router-link
                     v-if="canViewSystemPermissions"
-                    :to="canUseSystemPermissions ? '/system/permissions' : route.fullPath"
+                    :to="canAccessSystemPermissions ? '/system/permissions' : route.fullPath"
                     class="block px-4 py-2 transition-colors whitespace-nowrap"
                     :class="[
                       route.path === '/system/permissions' ? 'text-blue-600 bg-blue-50' : '',
-                      canUseSystemPermissions
+                      canAccessSystemPermissions
                         ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer'
                         : 'text-gray-400 bg-gray-50 cursor-not-allowed'
                     ]"
-                    @click="canUseSystemPermissions ? (showSystemDropdown = false) : null"
-                    @click.capture="guardNav(canUseSystemPermissions, $event)"
+                    @click="canAccessSystemPermissions ? (showSystemDropdown = false) : null"
+                    @click.capture="guardNav(canAccessSystemPermissions, $event)"
                   >
                     用户权限管理
                   </router-link>
@@ -170,9 +177,11 @@
         <div class="flex items-center space-x-10">
           <div class="hidden md:block">
             <el-input
+              v-if="canViewSearch"
               v-model="quickSearchQuery"
               placeholder="快速检索..."
               :prefix-icon="'Search'"
+              :disabled="!canQuickSearch"
               style="width: 200px"
               clearable
               @keyup.enter="handleQuickSearch"
@@ -228,21 +237,29 @@ const isSystemNavActive = computed(
 const quickSearchQuery = ref('')
 const userDropdownVisible = ref(false)
 
-const canViewSearch = computed(() => hasPerm(PERM.pages.search.view))
-const canUseSearch = computed(() => hasPerm(PERM.pages.search.use))
-const canViewAction = computed(() => hasPerm(PERM.pages.action.view))
-const canUseAction = computed(() => hasPerm(PERM.pages.action.use))
-const canViewActionTask = computed(() => hasPerm(PERM.pages.action.task.view))
-const canUseActionTask = computed(() => hasPerm(PERM.pages.action.task.use))
-const canViewTarget = computed(() => hasPerm(PERM.pages.target.view))
-const canUseTarget = computed(() => hasPerm(PERM.pages.target.use))
-const canViewAgent = computed(() => hasPerm(PERM.pages.agent.view))
-const canUseAgent = computed(() => hasPerm(PERM.pages.agent.use))
-const canViewSystemMenu = computed(() => hasPerm(PERM.pages.system.view))
-const canViewAlert = computed(() => hasPerm(PERM.pages.system.alert.view))
-const canUseAlert = computed(() => hasPerm(PERM.pages.system.alert.use))
-const canViewSystemPermissions = computed(() => hasPerm(PERM.pages.system.permissions.view))
-const canUseSystemPermissions = computed(() => hasPerm(PERM.pages.system.permissions.use))
+const canViewOverview = computed(() => hasPerm(PERM.pages.overview.visible))
+const canAccessOverview = computed(() => hasPerm(PERM.pages.overview.access))
+const canViewSearch = computed(() => hasPerm(PERM.pages.search.visible))
+const canAccessSearch = computed(() => hasPerm(PERM.pages.search.access))
+const canQuickSearch = computed(() => (
+  canAccessSearch.value && hasPerm(PERM.operations.search.entity.execute)
+))
+const canViewActionTask = computed(() => hasPerm(PERM.pages.action.tasks.visible))
+const canViewAction = computed(() => hasPerm(PERM.pages.action.visible) || canViewActionTask.value)
+const canAccessAction = computed(() => hasPerm(PERM.pages.action.access))
+const canAccessActionTask = computed(() => hasPerm(PERM.pages.action.tasks.access))
+const canViewTarget = computed(() => hasPerm(PERM.pages.target.visible))
+const canAccessTarget = computed(() => hasPerm(PERM.pages.target.access))
+const canViewAgent = computed(() => hasPerm(PERM.pages.agent.visible))
+const canAccessAgent = computed(() => hasPerm(PERM.pages.agent.access))
+const canViewAlert = computed(() => hasPerm(PERM.pages.system.alert.visible))
+const canAccessAlert = computed(() => hasPerm(PERM.pages.system.alert.access))
+const canViewSystemPermissions = computed(() => hasPerm(PERM.pages.system.permissions.visible))
+const canAccessSystemPermissions = computed(() => hasPerm(PERM.pages.system.permissions.access))
+const canViewSystemMenu = computed(() => (
+  hasPerm(PERM.pages.system.visible) || canViewAlert.value || canViewSystemPermissions.value
+))
+const canAccessSystemMenu = computed(() => hasPerm(PERM.pages.system.access))
 
 const displayUsername = computed(() => {
   const user = getAuthState().user
@@ -250,6 +267,10 @@ const displayUsername = computed(() => {
 })
 
 function handleQuickSearch() {
+  if (!canQuickSearch.value) {
+    noPerm()
+    return
+  }
   if (!quickSearchQuery.value || !quickSearchQuery.value.trim()) {
     return
   }
@@ -260,8 +281,8 @@ function handleQuickSearch() {
   quickSearchQuery.value = ''
 }
 
-function guardNav(canUse, e) {
-  if (canUse) return true
+function guardNav(canAccess, e) {
+  if (canAccess) return true
   try {
     e?.preventDefault?.()
     e?.stopPropagation?.()

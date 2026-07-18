@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.route_permissions import authorize_registered_route
 from app.main import app
 
 client = TestClient(app)
@@ -24,6 +25,7 @@ client = TestClient(app)
 def test_list_agent_prompt_brief(monkeypatch: pytest.MonkeyPatch, items: list[dict]) -> None:
     from app.api.v1.endpoints.agent import configs_templates as ep
 
+    monkeypatch.setitem(app.dependency_overrides, authorize_registered_route, lambda: None)
     monkeypatch.setattr(
         ep.SystemPromptService,
         "list_agent_prompt_brief",

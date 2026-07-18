@@ -17,9 +17,10 @@ from app.schemas.constants import (
 
 
 def test_user_model_settings():
-    # UserModel 集合名与索引字段应稳定
+    # 活跃用户名使用数据库唯一索引。
     assert UserModel.Settings.name == "auth_users"
-    assert "username" in UserModel.Settings.indexes
+    index_names = {getattr(index, "document", {}).get("name") for index in UserModel.Settings.indexes}
+    assert "uq_auth_users_username_active" in index_names
 
 
 def test_user_model_minimal_construct():
@@ -33,6 +34,8 @@ def test_user_model_minimal_construct():
     assert u.enabled is True
     assert u.is_deleted is False
     assert u.groups == []
+    assert u.authorization_version == 1
+    assert u.credential_version == 1
 
 
 def test_group_model_minimal_construct():

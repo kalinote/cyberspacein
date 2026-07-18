@@ -174,8 +174,9 @@ def get_log_manager() -> Optional[SDKLogManager]:
 class WebSocketLogClient:
     """WebSocket 日志提交客户端（静默容错）"""
     
-    def __init__(self, ws_url: str):
+    def __init__(self, ws_url: str, token: str = None):
         self._ws_url = ws_url
+        self._token = token
         self._ws = None
         self._connected = False
         self._callback = None
@@ -186,7 +187,8 @@ class WebSocketLogClient:
         try:
             import websocket
             # TODO: 实现 WebSocket 连接逻辑，等待后端接口实现后完善
-            self._ws = websocket.create_connection(self._ws_url, timeout=5)
+            headers = [f"Authorization: Bearer {self._token}"] if self._token else None
+            self._ws = websocket.create_connection(self._ws_url, timeout=5, header=headers)
             self._connected = True
             
             self._callback = self._on_log

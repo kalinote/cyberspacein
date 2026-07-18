@@ -1,27 +1,35 @@
-"""app.core.permissions 权限常量测试。"""
+"""Standard permission registry and route matrix invariants."""
 
-from app.core.permissions import AgentPerms, SystemPerms
-
-
-def test_system_perms_constants_are_non_empty_strings():
-    # 系统权限码应为非空字符串，便于与前后端约定一致
-    for name, val in SystemPerms.__dict__.items():
-        if not name.isupper():
-            continue
-        assert isinstance(val, str)
-        assert len(val) > 0
+from app.core.permissions import (
+    BACKEND_PERMISSION_CODES,
+    PERMISSION_DEFINITIONS,
+    PERMISSION_REGISTRY,
+    STANDARD_PERMISSION_CODES,
+)
+from app.core.route_permissions import ROUTE_PERMISSIONS, validate_fastapi_routes
+from app.main import app
 
 
-def test_system_perms_user_group_permcode_distinct():
-    # 典型权限常量应互不相同，避免复制粘贴遗漏
-    codes = [
-        SystemPerms.USER_VIEW,
-        SystemPerms.GROUP_VIEW,
-        SystemPerms.PERMCODE_VIEW,
-    ]
-    assert len(set(codes)) == len(codes)
+def test_permission_manifest_is_unique_and_well_formed() -> None:
+    codes = [item.code for item in PERMISSION_DEFINITIONS]
+    assert len(codes) == len(set(codes))
+    assert set(codes) == set(PERMISSION_REGISTRY) == set(STANDARD_PERMISSION_CODES)
+    assert "*" in codes
+    assert all(item.name and item.module and item.resource and item.description for item in PERMISSION_DEFINITIONS)
 
 
-def test_agent_perms_module_loadable():
-    # AgentPerms 占位模块应可导入（后续扩展权限时保持兼容）
-    assert AgentPerms is not None
+def test_page_permissions_never_authorize_backend() -> None:
+    assert not any(code.startswith("page:") for code in BACKEND_PERMISSION_CODES)
+    assert all(item.backend_enforced for item in PERMISSION_DEFINITIONS if item.code in BACKEND_PERMISSION_CODES)
+
+
+def test_every_business_route_has_one_exact_matrix_entry() -> None:
+    keys = [(item.method, item.path) for item in ROUTE_PERMISSIONS]
+    assert len(keys) == len(set(keys))
+    validate_fastapi_routes(app.routes)
+
+
+def test_matrix_never_uses_page_permission_for_backend() -> None:
+    for item in ROUTE_PERMISSIONS:
+        if item.permission:
+            assert item.permission in BACKEND_PERMISSION_CODES

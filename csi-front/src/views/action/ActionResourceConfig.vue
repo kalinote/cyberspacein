@@ -44,7 +44,7 @@
               <Icon icon="mdi:magnify" class="text-gray-400" />
             </template>
           </el-input>
-          <el-button type="primary" @click="handleAdd(activeTab)">
+          <el-button v-if="canCreateActiveTab" type="primary" @click="handleAdd(activeTab)">
             <template #icon>
               <Icon icon="mdi:plus" />
             </template>
@@ -112,19 +112,19 @@
                   </div>
                 </div>
                 <div class="flex items-center gap-2 ml-4">
-                  <el-button type="primary" link @click="handleView(node)">
+                  <el-button v-if="hasPerm(PERM.operations.action.node.read)" type="primary" link @click="handleView(node)">
                     <template #icon>
                       <Icon icon="mdi:eye" />
                     </template>
                     查看
                   </el-button>
-                  <el-button type="primary" link @click="handleEdit(node)">
+                  <el-button v-if="hasPerm(PERM.operations.action.node.update)" type="primary" link @click="handleEdit(node)">
                     <template #icon>
                       <Icon icon="mdi:pencil" />
                     </template>
                     编辑
                   </el-button>
-                  <el-button type="danger" link @click="handleDelete(node)">
+                  <el-button v-if="hasPerm(PERM.operations.action.node.delete)" type="danger" link @click="handleDelete(node)">
                     <template #icon>
                       <Icon icon="mdi:delete" />
                     </template>
@@ -198,17 +198,11 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="handleView(component)">
+                    <el-button v-if="hasPerm(PERM.operations.action.node.read)" type="primary" link @click="handleView(component)">
                       <template #icon>
                         <Icon icon="mdi:eye" />
                       </template>
                       查看
-                    </el-button>
-                    <el-button type="primary" link @click="handleEdit(component)">
-                      <template #icon>
-                        <Icon icon="mdi:pencil" />
-                      </template>
-                      编辑
                     </el-button>
                     <el-button 
                       :type="component.status === ACTION_STATUS.RUNNING ? 'warning' : 'success'" 
@@ -219,12 +213,6 @@
                         <Icon :icon="component.status === ACTION_STATUS.RUNNING ? 'mdi:stop' : 'mdi:play'" />
                       </template>
                       {{ component.status === ACTION_STATUS.RUNNING ? '停止' : '运行' }}
-                    </el-button>
-                    <el-button type="danger" link @click="handleDelete(component)">
-                      <template #icon>
-                        <Icon icon="mdi:delete" />
-                      </template>
-                      删除
                     </el-button>
                   </div>
                 </div>
@@ -298,23 +286,11 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="handleViewHandle(handle)">
+                    <el-button v-if="hasPerm(PERM.operations.action.config.read)" type="primary" link @click="handleViewHandle(handle)">
                       <template #icon>
                         <Icon icon="mdi:eye" />
                       </template>
                       查看
-                    </el-button>
-                    <el-button type="primary" link @click="handleEditHandle(handle)">
-                      <template #icon>
-                        <Icon icon="mdi:pencil" />
-                      </template>
-                      编辑
-                    </el-button>
-                    <el-button type="danger" link @click="handleDeleteHandle(handle)">
-                      <template #icon>
-                        <Icon icon="mdi:delete" />
-                      </template>
-                      删除
                     </el-button>
                   </div>
                 </div>
@@ -388,19 +364,19 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
-                    <el-button type="primary" link @click="handleViewAccount(account)">
+                    <el-button v-if="hasPerm(PERM.operations.action.account.detailRead)" type="primary" link @click="handleViewAccount(account)">
                       <template #icon>
                         <Icon icon="mdi:eye" />
                       </template>
                       查看
                     </el-button>
-                    <el-button type="primary" link @click="handleEditAccount(account)">
+                    <el-button v-if="hasPerm(PERM.operations.action.account.update)" type="primary" link @click="handleEditAccount(account)">
                       <template #icon>
                         <Icon icon="mdi:pencil" />
                       </template>
                       编辑
                     </el-button>
-                    <el-button type="danger" link @click="handleDeleteAccount(account)">
+                    <el-button v-if="hasPerm(PERM.operations.action.account.delete)" type="danger" link @click="handleDeleteAccount(account)">
                       <template #icon>
                         <Icon icon="mdi:delete" />
                       </template>
@@ -661,7 +637,12 @@
       <template #footer>
         <div class="flex justify-end gap-3">
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
+          <el-button
+            v-if="hasPerm(nodeDialogMode === 'edit' ? PERM.operations.action.node.update : PERM.operations.action.node.create)"
+            type="primary"
+            @click="handleSubmit"
+            :loading="submitting"
+          >确定</el-button>
         </div>
       </template>
     </el-dialog>
@@ -919,7 +900,7 @@
       <template #footer>
         <div class="flex justify-end gap-3">
           <el-button @click="handleDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="handleSubmitHandle" :loading="handleSubmitting">确定</el-button>
+          <el-button v-if="hasPerm(PERM.operations.action.config.create)" type="primary" @click="handleSubmitHandle" :loading="handleSubmitting">确定</el-button>
         </div>
       </template>
     </el-dialog>
@@ -989,7 +970,12 @@
       <template #footer>
         <div class="flex justify-end gap-3">
           <el-button @click="accountDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="handleSubmitAccount" :loading="accountSubmitting">确定</el-button>
+          <el-button
+            v-if="hasPerm(accountDialogMode === 'edit' ? PERM.operations.action.account.update : PERM.operations.action.account.create)"
+            type="primary"
+            @click="handleSubmitAccount"
+            :loading="accountSubmitting"
+          >确定</el-button>
         </div>
       </template>
     </el-dialog>
@@ -1050,6 +1036,8 @@ import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
 import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData, ACTION_STATUS } from '@/utils/action'
 import GenericNode from '@/components/action/nodes/GenericNode.vue'
+import { PERM } from '@/utils/permissions'
+import { hasPerm } from '@/utils/permissionKit'
 
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
@@ -1088,7 +1076,29 @@ const pagination = ref({
   totalPages: 0
 })
 
-const resourceTabs = [
+const actionTabPermissions = {
+  nodes: PERM.pages.action.resource.nodes,
+  baseComponents: PERM.pages.action.resource.components,
+  nodeHandles: PERM.pages.action.resource.handles,
+  proxy: PERM.pages.action.resource.proxy,
+  accounts: PERM.pages.action.resource.accounts,
+  corpus: PERM.pages.action.resource.corpus
+}
+
+const actionTabReadPermissions = {
+  nodes: PERM.operations.action.node.read,
+  baseComponents: PERM.operations.action.node.read,
+  nodeHandles: PERM.operations.action.config.read,
+  accounts: PERM.operations.action.account.listRead
+}
+
+const actionTabCreatePermissions = {
+  nodes: PERM.operations.action.node.create,
+  nodeHandles: PERM.operations.action.config.create,
+  accounts: PERM.operations.action.account.create
+}
+
+const baseResourceTabs = [
   { key: 'nodes', label: '行动节点', icon: 'mdi:chart-tree', children: [
     { key: 'baseComponents', label: '基础组件', icon: 'mdi:cog' },
     { key: 'nodeHandles', label: '节点接口配置', icon: 'mdi:link-variant' }
@@ -1099,7 +1109,27 @@ const resourceTabs = [
   ]}
 ]
 
-const currentTabMeta = computed(() => findNavItemByKey(resourceTabs, activeTab.value))
+const resourceTabs = computed(() => baseResourceTabs
+  .filter(item => hasPerm(actionTabPermissions[item.key].visible))
+  .map(item => ({
+    ...item,
+    disabled: !hasPerm(actionTabPermissions[item.key].access)
+      || (actionTabReadPermissions[item.key] && !hasPerm(actionTabReadPermissions[item.key])),
+    children: item.children
+      ?.filter(child => hasPerm(actionTabPermissions[child.key].visible))
+      .map(child => ({
+        ...child,
+        disabled: !hasPerm(actionTabPermissions[child.key].access)
+          || (actionTabReadPermissions[child.key] && !hasPerm(actionTabReadPermissions[child.key]))
+      }))
+  })))
+
+const canCreateActiveTab = computed(() => {
+  const code = actionTabCreatePermissions[activeTab.value]
+  return typeof code === 'string' && hasPerm(code)
+})
+
+const currentTabMeta = computed(() => findNavItemByKey(resourceTabs.value, activeTab.value))
 const currentTabIcon = computed(() => currentTabMeta.value?.icon || 'mdi:help')
 const currentTabLabel = computed(() => currentTabMeta.value?.label || '')
 
@@ -1523,6 +1553,13 @@ const removeInput = (index) => {
 }
 
 const handleSubmit = async () => {
+  const required = nodeDialogMode.value === 'edit'
+    ? PERM.operations.action.node.update
+    : PERM.operations.action.node.create
+  if (!hasPerm(required)) {
+    ElMessage.warning('暂无操作权限')
+    return
+  }
   if (!formRef.value) return
   
   try {
@@ -1879,6 +1916,10 @@ const handleHandleDialogClose = () => {
 }
 
 const handleSubmitHandle = async () => {
+  if (!hasPerm(PERM.operations.action.config.create)) {
+    ElMessage.warning('暂无操作权限')
+    return
+  }
   if (!handleFormRef.value) return
   
   try {
@@ -2047,6 +2088,13 @@ async function loadAccountForEdit() {
 }
 
 async function handleSubmitAccount() {
+  const required = accountDialogMode.value === 'edit'
+    ? PERM.operations.action.account.update
+    : PERM.operations.action.account.create
+  if (!hasPerm(required)) {
+    ElMessage.warning('暂无操作权限')
+    return
+  }
   if (!accountFormRef.value) return
   try {
     await accountFormRef.value.validate()
@@ -2149,6 +2197,7 @@ function handleAccountPageSizeChange(pageSize) {
 }
 
 watch(activeTab, (newTab) => {
+  if (!hasPerm(actionTabPermissions[newTab]?.access)) return
   if (newTab === 'nodeHandles') {
     fetchHandleList()
   } else if (newTab === 'baseComponents') {
@@ -2158,9 +2207,16 @@ watch(activeTab, (newTab) => {
   }
 })
 
+watch(resourceTabs, (tabs) => {
+  const flattened = tabs.flatMap(item => [item, ...(item.children || [])])
+  const current = flattened.find(item => item.key === activeTab.value)
+  if (current && !current.disabled) return
+  activeTab.value = flattened.find(item => !item.disabled)?.key || ''
+}, { immediate: true })
+
 onMounted(() => {
-  fetchStatistics()
-  fetchNodeList()
+  if (hasPerm(PERM.operations.action.config.read)) fetchStatistics()
+  if (activeTab.value === 'nodes' && hasPerm(actionTabPermissions.nodes.access)) fetchNodeList()
   if (activeTab.value === 'baseComponents') {
     fetchComponentList()
   } else if (activeTab.value === 'nodeHandles') {

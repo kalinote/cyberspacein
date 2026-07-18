@@ -315,7 +315,7 @@
                     link
                     @click="toggleHighlight(result)"
                     :loading="result._highlightLoading"
-                    :disabled="(result.is_highlighted && !hasPerm(PERM_SEARCH_RESULTS?.unhighlightUse)) || (!result.is_highlighted && !hasPerm(PERM_SEARCH_RESULTS?.highlightUse))"
+                    :disabled="!hasPerm(PERM_HIGHLIGHT?.update)"
                   >
                     <template #icon>
                       <Icon :icon="result.is_highlighted ? 'mdi:star' : 'mdi:star-outline'" />
@@ -449,7 +449,7 @@ import Header from '@/components/Header.vue'
 import { searchApi } from '@/api/search'
 import { highlightApi } from '@/api/highlight'
 import { PERM } from '@/utils/permissions'
-import { hasPerm, noPerm, guardUse } from '@/utils/permissionKit'
+import { hasPerm, hasAny, noPerm, guardPermission } from '@/utils/permissionKit'
 import { formatDateTime } from '@/utils/action'
 
 defineOptions({ name: 'Search' })
@@ -497,27 +497,31 @@ const searchTemplates = ref([])
 const templateLoading = ref(false)
 
 const PERM_SEARCH = PERM.operations?.search
-const PERM_SEARCH_TEMPLATES = PERM_SEARCH?.templateManagement?.templates
-const PERM_SEARCH_RESULTS = PERM_SEARCH?.results
+const PERM_SEARCH_TEMPLATES = PERM_SEARCH?.template
+const PERM_HIGHLIGHT = PERM.operations?.target?.highlight
 
-const canViewTemplateList = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.listView))
-const canViewApplyTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.applyView))
-const canUseApplyTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.applyUse))
+const canViewTemplateList = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.read))
+const canViewApplyTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.read))
+const canUseApplyTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.read))
 
-const canViewAddTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.addView))
-const canUseAddTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.addUse))
+const canViewAddTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.create))
+const canUseAddTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.create))
 
-const canViewOverwriteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.overwriteView))
-const canUseOverwriteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.overwriteUse))
+const canViewOverwriteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.update))
+const canUseOverwriteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.update))
 
-const canViewEditTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.editView))
-const canUseEditTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.editUse))
+const canViewEditTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.update))
+const canUseEditTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.update))
 
-const canViewDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.deleteView))
-const canUseDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.deleteUse))
+const canViewDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.delete))
+const canUseDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.delete))
 
-const canViewResultDetail = computed(() => hasPerm(PERM_SEARCH_RESULTS?.detailView))
-const canViewResultAnalysis = computed(() => hasPerm(PERM_SEARCH_RESULTS?.analysisView))
+const canViewResultDetail = computed(() => hasAny([
+  PERM.operations.content.article.read,
+  PERM.operations.content.forum.read,
+  PERM.operations.content.platform.read
+]))
+const canViewResultAnalysis = computed(() => hasPerm(PERM.pages.agent.access))
 
 const saveDialogVisible = ref(false)
 const saveSubmitLoading = ref(false)
@@ -572,7 +576,7 @@ function resetSaveForm() {
 }
 
 async function submitSaveTemplate() {
-  if (!guardUse(PERM_SEARCH_TEMPLATES?.addUse)) return
+  if (!guardPermission(PERM_SEARCH_TEMPLATES?.create)) return
   const { title, description, search_query } = saveForm.value
   if (!title?.trim()) {
     ElMessage.warning('请输入模板标题')
@@ -623,7 +627,7 @@ const editSubmitLoading = ref(false)
 const editForm = ref({ title: '', description: '', search_query: '' })
 
 function handleEditTemplate(template) {
-  if (!guardUse(PERM_SEARCH_TEMPLATES?.editUse)) return
+  if (!guardPermission(PERM_SEARCH_TEMPLATES?.update)) return
   editingTemplate.value = template
   editForm.value = {
     title: template.title ?? '',
@@ -634,7 +638,7 @@ function handleEditTemplate(template) {
 }
 
 async function submitEditTemplate() {
-  if (!guardUse(PERM_SEARCH_TEMPLATES?.editUse)) return
+  if (!guardPermission(PERM_SEARCH_TEMPLATES?.update)) return
   if (!editingTemplate.value) return
   const { title, description, search_query } = editForm.value
   if (!title?.trim()) {
@@ -667,7 +671,7 @@ async function submitEditTemplate() {
 }
 
 async function handleDeleteTemplate(template) {
-  if (!guardUse(PERM_SEARCH_TEMPLATES?.deleteUse)) return
+  if (!guardPermission(PERM_SEARCH_TEMPLATES?.delete)) return
   try {
     await ElMessageBox.confirm('确定要删除该检索模板吗？', '删除确认', {
       confirmButtonText: '删除',
@@ -702,7 +706,7 @@ function openOverwriteTemplateDialog() {
 }
 
 async function submitOverwriteTemplate() {
-  if (!guardUse(PERM_SEARCH_TEMPLATES?.overwriteUse)) return
+  if (!guardPermission(PERM_SEARCH_TEMPLATES?.update)) return
   if (!overwriteSelectedId.value) return
   overwriteSubmitLoading.value = true
   try {
@@ -1069,9 +1073,9 @@ function truncateContent(content, maxLength) {
       try {
         const isHighlighted = result.is_highlighted
     if (isHighlighted) {
-      if (!guardUse(PERM_SEARCH_RESULTS?.unhighlightUse)) return
+      if (!guardPermission(PERM_HIGHLIGHT?.update)) return
     } else {
-      if (!guardUse(PERM_SEARCH_RESULTS?.highlightUse)) return
+      if (!guardPermission(PERM_HIGHLIGHT?.update)) return
     }
         const entityType = result.entity_type?.toLowerCase() || 'article'
         const requestData = isHighlighted

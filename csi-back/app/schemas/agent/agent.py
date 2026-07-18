@@ -15,24 +15,54 @@ class AgentModelConfigCreateRequestSchema(BaseModel):
     model: str = Field(description="模型ID", min_length=1)
 
 
+class AgentModelConfigUpdateRequestSchema(BaseModel):
+    name: str = Field(description="模型名称", min_length=1)
+    description: str | None = Field(default=None, description="模型描述")
+    base_url: str = Field(description="模型基础URL", min_length=1)
+    api_key: str | None = Field(default=None, description="留空表示不修改")
+    model: str = Field(description="模型ID", min_length=1)
+
+
 class AgentModelConfigSchema(BaseModel):
     id: str = Field(description="配置ID")
     name: str = Field(description="模型名称")
     description: str | None = Field(default=None, description="模型描述")
     base_url: str = Field(description="模型基础URL")
-    api_key: str = Field(description="模型API密钥")
+    api_key: str | None = Field(default=None, description="模型API密钥；无敏感读取权限时为空")
     model: str = Field(description="模型ID")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
 
     @classmethod
-    def from_doc(cls, doc: "AgentModelConfigModel") -> "AgentModelConfigSchema":
+    def from_doc(cls, doc: "AgentModelConfigModel", include_secret: bool = False) -> "AgentModelConfigSchema":
         return cls(
             id=doc.id,
             name=doc.name,
             description=doc.description,
             base_url=doc.base_url,
-            api_key=doc.api_key,
+            api_key=doc.api_key if include_secret else None,
+            model=doc.model,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )
+
+
+class AgentModelConfigListItemSchema(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    base_url: str
+    model: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_doc(cls, doc: "AgentModelConfigModel") -> "AgentModelConfigListItemSchema":
+        return cls(
+            id=doc.id,
+            name=doc.name,
+            description=doc.description,
+            base_url=doc.base_url,
             model=doc.model,
             created_at=doc.created_at,
             updated_at=doc.updated_at,

@@ -19,6 +19,7 @@ from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, 
 from app.service.component import run_component
 from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id
+from app.service.component_auth import issue_component_bootstrap
 from app.utils.workflow import find_start_nodes
 from app.models.action.blueprint import ActionBlueprintModel
 from app.db.rabbitmq import delete_queue
@@ -387,11 +388,18 @@ class ActionInstanceService:
         
         # 这里是开始运行，在此之前应该做好全部准备工作
         command = node_definition.command
-        command_args = ["--api-base-url", settings.api_base_url, "--action-node-id", node_instance.id] + node_definition.command_args
+        command_args = [
+            "--api-base-url",
+            settings.api_base_url,
+            "--action-node-id",
+            node_instance.id,
+        ] + node_definition.command_args
         related_components = node_definition.related_components
         
         for component in related_components:
-            result = await run_component(component, command, command_args)
+            component_bootstrap = await issue_component_bootstrap(action.id, node_instance.id)
+            component_args = command_args + ["--component-bootstrap", component_bootstrap]
+            result = await run_component(component, command, component_args)
             if not result:
                 logger.error(f"运行组件失败，调度平台无结果返回，Component ID: {component}")
                 node_instance.status = ActionInstanceNodeStatusEnum.FAILED
@@ -707,4 +715,3 @@ class ActionInstanceService:
         node_instance.progress = progress
         await node_instance.save()
         return True
-    

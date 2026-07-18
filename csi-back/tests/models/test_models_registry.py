@@ -24,9 +24,11 @@ def test_get_all_models_includes_auth_models():
     # 应包含鉴权相关核心模型，便于 init_beanie 一次注册
     from app.models.auth.group import GroupModel
     from app.models.auth.permission_code import PermissionCodeModel
+    from app.models.auth.session import LoginSessionModel
     from app.models.auth.user import UserModel
 
     models = get_all_models()
     assert UserModel in models
     assert GroupModel in models
     assert PermissionCodeModel in models
+    assert LoginSessionModel in models

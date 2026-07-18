@@ -25,6 +25,14 @@ def test_permission_code_response_from_doc():
         category="c",
         create_by="sys",
         create_at=datetime(2024, 1, 1, 0, 0, 0),
+        module="x",
+        resource="thing",
+        source="placeholder",
+        backend_enforced=False,
+        system_reserved=False,
+        delegable=True,
+        default_enabled=True,
+        yaml_version=None,
     )
     resp = PermissionCodeResponse.from_doc(doc)
     assert resp.uuid == "pid-1"
