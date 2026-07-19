@@ -1,4 +1,4 @@
-version: "2026-07-18"
+version: "2026-07-19"
 
 # 新增权限维护说明：
 # 1. 页面权限使用 page:<模块>[:<页面或Tab>]:visible/access，仅控制前端展示和访问，backend_enforced 必须为 false。
@@ -71,6 +71,8 @@ permissions:
   - {code: "page:target:wiki:access", name: "Wiki 页面访问", module: "target", resource: "wiki-page", description: "访问 Wiki 页面", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:system:visible", name: "系统入口可见", module: "system", resource: "page", description: "显示系统入口", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:system:access", name: "系统页面访问", module: "system", resource: "page", description: "访问系统页面", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
+  - {code: "page:system:config:visible", name: "系统配置入口可见", module: "system", resource: "config-page", description: "显示系统配置入口，仅内置系统账号使用", tags: [page, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: false}
+  - {code: "page:system:config:access", name: "系统配置页面访问", module: "system", resource: "config-page", description: "访问系统配置页面，仅内置系统账号使用", tags: [page, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: false}
   - {code: "page:system:alert:visible", name: "告警入口可见", module: "system", resource: "alert-page", description: "显示告警入口", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:system:alert:access", name: "告警页面访问", module: "system", resource: "alert-page", description: "访问告警页面", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:system:permissions:visible", name: "权限管理入口可见", module: "system", resource: "permissions-page", description: "显示权限管理入口", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
@@ -182,3 +184,6 @@ permissions:
   - {code: "operation:system:permission-code:execute", name: "迁移或清理权限", module: "system", resource: "permission-code", description: "执行权限迁移和清理", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:system:login-session:read", name: "读取登录会话", module: "system", resource: "login-session", description: "读取用户活动会话", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:system:login-session:execute", name: "终止登录会话", module: "system", resource: "login-session", description: "终止具体或全部登录会话", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:system:config:read", name: "读取系统配置", module: "system", resource: "config", description: "读取脱敏后的系统配置，仅内置系统账号使用", tags: [read, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: true}
+  - {code: "operation:system:config:update", name: "更新系统配置", module: "system", resource: "config", description: "预览、应用实时配置或保存待重启配置，仅内置系统账号使用", tags: [update, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: true}
+  - {code: "operation:system:config:execute", name: "执行系统配置版本操作", module: "system", resource: "config", description: "取消待重启配置或还原历史版本，仅内置系统账号使用", tags: [execute, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: true}

@@ -48,6 +48,7 @@ export const PERM = Object.freeze({
     system: {
       visible: 'page:system:visible',
       access: 'page:system:access',
+      config: { visible: 'page:system:config:visible', access: 'page:system:config:access' },
       alert: { visible: 'page:system:alert:visible', access: 'page:system:alert:access' },
       permissions: {
         visible: 'page:system:permissions:visible',
@@ -197,6 +198,11 @@ export const PERM = Object.freeze({
       sessions: {
         read: 'operation:system:login-session:read',
         execute: 'operation:system:login-session:execute'
+      },
+      config: {
+        read: 'operation:system:config:read',
+        update: 'operation:system:config:update',
+        execute: 'operation:system:config:execute'
       }
     }
   }

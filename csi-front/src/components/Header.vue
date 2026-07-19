@@ -252,14 +252,16 @@ const canViewTarget = computed(() => hasPerm(PERM.pages.target.visible))
 const canAccessTarget = computed(() => hasPerm(PERM.pages.target.access))
 const canViewAgent = computed(() => hasPerm(PERM.pages.agent.visible))
 const canAccessAgent = computed(() => hasPerm(PERM.pages.agent.access))
+const canViewSystemConfig = computed(() => hasPerm(PERM.pages.system.config.visible))
+const canAccessSystemConfig = computed(() => hasPerm(PERM.pages.system.config.access))
 const canViewAlert = computed(() => hasPerm(PERM.pages.system.alert.visible))
 const canAccessAlert = computed(() => hasPerm(PERM.pages.system.alert.access))
 const canViewSystemPermissions = computed(() => hasPerm(PERM.pages.system.permissions.visible))
 const canAccessSystemPermissions = computed(() => hasPerm(PERM.pages.system.permissions.access))
 const canViewSystemMenu = computed(() => (
-  hasPerm(PERM.pages.system.visible) || canViewAlert.value || canViewSystemPermissions.value
+  hasPerm(PERM.pages.system.visible) || canViewSystemConfig.value || canViewAlert.value || canViewSystemPermissions.value
 ))
-const canAccessSystemMenu = computed(() => hasPerm(PERM.pages.system.access))
+const canAccessSystemMenu = computed(() => canAccessSystemConfig.value)
 
 const displayUsername = computed(() => {
   const user = getAuthState().user

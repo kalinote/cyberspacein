@@ -1,4 +1,4 @@
-version: "2026-07-18"
+version: "2026-07-19"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -174,3 +174,12 @@ routes:
   - {method: DELETE, path: "/system/perm-codes/{perm_code_id}", principal: user, permission: "operation:system:permission-code:delete"}
   - {method: POST, path: "/system/perm-codes/{perm_code_id}/migrate", principal: user, permission: "operation:system:permission-code:execute"}
   - {method: POST, path: "/system/perm-codes/{perm_code_id}/cleanup", principal: user, permission: "operation:system:permission-code:execute"}
+  - {method: GET, path: "/system/config", principal: user, permission: "operation:system:config:read"}
+  - {method: GET, path: "/system/config/status", principal: user, permission: "operation:system:config:read"}
+  - {method: POST, path: "/system/config/preview", principal: user, permission: "operation:system:config:update"}
+  - {method: PATCH, path: "/system/config/runtime", principal: user, permission: "operation:system:config:update"}
+  - {method: PATCH, path: "/system/config/pending", principal: user, permission: "operation:system:config:update"}
+  - {method: POST, path: "/system/config/pending/cancel", principal: user, permission: "operation:system:config:execute"}
+  - {method: GET, path: "/system/config/history", principal: user, permission: "operation:system:config:read"}
+  - {method: GET, path: "/system/config/history/{version}", principal: user, permission: "operation:system:config:read"}
+  - {method: POST, path: "/system/config/history/{version}/restore", principal: user, permission: "operation:system:config:execute"}

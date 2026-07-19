@@ -25,6 +25,7 @@ from app.db import (
 from app.utils.cos import init_cos, close_cos
 from app.utils.embedding import init_embedding_client, close_embedding_client
 from app.service.auth import ensure_default_admin
+from app.core.system_config import system_config_manager
 
 logger = logger.bind(name=__name__)
 
@@ -45,7 +46,14 @@ async def lifespan(app: FastAPI):
     from app.service.nanobot.bootstrap import ensure_builtin_agent_prompts
     await ensure_builtin_agent_prompts()
 
+    system_config_manager.commit_bootstrap()
+    from app.service.system_config_history import SystemConfigHistoryService
+    await SystemConfigHistoryService.flush_outbox(system_config_manager)
+    await SystemConfigHistoryService.ensure_baseline(system_config_manager)
+
     yield
+
+    system_config_manager.mark_not_ready()
 
     from app.service.analyst.service import AnalystService
     await AnalystService.shutdown_running_agents()
@@ -75,6 +83,22 @@ app.add_middleware(
 )
 
 app.add_middleware(ResponseMiddleware)
+
+
+@app.get("/health/live", include_in_schema=False)
+async def health_live():
+    return {"status": "live", "boot_id": system_config_manager.boot_id}
+
+
+@app.get("/health/ready", include_in_schema=False)
+async def health_ready():
+    if not system_config_manager.ready:
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
+    return {
+        "status": "ready",
+        "boot_id": system_config_manager.boot_id,
+        "version": system_config_manager.state()["version"],
+    }
 
 
 @app.exception_handler(ApiException)

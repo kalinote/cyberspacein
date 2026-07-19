@@ -90,15 +90,15 @@ service.interceptors.response.use(async response => {
     }
     if (failureKind === 'forbidden') {
       if (!refreshedForVersion) await refreshAfterPermissionChange(requestUrl)
-      ElMessage.warning(message)
+      if (!response?.config?.silent) ElMessage.warning(message)
       throw makeApiError(message, code, response)
     }
-    ElMessage.error(message)
+    if (!response?.config?.silent) ElMessage.error(message)
     throw makeApiError(message, code, response)
   }
   if (Array.isArray(res?.items) && typeof res?.total === 'number') return res
   const message = res?.message || '请求失败'
-  ElMessage.error(message)
+  if (!response?.config?.silent) ElMessage.error(message)
   throw makeApiError(message, code, response)
 }, async error => {
   const status = error.response?.status
@@ -110,8 +110,8 @@ service.interceptors.response.use(async response => {
   if (failureKind === 'unauthorized') handleUnauthorized(message, requestUrl)
   else if (failureKind === 'forbidden') {
     await refreshAfterPermissionChange(requestUrl)
-    ElMessage.warning(message)
-  } else ElMessage.error(message)
+    if (!error.config?.silent) ElMessage.warning(message)
+  } else if (!error.config?.silent) ElMessage.error(message)
   return Promise.reject(error)
 })
 

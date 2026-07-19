@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import Optional, Any
 from app.utils.network import get_local_ip
 
 class Settings(BaseSettings):
@@ -142,5 +142,24 @@ class Settings(BaseSettings):
             if len(self.INIT_SYSTEM_PASSWORD) < 12 or self.INIT_SYSTEM_PASSWORD in forbidden_passwords:
                 raise RuntimeError("生产环境 INIT_SYSTEM_PASSWORD 不得使用默认值且至少 12 位")
 
-settings = Settings()
+class SettingsProxy:
+    """Stable reference used by modules that import ``settings`` once."""
+
+    def __init__(self, current: Settings):
+        object.__setattr__(self, "_current", current)
+
+    def snapshot(self) -> Settings:
+        return object.__getattribute__(self, "_current")
+
+    def swap(self, current: Settings) -> None:
+        object.__setattr__(self, "_current", current)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.snapshot(), name)
+
+
+from app.core.system_config import system_config_manager
+
+settings = SettingsProxy(system_config_manager.bootstrap(Settings))
+system_config_manager.bind_settings(settings)
 

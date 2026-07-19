@@ -124,7 +124,7 @@ const router = createRouter({
       path: '/system',
       name: 'system-config-home',
       component: SystemConfigHome,
-      meta: { keepAlive: true, requiresAuth: true, pagePermission: PERM.pages.system.access }
+      meta: { keepAlive: true, requiresAuth: true, pagePermission: PERM.pages.system.config.access }
     },
     {
       path: '/system/permissions',

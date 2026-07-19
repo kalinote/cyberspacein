@@ -80,6 +80,34 @@ export const systemApi = {
   },
   cleanupPermCode(permCodeId) {
     return request.post(`/system/perm-codes/${permCodeId}/cleanup`, {})
+  },
+
+  getSystemConfig(config = {}) {
+    return request.get('/system/config', undefined, config)
+  },
+  getSystemConfigStatus(config = {}) {
+    return request.get('/system/config/status', undefined, config)
+  },
+  previewSystemConfig(data) {
+    return request.post('/system/config/preview', data)
+  },
+  applyRuntimeSystemConfig(data) {
+    return request.patch('/system/config/runtime', data)
+  },
+  stagePendingSystemConfig(data) {
+    return request.patch('/system/config/pending', data)
+  },
+  cancelPendingSystemConfig(data) {
+    return request.post('/system/config/pending/cancel', data)
+  },
+  getSystemConfigHistory(params) {
+    return request.get('/system/config/history', params)
+  },
+  getSystemConfigHistoryDetail(version) {
+    return request.get(`/system/config/history/${version}`)
+  },
+  restoreSystemConfigHistory(version, data) {
+    return request.post(`/system/config/history/${version}/restore`, data)
   }
 }
 
