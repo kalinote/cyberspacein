@@ -3,7 +3,9 @@
         "node_id": "test_config",
         "action_id": "test_config"
     },
-    "config": {},
+    "config": {
+        "batch_size": 100
+    },
     "inputs": {
         "data_in": {
             "type": "reference",
