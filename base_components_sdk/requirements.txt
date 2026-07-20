@@ -1,8 +1,7 @@
 requests
 setuptools
 wheel
-crawlab-sdk
+crawlab-sdk  # TODO(native-scheduler): 自研 Worker 上线后删除
 build
 pika>=1.3.0
 python-dotenv>=1.0.0
-websocket-client>=1.6.0

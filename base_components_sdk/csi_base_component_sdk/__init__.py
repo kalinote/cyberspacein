@@ -1,9 +1,5 @@
-from .logging_manager import setup_logging, SDKLogManager
-
-setup_logging()
-
-from .sync import BaseComponent
+from .context import ComponentCancelled, ComponentContext, ComponentFailure, ComponentTimedOut
 from .rabbitmq import RabbitMQClient
 
-__all__ = ['BaseComponent', 'RabbitMQClient', 'SDKLogManager']
-__version__ = '0.2.1'
+__all__ = ["ComponentCancelled", "ComponentContext", "ComponentFailure", "ComponentTimedOut", "RabbitMQClient"]
+__version__ = "2.0.1"

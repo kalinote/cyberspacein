@@ -13,6 +13,7 @@ from app.db.redis import get_redis
 class ComponentBootstrapContext:
     action_id: str
     node_instance_id: str
+    component_run_id: str
 
 
 def _bootstrap_key(value: str) -> str:
@@ -20,8 +21,12 @@ def _bootstrap_key(value: str) -> str:
     return f"{settings.AUTH_REDIS_NAMESPACE}:component-bootstrap:{digest}"
 
 
-async def issue_component_bootstrap(action_id: str, node_instance_id: str) -> str:
-    """Create a short-lived one-time exchange code; only its hash is stored."""
+async def issue_component_bootstrap(
+    action_id: str,
+    node_instance_id: str,
+    component_run_id: str,
+) -> str:
+    """创建短期一次性引导码，Redis 中仅保存其哈希键。"""
     redis = get_redis()
     if redis is None:
         raise RuntimeError("Redis 未初始化，无法签发组件引导码")
@@ -29,7 +34,7 @@ async def issue_component_bootstrap(action_id: str, node_instance_id: str) -> st
         value = secrets.token_urlsafe(32)
         created = await redis.set(
             _bootstrap_key(value),
-            f"{action_id}\n{node_instance_id}",
+            f"{action_id}\n{node_instance_id}\n{component_run_id}",
             ex=settings.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS,
             nx=True,
         )
@@ -40,9 +45,9 @@ async def issue_component_bootstrap(action_id: str, node_instance_id: str) -> st
 
 async def consume_component_bootstrap(
     value: str,
-    requested_node_id: str,
+    requested_component_run_id: str,
 ) -> ComponentBootstrapContext:
-    """Atomically consume an exchange code and enforce its node binding."""
+    """原子消费引导码并校验其 ComponentRun 绑定。"""
     if not value:
         raise UnauthorizedException("组件引导凭证无效或已过期")
     redis = get_redis()
@@ -56,9 +61,13 @@ async def consume_component_bootstrap(
     if not isinstance(stored, str):
         raise UnauthorizedException("组件引导凭证无效或已过期")
     try:
-        action_id, node_instance_id = stored.split("\n", 1)
+        action_id, node_instance_id, component_run_id = stored.split("\n", 2)
     except ValueError as exc:
         raise UnauthorizedException("组件引导凭证无效或已过期") from exc
-    if not action_id or node_instance_id != requested_node_id:
+    if not action_id or component_run_id != requested_component_run_id:
         raise UnauthorizedException("组件引导凭证无效或已过期")
-    return ComponentBootstrapContext(action_id=action_id, node_instance_id=node_instance_id)
+    return ComponentBootstrapContext(
+        action_id=action_id,
+        node_instance_id=node_instance_id,
+        component_run_id=component_run_id,
+    )

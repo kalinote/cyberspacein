@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from csi_base_component_sdk import BaseComponent
+from csi_base_component_sdk import ComponentContext, ComponentFailure
 from es_client import ElasticsearchClient
 from validator import validate_and_transform
 
@@ -61,14 +61,14 @@ def _decode_message_body(body: Any) -> Dict[str, Any]:
     raise TypeError(f"不支持的消息体类型: {type(body).__name__}")
 
 
-def _reject_without_requeue(component: BaseComponent, delivery_tag: int) -> None:
+def _reject_without_requeue(component: ComponentContext, delivery_tag: int) -> None:
     """拒绝永久错误；RabbitMQ 配置了 DLX 时消息会进入死信队列。"""
     if not component.rabbitmq.nack_message(delivery_tag, requeue=False):
         logger.error("拒绝永久错误消息失败: delivery_tag=%s", delivery_tag)
 
 
 def _process_batch(
-    component: BaseComponent,
+    component: ComponentContext,
     es_client: ElasticsearchClient,
     messages: List[Dict[str, Any]],
 ) -> BatchStats:
@@ -149,18 +149,18 @@ def _process_batch(
     return stats
 
 
-def main() -> None:
+def run(component: ComponentContext) -> dict:
     """从 RabbitMQ 消费实体，校验后批量写入 Elasticsearch。"""
-    with BaseComponent(enable_rabbitmq=True) as component:
+    if True:
         queue_names = component.inputs.get("data_in", {}).get("value", [])
         if isinstance(queue_names, str):
             queue_names = [queue_names]
         if not queue_names:
-            component.fail("未找到数据输入队列名称")
+            raise ComponentFailure("未找到数据输入队列名称")
 
         es_client = ElasticsearchClient()
         if not es_client.test_connection():
-            component.fail("无法连接到 Elasticsearch，请检查地址、认证和集群状态")
+            raise ComponentFailure("无法连接到 Elasticsearch，请检查地址、认证和集群状态")
 
         batch_size = _parse_batch_size(component.config.get("batch_size", 100))
         total = BatchStats()
@@ -206,18 +206,16 @@ def main() -> None:
                 "total_retryable": total.retryable,
             }
             if total.rejected or total.retryable:
-                component.fail(
+                raise ComponentFailure(
                     "实体存储未完全成功: "
                     f"读取 {total.read} 条，成功 {total.stored} 条，"
                     f"永久失败 {total.rejected} 条，可重试 {total.retryable} 条；"
                     "具体原因见 Bulk item 失败日志"
                 )
 
-            component.finish(result)
+            return result
+        except ComponentFailure:
+            raise
         except Exception as exc:
             logger.exception("处理过程中发生未捕获异常")
-            component.fail(f"处理失败: {exc}")
-
-
-if __name__ == "__main__":
-    main()
+            raise ComponentFailure(f"处理失败: {exc}") from exc

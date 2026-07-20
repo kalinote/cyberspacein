@@ -2,11 +2,19 @@ from datetime import datetime
 from typing import Any
 from pydantic import BaseModel, Field
 from app.schemas.action.blueprint import GraphSchema
-from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.constants import (
+    ActionConfigIOTypeEnum,
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ActionTriggerTypeEnum,
+)
 
 class StartActionRequest(BaseModel):
     blueprint_id: str = Field(description="蓝图ID")
     params: dict[str, Any] | None = Field(default=None, description="行动参数")
+    trigger_type: ActionTriggerTypeEnum = ActionTriggerTypeEnum.MANUAL
+    trigger_key: str | None = Field(default=None, max_length=256)
+    scheduled_for: datetime | None = None
     
 class StartActionResponse(BaseModel):
     action_id: str = Field(description="行动ID")
@@ -25,14 +33,19 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     
 
 class ActionNodeDetailResponse(BaseModel):
+    node_instance_id: str | None = Field(default=None, description="节点实例ID")
     status: ActionInstanceNodeStatusEnum = Field(description="节点状态")
     progress: int = Field(default=0, description="节点执行进度(%)")
     start_at: datetime | None = Field(default=None, description="节点执行开始时间")
     finished_at: datetime | None = Field(default=None, description="节点执行结束时间")
     duration: float = Field(default=0, description="节点执行时长(秒)")
-    inputs: dict[str, Any] = Field(default={}, description="节点输入配置")
-    outputs: dict[str, Any] = Field(default={}, description="节点输出配置")
+    inputs: dict[str, Any] = Field(default_factory=dict, description="节点输入配置")
+    outputs: dict[str, Any] = Field(default_factory=dict, description="节点输出配置")
     error_message: str | None = Field(default=None, description="节点执行错误信息")
+    component_runs: list[dict[str, Any]] = Field(default_factory=list)
+    log_count: int = 0
+    error_log_count: int = 0
+    dropped_log_count: int = 0
 
 class ActionDetailResponse(ActionInstanceBaseInfoResponse):
     """

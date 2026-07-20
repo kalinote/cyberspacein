@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.exceptions import ForbiddenException, UnauthorizedException
 from app.core.security import decode_component_token
 from app.models.action.action import ActionInstanceNodeModel
+from app.models.action.component_run import ComponentRunModel
 from app.models.auth.user import UserModel
 from app.service.auth import has_backend_permissions
 from app.service.auth_session import AuthContext, authenticate_access_token
@@ -60,6 +61,7 @@ def require_permissions(required_permissions: list[str]):
 class ComponentContext:
     action_id: str
     node_instance_id: str
+    component_run_id: str
     scopes: frozenset[str]
     claims: dict[str, Any]
 
@@ -77,20 +79,38 @@ async def get_component_context(
         raise UnauthorizedException("组件凭证无效或已过期")
     node_instance_id = str(claims["node_id"])
     action_id = str(claims["action_id"])
-    requested_node_id = str(request.path_params.get("node_instance_id") or "")
-    if requested_node_id != node_instance_id:
-        raise ForbiddenException("组件凭证不能跨节点使用")
+    component_run_id = str(claims["component_run_id"])
+    requested_run_id = str(request.path_params.get("component_run_id") or "")
+    if requested_run_id != component_run_id:
+        raise ForbiddenException("组件凭证不能跨运行实例使用")
     node = await ActionInstanceNodeModel.find_one(
         {"_id": node_instance_id, "action_id": action_id}
     )
     if node is None:
         raise UnauthorizedException("组件凭证绑定的节点不存在")
-    status = getattr(node.status, "value", node.status)
-    if status != "running":
-        raise UnauthorizedException("组件节点已不处于可调用状态")
+    component_run = await ComponentRunModel.find_one(
+        {
+            "_id": component_run_id,
+            "node_instance_id": node_instance_id,
+            "action_id": action_id,
+        }
+    )
+    if component_run is None:
+        raise UnauthorizedException("组件凭证绑定的运行实例不存在")
+    status = getattr(component_run.status, "value", component_run.status)
+    if status not in {
+        "dispatched",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "timed_out",
+    }:
+        raise UnauthorizedException("组件运行实例已不处于可调用状态")
     context = ComponentContext(
         action_id=action_id,
         node_instance_id=node_instance_id,
+        component_run_id=component_run_id,
         scopes=frozenset(claims["scope"]),
         claims=claims,
     )

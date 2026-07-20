@@ -477,12 +477,12 @@
             </el-select>
           </el-form-item>
           <el-form-item label="运行命令" prop="command">
-            <el-input v-model="formData.command" placeholder="请输入运行命令" />
+            <el-input v-model="formData.command" placeholder="csi-component" />
           </el-form-item>
           <el-form-item label="运行参数" prop="command_args">
             <TagInput
               v-model="formData.command_args"
-              placeholder="输入参数后按回车或点击添加"
+              placeholder="首项填写组件入口，例如 main:run"
               :show-count="true"
             />
           </el-form-item>

@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     ELASTICSEARCH_URL: str
     ELASTICSEARCH_USER: str
     ELASTICSEARCH_PASSWORD: str
+    COMPONENT_LOG_RETENTION_DAYS: int = 30
+    COMPONENT_LOG_DATA_STREAM: str = "csi-component-logs"
+    COMPONENT_HEARTBEAT_INTERVAL_SECONDS: int = 10
+    COMPONENT_LEASE_SECONDS: int = 30
+    COMPONENT_RUN_TIMEOUT_SECONDS: int = 3600
 
     RABBITMQ_HOST: str
     RABBITMQ_PORT: int
@@ -32,6 +37,7 @@ class Settings(BaseSettings):
     RABBITMQ_PASSWORD: str
     RABBITMQ_VHOST: str = "/"
 
+    # TODO(native-scheduler): 自研调度上线后删除 Crawlab 临时配置。
     CRAWLAB_BASE_URL: str
     CRAWLAB_TOKEN: str
 

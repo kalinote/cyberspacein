@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
-
-from loguru import logger
 
 from .capture import CapturePayload, CaptureResult
 
 if TYPE_CHECKING:
     from .service import SnapshotService
+
+
+logger = logging.getLogger("snapshot.processor")
 
 
 @dataclass(slots=True)

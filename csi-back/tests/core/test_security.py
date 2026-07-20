@@ -73,10 +73,11 @@ def test_decode_access_token_malformed():
 
 def test_component_token_isolated_from_user_audience(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(security.settings, "AUTH_SECRET_KEY", "unit-test-secret-key-32bytes!!")
-    token = security.create_component_token("action-1", "node-1")
+    token = security.create_component_token("action-1", "node-1", "run-1")
     assert security.decode_access_token(token) is None
     claims = security.decode_component_token(token)
     assert claims is not None
     assert claims["action_id"] == "action-1"
     assert claims["node_id"] == "node-1"
-    assert set(claims["scope"]) == {"sdk:init", "sdk:result", "sdk:heartbeat"}
+    assert claims["component_run_id"] == "run-1"
+    assert set(claims["scope"]) == {"sdk:init", "sdk:result", "sdk:heartbeat", "sdk:logs"}

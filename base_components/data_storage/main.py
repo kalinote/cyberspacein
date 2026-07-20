@@ -23,13 +23,12 @@
 #   { "$and": [ { "field": "snapshot", "op": "not_exists" } ] }
 
 import logging
-import sys
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from csi_base_component_sdk import BaseComponent, RabbitMQClient
+from csi_base_component_sdk import ComponentContext, ComponentFailure, RabbitMQClient
 from mongodb import MongoDBStorage
 from elasticsearch_storage import ElasticsearchStorage
 from redis_storage import RedisStorage
@@ -455,9 +454,9 @@ def read_from_storage(
     return documents
 
 
-def main():
+def run(base_component: ComponentContext) -> dict:
     try:
-        with BaseComponent(enable_rabbitmq=True) as base_component:
+        if True:
             config = base_component.config
             inputs = base_component.inputs if hasattr(base_component, 'inputs') else {}
             outputs = base_component.outputs if hasattr(base_component, 'outputs') else {}
@@ -466,8 +465,7 @@ def main():
             target_name = config.get('target_name', '')
             
             if not target or not target_name:
-                base_component.fail("配置缺少target或target_name")
-                return
+                raise ComponentFailure("配置缺少target或target_name")
             
             input_queues = get_input_queues(inputs)
             direct_output_queues = get_output_queues(outputs)
@@ -483,9 +481,9 @@ def main():
             if data_output_queues:
                 logger.info(f"数据输出队列: {data_output_queues}")
             if conditions:
-                logger.info(f"查询条件已配置")
+                logger.info("查询条件已配置")
             if storage_filter:
-                logger.info(f"存储过滤已启用")
+                logger.info("存储过滤已启用")
             
             total_processed = 0
             total_success = 0
@@ -571,24 +569,20 @@ def main():
                     raise
             
             if not input_queues and not data_output_queues:
-                base_component.fail("未配置输入队列或数据输出队列")
-                return
+                raise ComponentFailure("未配置输入队列或数据输出队列")
             
             logger.info(f"处理完成: 总计 {total_processed} 条，成功 {total_success} 条，失败 {total_errors} 条")
             
-            base_component.finish({
+            return {
                 "total_processed": total_processed,
                 "total_success": total_success,
                 "total_errors": total_errors
-            })
+            }
     
-    except KeyboardInterrupt:
-        logger.info("收到中断信号，正在退出...")
-        sys.exit(0)
+    except ComponentFailure:
+        raise
+    except KeyboardInterrupt as exc:
+        raise ComponentFailure("组件运行已被中断") from exc
     except Exception as e:
         logger.error(f"程序执行失败: {e}", exc_info=True)
-        sys.exit(1)
-
-
-if __name__ == '__main__':
-    main()
+        raise ComponentFailure(f"程序执行失败: {e}") from e

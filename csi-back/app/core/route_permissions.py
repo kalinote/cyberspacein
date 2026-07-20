@@ -20,6 +20,7 @@ from app.dependencies.auth import (
 from app.service.auth import has_backend_permissions
 from app.service.component_auth import consume_component_bootstrap
 from app.models.action.action import ActionInstanceNodeModel
+from app.models.action.component_run import ComponentRunModel
 
 
 _MATRIX_FILE = Path(__file__).with_name("route_permissions.yml")
@@ -119,16 +120,24 @@ async def authorize_registered_route(
     if rule.principal == "public":
         return
     if rule.principal == "component_bootstrap":
-        node_instance_id = str(request.path_params.get("node_instance_id") or "")
+        component_run_id = str(request.path_params.get("component_run_id") or "")
         context = await consume_component_bootstrap(
-            request.headers.get("x-component-bootstrap", ""), node_instance_id
+            request.headers.get("x-component-bootstrap", ""), component_run_id
         )
-        node = await ActionInstanceNodeModel.find_one(
-            {"_id": node_instance_id, "action_id": context.action_id}
+        component_run = await ComponentRunModel.find_one(
+            {
+                "_id": component_run_id,
+                "action_id": context.action_id,
+                "node_instance_id": context.node_instance_id,
+            }
         )
-        status = getattr(getattr(node, "status", None), "value", getattr(node, "status", None))
-        if node is None or status != "running":
-            raise ForbiddenException("组件节点已不处于可调用状态")
+        status = getattr(
+            getattr(component_run, "status", None),
+            "value",
+            getattr(component_run, "status", None),
+        )
+        if component_run is None or status not in {"dispatched", "running"}:
+            raise ForbiddenException("组件运行实例已不处于可调用状态")
         request.state.component_bootstrap_context = context
         return
     if rule.principal == "component":

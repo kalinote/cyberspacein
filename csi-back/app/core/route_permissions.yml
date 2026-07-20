@@ -1,4 +1,4 @@
-version: "2026-07-19"
+version: "2026-07-20"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -61,6 +61,7 @@ routes:
   - {method: POST, path: "/action/start", principal: user, permission: "operation:action:instance:execute"}
   - {method: GET, path: "/action/list", principal: user, permission: "operation:action:instance:read"}
   - {method: GET, path: "/action/detail/{action_id}", principal: user, permission: "operation:action:instance:read"}
+  - {method: GET, path: "/action/nodes/{node_instance_id}/logs", principal: user, permission: "operation:action:instance-log:read"}
   - {method: POST, path: "/action/blueprint", principal: user, permission: "operation:action:blueprint:create"}
   - {method: GET, path: "/action/blueprint/list", principal: user, permission: "operation:action:blueprint:read"}
   - {method: GET, path: "/action/blueprint/detail/{blueprint_id}", principal: user, permission: "operation:action:blueprint:read"}
@@ -87,10 +88,11 @@ routes:
   - {method: GET, path: "/action/accounts/detail/{account_id}", principal: user, permission: "operation:action:account-detail:read"}
   - {method: PATCH, path: "/action/accounts/{account_id}", principal: user, permission: "operation:action:account:update"}
   - {method: DELETE, path: "/action/accounts/{account_id}", principal: user, permission: "operation:action:account:delete"}
-  - {method: GET, path: "/action/sdk/{node_instance_id}/init", principal: component, scope: "sdk:init"}
-  - {method: POST, path: "/action/sdk/{node_instance_id}/token", principal: component_bootstrap}
-  - {method: POST, path: "/action/sdk/{node_instance_id}/result", principal: component, scope: "sdk:result"}
-  - {method: POST, path: "/action/sdk/{node_instance_id}/heartbeat", principal: component, scope: "sdk:heartbeat"}
+  - {method: GET, path: "/action/sdk/{component_run_id}/init", principal: component, scope: "sdk:init"}
+  - {method: POST, path: "/action/sdk/{component_run_id}/token", principal: component_bootstrap}
+  - {method: POST, path: "/action/sdk/{component_run_id}/result", principal: component, scope: "sdk:result"}
+  - {method: POST, path: "/action/sdk/{component_run_id}/heartbeat", principal: component, scope: "sdk:heartbeat"}
+  - {method: POST, path: "/action/sdk/{component_run_id}/log-batches", principal: component, scope: "sdk:logs"}
 
   - {method: POST, path: "/agent/agents", principal: user, permission: "operation:agent:agent:create"}
   - {method: GET, path: "/agent/agents", principal: user, permission: "operation:agent:agent:read"}

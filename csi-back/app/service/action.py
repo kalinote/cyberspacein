@@ -1,10 +1,12 @@
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 from typing import Any
 from beanie.operators import In
+from pymongo.errors import DuplicateKeyError
 from app.core.config import settings
 from app.models.action.action import ActionConfigIOModel, ActionInstanceModel, ActionInstanceNodeModel
+from app.models.action.component_run import ComponentRunModel
 from loguru import logger
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
@@ -15,8 +17,14 @@ from app.schemas.action.node import (
     ActionNodeResponse,
 )
 from app.schemas.action.sdk import SDKResultRequest
-from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
-from app.service.component import run_component
+from app.schemas.constants import (
+    ActionConfigIOTypeEnum,
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ActionNodeTypeEnum,
+    ComponentRunStatusEnum,
+)
+from app.service.component import dispatch_component_run
 from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id
 from app.service.component_auth import issue_component_bootstrap
@@ -219,12 +227,23 @@ class ActionInstanceService:
         return await ActionInstanceService.get_handle_definition(handle_id)
     
     @staticmethod
-    async def init(blueprint_id: str, inject_params: dict[str, Any] | None = None) -> tuple[bool, str]:
+    async def init(
+        blueprint_id: str,
+        inject_params: dict[str, Any] | None = None,
+        *,
+        trigger_type=None,
+        trigger_key: str | None = None,
+        scheduled_for: datetime | None = None,
+    ) -> tuple[bool, str]:
         """
         初始化行动实例
         
         return: tuple[bool, str] - 返回初始化是否成功和行动实例ID
         """
+        if trigger_key:
+            existing = await ActionInstanceModel.find_one({"trigger_key": trigger_key})
+            if existing:
+                return True, existing.id
         action_id = generate_id(blueprint_id + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
         
         blueprint = await ActionInstanceService.get_blueprint(blueprint_id)
@@ -254,9 +273,20 @@ class ActionInstanceService:
             id=action_id,
             blueprint_id=blueprint_id,
             status=ActionFlowStatusEnum.READY,
-            nodes_id=[node.id for node in blueprint.graph.nodes]
+            nodes_id=[node.id for node in blueprint.graph.nodes],
+            trigger_type=trigger_type or "manual",
+            trigger_key=trigger_key,
+            scheduled_for=scheduled_for,
         )
-        await action_instance.insert()
+        try:
+            await action_instance.insert()
+        except DuplicateKeyError:
+            if not trigger_key:
+                raise
+            existing = await ActionInstanceModel.find_one({"trigger_key": trigger_key})
+            if existing:
+                return True, existing.id
+            raise
         
         for node in blueprint.graph.nodes:
             default_configs = []
@@ -315,13 +345,20 @@ class ActionInstanceService:
         """
         开始某个行动
         """        
-        action = await ActionInstanceModel.find_one({"_id": action_id})
-        if not action:
-            logger.error(f"行动启动失败，ID不存在: {action_id}")
+        claim = await ActionInstanceModel.find_one(
+            {"_id": action_id, "status": ActionFlowStatusEnum.READY}
+        ).update(
+            {
+                "$set": {
+                    "status": ActionFlowStatusEnum.RUNNING,
+                    "start_at": datetime.now(),
+                }
+            }
+        )
+        if not claim or getattr(claim, "modified_count", 0) != 1:
+            logger.info(f"行动已启动或不存在，跳过重复启动: {action_id}")
             return
-        action.status = ActionFlowStatusEnum.RUNNING
-        action.start_at = datetime.now()
-        await action.save()
+        action = await ActionInstanceModel.find_one({"_id": action_id})
 
         ready_nodes = await ActionInstanceNodeModel.find({"action_id": action.id, "status": ActionInstanceNodeStatusEnum.READY}).to_list()
         for node in ready_nodes:
@@ -353,14 +390,46 @@ class ActionInstanceService:
         for prev_node in previous_node_instances:
             if prev_node.status != ActionInstanceNodeStatusEnum.COMPLETED:
                 logger.info(f"前置节点未完成({prev_node.node_id})，等待中，当前节点: {node_instance.id}，前置节点: {prev_node.id}")
-                node_instance.status = ActionInstanceNodeStatusEnum.UNREADY
-                await node_instance.save()
+                await ActionInstanceNodeModel.find_one(
+                    {
+                        "_id": node_instance.id,
+                        "status": {
+                            "$in": [
+                                ActionInstanceNodeStatusEnum.PENDING,
+                                ActionInstanceNodeStatusEnum.UNKNOWN,
+                                ActionInstanceNodeStatusEnum.READY,
+                                ActionInstanceNodeStatusEnum.UNREADY,
+                            ]
+                        },
+                    }
+                ).update({"$set": {"status": ActionInstanceNodeStatusEnum.UNREADY}})
                 return False
         
-        # 所有前置节点检查通过，设置为运行状态
-        node_instance.status = ActionInstanceNodeStatusEnum.RUNNING
-        node_instance.start_at = datetime.now()
-        await node_instance.save()
+        # 原子声明节点派发权，避免多个并行前置节点同时完成时重复派发。
+        claim = await ActionInstanceNodeModel.find_one(
+            {
+                "_id": node_instance_id,
+                "status": {
+                    "$in": [
+                        ActionInstanceNodeStatusEnum.PENDING,
+                        ActionInstanceNodeStatusEnum.UNKNOWN,
+                        ActionInstanceNodeStatusEnum.UNREADY,
+                        ActionInstanceNodeStatusEnum.READY,
+                    ]
+                },
+            }
+        ).update(
+            {
+                "$set": {
+                    "status": ActionInstanceNodeStatusEnum.QUEUED,
+                    "start_at": datetime.now(),
+                }
+            }
+        )
+        if not claim or getattr(claim, "modified_count", 0) != 1:
+            logger.info(f"节点已被其他任务派发，跳过重复启动: {node_instance_id}")
+            return False
+        node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
             
         action = await ActionInstanceModel.find_one({"_id": action_id})
         if not action:
@@ -388,26 +457,114 @@ class ActionInstanceService:
         
         # 这里是开始运行，在此之前应该做好全部准备工作
         command = node_definition.command
+        if (
+            command != "csi-component"
+            or not node_definition.command_args
+            or node_definition.command_args[0] != "main:run"
+        ):
+            node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+            node_instance.error_message = (
+                "节点运行命令必须为 csi-component，运行参数首项必须为 main:run"
+            )
+            node_instance.finished_at = datetime.now()
+            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            await node_instance.save()
+            await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
+            if await ActionInstanceService.check_action_finished(action.id):
+                await ActionInstanceService.finish_action(action.id)
+            return False
         command_args = [
+            "run",
+            *node_definition.command_args,
             "--api-base-url",
             settings.api_base_url,
-            "--action-node-id",
-            node_instance.id,
-        ] + node_definition.command_args
+        ]
         related_components = node_definition.related_components
-        
+
+        if not related_components:
+            node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+            node_instance.error_message = "节点未关联基础组件"
+            node_instance.finished_at = datetime.now()
+            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            await node_instance.save()
+            await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
+            if await ActionInstanceService.check_action_finished(action.id):
+                await ActionInstanceService.finish_action(action.id)
+            return False
+
+        component_runs: list[ComponentRunModel] = []
         for component in related_components:
-            component_bootstrap = await issue_component_bootstrap(action.id, node_instance.id)
-            component_args = command_args + ["--component-bootstrap", component_bootstrap]
-            result = await run_component(component, command, component_args)
-            if not result:
-                logger.error(f"运行组件失败，调度平台无结果返回，Component ID: {component}")
-                node_instance.status = ActionInstanceNodeStatusEnum.FAILED
-                node_instance.error_message = f"运行组件失败，调度平台无结果返回"
-                node_instance.finished_at = datetime.now()
-                node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-                await node_instance.save()
-                return False
+            component_run = ComponentRunModel(
+                id=generate_id(f"{node_instance.id}:{component}:1"),
+                action_id=action.id,
+                node_instance_id=node_instance.id,
+                component_id=component,
+                attempt=1,
+            )
+            await component_run.insert()
+            component_runs.append(component_run)
+
+        node_instance.status = ActionInstanceNodeStatusEnum.RUNNING
+        await node_instance.save()
+
+        dispatch_failed = False
+        for component_run in component_runs:
+            component_bootstrap = await issue_component_bootstrap(
+                action.id,
+                node_instance.id,
+                component_run.id,
+            )
+            component_args = command_args + [
+                "--component-run-id",
+                component_run.id,
+                "--component-bootstrap",
+                component_bootstrap,
+            ]
+            accepted = await dispatch_component_run(component_run, command, component_args)
+            if not accepted:
+                logger.error(
+                    "运行组件失败，调度平台无结果返回，Component ID: "
+                    f"{component_run.component_id}"
+                )
+                dispatch_failed = True
+                break
+
+        if dispatch_failed:
+            await ComponentRunModel.find(
+                {
+                    "node_instance_id": node_instance.id,
+                    "status": ComponentRunStatusEnum.CREATED,
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ComponentRunStatusEnum.CANCELLED,
+                        "error_message": "同节点组件派发失败，运行已取消",
+                        "finished_at": datetime.now(),
+                        "updated_at": datetime.now(),
+                    }
+                }
+            )
+            await ComponentRunModel.find(
+                {
+                    "node_instance_id": node_instance.id,
+                    "status": {
+                        "$in": [
+                            ComponentRunStatusEnum.DISPATCHED,
+                            ComponentRunStatusEnum.RUNNING,
+                        ]
+                    },
+                }
+            ).update({"$set": {"cancel_requested": True}})
+            node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+            node_instance.error_message = "运行组件失败，调度平台无结果返回"
+            node_instance.finished_at = datetime.now()
+            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            await node_instance.save()
+            await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
+            if await ActionInstanceService.check_action_finished(action.id):
+                await ActionInstanceService.finish_action(action.id)
+            return False
 
         return True
 
@@ -429,6 +586,7 @@ class ActionInstanceService:
                 ActionInstanceNodeStatusEnum.PENDING, 
                 ActionInstanceNodeStatusEnum.UNREADY, 
                 ActionInstanceNodeStatusEnum.READY,
+                ActionInstanceNodeStatusEnum.QUEUED,
                 ActionInstanceNodeStatusEnum.UNKNOWN
             ]:
                 node_instance.status = ActionInstanceNodeStatusEnum.CANCELLED
@@ -436,6 +594,171 @@ class ActionInstanceService:
                 await node_instance.save()
                 
                 await ActionInstanceService.cancel_following_nodes(action_id, node_instance.node_id)
+
+    @staticmethod
+    async def finish_component_run(
+        component_run_id: str,
+        result: SDKResultRequest,
+    ) -> bool:
+        component_run = await ComponentRunModel.find_one({"_id": component_run_id})
+        if component_run is None or component_run.attempt != result.attempt:
+            return False
+        if component_run.result_id == result.result_id:
+            return True
+        if component_run.result_id is not None:
+            return False
+
+        terminal_status = {
+            "success": ComponentRunStatusEnum.SUCCEEDED,
+            "failed": ComponentRunStatusEnum.FAILED,
+            "cancelled": ComponentRunStatusEnum.CANCELLED,
+            "timed_out": ComponentRunStatusEnum.TIMED_OUT,
+        }[result.status]
+        now = datetime.now()
+        claim = await ComponentRunModel.find_one(
+            {
+                "_id": component_run_id,
+                "result_id": None,
+                "status": {
+                    "$in": [
+                        ComponentRunStatusEnum.DISPATCHED,
+                        ComponentRunStatusEnum.RUNNING,
+                    ]
+                },
+            }
+        ).update(
+            {
+                "$set": {
+                    "status": terminal_status,
+                    "result_id": result.result_id,
+                    "outputs": result.outputs,
+                    "error_message": result.error,
+                    "exit_code": result.exit_code,
+                    "finished_at": now,
+                    "updated_at": now,
+                    "progress": 100 if result.status == "success" else component_run.progress,
+                }
+            }
+        )
+        if not claim or getattr(claim, "modified_count", 0) != 1:
+            current = await ComponentRunModel.find_one({"_id": component_run_id})
+            return bool(current and current.result_id == result.result_id)
+
+        component_run = await ComponentRunModel.find_one({"_id": component_run_id})
+        node_instance = await ActionInstanceNodeModel.find_one(
+            {"_id": component_run.node_instance_id}
+        )
+        if node_instance is None:
+            return False
+
+        component_runs = await ComponentRunModel.find(
+            {"node_instance_id": node_instance.id}
+        ).to_list()
+        failed = next(
+            (
+                run
+                for run in component_runs
+                if run.status
+                in {
+                    ComponentRunStatusEnum.FAILED,
+                    ComponentRunStatusEnum.CANCELLED,
+                    ComponentRunStatusEnum.TIMED_OUT,
+                }
+            ),
+            None,
+        )
+        all_succeeded = bool(component_runs) and all(
+            run.status == ComponentRunStatusEnum.SUCCEEDED for run in component_runs
+        )
+        if not failed and not all_succeeded:
+            return True
+
+        finalize_claim = await ActionInstanceNodeModel.find_one(
+            {"_id": node_instance.id, "finalization_claimed": False}
+        ).update({"$set": {"finalization_claimed": True}})
+        if not finalize_claim or getattr(finalize_claim, "modified_count", 0) != 1:
+            return True
+
+        if failed:
+            await ComponentRunModel.find(
+                {
+                    "node_instance_id": node_instance.id,
+                    "status": {
+                        "$in": [
+                            ComponentRunStatusEnum.CREATED,
+                            ComponentRunStatusEnum.DISPATCHED,
+                            ComponentRunStatusEnum.RUNNING,
+                        ]
+                    },
+                }
+            ).update({"$set": {"cancel_requested": True}})
+            failed_status = {
+                ComponentRunStatusEnum.CANCELLED: "cancelled",
+                ComponentRunStatusEnum.TIMED_OUT: "timed_out",
+            }.get(failed.status, "failed")
+            node_result = SDKResultRequest(
+                result_id=result.result_id,
+                attempt=result.attempt,
+                status=failed_status,
+                error=failed.error_message or "组件运行失败",
+                exit_code=failed.exit_code,
+            )
+        else:
+            definition = await ActionInstanceService.get_node_definition(
+                node_instance.definition_id
+            )
+            ordered = {run.component_id: run for run in component_runs}
+            merged_outputs: dict[str, Any] = {}
+            if definition:
+                for component_id in definition.related_components:
+                    run = ordered.get(component_id)
+                    if run:
+                        merged_outputs.update(run.outputs)
+            node_result = SDKResultRequest(
+                result_id=result.result_id,
+                attempt=result.attempt,
+                status="success",
+                outputs=merged_outputs,
+                exit_code=0,
+            )
+        await ActionInstanceService.finish_node(node_instance.id, node_result)
+        return True
+
+    @staticmethod
+    async def expire_stale_component_runs() -> int:
+        """将心跳租约或最大运行时限已过期的 ComponentRun 收敛到超时终态。"""
+        now = datetime.now()
+        timeout_started_before = now - timedelta(
+            seconds=settings.COMPONENT_RUN_TIMEOUT_SECONDS
+        )
+        stale_runs = await ComponentRunModel.find(
+            {
+                "status": {
+                    "$in": [
+                        ComponentRunStatusEnum.DISPATCHED,
+                        ComponentRunStatusEnum.RUNNING,
+                    ]
+                },
+                "$or": [
+                    {"lease_expires_at": {"$lte": now}},
+                    {"started_at": {"$lte": timeout_started_before}},
+                ],
+            }
+        ).to_list()
+        expired = 0
+        for component_run in stale_runs:
+            accepted = await ActionInstanceService.finish_component_run(
+                component_run.id,
+                SDKResultRequest(
+                    result_id=f"timeout:{component_run.id}:{component_run.attempt}",
+                    attempt=component_run.attempt,
+                    status="timed_out",
+                    error="组件心跳租约或运行时限已过期",
+                    exit_code=1,
+                ),
+            )
+            expired += int(accepted)
+        return expired
 
     @staticmethod
     async def finish_node(node_instance_id: str, result: SDKResultRequest):
@@ -470,8 +793,12 @@ class ActionInstanceService:
             action.finished_nodes_instance.append(node_instance.id)
             node_instance.progress = 100.0
             await action.save()
-        elif result.status == "failed":
-            node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+        elif result.status in {"failed", "cancelled", "timed_out"}:
+            node_instance.status = {
+                "failed": ActionInstanceNodeStatusEnum.FAILED,
+                "cancelled": ActionInstanceNodeStatusEnum.CANCELLED,
+                "timed_out": ActionInstanceNodeStatusEnum.TIMEOUT,
+            }[result.status]
             node_instance.error_message = result.error
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
@@ -686,6 +1013,7 @@ class ActionInstanceService:
                     ActionInstanceNodeStatusEnum.PENDING,
                     ActionInstanceNodeStatusEnum.UNREADY,
                     ActionInstanceNodeStatusEnum.READY,
+                    ActionInstanceNodeStatusEnum.QUEUED,
                     ActionInstanceNodeStatusEnum.RUNNING,
                     ActionInstanceNodeStatusEnum.UNKNOWN,
                     ActionInstanceNodeStatusEnum.PAUSED

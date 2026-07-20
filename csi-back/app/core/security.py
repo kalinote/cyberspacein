@@ -138,20 +138,25 @@ def decode_access_token(token: str) -> dict | None:
     return payload
 
 
-def create_component_token(action_id: str, node_instance_id: str) -> str:
+def create_component_token(
+    action_id: str,
+    node_instance_id: str,
+    component_run_id: str,
+) -> str:
     now = datetime.now(timezone.utc)
     exp = now + timedelta(minutes=settings.COMPONENT_TOKEN_EXPIRE_MINUTES)
     return _jwt_encode(
         {
-            "sub": node_instance_id,
+            "sub": component_run_id,
             "action_id": action_id,
             "node_id": node_instance_id,
+            "component_run_id": component_run_id,
             "iat": int(now.timestamp()),
             "exp": int(exp.timestamp()),
             "iss": settings.AUTH_ISSUER,
             "aud": settings.COMPONENT_AUTH_AUDIENCE,
             "purpose": "action_component",
-            "scope": ["sdk:init", "sdk:result", "sdk:heartbeat"],
+            "scope": ["sdk:init", "sdk:result", "sdk:heartbeat", "sdk:logs"],
         }
     )
 
@@ -167,7 +172,7 @@ def decode_component_token(token: str) -> dict | None:
         purpose="action_component",
     ):
         return None
-    if not payload.get("action_id") or not payload.get("node_id"):
+    if not payload.get("action_id") or not payload.get("node_id") or not payload.get("component_run_id"):
         return None
     scope = payload.get("scope")
     if not isinstance(scope, list) or not all(isinstance(item, str) for item in scope):

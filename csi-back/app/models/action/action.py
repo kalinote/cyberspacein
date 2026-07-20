@@ -2,8 +2,14 @@ from datetime import datetime
 from typing import Any
 from beanie import Document
 from pydantic import BaseModel, Field
+from pymongo import ASCENDING, IndexModel
 
-from app.schemas.constants import ActionConfigIOTypeEnum, ActionFlowStatusEnum, ActionInstanceNodeStatusEnum
+from app.schemas.constants import (
+    ActionConfigIOTypeEnum,
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ActionTriggerTypeEnum,
+)
 from app.schemas.general import DictModelSchema
 
 class ActionInstanceModel(Document):
@@ -23,13 +29,21 @@ class ActionInstanceModel(Document):
     duration: float = Field(default=0, description="行动执行时长(秒)")
     
     progress: float = Field(default=0, description="行动实例化流程进度(%)")
+    trigger_type: ActionTriggerTypeEnum = Field(default=ActionTriggerTypeEnum.MANUAL)
+    trigger_key: str | None = None
+    scheduled_for: datetime | None = None
 
     class Settings:
         name = "action_instances"
         indexes = [
-            "id"
+            "id",
             "blueprint_id",
             "status",
+            IndexModel(
+                [("trigger_key", ASCENDING)],
+                unique=True,
+                partialFilterExpression={"trigger_key": {"$type": "string"}},
+            ),
         ]
 
 class ActionConfigIOModel(BaseModel):
@@ -59,11 +73,11 @@ class ActionInstanceNodeModel(Document):
     inputs: dict[str, ActionConfigIOModel] = Field(default_factory=dict, description="节点输入配置，key是handle_id，value是数据")
     outputs: dict[str, ActionConfigIOModel] = Field(default_factory=dict, description="节点输出配置，key是handle_id，value是数据")
     reference_queues: dict[str, str] = Field(default_factory=dict, description="REFERENCE类型的边到队列的映射，key是target_node_id，value是队列名")
+    finalization_claimed: bool = Field(default=False, description="是否已有组件声明节点终态处理")
     
     class Settings:
         name = "action_instance_nodes"
         indexes = [
-            "id"
+            "id",
             "action_id",
         ]
-        

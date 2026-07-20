@@ -64,12 +64,29 @@ class ActionInstanceNodeStatusEnum(str, Enum):
     PENDING = "pending"
     UNREADY = "unready"
     READY = "ready"
+    QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
     PAUSED = "paused"
+
+
+class ComponentRunStatusEnum(str, Enum):
+    CREATED = "created"
+    DISPATCHED = "dispatched"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+
+
+class ActionTriggerTypeEnum(str, Enum):
+    MANUAL = "manual"
+    API = "api"
+    SCHEDULED = "scheduled"
 
 ActionNodeFinishStatusList = [
     ActionInstanceNodeStatusEnum.COMPLETED,
@@ -324,4 +341,3 @@ class WikiRevisionChangeTypeEnum(str, Enum):
     FOOTNOTES = "footnotes"
     REFERENCES = "references"
     RESTORE = "restore"
-    

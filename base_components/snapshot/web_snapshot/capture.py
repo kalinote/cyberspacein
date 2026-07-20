@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+
+
+logger = logging.getLogger("snapshot.capture")
 
 
 @dataclass(slots=True)

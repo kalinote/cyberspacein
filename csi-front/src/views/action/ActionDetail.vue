@@ -8,8 +8,8 @@
             <!-- 流程图区域 -->
             <div class="flex-1 h-full relative bg-gray-50">
                 <div v-if="loadingNodeConfigs || loadingActionData" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
-                    <div class="text-center">
-                        <Icon icon="mdi:loading" class="text-4xl text-blue-500 animate-spin mb-2" />
+                    <div class="flex flex-col items-center text-center">
+                        <Icon icon="mdi:loading" class="block text-4xl text-blue-500 animate-spin mb-2" />
                         <p class="text-gray-600">{{ loadingNodeConfigs ? '加载节点配置中...' : '加载行动数据中...' }}</p>
                     </div>
                 </div>
@@ -248,24 +248,57 @@
                          <!-- TODO: 添加分页 -->
                         <div>
                             <h4 class="text-sm font-semibold text-gray-800 mb-3">执行日志</h4>
+                            <div class="grid grid-cols-2 gap-2 mb-3">
+                                <el-select v-model="logFilters.level" clearable placeholder="全部级别" size="small">
+                                    <el-option v-for="level in ['TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'FATAL']" :key="level" :label="level" :value="level" />
+                                </el-select>
+                                <el-select v-model="logFilters.source" clearable placeholder="全部来源" size="small">
+                                    <el-option v-for="source in ['sdk', 'logging', 'stdout', 'stderr', 'exception', 'system']" :key="source" :label="source" :value="source" />
+                                </el-select>
+                                <el-select v-model="logFilters.componentRunId" clearable placeholder="全部组件" size="small">
+                                    <el-option
+                                        v-for="run in selectedNodeDetail.component_runs || []"
+                                        :key="run.component_run_id"
+                                        :label="getComponentName(run.component_id)"
+                                        :value="run.component_run_id"
+                                    />
+                                </el-select>
+                                <el-input v-model="logFilters.keyword" clearable placeholder="搜索日志" size="small" />
+                            </div>
                             <div class="bg-gray-50 rounded-lg border border-gray-200 max-h-48 overflow-y-auto">
-                                <div v-if="isLoadingNodeLogs" class="px-4 py-8 text-center text-sm text-gray-400">
-                                    <Icon icon="mdi:loading" class="text-2xl text-blue-500 animate-spin mb-2" />
+                                <button
+                                    v-if="nodeLogState[selectedNodeId]?.previousCursor && selectedNodeLogs.length < 5000"
+                                    type="button"
+                                    class="w-full px-4 py-2 text-xs text-blue-600 hover:bg-blue-50 border-b border-gray-200 disabled:cursor-wait disabled:opacity-60"
+                                    :disabled="isLoadingNodeLogs"
+                                    @click="fetchNodeLogs(selectedNodeId, false, true)"
+                                >
+                                    <span class="inline-flex items-center justify-center gap-1">
+                                        <Icon v-if="isLoadingNodeLogs" icon="mdi:loading" class="block animate-spin" />
+                                        {{ isLoadingNodeLogs ? '加载中...' : '加载更早日志' }}
+                                    </span>
+                                </button>
+                                <div
+                                    v-if="isLoadingNodeLogs && selectedNodeLogs.length === 0"
+                                    class="min-h-32 px-4 py-8 flex flex-col items-center justify-center text-center text-sm text-gray-400"
+                                >
+                                    <Icon icon="mdi:loading" class="block text-2xl text-blue-500 animate-spin mb-2" />
                                     <p>加载日志中...</p>
                                 </div>
                                 <template v-else>
                                     <div 
                                         v-for="(log, index) in selectedNodeLogs" 
-                                        :key="index"
+                                        :key="log.event_id || index"
                                         class="px-4 py-2 border-b border-gray-200 last:border-b-0"
                                         :class="getLogLevelClass(log.level)"
                                     >
                                         <div class="flex items-start gap-2">
-                                            <span class="text-xs text-gray-500 shrink-0">{{ formatLogTime(log.timestamp) }}</span>
+                                            <span class="text-xs text-gray-500 shrink-0">{{ formatLogTime(log.occurred_at) }}</span>
                                             <span class="text-xs font-medium shrink-0" :class="getLogLevelTextClass(log.level)">
                                                 [{{ log.level.toUpperCase() }}]
                                             </span>
-                                            <span class="text-xs text-gray-700 flex-1">{{ log.message }}</span>
+                                            <span class="text-xs text-gray-500 shrink-0">[{{ getComponentName(log.component_id) }}]</span>
+                                            <span class="text-xs text-gray-700 flex-1 whitespace-pre-wrap break-all">{{ log.message }}<template v-if="log.exception">\n{{ log.exception }}</template></span>
                                         </div>
                                     </div>
                                     <div v-if="!selectedNodeLogs || selectedNodeLogs.length === 0" class="px-4 py-8 text-center text-sm text-gray-400">
@@ -328,6 +361,21 @@ const actionId = computed(() => route.params.id)
 const nodeTypeConfigs = ref([])
 const loadingNodeConfigs = ref(false)
 const loadingActionData = ref(false)
+const componentNames = ref({})
+
+const getComponentName = (componentId) => componentNames.value[componentId] || componentId
+
+const fetchComponentNames = async () => {
+    try {
+        const response = await actionApi.getBaseComponents({ page: 1, page_size: 100 })
+        const items = response.items || response.data?.items || []
+        componentNames.value = Object.fromEntries(
+            items.map(component => [component.id, component.name])
+        )
+    } catch (error) {
+        console.error('获取基础组件名称失败:', error)
+    }
+}
 
 const fetchNodeConfigs = async () => {
     loadingNodeConfigs.value = true
@@ -448,7 +496,9 @@ const collapsedState = ref({
 
 const nodeLogs = ref({})
 const loadingNodeLogs = ref({})
-const loadedNodeLogs = ref(new Set())
+const nodeLogState = ref({})
+const nodeLogRequests = new Map()
+const logFilters = ref({ level: '', source: '', componentRunId: '', keyword: '' })
 
 const nodeDetailExpanded = computed(() => {
     return selectedNodeId.value !== null && !collapsedState.value.nodeDetail
@@ -488,43 +538,70 @@ const {
     startResize: startRightResize 
 } = useSidebarResize(400, 300, 800, 'right')
 
-const fetchNodeLogs = async (nodeId) => {
-    if (loadedNodeLogs.value.has(nodeId)) {
-        return
+const fetchNodeLogs = async (nodeId, reset = false, loadOlder = false, silent = false) => {
+    const pendingRequest = nodeLogRequests.get(nodeId)
+    if (pendingRequest) {
+        // 后台增量请求未结束时，显式筛选或向前翻页需要排队，不能被悄悄丢弃。
+        if (!reset && !loadOlder) return pendingRequest
+        try {
+            await pendingRequest
+        } catch {
+            // 前一个后台请求失败不应阻止用户发起新的显式查询。
+        }
     }
-    
-    loadingNodeLogs.value[nodeId] = true
-    
-    try {
-        // TODO: 后续将通过 API 接口获取节点日志
-        // const response = await actionApi.getNodeLogs(actionId.value, nodeId)
-        // if (response.code === 0) {
-        //     nodeLogs.value[nodeId] = response.data || []
-        // }
-        
-        // 生成模拟日志数据
-        const startTime = actionData.value.node_details[nodeId]?.startTime 
-            ? new Date(actionData.value.node_details[nodeId].startTime) 
-            : new Date()
-        
-        const mockLogs = []
-        
-        mockLogs.push(
-                { timestamp: new Date(startTime.getTime() + 0 * 1000).toISOString(), level: 'fatal', message: '日志功能尚未完成' },
-                { timestamp: new Date(startTime.getTime() + 1 * 1000).toISOString(), level: 'info', message: '这是一条普通日志' },
-                { timestamp: new Date(startTime.getTime() + 3 * 1000).toISOString(), level: 'warning', message: '这是一条警告日志' },
-                { timestamp: new Date(startTime.getTime() + 6 * 1000).toISOString(), level: 'error', message: '这是一条错误日志' },
-                { timestamp: new Date(startTime.getTime() + 10 * 1000).toISOString(), level: 'fatal', message: '这是一条致命日志' },
-                { timestamp: new Date(startTime.getTime() + 30 * 1000).toISOString(), level: 'debug', message: '这是一条调试输出' }
+    const detail = actionData.value.node_details[nodeId]
+    if (!detail?.node_instance_id) return false
+    if (reset) {
+        nodeLogs.value[nodeId] = []
+        nodeLogState.value[nodeId] = {
+            cursor: null,
+            previousCursor: null,
+            terminalFetched: false
+        }
+    }
+    const state = nodeLogState.value[nodeId] || {
+        cursor: null,
+        previousCursor: null,
+        terminalFetched: false
+    }
+    if (!silent) loadingNodeLogs.value[nodeId] = true
+    const request = (async () => {
+        const params = { limit: 200 }
+        if (loadOlder && state.previousCursor) params.before_cursor = state.previousCursor
+        else if (state.cursor) params.cursor = state.cursor
+        if (logFilters.value.level) params.levels = logFilters.value.level
+        if (logFilters.value.source) params.sources = logFilters.value.source
+        if (logFilters.value.componentRunId) params.component_run_id = logFilters.value.componentRunId
+        if (logFilters.value.keyword) params.keyword = logFilters.value.keyword
+        const response = await actionApi.getNodeLogs(detail.node_instance_id, params)
+        if (response.code !== 0) return false
+        const page = response.data || {}
+        const existing = nodeLogs.value[nodeId] || []
+        const known = new Set(existing.map(item => item.event_id))
+        const added = (page.items || []).filter(item => !known.has(item.event_id))
+        nodeLogs.value[nodeId] = (
+            loadOlder ? [...added, ...existing] : [...existing, ...added]
+        ).slice(-5000)
+        nodeLogState.value[nodeId] = {
+            ...state,
+            cursor: loadOlder ? state.cursor : (page.next_cursor || state.cursor),
+            previousCursor: (
+                loadOlder || !state.cursor
+                    ? (page.previous_cursor || null)
+                    : state.previousCursor
             )
-        
-        nodeLogs.value[nodeId] = mockLogs
-        loadedNodeLogs.value.add(nodeId)
+        }
+        return true
+    })()
+    nodeLogRequests.set(nodeId, request)
+    try {
+        return await request
     } catch (error) {
         console.error('获取节点日志失败:', error)
-        nodeLogs.value[nodeId] = []
+        return false
     } finally {
-        loadingNodeLogs.value[nodeId] = false
+        if (nodeLogRequests.get(nodeId) === request) nodeLogRequests.delete(nodeId)
+        if (!silent) loadingNodeLogs.value[nodeId] = false
     }
 }
 
@@ -533,7 +610,7 @@ const handleNodeClick = (event) => {
     selectedNodeId.value = nodeId
     collapsedState.value.nodeDetail = false
     
-    if (!loadedNodeLogs.value.has(nodeId)) {
+    if (!nodeLogState.value[nodeId]) {
         fetchNodeLogs(nodeId)
     }
 }
@@ -893,6 +970,22 @@ const updateActionData = async () => {
                 }
             }
         })
+        const selectedId = selectedNodeId.value
+        const selectedDetail = selectedId ? transformedNodeDetails[selectedId] : null
+        if (selectedDetail?.status === ACTION_STATUS.RUNNING) {
+            await fetchNodeLogs(selectedId, false, false, true)
+        } else if (
+            selectedDetail?.finished &&
+            !nodeLogState.value[selectedId]?.terminalFetched
+        ) {
+            const fetched = await fetchNodeLogs(selectedId, false, false, true)
+            if (fetched) {
+                nodeLogState.value[selectedId] = {
+                    ...(nodeLogState.value[selectedId] || {}),
+                    terminalFetched: true
+                }
+            }
+        }
     } catch (error) {
         console.error('更新行动详情失败:', error)
     }
@@ -934,8 +1027,20 @@ watch(selectedNodeId, (newId) => {
     })
 })
 
+let logFilterTimer = null
+watch(
+    () => ({ ...logFilters.value }),
+    () => {
+        clearTimeout(logFilterTimer)
+        logFilterTimer = setTimeout(() => {
+            if (selectedNodeId.value) fetchNodeLogs(selectedNodeId.value, true)
+        }, 300)
+    },
+    { deep: true }
+)
+
 onMounted(async () => {
-    await fetchNodeConfigs()
+    await Promise.all([fetchNodeConfigs(), fetchComponentNames()])
     if (nodeTypeConfigs.value.length > 0) {
         await loadActionData()
         startPolling()
@@ -947,6 +1052,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
     stopPolling()
+    clearTimeout(logFilterTimer)
     document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>

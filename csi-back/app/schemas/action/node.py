@@ -51,6 +51,7 @@ class ActionNode(BaseModel):
     command: str = Field(description="执行命令")
     command_args: list[str] = Field(default=[], description="自定义执行命令参数")
 
+
 class ActionNodeResponse(ActionNode):
     id: str = Field(description="节点类型ID")
     handles: list[ActionNodeHandleResponse] = Field(description="连接点列表")

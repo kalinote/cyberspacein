@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import APIRouter, BackgroundTasks, Depends
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
+from app.models.action.component_run import ComponentRunModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.schemas.action.action import (
@@ -30,9 +31,20 @@ async def start_action(
         return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {data.blueprint_id}")
 
     if not data.params:
-        result, message = await ActionInstanceService.init(data.blueprint_id)
+        result, message = await ActionInstanceService.init(
+            data.blueprint_id,
+            trigger_type=data.trigger_type,
+            trigger_key=data.trigger_key,
+            scheduled_for=data.scheduled_for,
+        )
     else:
-        result, message = await ActionInstanceService.init(data.blueprint_id, data.params)
+        result, message = await ActionInstanceService.init(
+            data.blueprint_id,
+            data.params,
+            trigger_type=data.trigger_type,
+            trigger_key=data.trigger_key,
+            scheduled_for=data.scheduled_for,
+        )
     if not result:
         return ApiResponseSchema.error(code=250004, message=message)
     background_tasks.add_task(ActionInstanceService.start, message)
@@ -108,6 +120,9 @@ async def get_action_detail(action_id: str):
             continue
 
         node_instance = node_instance_map[node_id]
+        component_runs = await ComponentRunModel.find(
+            {"node_instance_id": node_instance.id}
+        ).to_list()
 
         combined_outputs = dict(node_instance.outputs)
         for target_node_id, queue_name in node_instance.reference_queues.items():
@@ -123,6 +138,7 @@ async def get_action_detail(action_id: str):
                     break
 
         node_details[node_id] = ActionNodeDetailResponse(
+            node_instance_id=node_instance.id,
             status=node_instance.status,
             progress=node_instance.progress,
             start_at=node_instance.start_at,
@@ -130,7 +146,20 @@ async def get_action_detail(action_id: str):
             duration=node_instance.duration,
             inputs=node_instance.inputs,
             outputs=combined_outputs,
-            error_message=node_instance.error_message
+            error_message=node_instance.error_message,
+            component_runs=[
+                {
+                    "component_run_id": run.id,
+                    "component_id": run.component_id,
+                    "attempt": run.attempt,
+                    "status": run.status.value,
+                    "progress": run.progress,
+                }
+                for run in component_runs
+            ],
+            log_count=sum(run.log_count for run in component_runs),
+            error_log_count=sum(run.error_log_count for run in component_runs),
+            dropped_log_count=sum(run.dropped_log_count for run in component_runs),
         )
 
     return ApiResponseSchema.success(data=ActionDetailResponse(

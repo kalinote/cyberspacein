@@ -1,9 +1,11 @@
+import asyncio
+from contextlib import asynccontextmanager, suppress
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
 from loguru import logger
 
 from app.core.config import settings
@@ -37,6 +39,8 @@ async def lifespan(app: FastAPI):
     await init_mongodb()
     await init_redis()
     await init_elasticsearch()
+    from app.service.action_log import ActionLogService
+    await ActionLogService.ensure_storage()
     await init_rabbitmq()
     await init_cos()
     await init_embedding_client()
@@ -46,12 +50,29 @@ async def lifespan(app: FastAPI):
     from app.service.nanobot.bootstrap import ensure_builtin_agent_prompts
     await ensure_builtin_agent_prompts()
 
+    async def monitor_component_leases() -> None:
+        """周期收敛失去心跳或超过运行时限的组件运行。"""
+        from app.service.action import ActionInstanceService
+
+        while True:
+            try:
+                await ActionInstanceService.expire_stale_component_runs()
+            except Exception as exc:
+                logger.error(f"组件运行租约检查失败: {exc}")
+            await asyncio.sleep(settings.COMPONENT_HEARTBEAT_INTERVAL_SECONDS)
+
+    component_lease_task = asyncio.create_task(monitor_component_leases())
+
     system_config_manager.commit_bootstrap()
     from app.service.system_config_history import SystemConfigHistoryService
     await SystemConfigHistoryService.flush_outbox(system_config_manager)
     await SystemConfigHistoryService.ensure_baseline(system_config_manager)
 
     yield
+
+    component_lease_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await component_lease_task
 
     system_config_manager.mark_not_ready()
 

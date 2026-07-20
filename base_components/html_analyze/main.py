@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from csi_base_component_sdk import BaseComponent
+from csi_base_component_sdk import ComponentContext, ComponentFailure
 from analyzer import ml_client
 from analyzer.media_localizer import MediaLocalizer
 
@@ -112,8 +112,8 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
 
     return data
 
-def main():
-    with BaseComponent(enable_rabbitmq=True) as component:
+def run(component: ComponentContext) -> dict:
+    if True:
         enable_clean_content = component.get_config("clean_content", False)
         enable_safe_raw_content = component.get_config("safe_raw_content", False)
         enable_media_localization = component.get_config("media_localization", False)
@@ -144,10 +144,10 @@ def main():
             if has_queue_input:
                 outputs = component.outputs.get("data_out")
                 if not outputs.get("type") == "reference":
-                    component.fail("输出数据类型错误")
+                    raise ComponentFailure("输出数据类型错误")
                 output_queue_names = outputs.get("value")
                 if not output_queue_names:
-                    component.fail("未找到输出数据")
+                    raise ComponentFailure("未找到输出数据")
                 if isinstance(output_queue_names, str):
                     output_queue_names = [output_queue_names]
                 
@@ -208,7 +208,7 @@ def main():
             
             if has_queue_input and has_dict_input:
                 if processed_count == 0 and dict_error:
-                    component.fail(f"处理失败: 队列成功0条，字典处理失败: {dict_error}")
+                    raise ComponentFailure(f"处理失败: 队列成功0条，字典处理失败: {dict_error}")
                 else:
                     result = {
                         "processed": processed_count,
@@ -216,29 +216,27 @@ def main():
                     }
                     if handled_dict is not None:
                         result["dict_out"] = handled_dict
-                    component.finish(result)
+                    return result
             elif has_queue_input:
                 if processed_count == 0:
-                    component.fail(f"队列处理失败: 成功0条，失败{failed_count}条")
+                    raise ComponentFailure(f"队列处理失败: 成功0条，失败{failed_count}条")
                 else:
-                    component.finish({
+                    return {
                         "processed": processed_count,
                         "failed": failed_count
-                    })
+                    }
             elif has_dict_input:
                 if dict_error:
-                    component.fail(f"字典处理失败: {dict_error}")
+                    raise ComponentFailure(f"字典处理失败: {dict_error}")
                 else:
-                    component.finish({
+                    return {
                         "dict_out": handled_dict
-                    })
+                    }
             else:
-                component.fail("未提供任何输入数据")
+                raise ComponentFailure("未提供任何输入数据")
                 
+        except ComponentFailure:
+            raise
         except Exception as e:
             logger.error(f"处理过程发生错误: {e}")
-            component.fail(f"处理过程发生错误: {str(e)}")
-
-
-if __name__ == "__main__":
-    main()
+            raise ComponentFailure(f"处理过程发生错误: {str(e)}") from e

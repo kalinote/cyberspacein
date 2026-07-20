@@ -26,6 +26,7 @@ async def init_mongodb():
     else:
         logger.info("使用无认证方式连接 MongoDB")
     
+    # TODO: 后续版本将 Motor 迁移至 PyMongo Async，当前版本暂保留现有数据库实现。
     mongodb_client = AsyncIOMotorClient(
         settings.MONGODB_URL,
         **connection_kwargs

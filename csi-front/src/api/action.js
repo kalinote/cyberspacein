@@ -49,6 +49,10 @@ export const actionApi = {
   getActionDetail(id) {
     return request.get(`/action/detail/${id}`)
   },
+  // 增量查询节点执行日志
+  getNodeLogs(nodeInstanceId, params = {}) {
+    return request.get(`/action/nodes/${nodeInstanceId}/logs`, params)
+  },
   // 获取行动节点接口列表
   getNodeHandles(params = { page: 1, page_size: 10 }) {
     return request.get(`/action/configs/handles`, params)

@@ -1,4 +1,4 @@
-from csi_base_component_sdk.sync import BaseComponent
+from csi_base_component_sdk import ComponentContext, ComponentFailure
 import logging
 
 logging.basicConfig(
@@ -79,16 +79,13 @@ def parse_conditions(conditions):
     
     return {"$and": result}
 
-if __name__ == "__main__":
-    base_component = BaseComponent()
-    base_component.initialize()
-
-    conditions = base_component.get_config("conditions")
+def run(ctx: ComponentContext) -> dict:
+    conditions = ctx.get_config("conditions")
     if conditions:
         result = parse_conditions(conditions)
     else:
-        base_component.fail("未获取到条件")
+        raise ComponentFailure("未获取到条件")
 
-    base_component.finish({
+    return {
         "conditions": result
-    })
+    }

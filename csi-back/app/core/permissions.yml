@@ -109,6 +109,7 @@ permissions:
   - {code: "operation:compute:html-analyze:execute", name: "执行 HTML 分析", module: "compute", resource: "html-analyze", description: "执行 HTML 清理与抽取", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
 
   - {code: "operation:action:instance:read", name: "读取行动", module: "action", resource: "instance", description: "读取行动实例", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:instance-log:read", name: "读取行动节点日志", module: "action", resource: "instance-log", description: "读取基础组件运行日志", tags: [read, sensitive-detail], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:instance:execute", name: "启动行动", module: "action", resource: "instance", description: "启动行动实例", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:blueprint:read", name: "读取行动蓝图", module: "action", resource: "blueprint", description: "读取行动蓝图", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:blueprint:create", name: "创建行动蓝图", module: "action", resource: "blueprint", description: "创建行动蓝图", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}

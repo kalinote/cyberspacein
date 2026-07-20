@@ -3,6 +3,7 @@ export const ACTION_STATUS = Object.freeze({
   UNREADY: 'unready',
   PENDING: 'pending',
   READY: 'ready',
+  QUEUED: 'queued',
   RUNNING: 'running',
   COMPLETED: 'completed',
   FAILED: 'failed',
@@ -24,6 +25,7 @@ const STATUS_TEXT_MAP = {
   [ACTION_STATUS.UNREADY]: '未就绪',
   [ACTION_STATUS.PENDING]: '待执行',
   [ACTION_STATUS.READY]: '已就绪',
+  [ACTION_STATUS.QUEUED]: '排队中',
   [ACTION_STATUS.RUNNING]: '执行中',
   [ACTION_STATUS.COMPLETED]: '已完成',
   [ACTION_STATUS.FAILED]: '失败',
@@ -38,6 +40,7 @@ const STATUS_TAG_TYPE_MAP = {
   [ACTION_STATUS.UNREADY]: 'info',
   [ACTION_STATUS.PENDING]: 'info',
   [ACTION_STATUS.READY]: 'success',
+  [ACTION_STATUS.QUEUED]: 'primary',
   [ACTION_STATUS.RUNNING]: 'primary',
   [ACTION_STATUS.COMPLETED]: 'success',
   [ACTION_STATUS.PAUSED]: 'warning',
@@ -84,6 +87,7 @@ export const getActionStatusIcon = (status) => {
 
 // 获取日志级别样式类
 export const getLogLevelClass = (level) => {
+  level = String(level || '').toLowerCase()
   const classMap = {
     'fatal': 'bg-red-300',
     'info': 'bg-blue-50',
@@ -96,6 +100,7 @@ export const getLogLevelClass = (level) => {
 
 // 获取日志级别文本样式类
 export const getLogLevelTextClass = (level) => {
+  level = String(level || '').toLowerCase()
   const classMap = {
     'fatal': 'text-red-700',
     'info': 'text-blue-600',

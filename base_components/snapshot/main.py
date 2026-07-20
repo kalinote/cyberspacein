@@ -8,9 +8,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from csi_base_component_sdk import BaseComponent
+from csi_base_component_sdk import ComponentContext, ComponentFailure
 from web_snapshot import build_service
-from web_snapshot.logging_setup import configure_logging
 from web_snapshot.processor import QueueMessageItem, process_message_batch
 
 if TYPE_CHECKING:
@@ -41,13 +40,13 @@ def _normalize_queue_names(value: object) -> list[str]:
     return []
 
 
-def _resolve_output_queues(component: BaseComponent) -> list[str]:
+def _resolve_output_queues(component: ComponentContext) -> list[str]:
     outputs = component.outputs.get("data_out")
     if not outputs or outputs.get("type") != "reference":
-        component.fail("输出数据类型错误")
+        raise ComponentFailure("输出数据类型错误")
     output_queue_names = _normalize_queue_names(outputs.get("value"))
     if not output_queue_names:
-        component.fail("未找到输出队列配置")
+        raise ComponentFailure("未找到输出队列配置")
     return output_queue_names
 
 
@@ -64,12 +63,12 @@ def _coerce_int_config(value: object, name: str, *, default: int, minimum: int) 
 
 
 def _publish_to_data_out(
-    component: BaseComponent,
+    component: ComponentContext,
     output_queue_names: list[str],
     data: dict,
 ) -> bool:
     if component.rabbitmq is None:
-        component.fail("RabbitMQ 未初始化")
+        raise ComponentFailure("RabbitMQ 未初始化")
     success_count = component.rabbitmq.send_messages_batch(output_queue_names, data)
     if success_count == len(output_queue_names):
         return True
@@ -80,7 +79,7 @@ def _publish_to_data_out(
 
 
 def _process_queue_batch(
-    component: BaseComponent,
+    component: ComponentContext,
     input_queue: str,
     output_queue_names: list[str],
     service,
@@ -159,10 +158,8 @@ def _process_queue_batch(
     return processed_count, failed_count
 
 
-def main() -> None:
-    configure_logging()
-
-    with BaseComponent(enable_rabbitmq=True) as component:
+def run(component: ComponentContext) -> dict:
+    if True:
         max_concurrency = _coerce_int_config(
             component.get_config("max_concurrency", 4),
             "max_concurrency",
@@ -190,7 +187,7 @@ def main() -> None:
             component.inputs.get("data_in", {}).get("value")
         )
         if not input_queues:
-            component.fail("未配置 data_in 输入队列")
+            raise ComponentFailure("未配置 data_in 输入队列")
 
         output_queue_names = _resolve_output_queues(component)
         heartbeat_callback = create_heartbeat_callback(component.rabbitmq)
@@ -220,23 +217,19 @@ def main() -> None:
             )
 
             if processed_count == 0:
-                component.fail(
+                raise ComponentFailure(
                     f"处理失败: 成功 0 条，失败 {failed_count} 条"
                 )
 
-            component.finish(
-                {
-                    "processed": processed_count,
-                    "failed": failed_count,
-                    "output_queues": output_queue_names,
-                    "batch_size": batch_size,
-                }
-            )
+            return {
+                "processed": processed_count,
+                "failed": failed_count,
+                "output_queues": output_queue_names,
+                "batch_size": batch_size,
+            }
 
+        except ComponentFailure:
+            raise
         except Exception as exc:
             logger.error(f"处理过程发生错误: {exc}")
-            component.fail(f"处理过程发生错误: {str(exc)}")
-
-
-if __name__ == "__main__":
-    main()
+            raise ComponentFailure(f"处理过程发生错误: {str(exc)}") from exc

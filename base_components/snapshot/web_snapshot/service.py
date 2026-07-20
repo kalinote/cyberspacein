@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from uuid import uuid4
 
-from loguru import logger
-
 from .capture import PlaywrightSnapshotCapturer
 from .cos_storage import CosStorage
 from .models import PageSnapshotRecord, SnapshotRunResult
+
+
+logger = logging.getLogger("snapshot.service")
 
 
 @dataclass(slots=True)

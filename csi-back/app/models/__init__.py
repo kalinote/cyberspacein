@@ -6,6 +6,7 @@ from app.models.action.components_task import BaseComponentsTaskConfigModel
 from app.models.action.node import ActionNodeModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
+from app.models.action.component_run import ComponentRunModel
 from app.models.action.accounts import AccountModel
 from app.models.action.sandbox import SandboxModel
 from app.models.platform.platform import PlatformModel
@@ -40,6 +41,7 @@ def get_all_models() -> List[Type[Document]]:
         ActionBlueprintModel,
         ActionInstanceModel,
         ActionInstanceNodeModel,
+        ComponentRunModel,
         AccountModel,
         SandboxModel,
         ActionNodesHandleConfigModel,
