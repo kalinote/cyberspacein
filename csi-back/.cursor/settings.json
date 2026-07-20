@@ -1,7 +1,0 @@
-{
-  "plugins": {
-    "elastic-docs": {
-      "enabled": true
-    }
-  }
-}
