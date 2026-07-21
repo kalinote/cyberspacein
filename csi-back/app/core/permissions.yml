@@ -1,4 +1,4 @@
-version: "2026-07-19"
+version: "2026-07-20.1"
 
 # 新增权限维护说明：
 # 1. 页面权限使用 page:<模块>[:<页面或Tab>]:visible/access，仅控制前端展示和访问，backend_enforced 必须为 false。
@@ -106,7 +106,6 @@ permissions:
   - {code: "operation:target:wiki:delete", name: "删除 Wiki", module: "target", resource: "wiki", description: "删除 Wiki 页面或章节", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:target:wiki:execute", name: "执行 Wiki 恢复", module: "target", resource: "wiki", description: "恢复 Wiki 历史版本", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:compute:embedding:execute", name: "执行向量计算", module: "compute", resource: "embedding", description: "执行单条或批量向量计算", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
-  - {code: "operation:compute:html-analyze:execute", name: "执行 HTML 分析", module: "compute", resource: "html-analyze", description: "执行 HTML 清理与抽取", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
 
   - {code: "operation:action:instance:read", name: "读取行动", module: "action", resource: "instance", description: "读取行动实例", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:instance-log:read", name: "读取行动节点日志", module: "action", resource: "instance-log", description: "读取基础组件运行日志", tags: [read, sensitive-detail], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}

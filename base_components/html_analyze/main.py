@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from csi_base_component_sdk import ComponentContext, ComponentFailure
-from analyzer import ml_client
+from analyzer import html_analyzer
 from analyzer.media_localizer import MediaLocalizer
 
 if TYPE_CHECKING:
@@ -70,34 +70,19 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
             logger.warning(f"base_url字段 '{base_url_field}' 的值不是字符串类型，忽略")
             base_url = None
     
-    request_uuid = "0"
-    datas = [{"uuid": request_uuid, "html": content}]
-
     if enable_clean_content:
         try:
-            text_list = ml_client.extract_text_batch(datas)
-            item = next((x for x in text_list if x.get("uuid") == request_uuid), None)
-            data["clean_content"] = item.get("text") if item else None
-            if item is not None:
-                logger.debug("clean_content 处理完成")
-            else:
-                logger.warning("clean_content 接口未返回对应 uuid 结果")
+            data["clean_content"] = html_analyzer.extract_text(content)
+            logger.debug("clean_content 处理完成")
         except Exception as e:
             logger.error(f"clean_content 处理失败: {e}")
             data["clean_content"] = None
 
     if enable_safe_raw_content:
         try:
-            clean_list = ml_client.clean_batch(datas)
-            clean_item = next((x for x in clean_list if x.get("uuid") == request_uuid), None)
-            cleaned_html = clean_item.get("html") if clean_item else None
-            if cleaned_html is None:
-                logger.warning("clean_batch 接口未返回对应 uuid 结果")
-                data["safe_raw_content"] = None
-            elif enable_media_localization:
-                links_list = ml_client.extract_links_batch(datas)
-                links_item = next((x for x in links_list if x.get("uuid") == request_uuid), None)
-                links = links_item.get("links", []) if links_item and isinstance(links_item.get("links"), list) else []
+            cleaned_html = html_analyzer.clean_html(content)
+            if enable_media_localization:
+                links = html_analyzer.extract_resource_links(content)
                 localizer = MediaLocalizer(base_url=base_url, download_size_limit=download_size_limit)
                 data["safe_raw_content"] = localizer.localize(
                     cleaned_html, links, heartbeat_callback=heartbeat_callback

@@ -1,7 +1,6 @@
-from loguru import logger
+import logging
 import re
 from typing import Set
-from urllib.parse import urlparse
 
 import bleach
 import esprima
@@ -9,7 +8,7 @@ from bleach.css_sanitizer import CSSSanitizer
 from bs4 import BeautifulSoup
 
 
-logger = logger.bind(name=__name__)
+logger = logging.getLogger(__name__)
 
 MEDIA_TAGS_ATTRS = {
     'img': ['src', 'srcset', 'data-src', 'data-srcset'],
@@ -321,29 +320,16 @@ def _clean_html_impl(content: str,
         return ""
 
 
-class HtmlAnalyzeService:
-    _instance: "HtmlAnalyzeService | None" = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    async def initialize(self) -> None:
-        pass
-
-    async def cleanup(self) -> None:
-        pass
-
-    def extract_text(self, html: str) -> str:
-        soup = BeautifulSoup(html, "html.parser")
-        return soup.get_text().strip()
-
-    def clean_html(self, html: str) -> str:
-        return _clean_html_impl(html)
-
-    def extract_resource_links(self, html: str) -> list[str]:
-        return _collect_resource_links(html)
+def extract_text(html: str) -> str:
+    """提取 HTML 中的纯文本。"""
+    return BeautifulSoup(html, "html.parser").get_text().strip()
 
 
-html_analyze_service = HtmlAnalyzeService()
+def clean_html(html: str) -> str:
+    """清理 HTML 中的不安全内容。"""
+    return _clean_html_impl(html)
+
+
+def extract_resource_links(html: str) -> list[str]:
+    """提取 HTML 中引用的媒体资源链接。"""
+    return _collect_resource_links(html)

@@ -1,4 +1,4 @@
-version: "2026-07-20"
+version: "2026-07-20.1"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -26,13 +26,6 @@ routes:
   - {method: DELETE, path: "/annotation/{annotation_id}", principal: user, permission: "operation:target:annotation:delete"}
   - {method: POST, path: "/embedding", principal: user, permission: "operation:compute:embedding:execute"}
   - {method: POST, path: "/embedding/batch", principal: user, permission: "operation:compute:embedding:execute"}
-  - {method: POST, path: "/html-analyze/extract-text", principal: user, permission: "operation:compute:html-analyze:execute"}
-  - {method: POST, path: "/html-analyze/clean", principal: user, permission: "operation:compute:html-analyze:execute"}
-  - {method: POST, path: "/html-analyze/extract-links", principal: user, permission: "operation:compute:html-analyze:execute"}
-  - {method: POST, path: "/html-analyze/extract-text-batch", principal: user, permission: "operation:compute:html-analyze:execute"}
-  - {method: POST, path: "/html-analyze/clean-batch", principal: user, permission: "operation:compute:html-analyze:execute"}
-  - {method: POST, path: "/html-analyze/extract-links-batch", principal: user, permission: "operation:compute:html-analyze:execute"}
-
   - {method: POST, path: "/search/entity", principal: user, permission: "operation:search:entity:execute"}
   - {method: POST, path: "/search/template", principal: user, permission: "operation:search:template:create"}
   - {method: GET, path: "/search/templates", principal: user, permission: "operation:search:template:read"}
