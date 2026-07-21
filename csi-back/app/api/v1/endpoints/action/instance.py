@@ -33,17 +33,11 @@ async def start_action(
     if not data.params:
         result, message = await ActionInstanceService.init(
             data.blueprint_id,
-            trigger_type=data.trigger_type,
-            trigger_key=data.trigger_key,
-            scheduled_for=data.scheduled_for,
         )
     else:
         result, message = await ActionInstanceService.init(
             data.blueprint_id,
             data.params,
-            trigger_type=data.trigger_type,
-            trigger_key=data.trigger_key,
-            scheduled_for=data.scheduled_for,
         )
     if not result:
         return ApiResponseSchema.error(code=250004, message=message)
@@ -79,7 +73,12 @@ async def get_action_instances(
             duration=action_instance.duration,
             progress=action_instance.progress,
             completed_steps=completed_steps,
-            total_steps=total_steps
+            total_steps=total_steps,
+            schedule_id=action_instance.schedule_id,
+            schedule_name=action_instance.schedule_name,
+            schedule_priority=action_instance.schedule_priority,
+            scheduled_for=action_instance.scheduled_for,
+            created_at=action_instance.created_at,
         ))
 
     return PageResponseSchema.create(results, total, params.page, params.page_size)
@@ -175,6 +174,11 @@ async def get_action_detail(action_id: str):
         progress=action_instance.progress,
         completed_steps=completed_steps,
         total_steps=total_steps,
+        schedule_id=action_instance.schedule_id,
+        schedule_name=action_instance.schedule_name,
+        schedule_priority=action_instance.schedule_priority,
+        scheduled_for=action_instance.scheduled_for,
+        created_at=action_instance.created_at,
         graph=graph,
         node_details=node_details
     ))

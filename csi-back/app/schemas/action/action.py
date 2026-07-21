@@ -6,15 +6,11 @@ from app.schemas.constants import (
     ActionConfigIOTypeEnum,
     ActionFlowStatusEnum,
     ActionInstanceNodeStatusEnum,
-    ActionTriggerTypeEnum,
 )
 
 class StartActionRequest(BaseModel):
     blueprint_id: str = Field(description="蓝图ID")
     params: dict[str, Any] | None = Field(default=None, description="行动参数")
-    trigger_type: ActionTriggerTypeEnum = ActionTriggerTypeEnum.MANUAL
-    trigger_key: str | None = Field(default=None, max_length=256)
-    scheduled_for: datetime | None = None
     
 class StartActionResponse(BaseModel):
     action_id: str = Field(description="行动ID")
@@ -30,6 +26,11 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     progress: int = Field(description="行动实例化流程进度(%)")
     completed_steps: int = Field(description="已完成的节点数量")
     total_steps: int = Field(description="总节点数量")
+    schedule_id: str | None = None
+    schedule_name: str | None = None
+    schedule_priority: int = 5
+    scheduled_for: datetime | None = None
+    created_at: datetime | None = None
     
 
 class ActionNodeDetailResponse(BaseModel):

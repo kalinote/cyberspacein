@@ -1,9 +1,12 @@
+from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.models.action.action import ActionInstanceNodeModel
+from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.schemas.constants import ActionInstanceNodeStatusEnum
+from app.service import action as action_service
 from app.service.action import ActionInstanceService
 
 
@@ -126,3 +129,79 @@ async def test_run_node_can_move_pending_join_node_to_unready(monkeypatch):
     assert updates == [
         {"$set": {"status": ActionInstanceNodeStatusEnum.UNREADY}}
     ]
+
+
+@pytest.mark.asyncio
+async def test_run_node_keeps_leading_hyphen_bootstrap_as_option_value(monkeypatch):
+    node = SimpleNamespace(
+        id="node-instance-1",
+        node_id="start-node",
+        definition_id="definition-1",
+        reference_queues={},
+        status=ActionInstanceNodeStatusEnum.READY,
+        start_at=datetime.now(),
+        save=AsyncMock(),
+    )
+    node_definition = SimpleNamespace(
+        command="csi-component",
+        command_args=["main:run"],
+        related_components=["component-1"],
+    )
+    action = SimpleNamespace(
+        id="action-1",
+        blueprint_id="blueprint-1",
+        schedule_priority=5,
+    )
+    find_one_calls = 0
+
+    def find_one(_query):
+        nonlocal find_one_calls
+        find_one_calls += 1
+        if find_one_calls == 2:
+            return _FindOne(modified_count=1)
+        return _FindOne(node)
+
+    monkeypatch.setattr(ActionInstanceNodeModel, "find_one", staticmethod(find_one))
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([])),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        AsyncMock(return_value=action),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "get_node_definition",
+        AsyncMock(return_value=node_definition),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "find_all_previous_nodes",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "get_blueprint",
+        AsyncMock(return_value=SimpleNamespace(graph=SimpleNamespace(edges=[]))),
+    )
+    component_run = SimpleNamespace(id="component-run-1", insert=AsyncMock())
+    monkeypatch.setattr(
+        action_service,
+        "ComponentRunModel",
+        MagicMock(return_value=component_run),
+    )
+    monkeypatch.setattr(
+        action_service,
+        "issue_component_bootstrap",
+        AsyncMock(return_value="-bootstrap"),
+    )
+    dispatch = AsyncMock(return_value=True)
+    monkeypatch.setattr(action_service, "dispatch_component_run", dispatch)
+
+    assert await ActionInstanceService.run_node(node.id, action.id) is True
+    command_args = dispatch.await_args.args[2]
+    assert "--component-bootstrap=-bootstrap" in command_args
+    assert "--component-bootstrap" not in command_args

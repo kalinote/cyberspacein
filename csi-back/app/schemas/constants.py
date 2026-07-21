@@ -88,6 +88,27 @@ class ActionTriggerTypeEnum(str, Enum):
     API = "api"
     SCHEDULED = "scheduled"
 
+
+class ActionScheduleTypeEnum(str, Enum):
+    """行动计划的周期类型。"""
+
+    CRON = "cron"
+    INTERVAL = "interval"
+
+
+class ActionScheduleOverlapPolicyEnum(str, Enum):
+    """行动计划的重叠执行策略。"""
+
+    FORBID = "forbid"
+    ALLOW = "allow"
+
+
+class ActionScheduleMisfirePolicyEnum(str, Enum):
+    """行动计划的错过执行策略。"""
+
+    FIRE_ONCE = "fire_once"
+    SKIP = "skip"
+
 ActionNodeFinishStatusList = [
     ActionInstanceNodeStatusEnum.COMPLETED,
     ActionInstanceNodeStatusEnum.FAILED,

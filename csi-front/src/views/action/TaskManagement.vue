@@ -1,40 +1,20 @@
 <template>
   <div>
     <Header />
-    
-    <!-- 英雄区域 -->
     <section class="bg-linear-to-br from-blue-50 to-white py-12">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div class="lg:col-span-2">
             <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">基础组件</span>任务</h1>
-            <p class="text-gray-600 text-lg mb-6">统一管理和监控所有基础组件独立任务执行状态，从任务创建、分配到完成的全流程跟踪平台。</p>
+            <p class="text-gray-600 text-lg mb-6">统一管理完整行动的定时计划与执行记录，节点仍按行动依赖关系依次运行。</p>
             <div class="flex flex-wrap gap-4">
-              <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
-                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Icon icon="mdi:clipboard-list" class="text-blue-600 text-xl" />
+              <div v-for="item in metricCards" :key="item.label" class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" :class="item.bgClass">
+                  <Icon :icon="item.icon" class="text-xl" :class="item.iconClass" />
                 </div>
                 <div>
-                  <p class="text-sm text-gray-500">总任务数</p>
-                  <p class="text-xl font-bold text-gray-900">156</p>
-                </div>
-              </div>
-              <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
-                <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Icon icon="mdi:check-circle" class="text-green-600 text-xl" />
-                </div>
-                <div>
-                  <p class="text-sm text-gray-500">进行中任务</p>
-                  <p class="text-xl font-bold text-gray-900">23</p>
-                </div>
-              </div>
-              <div class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
-                <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                  <Icon icon="mdi:clock-outline" class="text-amber-600 text-xl" />
-                </div>
-                <div>
-                  <p class="text-sm text-gray-500">待处理任务</p>
-                  <p class="text-xl font-bold text-gray-900">8</p>
+                  <p class="text-sm text-gray-500">{{ item.label }}</p>
+                  <p class="text-xl font-bold text-gray-900">{{ item.value }}</p>
                 </div>
               </div>
             </div>
@@ -42,23 +22,27 @@
           <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">快速操作</h3>
             <div class="space-y-4">
-              <button class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2">
-                <Icon icon="mdi:plus-circle-outline" />
-                <span>创建新任务</span>
+              <button
+                v-if="canCreateSchedule"
+                class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
+                @click="openCreateSchedule"
+              >
+                <Icon icon="mdi:calendar-plus" />
+                <span>创建调度计划</span>
               </button>
               <button
                 class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2"
-                @click="router.push('/action/component-tasks')"
+                @click="openTaskList('tasks')"
               >
                 <Icon icon="mdi:clipboard-text-outline" />
-                <span>组件任务管理</span>
+                <span>执行任务管理</span>
               </button>
               <button
                 class="w-full border-2 border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2"
-                @click="router.push('/action/task-configs')"
+                @click="openTaskList('schedule')"
               >
-                <Icon icon="mdi:cog" />
-                <span>任务配置管理</span>
+                <Icon icon="mdi:calendar-clock" />
+                <span>调度计划管理</span>
               </button>
             </div>
           </div>
@@ -66,168 +50,50 @@
       </div>
     </section>
 
-    <!-- 任务列表 -->
-    <section class="py-12 bg-linear-to-b from-white to-gray-50">
+    <section class="py-12 bg-linear-to-b from-white to-gray-50 min-h-96">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center mb-8">
-          <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
-            <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
-            <span><span class="text-blue-500">任务</span>列表</span>
+        <div class="flex items-center justify-between mb-8">
+          <h2 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Icon icon="mdi:history" class="text-blue-600" />
+            <span><span class="text-blue-500">最近</span>执行</span>
           </h2>
-          <el-button type="primary" link>
+          <el-button type="primary" link @click="openTaskList('tasks')">
             <template #icon><Icon icon="mdi:arrow-right" /></template>
-            查看全部任务
+            查看全部
           </el-button>
         </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div 
-            v-for="task in placeholderTasks" 
-            :key="task.id"
-            class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-all hover:border-blue-300"
+        <div v-loading="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 min-h-48">
+          <button
+            v-for="run in summary.recent_runs"
+            :key="run.action_id"
+            class="text-left bg-white rounded-2xl border border-blue-100 p-6 shadow-lg hover:border-blue-300 hover:shadow-xl transition-all"
+            @click="router.push(`/action/${run.action_id}`)"
           >
-            <div class="flex items-start justify-between mb-4">
-              <div class="flex-1">
-                <h3 class="text-lg font-bold text-gray-900 mb-2 line-clamp-1">{{ task.name }}</h3>
-                <p class="text-sm text-gray-600 line-clamp-2 mb-3">{{ task.description }}</p>
+            <div class="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 class="font-bold text-gray-900">{{ run.blueprint_name }}</h3>
+                <p class="text-sm text-gray-500 mt-1">{{ run.schedule_name }}</p>
               </div>
-              <div class="ml-3 shrink-0">
-                <el-tag 
-                  :type="task.statusType"
-                  size="small"
-                >
-                  {{ task.status }}
-                </el-tag>
-              </div>
+              <el-tag :type="getStatusTagType(run.status)" size="small">{{ getStatusText(run.status) }}</el-tag>
             </div>
-
-            <div class="space-y-3 mb-4">
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-500 flex items-center gap-2">
-                  <Icon icon="mdi:account" class="text-blue-500" />
-                  负责人
-                </span>
-                <span class="font-medium text-gray-900">{{ task.assignee }}</span>
-              </div>
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-500 flex items-center gap-2">
-                  <Icon icon="mdi:calendar-clock" class="text-green-500" />
-                  截止时间
-                </span>
-                <span class="font-medium text-gray-900">{{ task.deadline }}</span>
-              </div>
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-500 flex items-center gap-2">
-                  <Icon icon="mdi:chart-line" class="text-purple-500" />
-                  完成进度
-                </span>
-                <span class="font-medium text-gray-900">{{ task.progress }}%</span>
-              </div>
-            </div>
-
-            <div class="mb-4">
-              <div class="flex justify-between text-xs text-gray-600 mb-1">
-                <span>执行进度</span>
-                <span>{{ task.completedSteps }}/{{ task.totalSteps }} 步骤</span>
-              </div>
-              <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div 
-                  class="h-full bg-linear-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-300"
-                  :style="{ width: task.progress + '%' }"
-                ></div>
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2 pt-4 border-t border-gray-200">
-              <el-button type="primary" link size="small" class="flex-1">
-                <template #icon><Icon icon="mdi:eye" /></template>
-                查看详情
-              </el-button>
-              <el-button type="warning" link size="small">
-                <template #icon><Icon icon="mdi:pencil" /></template>
-                编辑
-              </el-button>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="placeholderTasks.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
-          <Icon icon="mdi:clipboard-outline" class="text-6xl text-gray-300 mb-4" />
-          <p class="text-gray-500 text-lg mb-2">暂无任务</p>
-          <p class="text-gray-400 text-sm">创建新任务后，将显示在这里</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- 任务统计 -->
-    <section class="py-12 bg-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center mb-8">
-          <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
-            <Icon icon="mdi:chart-bar" class="text-blue-600 text-2xl" />
-            <span><span class="text-blue-500">任务</span>统计</span>
-          </h2>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div class="bg-linear-to-br from-blue-50 to-white rounded-2xl p-6 border border-blue-100 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-linear-to-br from-blue-500 to-cyan-400 rounded-xl flex items-center justify-center">
-                  <Icon icon="mdi:clipboard-list" class="text-white text-2xl" />
+            <div class="space-y-3 text-sm">
+              <div class="flex items-center gap-2"><Icon icon="mdi:calendar-clock" class="text-blue-500" /><span class="text-gray-500">计划时间</span><span class="font-medium text-gray-900">{{ formatDateTime(run.scheduled_for) }}</span></div>
+              <div class="flex items-center gap-2"><Icon icon="mdi:timer-outline" class="text-purple-500" /><span class="text-gray-500">执行耗时</span><span class="font-medium text-gray-900">{{ formatDuration(run.duration) }}</span></div>
+              <div>
+                <div class="flex justify-between text-xs text-gray-600 mb-1">
+                  <span>执行进度</span>
+                  <span>{{ Math.round(run.progress || 0) }}%（{{ run.completed_steps }}/{{ run.total_steps }} 节点）</span>
                 </div>
-                <div>
-                  <h3 class="font-bold text-gray-900">总任务数</h3>
-                  <p class="text-sm text-gray-500">全部任务</p>
+                <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div class="h-full bg-linear-to-r from-blue-500 to-cyan-400 rounded-full" :style="{ width: `${Math.min(100, Math.max(0, run.progress || 0))}%` }"></div>
                 </div>
               </div>
             </div>
-            <p class="text-3xl font-bold text-gray-900">156</p>
-          </div>
-
-          <div class="bg-linear-to-br from-green-50 to-white rounded-2xl p-6 border border-green-100 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-linear-to-br from-green-500 to-emerald-400 rounded-xl flex items-center justify-center">
-                  <Icon icon="mdi:check-circle" class="text-white text-2xl" />
-                </div>
-                <div>
-                  <h3 class="font-bold text-gray-900">已完成</h3>
-                  <p class="text-sm text-gray-500">成功完成</p>
-                </div>
-              </div>
-            </div>
-            <p class="text-3xl font-bold text-gray-900">125</p>
-          </div>
-
-          <div class="bg-linear-to-br from-amber-50 to-white rounded-2xl p-6 border border-amber-100 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-linear-to-br from-amber-500 to-orange-400 rounded-xl flex items-center justify-center">
-                  <Icon icon="mdi:clock-outline" class="text-white text-2xl" />
-                </div>
-                <div>
-                  <h3 class="font-bold text-gray-900">进行中</h3>
-                  <p class="text-sm text-gray-500">正在执行</p>
-                </div>
-              </div>
-            </div>
-            <p class="text-3xl font-bold text-gray-900">23</p>
-          </div>
-
-          <div class="bg-linear-to-br from-red-50 to-white rounded-2xl p-6 border border-red-100 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-linear-to-br from-red-500 to-pink-400 rounded-xl flex items-center justify-center">
-                  <Icon icon="mdi:alert-circle" class="text-white text-2xl" />
-                </div>
-                <div>
-                  <h3 class="font-bold text-gray-900">待处理</h3>
-                  <p class="text-sm text-gray-500">等待处理</p>
-                </div>
-              </div>
-            </div>
-            <p class="text-3xl font-bold text-gray-900">8</p>
+          </button>
+          <div v-if="!loading && !summary.recent_runs.length" class="md:col-span-2 lg:col-span-3 flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-gray-200 bg-white/80">
+            <Icon icon="mdi:clipboard-search-outline" class="text-6xl text-gray-300 mb-4" />
+            <p class="text-gray-500 text-lg mb-1">暂无定时行动执行记录</p>
+            <p class="text-sm text-gray-400">创建并启用调度计划后，执行记录将显示在这里</p>
           </div>
         </div>
       </div>
@@ -236,50 +102,53 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
+import Header from '@/components/Header.vue'
+import { actionScheduleApi } from '@/api/actionSchedule'
+import { formatDateTime, formatDuration, getStatusTagType, getStatusText } from '@/utils/action'
+import { PERM } from '@/utils/permissions'
+import { hasPerm } from '@/utils/permissionKit'
 
 defineOptions({ name: 'TaskManagement' })
 
 const router = useRouter()
-const placeholderTasks = ref([
-        {
-          id: 'task-001',
-          name: '数据采集任务',
-          description: '收集社交媒体平台的技术讨论和热点话题信息',
-          status: '进行中',
-          statusType: 'warning',
-          assignee: '系统管理员',
-          deadline: '2024-12-31',
-          progress: 65,
-          completedSteps: 13,
-          totalSteps: 20
-        },
-        {
-          id: 'task-002',
-          name: '信息分析任务',
-          description: '分析收集到的数据，提取关键信息和趋势',
-          status: '进行中',
-          statusType: 'warning',
-          assignee: '数据分析师',
-          deadline: '2024-12-30',
-          progress: 45,
-          completedSteps: 9,
-          totalSteps: 20
-        },
-        {
-          id: 'task-003',
-          name: '报告生成任务',
-          description: '生成月度分析报告，汇总所有收集和分析结果',
-          status: '待处理',
-          statusType: 'info',
-          assignee: '报告专员',
-          deadline: '2025-01-05',
-          progress: 0,
-          completedSteps: 0,
-          totalSteps: 10
-        }
-      ])
+const loading = ref(false)
+const summary = ref({
+  schedule_count: 0,
+  enabled_schedule_count: 0,
+  task_count: 0,
+  running_count: 0,
+  pending_count: 0,
+  failed_count: 0,
+  recent_runs: []
+})
+const canCreateSchedule = computed(() => hasPerm(PERM.operations.action.schedule.create))
+const metricCards = computed(() => [
+  { label: '执行任务', value: summary.value.task_count, icon: 'mdi:clipboard-list-outline', bgClass: 'bg-blue-100', iconClass: 'text-blue-600' },
+  { label: '运行中', value: summary.value.running_count, icon: 'mdi:progress-clock', bgClass: 'bg-green-100', iconClass: 'text-green-600' },
+  { label: '待执行', value: summary.value.pending_count, icon: 'mdi:clock-outline', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
+  { label: '失败', value: summary.value.failed_count, icon: 'mdi:alert-circle-outline', bgClass: 'bg-red-100', iconClass: 'text-red-600' }
+])
+
+function openTaskList(tab) {
+  router.push({ path: '/action/component-tasks', query: { tab } })
+}
+
+function openCreateSchedule() {
+  router.push({ path: '/action/component-tasks', query: { tab: 'schedule', create: '1' } })
+}
+
+async function fetchSummary() {
+  loading.value = true
+  try {
+    const response = await actionScheduleApi.getSummary()
+    if (response.code === 0 && response.data) summary.value = response.data
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(fetchSummary)
 </script>

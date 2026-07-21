@@ -8,7 +8,6 @@ from app.core.security import create_component_token
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.component_run import ComponentRunModel
-from app.models.action.components_task import BaseComponentsTaskConfigModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
 from app.schemas.action.log import ComponentLogBatchRequest, ComponentLogBatchResponse
@@ -96,21 +95,13 @@ async def get_component_init(component_run_id: str):
     if node_instance is None:
         return ApiResponseSchema.error(code=240417, message="节点实例不存在")
 
-    task_config = await BaseComponentsTaskConfigModel.find_one(
-        {"node_instance_id": node_instance.id}
+    definition = await ActionNodeModel.find_one(
+        {"_id": node_instance.definition_id, "is_deleted": False}
     )
-    if task_config:
-        config = task_config.config_data.config
-        inputs = task_config.config_data.inputs
-        outputs = task_config.config_data.outputs
-    else:
-        definition = await ActionNodeModel.find_one(
-            {"_id": node_instance.definition_id, "is_deleted": False}
-        )
-        if definition is None:
-            return ApiResponseSchema.error(code=240418, message="节点定义不存在")
-        config = unpack_dict(node_instance.configs) or {}
-        inputs, outputs = await _build_io(node_instance)
+    if definition is None:
+        return ApiResponseSchema.error(code=240418, message="节点定义不存在")
+    config = unpack_dict(node_instance.configs) or {}
+    inputs, outputs = await _build_io(node_instance)
 
     now = datetime.now()
     component_run.status = ComponentRunStatusEnum.RUNNING

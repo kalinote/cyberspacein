@@ -27,11 +27,16 @@ class ActionInstanceModel(Document):
     nodes_id: list[str] = Field(default_factory=list, description="节点ID列表，这是节点id")
     finished_nodes_instance: list[str] = Field(default_factory=list, description="已完成的节点ID列表，这是节点实例id")
     duration: float = Field(default=0, description="行动执行时长(秒)")
+    created_at: datetime = Field(default_factory=lambda: datetime.now())
+    updated_at: datetime = Field(default_factory=lambda: datetime.now())
     
     progress: float = Field(default=0, description="行动实例化流程进度(%)")
     trigger_type: ActionTriggerTypeEnum = Field(default=ActionTriggerTypeEnum.MANUAL)
     trigger_key: str | None = None
     scheduled_for: datetime | None = None
+    schedule_id: str | None = None
+    schedule_name: str | None = None
+    schedule_priority: int = 5
 
     class Settings:
         name = "action_instances"
@@ -44,6 +49,7 @@ class ActionInstanceModel(Document):
                 unique=True,
                 partialFilterExpression={"trigger_key": {"$type": "string"}},
             ),
+            IndexModel([("schedule_id", ASCENDING), ("created_at", ASCENDING)]),
         ]
 
 class ActionConfigIOModel(BaseModel):

@@ -1,4 +1,4 @@
-version: "2026-07-20.1"
+version: "2026-07-21.1"
 
 # 新增权限维护说明：
 # 1. 页面权限使用 page:<模块>[:<页面或Tab>]:visible/access，仅控制前端展示和访问，backend_enforced 必须为 false。
@@ -118,11 +118,10 @@ permissions:
   - {code: "operation:action:node:delete", name: "删除行动节点", module: "action", resource: "node", description: "删除行动节点", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:config:read", name: "读取行动配置", module: "action", resource: "config", description: "读取节点连接配置", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:config:create", name: "创建行动配置", module: "action", resource: "config", description: "创建节点连接配置", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
-  - {code: "operation:action:component-config:read", name: "读取组件配置", module: "action", resource: "component-config", description: "读取组件任务配置", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
-  - {code: "operation:action:component-config:create", name: "创建组件配置", module: "action", resource: "component-config", description: "创建组件任务配置", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
-  - {code: "operation:action:component-config:update", name: "更新组件配置", module: "action", resource: "component-config", description: "更新组件任务配置", tags: [update], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
-  - {code: "operation:action:component-config:delete", name: "删除组件配置", module: "action", resource: "component-config", description: "删除组件任务配置", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
-  - {code: "operation:action:component-task:read", name: "读取组件任务", module: "action", resource: "component-task", description: "读取组件任务和计划", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:schedule:read", name: "读取行动计划", module: "action", resource: "schedule", description: "读取行动调度计划、执行记录和调度器状态", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:schedule:create", name: "创建行动计划", module: "action", resource: "schedule", description: "创建行动调度计划", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:schedule:update", name: "更新行动计划", module: "action", resource: "schedule", description: "编辑、启用或停用行动调度计划", tags: [update], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:schedule:delete", name: "删除行动计划", module: "action", resource: "schedule", description: "删除行动调度计划", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:account-list:read", name: "读取采集账号列表", module: "action", resource: "account-list", description: "读取不含敏感值的账号列表", tags: [read, sensitive-list], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:account-detail:read", name: "读取采集账号详情", module: "action", resource: "account-detail", description: "读取采集账号详情", tags: [read, sensitive-detail], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:account-secret:read", name: "读取采集账号敏感值", module: "action", resource: "account-secret", description: "读取采集账号凭据", tags: [read, secret], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}

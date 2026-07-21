@@ -105,13 +105,12 @@ export const PERM = Object.freeze({
         delete: 'operation:action:node:delete'
       },
       config: { read: 'operation:action:config:read', create: 'operation:action:config:create' },
-      componentConfig: {
-        read: 'operation:action:component-config:read',
-        create: 'operation:action:component-config:create',
-        update: 'operation:action:component-config:update',
-        delete: 'operation:action:component-config:delete'
+      schedule: {
+        read: 'operation:action:schedule:read',
+        create: 'operation:action:schedule:create',
+        update: 'operation:action:schedule:update',
+        delete: 'operation:action:schedule:delete'
       },
-      componentTask: { read: 'operation:action:component-task:read' },
       account: {
         listRead: 'operation:action:account-list:read',
         detailRead: 'operation:action:account-detail:read',

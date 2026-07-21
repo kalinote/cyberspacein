@@ -1,12 +1,13 @@
 # 环境变量从 .env 加载
 
 services:
-  app:
+  csi-back-api:
     build: .
-    container_name: csi-back
+    container_name: csi-back-api
     env_file: .env
     environment:
       CSI_SYSTEM_CONFIG_FILE: /app/data/system-config.json
+      TZ: Asia/Shanghai
     volumes:
       - ./data:/app/data
     ports:
@@ -17,6 +18,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    restart: unless-stopped
+
+  csi-action-scheduler:
+    build: .
+    container_name: csi-action-scheduler
+    command: ["python", "-m", "app.scheduler"]
+    env_file: .env
+    environment:
+      CSI_SYSTEM_CONFIG_FILE: /app/data/system-config.json
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.scheduler", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # mariadb:

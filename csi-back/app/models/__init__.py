@@ -2,8 +2,8 @@ from typing import List, Type
 from beanie import Document
 
 from app.models.action.configs import ActionNodesHandleConfigModel
-from app.models.action.components_task import BaseComponentsTaskConfigModel
 from app.models.action.node import ActionNodeModel
+from app.models.action.schedule import ActionScheduleModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
@@ -41,11 +41,11 @@ def get_all_models() -> List[Type[Document]]:
         ActionBlueprintModel,
         ActionInstanceModel,
         ActionInstanceNodeModel,
+        ActionScheduleModel,
         ComponentRunModel,
         AccountModel,
         SandboxModel,
         ActionNodesHandleConfigModel,
-        BaseComponentsTaskConfigModel,
         PlatformModel,
         AgentModelConfigModel,
         AgentPromptTemplateModel,

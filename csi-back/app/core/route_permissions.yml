@@ -1,4 +1,4 @@
-version: "2026-07-20.1"
+version: "2026-07-21.1"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -69,13 +69,15 @@ routes:
   - {method: GET, path: "/action/configs/handles", principal: user, permission: "operation:action:config:read"}
   - {method: POST, path: "/action/configs/handles", principal: user, permission: "operation:action:config:create"}
   - {method: GET, path: "/action/configs/filter/node_type", principal: user, permission: "operation:action:config:read"}
-  - {method: POST, path: "/action/components-task/configs", principal: user, permission: "operation:action:component-config:create"}
-  - {method: GET, path: "/action/components-task/configs", principal: user, permission: "operation:action:component-config:read"}
-  - {method: GET, path: "/action/components-task/configs/detail/{config_id}", principal: user, permission: "operation:action:component-config:read"}
-  - {method: PATCH, path: "/action/components-task/configs/{config_id}", principal: user, permission: "operation:action:component-config:update"}
-  - {method: DELETE, path: "/action/components-task/configs/{config_id}", principal: user, permission: "operation:action:component-config:delete"}
-  - {method: GET, path: "/action/components-task/tasks", principal: user, permission: "operation:action:component-task:read"}
-  - {method: GET, path: "/action/components-task/schedules", principal: user, permission: "operation:action:component-task:read"}
+  - {method: GET, path: "/action/schedules", principal: user, permission: "operation:action:schedule:read"}
+  - {method: POST, path: "/action/schedules", principal: user, permission: "operation:action:schedule:create"}
+  - {method: POST, path: "/action/schedules/preview", principal: user, permission: "operation:action:schedule:create"}
+  - {method: GET, path: "/action/schedules/runs", principal: user, permission: "operation:action:schedule:read"}
+  - {method: GET, path: "/action/schedules/summary", principal: user, permission: "operation:action:schedule:read"}
+  - {method: GET, path: "/action/schedules/status", principal: user, permission: "operation:action:schedule:read"}
+  - {method: GET, path: "/action/schedules/{schedule_id}", principal: user, permission: "operation:action:schedule:read"}
+  - {method: PATCH, path: "/action/schedules/{schedule_id}", principal: user, permission: "operation:action:schedule:update"}
+  - {method: DELETE, path: "/action/schedules/{schedule_id}", principal: user, permission: "operation:action:schedule:delete"}
   - {method: POST, path: "/action/accounts", principal: user, permission: "operation:action:account:create"}
   - {method: GET, path: "/action/accounts/list", principal: user, permission: "operation:action:account-list:read"}
   - {method: GET, path: "/action/accounts/detail/{account_id}", principal: user, permission: "operation:action:account-detail:read"}

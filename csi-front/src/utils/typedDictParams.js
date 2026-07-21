@@ -2,7 +2,7 @@
  * 类型化字典参数工具 (typedDictParams)
  *
  * 为 TypedDictParamsEditor 及分析引擎 injection_param 等场景提供参数行与对象的互转、校验能力。
- * 编辑交互参考 /action/task-configs 的配置参数 (config) 区块。
+ * 编辑交互与系统内通用的结构化参数编辑器保持一致。
  *
  * 使用场景：
  * - AgentStartDialog 提交前将 ParamRow[] 转为 injection_param 对象

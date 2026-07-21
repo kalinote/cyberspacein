@@ -2,7 +2,7 @@
   类型化字典参数编辑器 (TypedDictParamsEditor)
 
   支持多行键值参数编辑，值类型涵盖 string / number / boolean / null / array / object。
-  array、object 类型可通过侧栏 JSON 编辑器与 AnyValueTreeEditor 可视化编辑（与 task-configs 配置参数一致）。
+  array、object 类型可通过侧栏 JSON 编辑器与 AnyValueTreeEditor 可视化编辑。
 
   使用场景：
   - 分析引擎启动弹窗中的执行参数 (injection_param)

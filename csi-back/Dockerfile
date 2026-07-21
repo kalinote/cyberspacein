@@ -1,5 +1,7 @@
 FROM python:3.13-slim
 
+ENV TZ=Asia/Shanghai
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

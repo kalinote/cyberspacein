@@ -234,6 +234,9 @@ class ActionInstanceService:
         trigger_type=None,
         trigger_key: str | None = None,
         scheduled_for: datetime | None = None,
+        schedule_id: str | None = None,
+        schedule_name: str | None = None,
+        schedule_priority: int = 5,
     ) -> tuple[bool, str]:
         """
         初始化行动实例
@@ -277,6 +280,9 @@ class ActionInstanceService:
             trigger_type=trigger_type or "manual",
             trigger_key=trigger_key,
             scheduled_for=scheduled_for,
+            schedule_id=schedule_id,
+            schedule_name=schedule_name,
+            schedule_priority=schedule_priority,
         )
         try:
             await action_instance.insert()
@@ -517,10 +523,14 @@ class ActionInstanceService:
             component_args = command_args + [
                 "--component-run-id",
                 component_run.id,
-                "--component-bootstrap",
-                component_bootstrap,
+                f"--component-bootstrap={component_bootstrap}",
             ]
-            accepted = await dispatch_component_run(component_run, command, component_args)
+            accepted = await dispatch_component_run(
+                component_run,
+                command,
+                component_args,
+                priority=action.schedule_priority,
+            )
             if not accepted:
                 logger.error(
                     "运行组件失败，调度平台无结果返回，Component ID: "

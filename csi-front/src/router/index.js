@@ -10,7 +10,6 @@ import ActionHistory from '../views/action/ActionHistory.vue'
 import ActionDetail from '../views/action/ActionDetail.vue'
 import ActionBlueprintList from '../views/action/ActionBlueprintList.vue'
 import TaskManagement from '../views/action/TaskManagement.vue'
-import TaskConfigManagement from '../views/action/TaskConfigManagement.vue'
 import ComponentTaskManagement from '../views/action/ComponentTaskManagement.vue'
 import AgentMonitor from '../views/agent/AgentMonitor.vue'
 import AgentConfig from '../views/agent/AgentConfig.vue'
@@ -98,13 +97,6 @@ const router = createRouter({
       name: 'task-management',
       component: TaskManagement,
       meta: { keepAlive: true, requiresAuth: true, pagePermission: PERM.pages.action.tasks.access }
-    },
-    {
-      // 基础组件任务配置管理
-      path: '/action/task-configs',
-      name: 'task-config-management',
-      component: TaskConfigManagement,
-      meta: { requiresAuth: true, pagePermission: PERM.pages.action.tasks.access }
     },
     {
       // 组件任务管理

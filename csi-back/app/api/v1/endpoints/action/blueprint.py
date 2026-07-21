@@ -134,8 +134,9 @@ async def get_blueprints(
 ):
     skip = (params.page - 1) * params.page_size
 
-    total = await ActionBlueprintModel.find_all().count()
-    blueprints = await ActionBlueprintModel.find_all().skip(skip).limit(params.page_size).to_list()
+    query = ActionBlueprintModel.find({"is_deleted": False})
+    total = await query.count()
+    blueprints = await query.skip(skip).limit(params.page_size).to_list()
 
     results = []
     for blueprint in blueprints:
