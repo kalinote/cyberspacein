@@ -26,7 +26,7 @@ async def start_action(
     data: StartActionRequest,
     background_tasks: BackgroundTasks
 ):
-    blueprint = await ActionBlueprintModel.find_one({"_id": data.blueprint_id})
+    blueprint = await ActionBlueprintModel.find_one({"_id": data.blueprint_id, "is_deleted": False})
     if not blueprint:
         return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {data.blueprint_id}")
 

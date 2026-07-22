@@ -1,5 +1,11 @@
+from datetime import datetime
+
+from elasticsearch import ApiError
 from loguru import logger
 from fastapi import APIRouter, Depends
+from app.core.config import settings
+from app.db.elasticsearch import get_es
+from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.blueprint import (
     ActionBlueprintModel,
     PositionModel,
@@ -9,6 +15,8 @@ from app.models.action.blueprint import (
     ViewportModel,
     GraphModel,
 )
+from app.models.action.component_run import ComponentRunModel
+from app.models.action.schedule import ActionScheduleModel
 from app.schemas.action.blueprint import (
     ActionBlueprintSchema,
     ActionBlueprintBaseInfoResponse,
@@ -17,6 +25,7 @@ from app.schemas.action.blueprint import (
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
+from app.schemas.constants import ActionFlowStatusEnum
 from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 from app.utils.dict_helper import pack_dict
@@ -184,3 +193,78 @@ async def get_blueprint(blueprint_id: str):
     )
 
     return ApiResponseSchema.success(data=response_data)
+
+
+@router.delete("/{blueprint_id}", response_model=ApiResponseSchema[None], summary="删除蓝图及历史行动")
+async def delete_blueprint(blueprint_id: str):
+    """删除蓝图，并级联清理其历史行动、节点、组件运行记录和日志。
+
+    Args:
+        blueprint_id: 待删除的蓝图 ID。
+
+    Returns:
+        删除结果；存在调度计划或未结束行动时返回业务错误。
+    """
+    blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id, "is_deleted": False})
+    if not blueprint:
+        return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {blueprint_id}")
+
+    schedule = await ActionScheduleModel.find_one({"blueprint_id": blueprint_id, "is_deleted": False})
+    if schedule:
+        return ApiResponseSchema.error(code=240423, message="该蓝图仍有关联调度计划，请先删除调度计划")
+
+    blueprint.is_deleted = True
+    blueprint.updated_at = datetime.now()
+    await blueprint.save()
+    await ActionInstanceService._clear_cache("blueprint", blueprint_id)
+
+    terminal_statuses = [
+        ActionFlowStatusEnum.COMPLETED.value,
+        ActionFlowStatusEnum.FAILED.value,
+        ActionFlowStatusEnum.CANCELLED.value,
+        ActionFlowStatusEnum.TIMEOUT.value,
+    ]
+    active_action = await ActionInstanceModel.find_one({
+        "blueprint_id": blueprint_id,
+        "status": {"$nin": terminal_statuses},
+    })
+    if active_action:
+        blueprint.is_deleted = False
+        blueprint.updated_at = datetime.now()
+        await blueprint.save()
+        await ActionInstanceService._clear_cache("blueprint", blueprint_id)
+        return ApiResponseSchema.error(code=240423, message="该蓝图仍有未结束的行动，暂时无法删除")
+
+    try:
+        action_instances = await ActionInstanceModel.find({"blueprint_id": blueprint_id}).to_list()
+        action_ids = [action.id for action in action_instances]
+
+        es = get_es()
+        if es is not None and action_ids:
+            for offset in range(0, len(action_ids), 10000):
+                try:
+                    await es.delete_by_query(
+                        index=settings.COMPONENT_LOG_DATA_STREAM,
+                        query={"terms": {"action_id": action_ids[offset:offset + 10000]}},
+                        conflicts="proceed",
+                        refresh=True,
+                    )
+                except ApiError as exc:
+                    if getattr(exc, "status_code", None) != 404:
+                        raise
+
+        if action_ids:
+            await ComponentRunModel.find({"action_id": {"$in": action_ids}}).delete()
+            await ActionInstanceNodeModel.find({"action_id": {"$in": action_ids}}).delete()
+            await ActionInstanceModel.find({"_id": {"$in": action_ids}}).delete()
+
+        await blueprint.delete()
+    except Exception:
+        blueprint.is_deleted = False
+        blueprint.updated_at = datetime.now()
+        await blueprint.save()
+        await ActionInstanceService._clear_cache("blueprint", blueprint_id)
+        raise
+
+    logger.info(f"成功删除蓝图及其历史行动: {blueprint_id}，历史行动数: {len(action_ids)}")
+    return ApiResponseSchema.success(message="蓝图及历史行动已删除")

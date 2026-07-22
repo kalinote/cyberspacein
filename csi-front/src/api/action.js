@@ -37,6 +37,10 @@ export const actionApi = {
   getBlueprintsBaseInfo(params = {page: 1, page_size: 10}) {
     return request.get('/action/blueprint/list', params)
   },
+  // 删除行动蓝图及其历史行动
+  deleteBlueprint(id) {
+    return request.delete(`/action/blueprint/${id}`)
+  },
   // 获取行动历史列表
   getActionHistory(params = {page: 1, page_size: 10}) {
     return request.get('/action/list', params)

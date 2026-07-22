@@ -1,4 +1,4 @@
-version: "2026-07-21.1"
+version: "2026-07-22.1"
 
 # 新增权限维护说明：
 # 1. 页面权限使用 page:<模块>[:<页面或Tab>]:visible/access，仅控制前端展示和访问，backend_enforced 必须为 false。
@@ -112,6 +112,7 @@ permissions:
   - {code: "operation:action:instance:execute", name: "启动行动", module: "action", resource: "instance", description: "启动行动实例", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:blueprint:read", name: "读取行动蓝图", module: "action", resource: "blueprint", description: "读取行动蓝图", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:blueprint:create", name: "创建行动蓝图", module: "action", resource: "blueprint", description: "创建行动蓝图", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:blueprint:delete", name: "删除行动蓝图", module: "action", resource: "blueprint", description: "删除行动蓝图及其历史行动", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:node:read", name: "读取行动节点", module: "action", resource: "node", description: "读取行动节点与基础组件", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:node:create", name: "创建行动节点", module: "action", resource: "node", description: "创建行动节点", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:node:update", name: "更新行动节点", module: "action", resource: "node", description: "更新行动节点", tags: [update], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}

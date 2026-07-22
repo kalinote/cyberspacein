@@ -121,7 +121,7 @@ class ActionInstanceService:
         except Exception as e:
             logger.warning(f"从Redis读取蓝图缓存失败: {e}")
         
-        blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id})
+        blueprint = await ActionBlueprintModel.find_one({"_id": blueprint_id, "is_deleted": False})
         if blueprint:
             try:
                 redis_client = get_redis()

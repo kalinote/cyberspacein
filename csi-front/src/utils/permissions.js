@@ -97,7 +97,11 @@ export const PERM = Object.freeze({
     },
     action: {
       instance: { read: 'operation:action:instance:read', execute: 'operation:action:instance:execute' },
-      blueprint: { read: 'operation:action:blueprint:read', create: 'operation:action:blueprint:create' },
+      blueprint: {
+        read: 'operation:action:blueprint:read',
+        create: 'operation:action:blueprint:create',
+        delete: 'operation:action:blueprint:delete'
+      },
       node: {
         read: 'operation:action:node:read',
         create: 'operation:action:node:create',

@@ -1,4 +1,4 @@
-version: "2026-07-21.1"
+version: "2026-07-22.1"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -58,6 +58,7 @@ routes:
   - {method: POST, path: "/action/blueprint", principal: user, permission: "operation:action:blueprint:create"}
   - {method: GET, path: "/action/blueprint/list", principal: user, permission: "operation:action:blueprint:read"}
   - {method: GET, path: "/action/blueprint/detail/{blueprint_id}", principal: user, permission: "operation:action:blueprint:read"}
+  - {method: DELETE, path: "/action/blueprint/{blueprint_id}", principal: user, permission: "operation:action:blueprint:delete"}
   - {method: GET, path: "/action/resource/nodes", principal: user, permission: "operation:action:node:read"}
   - {method: POST, path: "/action/resource/nodes", principal: user, permission: "operation:action:node:create"}
   - {method: GET, path: "/action/resource/nodes/{node_id}", principal: user, permission: "operation:action:node:read"}

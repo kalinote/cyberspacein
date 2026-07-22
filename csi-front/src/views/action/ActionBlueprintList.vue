@@ -146,6 +146,7 @@
                     从此蓝图创建分支
                   </el-button>
                   <el-button 
+                    v-if="hasPerm(PERM.operations.action.blueprint.delete)"
                     plain 
                     class="w-full ml-0! text-red-500! border-red-500!" 
                     @click="handleDeleteBlueprint(blueprint)"
@@ -211,7 +212,7 @@
                       <template #icon><Icon icon="mdi:source-branch" /></template>
                       分支
                     </el-button>
-                    <el-button type="danger" link size="small" @click="handleDeleteBlueprint(row)">
+                    <el-button v-if="hasPerm(PERM.operations.action.blueprint.delete)" type="danger" link size="small" @click="handleDeleteBlueprint(row)">
                       <template #icon><Icon icon="mdi:delete" /></template>
                       删除
                     </el-button>
@@ -264,6 +265,8 @@ import TemplateParamsDialog from '@/components/action/template/TemplateParamsDia
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
+import { PERM } from '@/utils/permissions'
+import { hasPerm } from '@/utils/permissionKit'
 
 const router = useRouter()
 
@@ -421,25 +424,32 @@ const handleCreateBlueprint = () => {
   router.push('/action/new')
 }
 
-const handleDeleteBlueprint = (blueprint) => {
-  ElMessageBox.confirm(
-    '确定要删除此蓝图吗？',
-    '确认删除',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(() => {
-    const index = blueprints.value.findIndex(b => b.id === blueprint.id)
-    if (index > -1) {
-      blueprints.value.splice(index, 1)
-      pagination.value.total -= 1
-      ElMessage.success('已删除')
-    }
-  }).catch(() => {
+const handleDeleteBlueprint = async (blueprint) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除蓝图“${blueprint.title}”吗？其所有历史行动和运行日志也将被永久删除，此操作不可恢复。`,
+      '确认删除',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
     ElMessage.info('已取消删除')
-  })
+    return
+  }
+
+  try {
+    await actionApi.deleteBlueprint(blueprint.id)
+    ElMessage.success('蓝图及历史行动已删除')
+    if (blueprints.value.length === 1 && pagination.value.page > 1) {
+      pagination.value.page -= 1
+    }
+    await fetchBlueprints()
+  } catch {
+    // 请求层统一展示后端错误信息
+  }
 }
 
 onMounted(() => {
