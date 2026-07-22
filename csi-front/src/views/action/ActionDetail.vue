@@ -39,13 +39,29 @@
 
             <!-- 右侧边栏 -->
             <div 
-                class="bg-white flex flex-col border-l border-gray-200 relative shrink-0 group"
-                :style="{ width: rightSidebarWidth + 'px' }"
+                class="bg-white flex flex-col border-l border-gray-200 relative shrink-0 group overflow-hidden"
+                :class="{ 'transition-[width] duration-300': !isRightResizing }"
+                :style="{ width: collapsedState.actionInfo ? '48px' : rightSidebarWidth + 'px' }"
             >
-                <div class="px-4 pt-4 pb-2 border-b border-gray-200 shrink-0">
+                <div
+                    v-show="!collapsedState.actionInfo"
+                    class="px-4 pt-4 pb-2 border-b border-gray-200 shrink-0 flex items-center justify-center relative"
+                >
                     <h3 class="text-base font-semibold text-gray-800 text-center">行动信息</h3>
+                    <el-tooltip content="折叠行动信息" placement="left">
+                        <el-button
+                            type="primary"
+                            link
+                            circle
+                            class="absolute right-3"
+                            aria-label="折叠行动信息"
+                            @click="toggleCollapse('actionInfo')"
+                        >
+                            <Icon icon="mdi:chevron-right" />
+                        </el-button>
+                    </el-tooltip>
                 </div>
-                <div class="p-4 flex flex-col gap-4 flex-1 overflow-y-auto min-h-0">
+                <div v-show="!collapsedState.actionInfo" class="p-4 flex flex-col gap-4 flex-1 overflow-y-auto min-h-0">
                     <!-- 基本信息卡片 -->
                     <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
                         <h4 class="text-sm font-semibold text-gray-800 mb-3">基本信息</h4>
@@ -126,19 +142,45 @@
 
                 <!-- 调整大小手柄 -->
                 <div 
+                    v-show="!collapsedState.actionInfo"
                     class="absolute top-0 bottom-0 -left-1 w-2 cursor-col-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
                     @mousedown.prevent="startRightResize"
                 >
                     <div class="w-px h-full bg-gray-200 group-hover:bg-blue-400 transition-colors" :class="{ 'bg-blue-600!': isRightResizing }"></div>
                 </div>
+                <button
+                    v-if="collapsedState.actionInfo"
+                    type="button"
+                    class="flex-1 flex flex-col items-center gap-2 py-4 text-gray-600 hover:bg-gray-50 hover:text-blue-600 transition-colors"
+                    aria-label="展开行动信息"
+                    @click="toggleCollapse('actionInfo')"
+                >
+                    <Icon icon="mdi:chevron-left" class="text-lg" />
+                    <span class="text-sm font-medium tracking-widest" style="writing-mode: vertical-rl;">行动信息</span>
+                </button>
             </div>
         </div>
 
         <!-- 底部节点详细信息栏 -->
         <div 
-            class="bg-white border-t border-gray-200 transition-all duration-300 overflow-hidden"
-            :style="{ height: nodeDetailExpanded ? '400px' : '0px' }"
+            class="bg-white border-t border-gray-200 overflow-hidden shrink-0 relative"
+            :class="{ 'transition-[height] duration-300': !isNodeDetailResizing }"
+            :style="{ height: nodeDetailExpanded ? nodeDetailHeight + 'px' : '0px' }"
         >
+            <div
+                v-if="nodeDetailExpanded"
+                class="absolute left-0 right-0 -top-1 h-2 cursor-row-resize z-20 flex items-center justify-center group hover:bg-blue-100/50 transition-colors"
+                title="拖动调整节点详细信息高度"
+                role="separator"
+                aria-label="调整节点详细信息高度"
+                aria-orientation="horizontal"
+                @mousedown.prevent="startNodeDetailResize"
+            >
+                <div
+                    class="h-1 w-12 rounded-full bg-gray-300 group-hover:bg-blue-400 transition-colors"
+                    :class="{ 'bg-blue-600!': isNodeDetailResizing }"
+                ></div>
+            </div>
             <div v-if="nodeDetailExpanded" class="h-full flex flex-col">
                 <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
                     <div class="flex items-center gap-3">
@@ -248,7 +290,7 @@
                          <!-- TODO: 添加分页 -->
                         <div>
                             <h4 class="text-sm font-semibold text-gray-800 mb-3">执行日志</h4>
-                            <div class="grid grid-cols-2 gap-2 mb-3">
+                            <div class="grid grid-cols-4 gap-2 mb-3">
                                 <el-select v-model="logFilters.level" clearable placeholder="全部级别" size="small">
                                     <el-option v-for="level in ['TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'FATAL']" :key="level" :label="level" :value="level" />
                                 </el-select>
@@ -265,7 +307,7 @@
                                 </el-select>
                                 <el-input v-model="logFilters.keyword" clearable placeholder="搜索日志" size="small" />
                             </div>
-                            <div class="bg-gray-50 rounded-lg border border-gray-200 max-h-48 overflow-y-auto">
+                            <div class="bg-gray-50 rounded-lg border border-gray-200 max-h-80 overflow-y-auto">
                                 <button
                                     v-if="nodeLogState[selectedNodeId]?.previousCursor && selectedNodeLogs.length < 5000"
                                     type="button"
@@ -351,6 +393,7 @@ import {
   ACTION_STATUS
 } from '@/utils/action'
 import { useSidebarResize } from '@/utils/action/useSidebarResize'
+import { useVerticalResize } from '@/utils/action/useVerticalResize'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -488,6 +531,7 @@ const selectedNodeId = ref(null)
 
 // 统一管理折叠状态
 const collapsedState = ref({
+  actionInfo: false,
   nodeDetail: false,
   configs: false,
   inputs: false,
@@ -537,6 +581,14 @@ const {
     isResizing: isRightResizing, 
     startResize: startRightResize 
 } = useSidebarResize(400, 300, 800, 'right')
+
+// 节点详情栏高度调整
+const maxNodeDetailHeight = Math.max(220, Math.min(800, window.innerHeight - 220))
+const {
+    height: nodeDetailHeight,
+    isResizing: isNodeDetailResizing,
+    startResize: startNodeDetailResize
+} = useVerticalResize(Math.min(400, maxNodeDetailHeight), 220, maxNodeDetailHeight)
 
 const fetchNodeLogs = async (nodeId, reset = false, loadOlder = false, silent = false) => {
     const pendingRequest = nodeLogRequests.get(nodeId)

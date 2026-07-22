@@ -138,7 +138,6 @@
               <p class="text-gray-400 text-sm">创建新行动后，历史记录将显示在这里</p>
             </div>
 
-            <!-- TODO: 周期更新 -->
             <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               <div
                 v-for="action in filteredActions"
@@ -313,7 +312,7 @@
 
 <script setup>
 defineOptions({ name: 'ActionHistory' })
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -355,6 +354,8 @@ const statistics = ref({
 })
 
 const actions = ref([])
+const locallyDeletedActionIds = new Set()
+let isFetchingActions = false
 
 const filteredActions = computed(() => {
   let result = [...actions.value]
@@ -374,8 +375,11 @@ const filteredActions = computed(() => {
   return result
 })
 
-const fetchActions = async () => {
-  loading.value = true
+const fetchActions = async (showLoading = true) => {
+  if (isFetchingActions) return
+
+  isFetchingActions = true
+  if (showLoading) loading.value = true
   try {
     const params = {
       page: pagination.value.page,
@@ -384,14 +388,16 @@ const fetchActions = async () => {
     
     const result = await getPaginatedData(actionApi.getActionHistory, params)
     
-    actions.value = (result.items || []).map(item => ({
-      ...item,
-      startTime: item.start_at || null,
-      endTime: item.finished_at || null,
-      completedSteps: item.completed_steps || 0,
-      totalSteps: item.total_steps || 0,
-      duration: item.duration ? item.duration * 1000 : 0
-    }))
+    actions.value = (result.items || [])
+      .filter(item => !locallyDeletedActionIds.has(item.id))
+      .map(item => ({
+        ...item,
+        startTime: item.start_at || null,
+        endTime: item.finished_at || null,
+        completedSteps: item.completed_steps || 0,
+        totalSteps: item.total_steps || 0,
+        duration: item.duration ? item.duration * 1000 : 0
+      }))
     
     pagination.value.total = result.pagination.total
     pagination.value.page = result.pagination.page
@@ -400,9 +406,10 @@ const fetchActions = async () => {
     updateStatistics()
   } catch (error) {
     console.error('获取行动历史失败:', error)
-    actions.value = []
+    if (showLoading) actions.value = []
   } finally {
-    loading.value = false
+    if (showLoading) loading.value = false
+    isFetchingActions = false
   }
 }
 
@@ -463,6 +470,7 @@ const deleteAction = (actionId) => {
   ).then(() => {
     const index = actions.value.findIndex(a => a.id === actionId)
     if (index > -1) {
+      locallyDeletedActionIds.add(actionId)
       actions.value.splice(index, 1)
       updateStatistics()
       ElMessage.success('行动已删除')
@@ -472,7 +480,41 @@ const deleteAction = (actionId) => {
   })
 }
 
+let pollingInterval = null
+
+const startPolling = () => {
+  if (pollingInterval) return
+
+  pollingInterval = window.setInterval(() => {
+    fetchActions(false)
+  }, 3000)
+}
+
+const stopPolling = () => {
+  if (!pollingInterval) return
+
+  window.clearInterval(pollingInterval)
+  pollingInterval = null
+}
+
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    stopPolling()
+    return
+  }
+
+  fetchActions(false)
+  startPolling()
+}
+
 onMounted(() => {
   fetchActions()
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>

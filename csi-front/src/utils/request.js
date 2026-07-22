@@ -46,6 +46,29 @@ async function refreshAfterPermissionChange(requestUrl = '') {
   try { await permissionRefreshPromise } catch { /* 401 handler owns session cleanup */ }
 }
 
+/**
+ * 统一处理接口鉴权失败，并返回失败类型。
+ * @param {{ code?: number|null, httpStatus?: number|null, message: string, requestUrl?: string, silent?: boolean, skipPermissionRefresh?: boolean }} options
+ * @returns {Promise<'unauthorized'|'forbidden'|'other'>}
+ */
+export async function handleApiAuthorizationFailure({
+  code = null,
+  httpStatus = null,
+  message,
+  requestUrl = '',
+  silent = false,
+  skipPermissionRefresh = false
+}) {
+  const failureKind = classifyAuthorizationFailure(code, httpStatus)
+  if (failureKind === 'unauthorized') {
+    handleUnauthorized(message, requestUrl)
+  } else if (failureKind === 'forbidden') {
+    if (!skipPermissionRefresh) await refreshAfterPermissionChange(requestUrl)
+    if (!silent) ElMessage.warning(message)
+  }
+  return failureKind
+}
+
 const service = axios.create({
   baseURL,
   timeout: 30000,
@@ -83,14 +106,14 @@ service.interceptors.response.use(async response => {
   if (code === 0) return res
   if (typeof code === 'number' && code !== 0) {
     const message = res?.message || '请求失败'
-    const failureKind = classifyAuthorizationFailure(code, null)
-    if (failureKind === 'unauthorized') {
-      handleUnauthorized(message, requestUrl)
-      throw makeApiError(message, code, response)
-    }
-    if (failureKind === 'forbidden') {
-      if (!refreshedForVersion) await refreshAfterPermissionChange(requestUrl)
-      if (!response?.config?.silent) ElMessage.warning(message)
+    const failureKind = await handleApiAuthorizationFailure({
+      code,
+      message,
+      requestUrl,
+      silent: Boolean(response?.config?.silent),
+      skipPermissionRefresh: refreshedForVersion
+    })
+    if (failureKind === 'unauthorized' || failureKind === 'forbidden') {
       throw makeApiError(message, code, response)
     }
     if (!response?.config?.silent) ElMessage.error(message)
@@ -106,12 +129,13 @@ service.interceptors.response.use(async response => {
   const message = error.response?.data?.message || (status === 401
     ? '登录已失效，请重新登录'
     : status === 403 ? '无权限执行该操作' : '网络错误，请稍后重试')
-  const failureKind = classifyAuthorizationFailure(null, status)
-  if (failureKind === 'unauthorized') handleUnauthorized(message, requestUrl)
-  else if (failureKind === 'forbidden') {
-    await refreshAfterPermissionChange(requestUrl)
-    if (!error.config?.silent) ElMessage.warning(message)
-  } else if (!error.config?.silent) ElMessage.error(message)
+  const failureKind = await handleApiAuthorizationFailure({
+    httpStatus: status,
+    message,
+    requestUrl,
+    silent: Boolean(error.config?.silent)
+  })
+  if (failureKind === 'other' && !error.config?.silent) ElMessage.error(message)
   return Promise.reject(error)
 })
 

@@ -11,6 +11,7 @@ import {
 import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
 import { getApprovalSourceLabel, isApprovalAwaitingUserAction } from '@/utils/agentApproval'
 import { TODO_ITEM_STATUS } from '@/utils/action'
+import { AgentSseError, openAuthenticatedSse } from '@/utils/agentSseClient'
 import { fetchReplayBatch } from '@/utils/agentSseReplay'
 import {
     getAgentSessionStatusLabel,
@@ -19,6 +20,16 @@ import {
 } from '@/utils/agent/sessionStatus'
 
 const DEFAULT_REPLAY_PAGE_SIZE = 20
+const AGENT_SSE_TIMELINE_EVENT_TYPES = new Set([
+    'notification',
+    'debug_prompt',
+    'progress',
+    'step',
+    'task_submitted',
+    'stream',
+    'stream_end',
+    'reasoning_stream',
+])
 
 /**
  * @param {object} options
@@ -55,7 +66,11 @@ export function useAgentSessionStream(options = {}) {
         return timelineSeq
     }
 
-    let eventSource = null
+    /** @type {AbortController | null} */
+    let streamAbortController = null
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let retryTimer = null
+    let connectionGeneration = 0
     let retryCount = 0
     const maxRetries = 3
 
@@ -378,8 +393,8 @@ export function useAgentSessionStream(options = {}) {
             if (events.length < replayPageSize) {
                 hasMoreHistory.value = false
             }
-        } catch {
-            ElMessage.error('加载历史事件失败')
+        } catch (error) {
+            ElMessage.error(error?.message || '加载历史事件失败')
         } finally {
             historyLoading.value = false
         }
@@ -453,7 +468,10 @@ export function useAgentSessionStream(options = {}) {
         { deep: true, flush: 'post' }
     )
 
-    onUnmounted(teardownEventsScrollObserver)
+    onUnmounted(() => {
+        teardownEventsScrollObserver()
+        disconnectSSE()
+    })
 
     const statusRaw = computed(() => {
         const runtime = String(sessionRuntimeStatus.value || 'unknown')
@@ -562,6 +580,86 @@ export function useAgentSessionStream(options = {}) {
         }
     }
 
+    async function runSseAttempt(url, generation) {
+        const controller = new AbortController()
+        streamAbortController = controller
+        try {
+            await openAuthenticatedSse(url, {
+                signal: controller.signal,
+                onOpen: () => {
+                    if (generation !== connectionGeneration || controller.signal.aborted) return
+                    sseConnected.value = true
+                    sseError.value = ''
+                    retryCount = 0
+                    pushSystemTimeline('sse_open', '实时通道已建立')
+                },
+                onEvent: (event) => {
+                    if (generation !== connectionGeneration || controller.signal.aborted) return
+                    const type = event?.type || 'message'
+                    const raw = event?.data ?? ''
+                    if (type === 'user_message') {
+                        noteInitialReplayEvent()
+                        ingestSseNamedEvent(type, raw)
+                    } else if (type === 'status') {
+                        noteInitialReplayEvent()
+                        ingestSseNamedEvent(type, raw)
+                        applyStatusFromSsePayload(raw)
+                    } else if (type === 'todos') {
+                        onTodosSse(raw)
+                    } else if (type === 'result') {
+                        noteInitialReplayEvent()
+                        ingestSseNamedEvent(type, raw)
+                        applyStatusFromSsePayload(raw)
+                    } else if (type === 'approval_required') {
+                        handleApprovalRequiredEvent(raw)
+                    } else if (type === 'message' || AGENT_SSE_TIMELINE_EVENT_TYPES.has(type)) {
+                        noteInitialReplayEvent()
+                        ingestSseNamedEvent(type, raw)
+                    }
+                },
+            })
+            if (generation !== connectionGeneration || controller.signal.aborted) return
+            throw new AgentSseError('实时连接已中断', {
+                kind: 'network',
+                retryable: true,
+            })
+        } catch (error) {
+            if (
+                generation !== connectionGeneration ||
+                controller.signal.aborted ||
+                error?.name === 'AbortError'
+            ) return
+
+            sseConnected.value = false
+            if (error?.retryable && retryCount < maxRetries) {
+                retryCount++
+                const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000)
+                pushSystemTimeline('sse_retry', `第 ${retryCount} 次重连，${delay}ms 后执行`)
+                retryTimer = setTimeout(() => {
+                    retryTimer = null
+                    if (
+                        generation === connectionGeneration &&
+                        sessionId.value &&
+                        resolvedAgentId.value
+                    ) {
+                        void runSseAttempt(url, generation)
+                    }
+                }, delay)
+                return
+            }
+
+            sseError.value = error?.retryable
+                ? 'SSE 连接失败，请刷新页面重试'
+                : error?.message || '创建 SSE 连接失败'
+            pushSystemTimeline('sse_error', sseError.value)
+            if (error?.kind !== 'unauthorized' && error?.kind !== 'forbidden') {
+                ElMessage.error(sseError.value)
+            }
+        } finally {
+            if (streamAbortController === controller) streamAbortController = null
+        }
+    }
+
     function connectSSE() {
         if (!resolvedAgentId.value) {
             sseError.value = '缺少 agent_id 参数'
@@ -573,106 +671,26 @@ export function useAgentSessionStream(options = {}) {
         }
 
         disconnectSSE()
-
-        try {
-            const url = agentApi.getAgentStatusUrl(resolvedAgentId.value, sessionId.value, {
-                limit: replayPageSize,
-                offset: 0,
-            })
-            startInitialReplayTracking()
-            eventSource = new EventSource(url)
-
-            eventSource.onopen = () => {
-                sseConnected.value = true
-                sseError.value = ''
-                retryCount = 0
-                pushSystemTimeline('sse_open', '实时通道已建立')
-            }
-
-            eventSource.onerror = () => {
-                sseConnected.value = false
-                if (eventSource) {
-                    eventSource.close()
-                    eventSource = null
-                }
-
-                if (retryCount < maxRetries) {
-                    retryCount++
-                    const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000)
-                    pushSystemTimeline('sse_retry', `第 ${retryCount} 次重连，${delay}ms 后执行`)
-                    setTimeout(() => {
-                        if (retryCount <= maxRetries && sessionId.value && resolvedAgentId.value) {
-                            connectSSE()
-                        }
-                    }, delay)
-                } else {
-                    sseError.value = 'SSE 连接失败，请刷新页面重试'
-                    pushSystemTimeline('sse_error', sseError.value)
-                    ElMessage.error('实时连接中断，请稍后重试')
-                }
-            }
-
-            eventSource.addEventListener('user_message', (event) => {
-                noteInitialReplayEvent()
-                ingestSseNamedEvent('user_message', event.data ?? '')
-            })
-
-            eventSource.addEventListener('status', (event) => {
-                noteInitialReplayEvent()
-                const raw = event.data ?? ''
-                ingestSseNamedEvent('status', raw)
-                applyStatusFromSsePayload(raw)
-            })
-            eventSource.addEventListener('todos', (event) => {
-                const raw = event.data ?? ''
-                onTodosSse(raw)
-            })
-
-            eventSource.addEventListener('result', (event) => {
-                noteInitialReplayEvent()
-                const raw = event.data ?? ''
-                ingestSseNamedEvent('result', raw)
-                applyStatusFromSsePayload(raw)
-            })
-
-            const sseNamedEvents = [
-                'notification',
-                'debug_prompt',
-                'progress',
-                'step',
-                'task_submitted',
-                'stream',
-                'stream_end',
-            ]
-            for (const name of sseNamedEvents) {
-                eventSource.addEventListener(name, (event) => {
-                    noteInitialReplayEvent()
-                    ingestSseNamedEvent(name, event.data ?? '')
-                })
-            }
-            eventSource.addEventListener('reasoning_stream', (event) => {
-                noteInitialReplayEvent()
-                ingestSseNamedEvent('reasoning_stream', event.data ?? '')
-            })
-            eventSource.addEventListener('approval_required', (event) => {
-                handleApprovalRequiredEvent(event.data ?? '')
-            })
-            eventSource.onmessage = (event) => {
-                noteInitialReplayEvent()
-                ingestSseNamedEvent('message', event.data ?? '')
-            }
-        } catch (e) {
-            sseConnected.value = false
-            sseError.value = e?.message || '创建 SSE 连接失败'
-            pushSystemTimeline('sse_error', sseError.value)
-        }
+        const url = agentApi.getAgentStatusUrl(resolvedAgentId.value, sessionId.value, {
+            limit: replayPageSize,
+            offset: 0,
+        })
+        startInitialReplayTracking()
+        void runSseAttempt(url, connectionGeneration)
     }
 
     function disconnectSSE() {
-        if (eventSource) {
-            eventSource.close()
-            eventSource = null
+        connectionGeneration++
+        retryCount = 0
+        if (retryTimer) {
+            clearTimeout(retryTimer)
+            retryTimer = null
         }
+        if (streamAbortController) {
+            streamAbortController.abort()
+            streamAbortController = null
+        }
+        clearInitialReplayTracking()
         sseConnected.value = false
     }
 
