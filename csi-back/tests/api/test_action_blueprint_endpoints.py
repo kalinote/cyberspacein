@@ -4,11 +4,43 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.api.v1.endpoints.action import blueprint as blueprint_endpoint
+from app.api.v1.endpoints.action import instance as instance_endpoint
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.component_run import ComponentRunModel
 from app.models.action.schedule import ActionScheduleModel
+from app.schemas.general import PageParamsSchema
 from app.service.action import ActionInstanceService
+
+
+@pytest.mark.asyncio
+async def test_blueprint_list_sorts_by_created_at_descending(monkeypatch):
+    query = Mock()
+    query.count = AsyncMock(return_value=0)
+    query.sort.return_value = query
+    query.skip.return_value = query
+    query.limit.return_value = query
+    query.to_list = AsyncMock(return_value=[])
+    monkeypatch.setattr(ActionBlueprintModel, "find", Mock(return_value=query))
+
+    await blueprint_endpoint.get_blueprints(PageParamsSchema())
+
+    query.sort.assert_called_once_with("-created_at")
+
+
+@pytest.mark.asyncio
+async def test_action_history_sorts_by_created_at_descending(monkeypatch):
+    query = Mock()
+    query.count = AsyncMock(return_value=0)
+    query.sort.return_value = query
+    query.skip.return_value = query
+    query.limit.return_value = query
+    query.to_list = AsyncMock(return_value=[])
+    monkeypatch.setattr(ActionInstanceModel, "find_all", Mock(return_value=query))
+
+    await instance_endpoint.get_action_instances(PageParamsSchema())
+
+    query.sort.assert_called_once_with("-created_at")
 
 
 @pytest.mark.asyncio

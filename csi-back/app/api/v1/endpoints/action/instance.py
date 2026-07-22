@@ -52,7 +52,7 @@ async def get_action_instances(
 ):
     skip = (params.page - 1) * params.page_size
     total = await ActionInstanceModel.find_all().count()
-    action_instances = await ActionInstanceModel.find_all().skip(skip).limit(params.page_size).to_list()
+    action_instances = await ActionInstanceModel.find_all().sort("-created_at").skip(skip).limit(params.page_size).to_list()
 
     results: List[ActionInstanceBaseInfoResponse] = []
     for action_instance in action_instances:
