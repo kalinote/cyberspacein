@@ -35,6 +35,7 @@ logger = logger.bind(name=__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_auth_security()
+    settings.validate_analyst_runtime()
     await init_mariadb()
     await init_mongodb()
     await init_redis()
@@ -49,6 +50,13 @@ async def lifespan(app: FastAPI):
     await ensure_default_admin()
     from app.service.nanobot.bootstrap import ensure_builtin_agent_prompts
     await ensure_builtin_agent_prompts()
+
+    analyst_runtime_worker = None
+    if settings.NANOBOT_RUNTIME_WORKER_ENABLED:
+        from app.service.analyst.runtime_worker import AnalystRuntimeWorker
+
+        analyst_runtime_worker = AnalystRuntimeWorker()
+        await analyst_runtime_worker.start()
 
     async def monitor_component_leases() -> None:
         """周期收敛失去心跳或超过运行时限的组件运行。"""
@@ -75,6 +83,9 @@ async def lifespan(app: FastAPI):
         await component_lease_task
 
     system_config_manager.mark_not_ready()
+
+    if analyst_runtime_worker is not None:
+        await analyst_runtime_worker.stop()
 
     from app.service.analyst.service import AnalystService
     await AnalystService.shutdown_running_agents()

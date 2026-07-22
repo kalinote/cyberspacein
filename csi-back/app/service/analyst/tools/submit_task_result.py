@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from pymongo import ReturnDocument
+
 from app.models.agent.nanobot import NanobotSessionModel
 from app.schemas.agent.result import (
     SUBMIT_TASK_RESULT_TOOL_NAME,
@@ -15,6 +17,8 @@ from app.utils.id_lib import generate_id
 from app.service.analyst.context import (
     current_task_completion,
     get_current_agent_id,
+    get_current_run_id,
+    get_current_run_lease_token,
     get_current_session_id,
 )
 from app.service.analyst.tools._context import require_agent_id
@@ -68,19 +72,27 @@ class SubmitTaskResultTool(Tool):
         submission_id = generate_id(f"submission:{session_id}:{datetime.now().isoformat()}")
         record = TaskSubmissionRecordSchema.from_submit_params(submission_id, params)
         record_dict = record.model_dump()
-        current_task_completion.set(record_dict)
 
         if session_id:
-            sess = await NanobotSessionModel.find_one({"_id": session_id})
-            if sess is not None:
-                sess.task_submissions = list(sess.task_submissions or []) + [record_dict]
-                sess.updated_at = datetime.now()
-                await sess.save()
-                submission_index = len(sess.task_submissions) - 1
-            else:
-                submission_index = 0
+            query: dict = {"_id": session_id}
+            run_id = get_current_run_id()
+            if run_id:
+                query["active_run_id"] = run_id
+                query["active_run_lease_token"] = get_current_run_lease_token()
+            updated = await NanobotSessionModel.get_motor_collection().find_one_and_update(
+                query,
+                {
+                    "$push": {"task_submissions": record_dict},
+                    "$set": {"updated_at": datetime.now()},
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+            if updated is None:
+                return "Error: 当前会话已结束或 Worker 已失去租约，结果未记录"
+            submission_index = len(updated.get("task_submissions") or []) - 1
         else:
             submission_index = 0
+        current_task_completion.set(record_dict)
 
         await AnalystService.broadcast_sse(
             agent_id,

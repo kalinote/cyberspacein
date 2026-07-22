@@ -20,11 +20,19 @@ from typing import Any
 
 from loguru import logger
 
-from app.service.analyst.context import get_current_auto_approve_hitl
+from app.service.analyst.context import (
+    get_current_auto_approve_hitl,
+    get_current_run_id,
+    get_current_run_lease_token,
+    get_current_run_worker_id,
+)
+from app.service.analyst.approval_store import AnalystApprovalStore
+from app.service.analyst.runtime_store import AnalystRuntimeStore
 from app.models.agent.nanobot import NanobotSessionModel
 from app.models.agent.sse_event import NanobotAgentSseEventModel
 from app.schemas.agent.hitl import validate_source
 from app.schemas.agent.nanobot_agent import AgentServiceError
+from app.schemas.agent.runtime_state import NanobotRunStatusEnum
 from app.schemas.constants import NanobotSessionStatusEnum
 from app.utils import status_codes
 
@@ -118,7 +126,12 @@ class HitlService:
 
     @classmethod
     async def submit_decisions(
-        cls, agent_id: str, session_id: str, decisions: list[dict]
+        cls,
+        agent_id: str,
+        session_id: str,
+        approval_request_id: str,
+        decisions: list[dict],
+        resolver_user_id: str | None = None,
     ) -> None:
         session_id = str(session_id or "").strip()
         if not session_id:
@@ -131,13 +144,43 @@ class HitlService:
                 status_codes.NOT_FOUND_AGENT,
                 f"会话不存在或不属于该 Agent: session_id={session_id}",
             )
-        if doc.status != NanobotSessionStatusEnum.AWAITING_APPROVAL:
-            logger.warning(
-                f"/approve 写入时会话非 AWAITING_APPROVAL 状态: "
-                f"session_id={session_id} status={doc.status}"
+        pending = doc.pending_approval if isinstance(doc.pending_approval, dict) else {}
+        if (
+            doc.status != NanobotSessionStatusEnum.AWAITING_APPROVAL
+            or pending.get("approval_request_id") != approval_request_id
+        ):
+            raise AgentServiceError(
+                status_codes.CONFLICT_STATE,
+                "审批请求已失效、已被处理或不属于当前待审批步骤",
             )
+
+        if doc.active_run_id:
+            approved, rejections = parse_approval_decisions(decisions)
+            resolution = approval_resolution_label(approved, rejections)
+            resolved = await AnalystApprovalStore.resolve(
+                approval_request_id=approval_request_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                decisions=decisions,
+                resolution=resolution,
+                reject_reasons=rejections or None,
+                resolver_user_id=resolver_user_id,
+            )
+            if resolved is None:
+                raise AgentServiceError(
+                    status_codes.CONFLICT_STATE,
+                    "审批请求已被其他请求处理，请刷新会话状态",
+                )
+            return
+
         queue = await cls._get_or_create_resume_queue(session_id)
-        await queue.put({"decisions": decisions, "submitted_at": datetime.now()})
+        await queue.put(
+            {
+                "approval_request_id": approval_request_id,
+                "decisions": decisions,
+                "submitted_at": datetime.now(),
+            }
+        )
 
     @classmethod
     async def _await_decisions(cls, session_id: str) -> dict:
@@ -146,6 +189,37 @@ class HitlService:
             raise RuntimeError("HITL 等待决策需要非空 session_id")
         queue = await cls._get_or_create_resume_queue(session_id)
         return await queue.get()
+
+    @classmethod
+    async def _await_persisted_decision(
+        cls,
+        *,
+        run_id: str,
+        approval_request_id: str,
+        worker_id: str,
+        lease_token: str,
+    ) -> dict[str, Any]:
+        """轮询持久化审批和 Run 租约，使任意 API 实例都能提交决策。"""
+        while True:
+            approval = await AnalystApprovalStore.get(approval_request_id)
+            if approval is None:
+                raise RuntimeError(f"审批请求不存在: {approval_request_id}")
+            if approval.status.value != "pending":
+                return {
+                    "approval_request_id": approval_request_id,
+                    "decisions": list(approval.decisions or []),
+                    "submitted_at": approval.resolved_at,
+                }
+
+            run = await AnalystRuntimeStore.get(run_id)
+            if (
+                run is None
+                or not run.active
+                or run.worker_id != worker_id
+                or run.lease_token != lease_token
+            ):
+                raise RuntimeError("审批等待期间 Run 已结束或 Worker 已失去租约")
+            await asyncio.sleep(0.25)
 
     @classmethod
     async def patch_persisted_approval_required(
@@ -243,14 +317,54 @@ class HitlService:
             "payload": business_payload,
         }
 
+        run_id = get_current_run_id()
+        worker_id = get_current_run_worker_id()
+        lease_token = get_current_run_lease_token()
+        if run_id:
+            if not worker_id or not lease_token:
+                raise RuntimeError("持久化 Run 缺少 Worker 租约上下文")
+            await AnalystApprovalStore.create(
+                approval_request_id=approval_request_id,
+                run_id=run_id,
+                session_id=session_id,
+                agent_id=agent_id,
+                source=source,
+                payload=business_payload,
+            )
+            updated = await AnalystRuntimeStore.set_status(
+                run_id,
+                worker_id,
+                lease_token,
+                NanobotRunStatusEnum.AWAITING_APPROVAL,
+            )
+            if not updated:
+                raise RuntimeError("进入待审批状态前已失去 Run 租约")
+
         session = await NanobotSessionModel.find_one({"_id": session_id})
         if session is None:
             raise RuntimeError(f"当前会话不存在: {session_id}")
-
-        session.status = NanobotSessionStatusEnum.AWAITING_APPROVAL
-        session.pending_approval = pending_record
-        session.updated_at = datetime.now()
-        await session.save()
+        if run_id and lease_token:
+            update = await NanobotSessionModel.get_motor_collection().update_one(
+                {
+                    "_id": session_id,
+                    "active_run_id": run_id,
+                    "active_run_lease_token": lease_token,
+                },
+                {
+                    "$set": {
+                        "status": NanobotSessionStatusEnum.AWAITING_APPROVAL.value,
+                        "pending_approval": pending_record,
+                        "updated_at": datetime.now(),
+                    }
+                },
+            )
+            if update.matched_count != 1:
+                raise RuntimeError("写入待审批会话状态时 Run 已失效")
+        else:
+            session.status = NanobotSessionStatusEnum.AWAITING_APPROVAL
+            session.pending_approval = pending_record
+            session.updated_at = datetime.now()
+            await session.save()
 
         event_pending = cls._build_approval_event_data(
             agent_id=agent_id,
@@ -275,7 +389,15 @@ class HitlService:
         )
 
         try:
-            decision_msg = await cls._await_decisions(session_id)
+            if run_id and worker_id and lease_token:
+                decision_msg = await cls._await_persisted_decision(
+                    run_id=run_id,
+                    approval_request_id=approval_request_id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                )
+            else:
+                decision_msg = await cls._await_decisions(session_id)
         except Exception:
             logger.exception(
                 f"HITL 等待审批异常: agent_id={agent_id} session_id={session_id} source={source}"
@@ -288,10 +410,38 @@ class HitlService:
 
         session = await NanobotSessionModel.find_one({"_id": session_id})
         if session is not None:
-            session.status = NanobotSessionStatusEnum.RUNNING
-            session.pending_approval = None
-            session.updated_at = datetime.now()
-            await session.save()
+            if run_id and lease_token:
+                update = await NanobotSessionModel.get_motor_collection().update_one(
+                    {
+                        "_id": session_id,
+                        "active_run_id": run_id,
+                        "active_run_lease_token": lease_token,
+                    },
+                    {
+                        "$set": {
+                            "status": NanobotSessionStatusEnum.RUNNING.value,
+                            "pending_approval": None,
+                            "updated_at": datetime.now(),
+                        }
+                    },
+                )
+                if update.matched_count != 1:
+                    raise RuntimeError("恢复运行状态时 Run 已失效")
+            else:
+                session.status = NanobotSessionStatusEnum.RUNNING
+                session.pending_approval = None
+                session.updated_at = datetime.now()
+                await session.save()
+
+        if run_id and worker_id and lease_token:
+            updated = await AnalystRuntimeStore.set_status(
+                run_id,
+                worker_id,
+                lease_token,
+                NanobotRunStatusEnum.RUNNING,
+            )
+            if not updated:
+                raise RuntimeError("审批完成后恢复运行态时已失去 Run 租约")
 
         await cls.patch_persisted_approval_required(
             agent_id,

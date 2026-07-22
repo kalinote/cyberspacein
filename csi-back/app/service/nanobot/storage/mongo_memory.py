@@ -28,6 +28,25 @@ from app.schemas.constants import NanobotMemoryDocTypeEnum
 logger = logger.bind(name=__name__)
 
 
+async def _ensure_current_run_lease() -> None:
+    """持久化 Run 内的记忆写入必须仍持有有效 fencing 租约。"""
+    from app.service.analyst.context import (
+        get_current_run_id,
+        get_current_run_lease_token,
+    )
+    from app.service.analyst.runtime_store import AnalystRuntimeStore
+
+    run_id = get_current_run_id()
+    if not run_id:
+        return
+    lease_token = get_current_run_lease_token()
+    if not lease_token or not await AnalystRuntimeStore.owns_active_lease(
+        run_id,
+        lease_token,
+    ):
+        raise RuntimeError("当前 Worker 已失去 Run 租约，拒绝写入长期记忆")
+
+
 class MongoMemoryBackend:
     """MemoryBackend 的 MongoDB 实现"""
 
@@ -58,6 +77,7 @@ class MongoMemoryBackend:
             .to_list()
         )
         doc = docs[0] if docs else None
+        await _ensure_current_run_lease()
         if doc is None:
             await NanobotMemoryDocsModel(
                 workspace_id=workspace_id,
@@ -80,9 +100,10 @@ class MongoMemoryBackend:
     async def append_history(self, workspace_id: str, entry: str) -> int:
         """追加历史条目，原子分配 cursor 并同步更新 nanobot_history_state.last_cursor"""
         now = datetime.now()
+        await _ensure_current_run_lease()
 
         # 通过 $inc + upsert 原子分配 cursor，返回更新后的 state
-        collection = NanobotHistoryStateModel.get_pymongo_collection()
+        collection = NanobotHistoryStateModel.get_motor_collection()
         updated = await collection.find_one_and_update(
             {"_id": workspace_id},
             {
@@ -151,7 +172,8 @@ class MongoMemoryBackend:
             return 0
 
         cutoff_cursor = oldest[-1].cursor
-        collection = NanobotHistoryModel.get_pymongo_collection()
+        await _ensure_current_run_lease()
+        collection = NanobotHistoryModel.get_motor_collection()
         result = await collection.delete_many({
             "workspace_id": workspace_id,
             "cursor": {"$lte": cutoff_cursor},
@@ -178,6 +200,7 @@ class MongoMemoryBackend:
     async def set_dream_cursor(self, workspace_id: str, cursor: int) -> None:
         now = datetime.now()
         state = await NanobotHistoryStateModel.find_one({"_id": workspace_id})
+        await _ensure_current_run_lease()
         if state is None:
             await NanobotHistoryStateModel(
                 id=workspace_id,

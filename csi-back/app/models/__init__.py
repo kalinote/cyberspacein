@@ -25,6 +25,11 @@ from app.models.agent.sse_event import (
     NanobotAgentSseEventModel,
     NanobotAgentSseEventStateModel,
 )
+from app.models.agent.runtime import (
+    NanobotApprovalModel,
+    NanobotRunModel,
+    NanobotToolExecutionModel,
+)
 from app.models.annotation import AnnotationModel
 from app.models.search_template import SearchTemplateModel
 from app.models.auth.group import GroupModel
@@ -60,6 +65,9 @@ def get_all_models() -> List[Type[Document]]:
         NanobotSkillFileModel,
         NanobotAgentSseEventModel,
         NanobotAgentSseEventStateModel,
+        NanobotRunModel,
+        NanobotApprovalModel,
+        NanobotToolExecutionModel,
         AnnotationModel,
         SearchTemplateModel,
         GroupModel,

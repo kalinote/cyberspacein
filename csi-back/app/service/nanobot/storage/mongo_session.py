@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+from pymongo import ReturnDocument
 
 from app.models.agent.nanobot import (
     NanobotSessionMessagesModel,
@@ -99,8 +100,9 @@ class MongoSessionStore:
     async def save(self, session: "Session") -> None:
         now = datetime.now()
         session.updated_at = now
+        pending = [m for m in session.messages if "seq" not in m]
 
-        # 1) upsert 元数据
+        # 1) 确保元数据文档存在
         existing = await NanobotSessionModel.find_one({"_id": session.id})
         if existing is None:
             await NanobotSessionModel(
@@ -109,22 +111,30 @@ class MongoSessionStore:
                 workspace_id=session.workspace_id,
                 metadata=session.metadata,
                 last_consolidated_seq=session.last_consolidated,
+                last_message_seq=0,
                 created_at=session.created_at,
                 updated_at=now,
             ).insert()
-        else:
-            existing.metadata = session.metadata
-            existing.last_consolidated_seq = session.last_consolidated
-            existing.updated_at = now
-            await existing.save()
 
-        # 2) 增量 append 消息
-        pending = [m for m in session.messages if "seq" not in m]
-        if not pending:
-            self._cache[session.id] = session
-            return
+        from app.service.analyst.context import (
+            get_current_run_id,
+            get_current_run_lease_token,
+        )
 
-        # 查询当前 max(seq) 作为起始点
+        query: dict[str, Any] = {"_id": session.id}
+        run_id = get_current_run_id()
+        if run_id:
+            from app.service.analyst.service import AnalystService
+
+            if (
+                AnalystService._owned_run_leases.get(run_id)
+                != get_current_run_lease_token()
+            ):
+                raise RuntimeError("当前 Worker 已失去 Run 租约，拒绝保存会话")
+            query["active_run_id"] = run_id
+            query["active_run_lease_token"] = get_current_run_lease_token()
+
+        # 2) 在会话文档上原子分配消息 seq，兼容尚未回填计数器的历史会话
         latest = (
             await NanobotSessionMessagesModel
             .find({"session_id": session.id})
@@ -133,11 +143,44 @@ class MongoSessionStore:
             .to_list()
         )
         current_max = latest[0].seq if latest else 0
+        update_pipeline = [
+            {
+                "$set": {
+                    "metadata": session.metadata,
+                    "last_consolidated_seq": session.last_consolidated,
+                    "last_message_seq": {
+                        "$add": [
+                            {
+                                "$max": [
+                                    {"$ifNull": ["$last_message_seq", 0]},
+                                    current_max,
+                                ]
+                            },
+                            len(pending),
+                        ]
+                    },
+                    "updated_at": now,
+                }
+            }
+        ]
+        updated = await NanobotSessionModel.get_motor_collection().find_one_and_update(
+            query,
+            update_pipeline,
+            return_document=ReturnDocument.AFTER,
+        )
+        if updated is None:
+            raise RuntimeError("会话已被其他 Run 接管，拒绝保存过期运行检查点")
+        if not pending:
+            self._cache[session.id] = session
+            return
+
+        allocated_end = int(updated.get("last_message_seq") or 0)
+        allocated_start = allocated_end - len(pending) + 1
 
         docs: list[NanobotSessionMessagesModel] = []
-        for offset, msg in enumerate(pending, start=1):
-            seq = current_max + offset
-            msg["seq"] = seq  # 原地写回，下次 save 时不会被重复插入
+        assigned: list[tuple[dict[str, Any], int]] = []
+        for offset, msg in enumerate(pending):
+            seq = allocated_start + offset
 
             role_raw = msg.get("role", "user")
             role = (
@@ -162,14 +205,17 @@ class MongoSessionStore:
                     tool_call_name=msg.get("tool_call_name"),
                 )
             )
+            assigned.append((msg, seq))
 
         await NanobotSessionMessagesModel.insert_many(docs)
+        for msg, seq in assigned:
+            msg["seq"] = seq
         logger.debug(
             "session {} 新增 {} 条消息 (seq {}..{})",
             session.id,
             len(docs),
-            current_max + 1,
-            current_max + len(docs),
+            allocated_start,
+            allocated_end,
         )
         self._cache[session.id] = session
 

@@ -149,8 +149,9 @@ class SendAgentMessageResponseSchema(BaseModel):
 class ApproveRequestSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
     session_id: str = Field(description="会话ID", min_length=1)
+    approval_request_id: str = Field(description="待决议审批请求 ID", min_length=1)
     decisions: list[dict] = Field(
-        description="审批决策列表，对应会话当前 pending_approval（与 source 无关，单会话单队列）"
+        description="审批决策列表，必须与 approval_request_id 对应"
     )
 
 
@@ -162,7 +163,7 @@ class CancelAgentRequestSchema(BaseModel):
 
 class CancelAgentResponseSchema(BaseModel):
     agent_id: str = Field(description="分析引擎ID")
-    cancelled: bool = Field(description="是否真的向后台任务发出了取消请求（任务不在则为 False）")
+    cancelled: bool = Field(description="是否已持久化取消请求（活动 Run 不存在则为 False）")
 
 
 class ToolDescriptorSchema(BaseModel):

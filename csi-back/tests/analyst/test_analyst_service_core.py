@@ -24,6 +24,7 @@ class FakeSessionDoc:
     id: str
     agent_id: str = "a1"
     status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.IDLE
+    active_run_id: str | None = None
     steps: list[dict] = field(default_factory=list)
     todos: list[dict] = field(default_factory=list)
     pending_approval: dict | None = None
@@ -63,6 +64,13 @@ def _reset_singletons(monkeypatch: pytest.MonkeyPatch) -> Iterable[None]:
     monkeypatch.setattr(hitl_module, "NanobotSessionModel", FakeNanobotSessionModel)
     monkeypatch.setattr(service_module, "NanobotSessionModel", FakeNanobotSessionModel)
     monkeypatch.setattr(service_module.AnalystService, "_persist_sse_event", AsyncMock())
+    monkeypatch.setattr(service_module.AnalystService, "_load_replay_events", AsyncMock(return_value=[]))
+    monkeypatch.setattr(service_module.AnalystService, "_build_session_fallback_replay", AsyncMock(return_value=[]))
+    monkeypatch.setattr(service_module.AnalystService, "_latest_persisted_sse_seq", AsyncMock(return_value=0))
+    monkeypatch.setattr(service_module.AnalystService, "_flush_stream_buffer", AsyncMock())
+    monkeypatch.setattr(service_module.AnalystService, "_flush_reasoning_stream_buffer", AsyncMock())
+    monkeypatch.setattr(service_module.AnalystEventBus, "prepare_subscription", AsyncMock(return_value=None))
+    monkeypatch.setattr(service_module.AnalystEventBus, "publish", AsyncMock(return_value=False))
     yield
 
 
@@ -99,6 +107,7 @@ async def test_context_isolation_between_tasks() -> None:
 
 @pytest.mark.asyncio
 async def test_sse_subscribe_and_broadcast() -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     q = await service_module.AnalystService.subscribe("a1", "s1")
     await service_module.AnalystService.broadcast_sse(
         "a1", "status", {"session_id": "s1", "x": 1}
@@ -110,6 +119,7 @@ async def test_sse_subscribe_and_broadcast() -> None:
 
 @pytest.mark.asyncio
 async def test_sse_multiple_subscribers() -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     q1 = await service_module.AnalystService.subscribe("a1", "s1")
     q2 = await service_module.AnalystService.subscribe("a1", "s1")
     await service_module.AnalystService.broadcast_sse(
@@ -129,6 +139,7 @@ async def test_sse_multiple_subscribers() -> None:
 
 @pytest.mark.asyncio
 async def test_sse_unsubscribe_cleans_subs_map() -> None:
+    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
     q = await service_module.AnalystService.subscribe("a1", "s1")
     await service_module.AnalystService.unsubscribe("a1", "s1", q)
     assert ("a1", "s1") not in service_module.AnalystService._sse_subscribers
@@ -143,9 +154,12 @@ async def test_submit_approval_puts_queue() -> None:
         id="s1",
         agent_id="a1",
         status=NanobotSessionStatusEnum.AWAITING_APPROVAL,
+        pending_approval={"approval_request_id": "req-1"},
     )
     decisions = [{"id": "x", "approve": True}]
-    await service_module.AnalystService.submit_approval("a1", "s1", decisions)
+    await service_module.AnalystService.submit_approval(
+        "a1", "s1", "req-1", decisions
+    )
     payload = await HitlService._await_decisions("s1")
     assert payload["decisions"] == decisions
     assert "submitted_at" in payload
@@ -154,26 +168,24 @@ async def test_submit_approval_puts_queue() -> None:
 @pytest.mark.asyncio
 async def test_submit_approval_not_found_session() -> None:
     with pytest.raises(AgentServiceError) as e:
-        await service_module.AnalystService.submit_approval("a1", "missing", [])
+        await service_module.AnalystService.submit_approval(
+            "a1", "missing", "req-1", []
+        )
     assert e.value.code == status_codes.NOT_FOUND_AGENT
 
 
 @pytest.mark.asyncio
-async def test_submit_approval_non_awaiting_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_submit_approval_non_awaiting_rejected() -> None:
     FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(
         id="s1",
         agent_id="a1",
         status=NanobotSessionStatusEnum.RUNNING,
     )
-    warnings: list[str] = []
-
-    monkeypatch.setattr(
-        hitl_module.logger,
-        "warning",
-        lambda msg, *_a, **_k: warnings.append(str(msg)),
-    )
-    await service_module.AnalystService.submit_approval("a1", "s1", [{"id": "x"}])
-    assert warnings and "非 AWAITING_APPROVAL" in warnings[0]
+    with pytest.raises(AgentServiceError) as exc_info:
+        await service_module.AnalystService.submit_approval(
+            "a1", "s1", "req-1", [{"id": "x"}]
+        )
+    assert exc_info.value.code == status_codes.CONFLICT_STATE
 
 
 @pytest.mark.asyncio

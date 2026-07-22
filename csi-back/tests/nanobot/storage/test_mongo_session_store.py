@@ -28,6 +28,24 @@ def store_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     # --- NanobotSessionModel（在 mongo_session 模块内打桩） ---
     nanobot_session_find_one = AsyncMock(return_value=None)
     nanobot_session_insert = AsyncMock()
+    session_state = {"last_message_seq": 0}
+
+    async def _find_one_and_update(
+        _query: dict[str, Any],
+        pipeline: list[dict[str, Any]],
+        **_kwargs: Any,
+    ) -> dict[str, int]:
+        seq_expr = pipeline[0]["$set"]["last_message_seq"]["$add"]
+        current_max = seq_expr[0]["$max"][1]
+        session_state["last_message_seq"] = (
+            max(session_state["last_message_seq"], current_max) + seq_expr[1]
+        )
+        return dict(session_state)
+
+    session_collection = MagicMock()
+    session_collection.find_one_and_update = AsyncMock(
+        side_effect=_find_one_and_update
+    )
 
     class _FakeNanobotSessionModel:
         def __init__(self, **kwargs: Any) -> None:
@@ -45,6 +63,10 @@ def store_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         def find(query: dict[str, Any]) -> Any:
             # 测试用：由用例在运行时 monkeypatch 这个方法
             raise NotImplementedError
+
+        @staticmethod
+        def get_motor_collection() -> Any:
+            return session_collection
 
     nanobot_session_existing = MagicMock()
     nanobot_session_existing.save = AsyncMock()
@@ -96,6 +118,7 @@ def store_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "nanobot_session_find_one": nanobot_session_find_one,
         "nanobot_session_insert": nanobot_session_insert,
         "nanobot_session_existing": nanobot_session_existing,
+        "session_collection": session_collection,
         "latest_docs": latest_docs,
         "by_session_docs": by_session_docs,
         "insert_many": insert_many,
@@ -184,17 +207,16 @@ async def test_save_meta_overwrite(store_mocks: dict[str, Any]) -> None:
     session.add_message("user", "x")
     await store.save(session)
 
-    # 第二次 save：元数据应走 update 分支（existing.save）
+    # 第二次 save：元数据通过原子更新管道覆盖
     store_mocks["nanobot_session_find_one"].return_value = store_mocks["nanobot_session_existing"]
 
     session.metadata["k"] = "v"
     session.last_consolidated = 7
     await store.save(session)
 
-    existing = store_mocks["nanobot_session_existing"]
-    assert existing.metadata == {"k": "v"}
-    assert existing.last_consolidated_seq == 7
-    assert existing.save.await_count == 1
+    pipeline = store_mocks["session_collection"].find_one_and_update.await_args.args[1]
+    assert pipeline[0]["$set"]["metadata"] == {"k": "v"}
+    assert pipeline[0]["$set"]["last_consolidated_seq"] == 7
 
 
 @pytest.mark.asyncio

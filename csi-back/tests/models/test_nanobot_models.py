@@ -128,13 +128,13 @@ async def test_models_registered_collections_exist_after_insert(nanobot_db: Any)
     st = NanobotHistoryStateModel(id=ws_id, last_cursor=1, last_dream_cursor=0)
     await st.insert()
 
-    db = NanobotWorkspaceModel.get_pymongo_collection().database
+    db = NanobotWorkspaceModel.get_motor_collection().database
     names = set(await db.list_collection_names())
     expected = {cls.Settings.name for cls in NANOBOT_DOCUMENTS}
     assert expected <= names, f"缺少集合: {expected - names}"
 
     for cls in NANOBOT_DOCUMENTS:
-        assert await cls.get_pymongo_collection().count_documents({}) >= 1
+        assert await cls.get_motor_collection().count_documents({}) >= 1
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_indexes_created(nanobot_db: Any) -> None:
     await _seed_minimal_workspace_agent_session()
 
     async def keys_and_uniques(model: type) -> list[tuple[dict[str, int], bool]]:
-        coll = model.get_pymongo_collection()
+        coll = model.get_motor_collection()
         specs = await coll.list_indexes().to_list(length=None)
         out: list[tuple[dict[str, int], bool]] = []
         for spec in specs:
@@ -188,7 +188,7 @@ async def test_id_alias_roundtrip(nanobot_db: Any) -> None:
     ws = NanobotWorkspaceModel(id=ws_id, name="别名测试")
     await ws.insert()
 
-    raw = await NanobotWorkspaceModel.get_pymongo_collection().find_one({"_id": ws_id})
+    raw = await NanobotWorkspaceModel.get_motor_collection().find_one({"_id": ws_id})
     assert raw is not None
     assert raw["_id"] == ws_id
 
@@ -233,7 +233,7 @@ async def test_enum_roundtrip_stored_as_string(nanobot_db: Any) -> None:
     )
     await msg.insert()
 
-    raw_msg = await NanobotSessionMessagesModel.get_pymongo_collection().find_one(
+    raw_msg = await NanobotSessionMessagesModel.get_motor_collection().find_one(
         {"session_id": ss_id, "seq": 1}
     )
     assert raw_msg is not None
@@ -251,7 +251,7 @@ async def test_enum_roundtrip_stored_as_string(nanobot_db: Any) -> None:
     sess.status = NanobotSessionStatusEnum.RUNNING
     await sess.save()
 
-    raw_sess = await NanobotSessionModel.get_pymongo_collection().find_one({"_id": ss_id})
+    raw_sess = await NanobotSessionModel.get_motor_collection().find_one({"_id": ss_id})
     assert raw_sess is not None
     assert raw_sess["status"] == NanobotSessionStatusEnum.RUNNING.value
 
@@ -265,7 +265,7 @@ async def test_enum_roundtrip_stored_as_string(nanobot_db: Any) -> None:
         content="soul",
     )
     await mem.insert()
-    raw_mem = await NanobotMemoryDocsModel.get_pymongo_collection().find_one(
+    raw_mem = await NanobotMemoryDocsModel.get_motor_collection().find_one(
         {"workspace_id": ws_id}
     )
     assert raw_mem is not None

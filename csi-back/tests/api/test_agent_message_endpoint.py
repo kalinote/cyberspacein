@@ -30,12 +30,14 @@ def test_route_message_success(monkeypatch: pytest.MonkeyPatch) -> None:
         user_prompt: str,
         context: dict,
         auto_approve: bool = False,
+        initiator_user_id: str | None = None,
     ):
         assert agent_id == "a1"
         assert session_id == "s1"
         assert user_prompt == "你好 v"
         assert context == {"k": "v"}
         assert auto_approve is False
+        assert initiator_user_id is None
         return "s1"
 
     monkeypatch.setattr(runtime_ep.AnalystService, "send_message", _send_message)

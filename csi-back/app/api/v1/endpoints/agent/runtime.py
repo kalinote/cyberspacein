@@ -3,7 +3,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 
 from app.models.agent.configs import AgentPromptTemplateModel
@@ -62,11 +62,11 @@ async def _fetch_agent_template_user_prompt(agent_id: str) -> str:
         "请求体 `auto_approve=true` 时，本轮 run 内写操作工具自动批准，无需调用 `/agent/approve`（仅本轮有效）。"
         "请求体 `merge_user_prompts=true` 时，将提示词模板 user_prompt（前）与请求 user_prompt（后）分别 Jinja 渲染后合并，"
         "两段之间空一行，且请求 `user_prompt` 必填。"
-        "当环境变量 `NANOBOT_AGENT_MAX_PARALLEL_SESSIONS` 大于 0 且该 Agent 在库中 `running` 会话数已达上限时，"
+        "当环境变量 `NANOBOT_AGENT_MAX_PARALLEL_SESSIONS` 大于 0 且该 Agent 的持久化活动 Run 已占满原子槽位时，"
         "返回 HTTP 200 且业务码为冲突态（`CONFLICT_STATE`），不会在库中新建本会话。"
     ),
 )
-async def start_agent(data: AgentRuntimeRequestSchema):
+async def start_agent(data: AgentRuntimeRequestSchema, request: Request):
     try:
         injection_param = dict(data.injection_param)
         request_user_prompt = str(data.user_prompt or "").strip()
@@ -117,6 +117,11 @@ async def start_agent(data: AgentRuntimeRequestSchema):
             user_prompt=final_user_prompt,
             context=injection_param,
             auto_approve=data.auto_approve,
+            initiator_user_id=getattr(
+                getattr(getattr(request.state, "auth_context", None), "user", None),
+                "id",
+                None,
+            ),
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
@@ -137,7 +142,7 @@ async def start_agent(data: AgentRuntimeRequestSchema):
         "请求体 `auto_approve=true` 时，本轮 run 内写操作工具自动批准，无需调用 `/agent/approve`（仅本轮有效）。"
     ),
 )
-async def send_agent_message(data: AgentRuntimeRequestSchema):
+async def send_agent_message(data: AgentRuntimeRequestSchema, request: Request):
     try:
         session_id = str(data.session_id or "").strip()
         if not session_id:
@@ -167,6 +172,11 @@ async def send_agent_message(data: AgentRuntimeRequestSchema):
             user_prompt=final_user_prompt,
             context=injection_param,
             auto_approve=data.auto_approve,
+            initiator_user_id=getattr(
+                getattr(getattr(request.state, "auth_context", None), "user", None),
+                "id",
+                None,
+            ),
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
@@ -194,9 +204,19 @@ async def get_agent_status(
     ),
     offset: int = Query(0, ge=0, description="从最新事件起跳过条数；仅影响历史回放"),
 ):
-    queue = await AnalystService.subscribe(
-        agent_id, session_id, limit=limit, offset=offset
-    )
+    try:
+        queue = await AnalystService.subscribe(
+            agent_id, session_id, limit=limit, offset=offset
+        )
+    except AgentServiceError as exc:
+        return JSONResponse(
+            status_code=200,
+            content=ApiResponseSchema.error(
+                code=exc.code,
+                message=exc.message,
+                data=exc.data,
+            ).model_dump(),
+        )
 
     async def event_stream():
         try:
@@ -230,9 +250,19 @@ async def get_agent_status(
 
 
 @router.post("/approve", response_model=ApiResponseSchema[Any], summary="提交行为批准")
-async def approve_agent(data: ApproveRequestSchema):
+async def approve_agent(data: ApproveRequestSchema, request: Request):
     try:
-        await AnalystService.submit_approval(data.agent_id, data.session_id, data.decisions)
+        await AnalystService.submit_approval(
+            data.agent_id,
+            data.session_id,
+            data.approval_request_id,
+            data.decisions,
+            resolver_user_id=getattr(
+                getattr(getattr(request.state, "auth_context", None), "user", None),
+                "id",
+                None,
+            ),
+        )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
     return ApiResponseSchema.success(data=None, message="批准决策已提交")
@@ -251,4 +281,3 @@ async def cancel_agent(data: CancelAgentRequestSchema):
         data=CancelAgentResponseSchema(agent_id=data.agent_id, cancelled=cancelled),
         message="取消请求已发送" if cancelled else "该 Agent 当前没有正在运行的任务",
     )
-

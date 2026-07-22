@@ -32,6 +32,24 @@ class FakeNanobotSessionModel:
     async def find_one(cls, query: dict[str, Any]) -> FakeSessionDoc | None:
         return cls._docs.get(query.get("_id"))
 
+    @classmethod
+    def get_motor_collection(cls) -> Any:
+        class _Collection:
+            async def find_one_and_update(
+                self,
+                query: dict[str, Any],
+                update: dict[str, Any],
+                **_kwargs: Any,
+            ) -> dict[str, Any] | None:
+                doc = cls._docs.get(query.get("_id"))
+                if doc is None:
+                    return None
+                doc.task_submissions.append(update["$push"]["task_submissions"])
+                doc.updated_at = update["$set"]["updated_at"]
+                return {"task_submissions": list(doc.task_submissions)}
+
+        return _Collection()
+
 
 @pytest.fixture(autouse=True)
 def _patch_session_model(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any, Iterable
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -35,6 +35,23 @@ class FakeNanobotSessionModel:
     @classmethod
     async def find_one(cls, query: dict[str, Any]) -> FakeSessionDoc | None:
         return cls._docs.get(query.get("_id"))
+
+    @classmethod
+    def get_motor_collection(cls) -> Any:
+        class _Collection:
+            async def update_one(
+                self, query: dict[str, Any], update: dict[str, Any]
+            ) -> Any:
+                doc = cls._docs.get(query.get("_id"))
+                if doc is None:
+                    return SimpleNamespace(matched_count=0)
+                for field_name, value in update.get("$set", {}).items():
+                    setattr(doc, field_name, value)
+                for field_name, value in update.get("$push", {}).items():
+                    getattr(doc, field_name).append(value)
+                return SimpleNamespace(matched_count=1)
+
+        return _Collection()
 
 
 @pytest.fixture(autouse=True)

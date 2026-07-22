@@ -21,7 +21,7 @@ def _app() -> TestClient:
 def test_route_start_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False, initiator_user_id: str | None = None):
         assert agent_id == "a1"
         assert user_prompt == "hi"
         assert context["k"] == "v"
@@ -59,7 +59,7 @@ def test_route_start_merge_user_prompts(
         assert query == {"_id": "tpl1"}
         return _FakeTemplate()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False, initiator_user_id: str | None = None):
         assert agent_id == "a1"
         assert context["k"] == "v"
         assert user_prompt == "模板任务 v\n\n补充说明 v"
@@ -121,7 +121,7 @@ def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
         assert query == {"_id": "tpl1"}
         return _FakeTemplate()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False, initiator_user_id: str | None = None):
         assert agent_id == "a1"
         assert context["k"] == "v"
         assert user_prompt == "你好 v !字段丢失或不存在!"
@@ -144,9 +144,10 @@ def test_route_start_prompt_can_be_empty_and_fallback_and_inject(
 def test_route_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _submit(agent_id: str, session_id: str, decisions: list[dict]):
+    async def _submit(agent_id: str, session_id: str, approval_request_id: str, decisions: list[dict], resolver_user_id: str | None = None):
         assert agent_id == "a1"
         assert session_id == "s1"
+        assert approval_request_id == "req-1"
         assert decisions == [{"id": "x", "approve": True}]
 
     monkeypatch.setattr(runtime_ep.AnalystService, "submit_approval", _submit)
@@ -155,6 +156,7 @@ def test_route_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
         json={
             "agent_id": "a1",
             "session_id": "s1",
+            "approval_request_id": "req-1",
             "decisions": [{"id": "x", "approve": True}],
         },
     )
@@ -166,7 +168,7 @@ def test_route_approve_success(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_route_start_passes_auto_approve(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False, initiator_user_id: str | None = None):
         assert agent_id == "a1"
         assert user_prompt == "hi"
         assert auto_approve is True
@@ -196,6 +198,7 @@ def test_route_message_passes_auto_approve(monkeypatch: pytest.MonkeyPatch) -> N
         user_prompt: str,
         context: dict,
         auto_approve: bool = False,
+        initiator_user_id: str | None = None,
     ):
         assert agent_id == "a1"
         assert session_id == "s1"
@@ -221,7 +224,7 @@ def test_route_message_passes_auto_approve(monkeypatch: pytest.MonkeyPatch) -> N
 def test_route_start_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False):
+    async def _start_agent(*, agent_id: str, user_prompt: str, context: dict, auto_approve: bool = False, initiator_user_id: str | None = None):
         raise AgentServiceError(status_codes.NOT_FOUND_AGENT, "Agent 不存在")
 
     monkeypatch.setattr(runtime_ep.AnalystService, "start_agent", _start_agent)
@@ -237,13 +240,13 @@ def test_route_start_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_route_approve_unknown_agent_404(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _app()
 
-    async def _submit(agent_id: str, session_id: str, decisions: list[dict]):
+    async def _submit(agent_id: str, session_id: str, approval_request_id: str, decisions: list[dict], resolver_user_id: str | None = None):
         raise AgentServiceError(status_codes.NOT_FOUND_AGENT, "Agent 不存在")
 
     monkeypatch.setattr(runtime_ep.AnalystService, "submit_approval", _submit)
     r = client.post(
         "/api/v1/agent/approve",
-        json={"agent_id": "missing", "session_id": "s0", "decisions": []},
+        json={"agent_id": "missing", "session_id": "s0", "approval_request_id": "req-0", "decisions": []},
     )
     assert r.status_code == 200
     body = r.json()

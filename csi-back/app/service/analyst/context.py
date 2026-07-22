@@ -23,6 +23,16 @@ from typing import Any
 
 current_agent_id: ContextVar[str | None] = ContextVar("current_agent_id", default=None)
 current_session_id: ContextVar[str | None] = ContextVar("current_session_id", default=None)
+current_run_id: ContextVar[str | None] = ContextVar("current_run_id", default=None)
+current_run_worker_id: ContextVar[str | None] = ContextVar(
+    "current_run_worker_id", default=None
+)
+current_run_lease_token: ContextVar[str | None] = ContextVar(
+    "current_run_lease_token", default=None
+)
+current_initiator_user_id: ContextVar[str | None] = ContextVar(
+    "current_initiator_user_id", default=None
+)
 current_task_completion: ContextVar[dict[str, Any] | None] = ContextVar(
     "current_task_completion", default=None
 )
@@ -39,6 +49,26 @@ def get_current_agent_id() -> str | None:
 def get_current_session_id() -> str | None:
     """读取当前协程上下文中的 session_id（未绑定时返回 None）。"""
     return current_session_id.get()
+
+
+def get_current_run_id() -> str | None:
+    """读取当前协程绑定的持久化 Run ID。"""
+    return current_run_id.get()
+
+
+def get_current_run_worker_id() -> str | None:
+    """读取当前 Run 的 Worker ID。"""
+    return current_run_worker_id.get()
+
+
+def get_current_run_lease_token() -> str | None:
+    """读取当前 Run 的 fencing lease token。"""
+    return current_run_lease_token.get()
+
+
+def get_current_initiator_user_id() -> str | None:
+    """读取当前 Run 的发起用户 ID。"""
+    return current_initiator_user_id.get()
 
 
 def get_current_task_completion() -> dict[str, Any] | None:

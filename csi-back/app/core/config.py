@@ -57,6 +57,14 @@ class Settings(BaseSettings):
 
     NANOBOT_AGENT_MAX_PARALLEL_SESSIONS: int = 0
     NANOBOT_SHUTDOWN_TIMEOUT_S: float = 30.0
+    NANOBOT_RUNTIME_WORKER_ENABLED: bool = True
+    NANOBOT_RUNTIME_WORKER_CONCURRENCY: int = 4
+    NANOBOT_RUNTIME_POLL_SECONDS: float = 0.5
+    NANOBOT_RUNTIME_LEASE_SECONDS: int = 30
+    NANOBOT_RUNTIME_HEARTBEAT_SECONDS: int = 10
+    NANOBOT_RUNTIME_MAX_ATTEMPTS: int = 1
+    NANOBOT_EVENT_STREAM_MAXLEN: int = 10000
+    NANOBOT_EVENT_STREAM_TTL_SECONDS: int = 60 * 60 * 24
 
     EMBEDDING_MODEL: str = "Qwen/Qwen3-Embedding-8B"
     EMBEDDING_MODEL_URL: str = "https://api.siliconflow.cn/v1/embeddings"
@@ -155,6 +163,23 @@ class Settings(BaseSettings):
             forbidden_passwords = {"system123456", "admin123456", "password", "admin"}
             if len(self.INIT_SYSTEM_PASSWORD) < 12 or self.INIT_SYSTEM_PASSWORD in forbidden_passwords:
                 raise RuntimeError("生产环境 INIT_SYSTEM_PASSWORD 不得使用默认值且至少 12 位")
+
+    def validate_analyst_runtime(self) -> None:
+        """校验分布式分析 Worker 的租约与容量参数。"""
+        if self.NANOBOT_RUNTIME_WORKER_CONCURRENCY < 1:
+            raise RuntimeError("NANOBOT_RUNTIME_WORKER_CONCURRENCY 必须大于 0")
+        if self.NANOBOT_RUNTIME_POLL_SECONDS <= 0:
+            raise RuntimeError("NANOBOT_RUNTIME_POLL_SECONDS 必须大于 0")
+        if self.NANOBOT_RUNTIME_HEARTBEAT_SECONDS <= 0:
+            raise RuntimeError("NANOBOT_RUNTIME_HEARTBEAT_SECONDS 必须大于 0")
+        if self.NANOBOT_RUNTIME_LEASE_SECONDS <= self.NANOBOT_RUNTIME_HEARTBEAT_SECONDS:
+            raise RuntimeError("NANOBOT_RUNTIME_LEASE_SECONDS 必须大于心跳间隔")
+        if self.NANOBOT_RUNTIME_MAX_ATTEMPTS < 1:
+            raise RuntimeError("NANOBOT_RUNTIME_MAX_ATTEMPTS 必须大于 0")
+        if self.NANOBOT_EVENT_STREAM_MAXLEN < 100:
+            raise RuntimeError("NANOBOT_EVENT_STREAM_MAXLEN 不能小于 100")
+        if self.NANOBOT_EVENT_STREAM_TTL_SECONDS < 60:
+            raise RuntimeError("NANOBOT_EVENT_STREAM_TTL_SECONDS 不能小于 60")
 
 class SettingsProxy:
     """Stable reference used by modules that import ``settings`` once."""

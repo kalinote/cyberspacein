@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -71,54 +71,6 @@ async def test_shutdown_clears_hitl_queues() -> None:
     hitl_module.HitlService._pending_resumes["s1"] = asyncio.Queue()
     await service_module.AnalystService.shutdown_running_agents(timeout=1.0)
     assert hitl_module.HitlService._pending_resumes == {}
-
-
-@pytest.mark.asyncio
-async def test_shutdown_cancels_hanging_run_analysis() -> None:
-    FakeNanobotSessionModel._docs["s1"] = FakeSessionDoc(id="s1", agent_id="a1")
-    bot = MagicMock()
-    bot.agent_id = "a1"
-    bot.loop.process_direct = None
-    bot.loop.model = "test-model"
-    bot.loop.subagents.cancel_by_session = AsyncMock(return_value=0)
-    bot.loop.context.refresh_memory_snapshot = AsyncMock()
-    bot.loop.context.build_system_prompt = MagicMock(return_value="sys")
-    bot.loop.context.extra_system_suffix = ""
-    bot.loop.context.snapshot = MagicMock(
-        memory="", soul="", user="", recent_history=[]
-    )
-
-    async def _hang(*_a: Any, **_kw: Any) -> None:
-        await asyncio.sleep(3600)
-
-    bot.run = AsyncMock(side_effect=_hang)
-    bot.close = AsyncMock()
-
-    task = asyncio.create_task(
-        service_module.AnalystService.run_analysis(
-            agent_id="a1",
-            session_id="s1",
-            bot=bot,
-            user_prompt="hi",
-            context={},
-        ),
-        name="analyst-run:a1:s1",
-    )
-    async with service_module.AnalystService._bots_lock:
-        service_module.AnalystService._bots["s1"] = bot
-    async with service_module.AnalystService._task_lock:
-        service_module.AnalystService._running_tasks["s1"] = task
-
-    await asyncio.sleep(0.05)
-    await service_module.AnalystService.shutdown_running_agents(timeout=2.0)
-
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    bot.close.assert_awaited()
-    doc = FakeNanobotSessionModel._docs["s1"]
-    assert doc.status == NanobotSessionStatusEnum.CANCELLED
-
-
 @pytest.mark.asyncio
 async def test_shutdown_cancels_orphan_task_without_session_doc() -> None:
     async def _hang() -> None:

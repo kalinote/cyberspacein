@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Iterable
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 import app.service.analyst.hooks as hooks_module
 import app.service.analyst.service as service_module
-from app.schemas.constants import NanobotSessionStatusEnum
 from app.service.analyst.context import current_agent_id, current_session_id
 from app.service.analyst.hooks import StatusHook
 from app.service.nanobot.agent.hook import AgentHookContext
@@ -33,6 +32,21 @@ class FakeNanobotSessionModel:
     @classmethod
     async def find_one(cls, query: dict[str, Any]) -> FakeSessionDoc | None:
         return cls._docs.get(query.get("_id"))
+
+    @classmethod
+    def get_motor_collection(cls) -> Any:
+        class _Collection:
+            async def update_one(
+                self, query: dict[str, Any], update: dict[str, Any]
+            ) -> Any:
+                doc = cls._docs.get(query.get("_id"))
+                if doc is None:
+                    return SimpleNamespace(matched_count=0)
+                for field_name, value in update.get("$push", {}).items():
+                    getattr(doc, field_name).append(value)
+                return SimpleNamespace(matched_count=1)
+
+        return _Collection()
 
 
 @pytest.fixture
@@ -77,57 +91,3 @@ async def test_status_hook_steps_isolated_per_session(
     assert len(sb.steps) == 1
     assert sa.steps[0]["iteration"] == 0
     assert sb.steps[0]["iteration"] == 1
-
-
-@pytest.mark.asyncio
-async def test_cancel_agent_only_triggers_subagent_cancel_for_target_session(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    @dataclass
-    class Sess:
-        id: str
-        agent_id: str = "a1"
-        status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.RUNNING
-
-    class FakeSessModel:
-        @staticmethod
-        async def find_one(query: dict[str, Any]) -> Sess | None:
-            sid = query.get("_id")
-            if sid == "s1":
-                return Sess(id="s1")
-            if sid == "s2":
-                return Sess(id="s2")
-            return None
-
-    monkeypatch.setattr(service_module, "NanobotSessionModel", FakeSessModel)
-
-    bot1 = MagicMock()
-    bot1.loop.subagents.cancel_by_session = AsyncMock(return_value=0)
-    bot2 = MagicMock()
-    bot2.loop.subagents.cancel_by_session = AsyncMock(return_value=0)
-
-    async def hang() -> None:
-        await asyncio.sleep(3600)
-
-    t1 = asyncio.create_task(hang())
-    t2 = asyncio.create_task(hang())
-
-    service_module.AnalystService._bots_lock = asyncio.Lock()
-    service_module.AnalystService._task_lock = asyncio.Lock()
-    async with service_module.AnalystService._bots_lock:
-        service_module.AnalystService._bots["s1"] = bot1
-        service_module.AnalystService._bots["s2"] = bot2
-    async with service_module.AnalystService._task_lock:
-        service_module.AnalystService._running_tasks["s1"] = t1
-        service_module.AnalystService._running_tasks["s2"] = t2
-
-    ok = await service_module.AnalystService.cancel_agent("a1", "s1")
-    assert ok is True
-    bot1.loop.subagents.cancel_by_session.assert_awaited_once_with("s1")
-    bot2.loop.subagents.cancel_by_session.assert_not_called()
-
-    with pytest.raises(asyncio.CancelledError):
-        await t1
-    t2.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await t2

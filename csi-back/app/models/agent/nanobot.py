@@ -87,6 +87,14 @@ class NanobotSessionModel(Document):
 
     metadata: dict = Field(default_factory=dict, description="会话元数据（runtime_checkpoint / pending_user_turn / _last_summary 等）")
     last_consolidated_seq: int = Field(default=0, description="已合并到 history 的消息 seq 上限")
+    last_message_seq: int = Field(default=0, description="已原子分配的最大消息 seq")
+    active_run_id: str | None = Field(default=None, description="当前活动的持久化 Run ID")
+    active_run_lease_token: str | None = Field(
+        default=None,
+        description="当前 Worker 的 fencing token",
+    )
+    run_generation: int = Field(default=0, description="当前会话已分配的 Run 代次")
+    initiator_user_id: str | None = Field(default=None, description="最近一轮运行发起用户 ID")
 
     status: NanobotSessionStatusEnum = Field(
         default=NanobotSessionStatusEnum.IDLE,
@@ -116,6 +124,7 @@ class NanobotSessionModel(Document):
             IndexModel(
                 [("agent_id", ASCENDING), ("status", ASCENDING), ("updated_at", DESCENDING)],
             ),
+            "active_run_id",
             "workspace_id",
             "updated_at",
         ]

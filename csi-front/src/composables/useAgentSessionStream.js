@@ -788,6 +788,7 @@ export function useAgentSessionStream(options = {}) {
             const res = await agentApi.approveAgent({
                 agent_id: resolvedAgentId.value,
                 session_id: sessionId.value,
+                approval_request_id: pendingApproval.value?.approval_request_id,
                 decisions: [decision],
             })
             if (res?.code !== 0) {

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+import hashlib
 import inspect
+import json
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
-from app.schemas.agent.result import SUBMIT_TASK_RESULT_TOOL_NAME
 from app.schemas.constants import AgentStopReasonEnum
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
 from app.service.nanobot.agent.tools.registry import ToolRegistry
@@ -718,14 +719,92 @@ class AgentRunner:
                 "detail": prep_error.split(": ", 1)[-1][:120],
             }
             return prep_error + _HINT, event, RuntimeError(prep_error) if spec.fail_on_tool_error else None
+
+        execute_tool = True
+        durable_claim = False
+        durable_tool_call_id = str(tool_call.id or "")
+        run_id = lease_token = None
+        result: Any = None
+        if tool is not None and not tool.read_only:
+            from app.service.analyst.context import (
+                get_current_agent_id,
+                get_current_run_id,
+                get_current_run_lease_token,
+                get_current_session_id,
+            )
+            from app.service.analyst.tool_execution_store import (
+                AnalystToolExecutionStore,
+            )
+
+            run_id = get_current_run_id()
+            lease_token = get_current_run_lease_token()
+            if run_id:
+                agent_id = get_current_agent_id()
+                session_id = get_current_session_id()
+                if not agent_id or not session_id or not lease_token:
+                    error = "持久化 Run 缺少写工具幂等上下文"
+                    event = {"name": tool_call.name, "status": "error", "detail": error}
+                    return f"Error: {error}" + _HINT, event, RuntimeError(error)
+                arguments_hash = hashlib.sha256(
+                    json.dumps(
+                        params,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ).encode("utf-8")
+                ).hexdigest()
+                durable_tool_call_id = durable_tool_call_id or arguments_hash[:24]
+                try:
+                    action, durable_value = await AnalystToolExecutionStore.claim(
+                        run_id=run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        tool_call_id=durable_tool_call_id,
+                        tool_name=tool_call.name,
+                        arguments_hash=arguments_hash,
+                        lease_token=lease_token,
+                    )
+                except Exception as exc:
+                    error = f"写工具幂等检查失败: {exc}"
+                    event = {"name": tool_call.name, "status": "error", "detail": error}
+                    return f"Error: {error}" + _HINT, event, RuntimeError(error)
+                if action == "blocked":
+                    error = str(durable_value or "写工具调用被幂等保护阻止")
+                    event = {"name": tool_call.name, "status": "error", "detail": error}
+                    return (
+                        f"Error: {error}" + _HINT,
+                        event,
+                        RuntimeError(error) if spec.fail_on_tool_error else None,
+                    )
+                if action == "cached":
+                    result = durable_value
+                    execute_tool = False
+                else:
+                    durable_claim = True
         try:
-            if tool is not None:
-                result = await tool.execute(**params)
-            else:
-                result = await spec.tools.execute(tool_call.name, params)
+            if execute_tool:
+                if tool is not None:
+                    result = await tool.execute(**params)
+                else:
+                    result = await spec.tools.execute(tool_call.name, params)
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
+            if durable_claim and run_id and lease_token:
+                try:
+                    await AnalystToolExecutionStore.fail(
+                        run_id=run_id,
+                        tool_call_id=durable_tool_call_id,
+                        lease_token=lease_token,
+                        error_message=str(exc),
+                    )
+                except Exception:
+                    logger.exception(
+                        "持久化写工具失败结果异常: run_id={} tool_call_id={}",
+                        run_id,
+                        durable_tool_call_id,
+                    )
             event = {
                 "name": tool_call.name,
                 "status": "error",
@@ -736,6 +815,13 @@ class AgentRunner:
             return f"Error: {type(exc).__name__}: {exc}", event, None
 
         if isinstance(result, str) and result.startswith("Error"):
+            if durable_claim and run_id and lease_token:
+                await AnalystToolExecutionStore.fail(
+                    run_id=run_id,
+                    tool_call_id=durable_tool_call_id,
+                    lease_token=lease_token,
+                    error_message=result,
+                )
             event = {
                 "name": tool_call.name,
                 "status": "error",
@@ -744,6 +830,18 @@ class AgentRunner:
             if spec.fail_on_tool_error:
                 return result + _HINT, event, RuntimeError(result)
             return result + _HINT, event, None
+
+        if durable_claim and run_id and lease_token:
+            committed = await AnalystToolExecutionStore.succeed(
+                run_id=run_id,
+                tool_call_id=durable_tool_call_id,
+                lease_token=lease_token,
+                result=result,
+            )
+            if not committed:
+                error = "写工具已执行，但幂等结果因租约变化未能提交"
+                event = {"name": tool_call.name, "status": "error", "detail": error}
+                return f"Error: {error}" + _HINT, event, RuntimeError(error)
 
         detail = "" if result is None else str(result)
         detail = detail.replace("\n", " ").strip()

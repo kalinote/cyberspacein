@@ -14,13 +14,17 @@ Hook 分工（MIGRATION_PLAN §3.2）：
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 from loguru import logger
 
 from app.models.agent.nanobot import NanobotSessionModel
 from app.schemas.constants import AgentStopReasonEnum, NanobotSessionStatusEnum
-from app.service.analyst.context import get_current_agent_id, get_current_session_id
+from app.service.analyst.context import (
+    get_current_agent_id,
+    get_current_run_id,
+    get_current_run_lease_token,
+    get_current_session_id,
+)
 from app.service.nanobot.agent.hook import AgentHook, AgentHookContext
 
 logger = logger.bind(name=__name__)
@@ -31,7 +35,16 @@ async def _load_current_session() -> NanobotSessionModel | None:
     session_id = get_current_session_id()
     if not session_id:
         return None
-    return await NanobotSessionModel.find_one({"_id": session_id})
+    query: dict = {"_id": session_id}
+    run_id = get_current_run_id()
+    if run_id:
+        from app.service.analyst.service import AnalystService
+
+        if AnalystService._owned_run_leases.get(run_id) != get_current_run_lease_token():
+            return None
+        query["active_run_id"] = run_id
+        query["active_run_lease_token"] = get_current_run_lease_token()
+    return await NanobotSessionModel.find_one(query)
 
 
 class StatusHook(AgentHook):
@@ -87,10 +100,21 @@ class StatusHook(AgentHook):
             "error": context.error,
             "created_at": datetime.now().isoformat(),
         }
-        session.steps = list(session.steps) + [step_entry]
-        session.updated_at = datetime.now()
         try:
-            await session.save()
+            query: dict = {"_id": session.id}
+            run_id = get_current_run_id()
+            if run_id:
+                query["active_run_id"] = run_id
+                query["active_run_lease_token"] = get_current_run_lease_token()
+            update = await NanobotSessionModel.get_motor_collection().update_one(
+                query,
+                {
+                    "$push": {"steps": step_entry},
+                    "$set": {"updated_at": datetime.now()},
+                },
+            )
+            if update.matched_count != 1:
+                return
         except Exception:
             logger.exception(f"StatusHook 保存步骤失败: session_id={session.id}")
             return
@@ -161,11 +185,25 @@ class ApprovalHook(AgentHook):
             and context.stop_reason
             and context.stop_reason != AgentStopReasonEnum.AWAITING_APPROVAL
         ):
-            session.status = NanobotSessionStatusEnum.RUNNING
-            session.pending_approval = None
-            session.updated_at = datetime.now()
             try:
-                await session.save()
+                query: dict = {
+                    "_id": session.id,
+                    "status": NanobotSessionStatusEnum.AWAITING_APPROVAL.value,
+                }
+                run_id = get_current_run_id()
+                if run_id:
+                    query["active_run_id"] = run_id
+                    query["active_run_lease_token"] = get_current_run_lease_token()
+                await NanobotSessionModel.get_motor_collection().update_one(
+                    query,
+                    {
+                        "$set": {
+                            "status": NanobotSessionStatusEnum.RUNNING.value,
+                            "pending_approval": None,
+                            "updated_at": datetime.now(),
+                        }
+                    },
+                )
             except Exception:
                 logger.exception(
                     f"ApprovalHook 复位 pending_approval 失败: session_id={session.id}"

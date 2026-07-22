@@ -16,7 +16,6 @@ from app.schemas.agent.hitl import HitlSource, validate_source
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.constants import NanobotSessionStatusEnum
 from app.service.analyst.hitl import (
-    HitlOutcome,
     HitlService,
     approval_resolution_label,
     parse_approval_decisions,
@@ -29,6 +28,7 @@ class FakeSessionDoc:
     id: str
     agent_id: str = "a1"
     status: NanobotSessionStatusEnum = NanobotSessionStatusEnum.RUNNING
+    active_run_id: str | None = None
     pending_approval: dict | None = None
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -82,9 +82,10 @@ async def test_submit_decisions_puts_queue() -> None:
         id="s1",
         agent_id="a1",
         status=NanobotSessionStatusEnum.AWAITING_APPROVAL,
+        pending_approval={"approval_request_id": "req-1"},
     )
     decisions = [{"action": "approve"}]
-    await HitlService.submit_decisions("a1", "s1", decisions)
+    await HitlService.submit_decisions("a1", "s1", "req-1", decisions)
     payload = await HitlService._await_decisions("s1")
     assert payload["decisions"] == decisions
 
@@ -92,7 +93,7 @@ async def test_submit_decisions_puts_queue() -> None:
 @pytest.mark.asyncio
 async def test_submit_decisions_not_found() -> None:
     with pytest.raises(AgentServiceError) as e:
-        await HitlService.submit_decisions("a1", "missing", [])
+        await HitlService.submit_decisions("a1", "missing", "req-1", [])
     assert e.value.code == status_codes.NOT_FOUND_AGENT
 
 

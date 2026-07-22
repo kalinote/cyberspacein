@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -88,7 +87,7 @@ def backend_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             return await state_find_one(query)
 
         @staticmethod
-        def get_pymongo_collection() -> Any:
+        def get_motor_collection() -> Any:
             return state_collection
 
     # -------------------------
@@ -142,7 +141,7 @@ def backend_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             return _Query(docs)
 
         @staticmethod
-        def get_pymongo_collection() -> Any:
+        def get_motor_collection() -> Any:
             return history_collection
 
     monkeypatch.setattr(mongo_memory_mod, "NanobotMemoryDocsModel", _FakeNanobotMemoryDocsModel)

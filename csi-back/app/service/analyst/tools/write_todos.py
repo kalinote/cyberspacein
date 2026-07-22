@@ -6,7 +6,11 @@ from datetime import datetime
 from typing import Any
 
 from app.models.agent.nanobot import NanobotSessionModel
-from app.service.analyst.context import get_current_session_id
+from app.service.analyst.context import (
+    get_current_run_id,
+    get_current_run_lease_token,
+    get_current_session_id,
+)
 from app.service.analyst.tools._context import require_agent_id
 from app.service.nanobot.agent.tools.base import Tool, tool_parameters
 
@@ -70,12 +74,22 @@ class WriteTodosTool(Tool):
         todos = kwargs.get("todos") or []
         normalized = [_normalize_todo(item) for item in todos]
 
-        session = await NanobotSessionModel.find_one({"_id": sid})
-        if session is None:
+        query: dict = {"_id": sid}
+        run_id = get_current_run_id()
+        if run_id:
+            query["active_run_id"] = run_id
+            query["active_run_lease_token"] = get_current_run_lease_token()
+        update = await NanobotSessionModel.get_motor_collection().update_one(
+            query,
+            {
+                "$set": {
+                    "todos": normalized,
+                    "updated_at": datetime.now(),
+                }
+            },
+        )
+        if update.matched_count != 1:
             return f"[错误] 当前会话不存在: {sid}"
-        session.todos = normalized
-        session.updated_at = datetime.now()
-        await session.save()
 
         await AnalystService.broadcast_sse(
             agent_id,
