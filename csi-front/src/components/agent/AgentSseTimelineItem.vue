@@ -1,294 +1,274 @@
 <template>
-    <div class="min-w-0">
-        <div v-if="item.kind === 'user_message'" class="flex justify-end gap-3 min-w-0">
-            <div
-                class="min-w-0 max-w-[85%] rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 shadow-sm">
-                <div class="mb-2 flex flex-wrap items-center justify-end gap-2 text-xs text-gray-500">
-                    <span>{{ formatTime(item.ts) }}</span>
-                    <span class="font-medium text-emerald-800">用户输入</span>
-                </div>
-                <p class="text-sm text-gray-900 whitespace-pre-wrap wrap-break-word">{{ userMessageContent }}</p>
-            </div>
-        </div>
-
-        <div v-else-if="item.kind === 'assistant_reasoning_stream'" class="flex gap-3 min-w-0">
-            <div class="mt-1.5 h-8 w-1 shrink-0 rounded-full bg-violet-400/70" />
-            <div
-                class="min-w-0 flex-1 rounded-xl border border-violet-100 bg-violet-50/50 px-4 py-3 shadow-sm ring-1 ring-violet-100/60">
-                <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                    <Icon icon="mdi:brain" class="text-base text-violet-600 shrink-0" />
-                    <span class="font-medium text-violet-900">思考过程</span>
-                    <span>{{ formatTime(item.ts) }}</span>
-                    <span v-if="item.streaming"
-                        class="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-800">思考中</span>
-                    <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">已结束</span>
-                </div>
-                <div class="min-w-0 text-sm text-gray-700">
-                    <MarkdownViewer
-                        v-if="item.text"
-                        :content="item.text"
-                        :breaks="true"
-                        custom-class="min-w-0"
-                    />
-                    <span v-else-if="item.streaming" class="text-xs text-violet-700/80">等待思考内容…</span>
-                    <span v-if="item.streaming && item.text"
-                        class="ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-sm bg-violet-500 align-middle animate-pulse"
-                        aria-hidden="true" />
-                </div>
-                <p v-if="item.resuming" class="mt-2 text-xs text-amber-700">后续可能继续思考…</p>
-            </div>
-        </div>
-
-        <div v-else-if="item.kind === 'assistant_stream'" class="flex gap-3 min-w-0">
-            <div class="mt-1.5 h-8 w-1 shrink-0 rounded-full bg-blue-500/80" />
-            <div
-                class="min-w-0 flex-1 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm ring-1 ring-gray-100/80">
-                <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                    <span class="font-medium text-gray-700">模型输出</span>
-                    <span>{{ formatTime(item.ts) }}</span>
-                    <span v-if="item.streaming"
-                        class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">输出中</span>
-                    <span v-else class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">已结束</span>
-                </div>
-                <div class="min-w-0">
-                    <MarkdownViewer
-                        v-if="item.text"
-                        :content="item.text"
-                        :breaks="true"
-                        custom-class="min-w-0"
-                    />
-                    <span v-if="item.streaming" class="ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-sm bg-blue-500 align-middle animate-pulse" aria-hidden="true" />
-                </div>
-                <p v-if="item.resuming" class="mt-2 text-xs text-amber-700">继续生成中…</p>
-            </div>
-        </div>
-
-        <div v-else-if="item.kind === 'status'"
-            class="rounded-lg border border-gray-100 bg-linear-to-r from-slate-50 to-white px-3 py-2.5 shadow-sm">
-            <div class="flex flex-wrap items-center gap-2">
-                <Icon icon="mdi:state-machine" class="text-lg text-slate-600 shrink-0" />
-                <span class="text-xs font-semibold text-gray-700">会话状态</span>
-                <span class="text-xs text-gray-400">{{ formatTime(item.ts) }}</span>
-                <span
-                    class="rounded-md bg-white px-2 py-0.5 text-xs font-mono font-medium text-gray-900 ring-1 ring-gray-200">{{ statusText }}</span>
-            </div>
-        </div>
-
-        <div v-else-if="item.kind === 'progress'"
-            class="rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-sm">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                <Icon icon="mdi:text-long" class="text-base text-blue-600" />
-                <span class="font-semibold text-gray-700">进度</span>
-                <span v-if="item.payload?.tool_hint"
-                    class="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">工具提示</span>
-                <span>{{ formatTime(item.ts) }}</span>
-            </div>
-            <p class="mt-2 text-sm text-gray-800 whitespace-pre-wrap wrap-break-word">{{ item.payload?.content ?? '—' }}</p>
-        </div>
-
-        <div v-else-if="item.kind === 'step'"
-            class="rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2.5 shadow-sm">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <Icon icon="mdi:stairs" class="text-base text-indigo-600" />
-                <span class="font-semibold text-gray-800">步骤</span>
-                <span class="rounded bg-white/80 px-1.5 py-0.5 font-mono text-[11px]">#{{ item.payload?.iteration ?? '—' }}</span>
-                <span class="rounded bg-indigo-100/80 px-1.5 py-0.5 text-[11px] font-medium text-indigo-900">{{ phaseLabel }}</span>
-                <span>{{ formatTime(item.ts) }}</span>
-            </div>
-            <template v-if="item.payload?.phase === 'before_tools'">
-                <p class="mt-2 text-sm text-gray-800">调用工具：</p>
-                <ul class="mt-1.5 flex flex-wrap gap-1.5">
-                    <li v-for="(tc, idx) in beforeToolCalls" :key="idx"
-                        class="rounded-md bg-white px-2 py-1 text-xs font-mono text-indigo-900 ring-1 ring-indigo-100">
-                        {{ tc.name }}
-                    </li>
-                </ul>
-            </template>
-            <template v-else-if="item.payload?.phase === 'after_iteration'">
-                <MarkdownViewer
-                    v-if="afterStepContent"
-                    :content="afterStepContent"
-                    :breaks="true"
-                    custom-class="mt-2 rounded-lg border border-gray-100 bg-white/90 p-3"
+    <article class="min-w-0 text-gray-800">
+        <template v-if="item.kind === 'run_details'">
+            <button
+                type="button"
+                class="group flex w-full min-w-0 items-center gap-2 text-left text-xs text-gray-500 hover:text-gray-800"
+                :aria-expanded="expanded"
+                @click="toggleExpanded"
+            >
+                <Icon icon="mdi:progress-wrench" class="shrink-0 text-base" />
+                <span class="min-w-0 flex-1 truncate">{{ runDetailsSummary }}</span>
+                <Icon
+                    icon="mdi:chevron-right"
+                    class="shrink-0 text-base transition-transform duration-150"
+                    :class="expanded ? 'rotate-90' : ''"
                 />
-                <p v-if="afterToolNames.length" class="mt-2 text-xs text-gray-600">工具：{{ afterToolNames.join('、') }}</p>
-                <el-collapse v-if="afterArgsJson" v-model="stepCollapse" class="mt-2 border-0">
-                    <el-collapse-item title="参数（JSON）" name="args">
-                        <pre class="rounded bg-white p-2 text-[11px] text-gray-800 ring-1 ring-gray-100 whitespace-pre-wrap">{{ afterArgsJson }}</pre>
-                    </el-collapse-item>
-                </el-collapse>
-            </template>
-            <template v-else>
-                <pre class="mt-2 max-h-40 overflow-auto rounded bg-white p-2 text-xs ring-1 ring-gray-100">{{ stepFallbackJson }}</pre>
-            </template>
-        </div>
+            </button>
+            <div v-if="expanded" class="mt-3 ml-2 space-y-3 border-l border-gray-200 pl-4">
+                <div v-for="row in runTechnicalRows" :key="row.key" class="min-w-0 text-xs text-gray-600">
+                    <div class="flex min-w-0 items-start gap-2">
+                        <Icon :icon="row.icon" class="mt-0.5 shrink-0 text-sm" :class="row.iconClass" />
+                        <span class="min-w-0 flex-1 wrap-break-word">{{ row.label }}</span>
+                        <span class="hidden shrink-0 text-gray-400 sm:inline">{{ row.time }}</span>
+                    </div>
+                    <pre
+                        v-if="row.raw"
+                        class="mt-2 max-h-64 overflow-auto rounded-md bg-gray-50 px-3 py-2 font-mono text-[11px] leading-5 text-gray-600 whitespace-pre-wrap wrap-break-word"
+                    >{{ row.raw }}</pre>
+                </div>
+            </div>
+        </template>
 
-        <div v-else-if="item.kind === 'todos'"
-            class="rounded-lg border border-emerald-100 bg-emerald-50/30 px-3 py-2.5 shadow-sm">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <Icon icon="mdi:format-list-checks" class="text-base text-emerald-600" />
-                <span class="font-semibold text-gray-800">待办已更新</span>
-                <span class="rounded bg-white px-1.5 py-0.5 font-medium text-emerald-800">{{ item.todoCount ?? 0 }} 项</span>
-                <span>{{ formatTime(item.ts) }}</span>
+        <template v-else-if="item.kind === 'user_message'">
+            <div class="flex min-w-0 justify-end">
+                <div class="min-w-0 max-w-[92%] rounded-2xl rounded-tr-sm bg-slate-100 px-4 py-3 sm:max-w-[85%]">
+                    <div class="mb-2 flex items-center justify-end gap-2 text-xs text-gray-500">
+                        <span class="hidden sm:inline">{{ formatTime(item.ts) }}</span>
+                        <span class="font-medium text-gray-700">用户输入</span>
+                        <Icon icon="mdi:account-outline" class="shrink-0 text-base text-emerald-600" />
+                    </div>
+                    <MarkdownViewer :content="userMessageContent" :breaks="true" custom-class="min-w-0" />
+                </div>
             </div>
-            <p v-if="item.todoPreview" class="mt-2 text-xs text-gray-600">摘要：{{ item.todoPreview }}</p>
-        </div>
+        </template>
 
-        <div v-else-if="item.kind === 'approval_required'" class="rounded-lg border px-3 py-2.5 shadow-sm"
-            :class="approvalTheme.card">
-            <div class="flex flex-wrap items-center gap-2 text-xs">
-                <Icon :icon="approvalIcon" class="text-base shrink-0" :class="approvalTheme.icon" />
-                <span class="font-semibold" :class="approvalTheme.title">审批</span>
-                <span class="rounded px-1.5 py-0.5 text-[11px]" :class="approvalTheme.sourceTag">{{ approvalSourceLabel }}</span>
-                <span v-if="approvalResolutionLabel" class="rounded-md px-2 py-0.5 text-[11px] font-medium"
-                    :class="approvalBadgeClass">{{ approvalResolutionLabel }}</span>
-                <span :class="approvalTheme.time">{{ formatTime(item.ts) }}</span>
+        <template v-else-if="item.kind === 'assistant_reasoning_stream'">
+            <button
+                type="button"
+                class="group flex w-full min-w-0 items-center gap-2 text-left text-sm text-gray-500 hover:text-gray-800"
+                :aria-expanded="expanded"
+                @click="toggleExpanded"
+            >
+                <Icon
+                    :icon="item.streaming ? 'mdi:head-cog-outline' : 'mdi:brain'"
+                    class="shrink-0 text-base text-violet-500"
+                    :class="item.streaming ? 'animate-pulse' : ''"
+                />
+                <span class="font-medium">{{ item.streaming ? '正在思考' : '思考过程' }}</span>
+                <span v-if="item.resuming" class="text-xs text-amber-600">后续仍会继续</span>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.ts) }}</span>
+                <Icon
+                    icon="mdi:chevron-right"
+                    class="ml-auto shrink-0 text-base transition-transform duration-150"
+                    :class="expanded ? 'rotate-90' : ''"
+                />
+            </button>
+            <div v-if="expanded" class="mt-3 ml-2 border-l border-violet-200 pl-4 text-sm text-gray-600">
+                <MarkdownViewer
+                    v-if="item.text"
+                    :content="item.text"
+                    :breaks="true"
+                    custom-class="min-w-0"
+                />
+                <span v-else class="text-xs text-gray-400">等待思考内容…</span>
             </div>
-            <p v-if="approvalEntityTypeLabel" class="mt-2 text-sm" :class="approvalTheme.meta">
-                实体：<span class="font-medium">{{ approvalEntityTypeLabel }}</span>
-                <span v-if="approvalEntityUuidShort" class="ml-1 font-mono text-xs opacity-70">{{ approvalEntityUuidShort }}</span>
-            </p>
-            <p v-if="approvalWikiCreateTitle" class="mt-2 text-sm" :class="approvalTheme.meta">
-                标题：<span class="font-medium">{{ approvalWikiCreateTitle }}</span>
-            </p>
-            <p v-if="approvalWikiEditLine" class="mt-2 text-sm" :class="approvalTheme.meta">{{ approvalWikiEditLine }}</p>
-            <p v-if="approvalModificationCount" class="mt-1 text-xs" :class="approvalTheme.sub">修改项 {{ approvalModificationCount }} 个</p>
-            <p v-if="approvalReasonText" class="mt-1 text-sm whitespace-pre-wrap wrap-break-word line-clamp-3" :class="approvalTheme.reason">说明：{{ approvalReasonText }}</p>
-            <p v-if="approvalPending" class="mt-2 text-xs" :class="approvalTheme.pendingHint">需要审批，请在审批面板中操作。</p>
-            <div v-else-if="rejectReasons.length" class="mt-2">
-                <p class="text-xs font-semibold" :class="approvalTheme.sub">审批意见</p>
-                <ol class="mt-1 list-decimal pl-5 text-sm space-y-0.5" :class="approvalTheme.rejectList">
-                    <li v-for="(r, i) in rejectReasons" :key="i">{{ r }}</li>
-                </ol>
-            </div>
-        </div>
+        </template>
 
-        <div v-else-if="item.kind === 'notification'" class="rounded-lg border-l-4 bg-white px-3 py-2.5 shadow-sm ring-1 ring-gray-100"
-            :class="notificationBorderClass">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                <Icon :icon="notificationIcon" class="text-base" :class="notificationIconColor" />
-                <span class="font-semibold text-gray-800">通知</span>
-                <span class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px]">{{ item.payload?.level ?? 'info' }}</span>
-                <span>{{ formatTime(item.payload?.created_at || item.ts) }}</span>
+        <template v-else-if="item.kind === 'tool_activity'">
+            <button
+                type="button"
+                class="group flex w-full min-w-0 items-start gap-2 text-left text-sm text-gray-500 hover:text-gray-800"
+                :aria-expanded="expanded"
+                @click="toggleExpanded"
+            >
+                <Icon
+                    icon="mdi:console-line"
+                    class="mt-0.5 shrink-0 text-base text-slate-500"
+                    :class="item.running ? 'animate-pulse' : ''"
+                />
+                <span class="shrink-0 font-medium">{{ toolActivityLabel }}</span>
+                <span v-if="toolNames" class="min-w-0 flex-1 wrap-break-word text-gray-400">{{ toolNames }}</span>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.updatedTs || item.ts) }}</span>
+                <Icon
+                    icon="mdi:chevron-right"
+                    class="mt-0.5 shrink-0 text-base transition-transform duration-150"
+                    :class="expanded ? 'rotate-90' : ''"
+                />
+            </button>
+            <div v-if="expanded" class="mt-3 ml-2 space-y-4 border-l border-gray-200 pl-4">
+                <div v-for="tool in toolDetails" :key="tool.key" class="min-w-0">
+                    <div class="flex min-w-0 items-center gap-2 text-xs">
+                        <Icon :icon="tool.icon" class="shrink-0 text-sm" :class="tool.iconClass" />
+                        <code class="min-w-0 wrap-break-word font-medium text-gray-800">{{ tool.name }}</code>
+                        <span class="text-gray-400">{{ tool.statusLabel }}</span>
+                    </div>
+                    <div v-if="tool.argumentsText" class="mt-2 min-w-0">
+                        <p class="mb-1 text-[11px] text-gray-400">参数</p>
+                        <pre class="max-h-56 overflow-auto rounded-md bg-gray-50 px-3 py-2 font-mono text-[11px] leading-5 text-gray-600 whitespace-pre-wrap wrap-break-word">{{ tool.argumentsText }}</pre>
+                    </div>
+                    <div v-if="tool.detail" class="mt-2 min-w-0">
+                        <p class="mb-1 text-[11px] text-gray-400">结果</p>
+                        <p class="text-xs leading-5 whitespace-pre-wrap wrap-break-word" :class="tool.status === 'error' ? 'text-red-700' : 'text-gray-600'">{{ tool.detail }}</p>
+                    </div>
+                </div>
+                <MarkdownViewer
+                    v-if="item.assistantContent"
+                    :content="item.assistantContent"
+                    :breaks="true"
+                    custom-class="min-w-0 text-sm text-gray-600"
+                />
+                <p v-if="toolUsageText" class="text-[11px] text-gray-400">用量：{{ toolUsageText }}</p>
+                <p v-if="toolErrorText" class="border-l-2 border-red-400 pl-3 text-xs text-red-700 whitespace-pre-wrap wrap-break-word">{{ toolErrorText }}</p>
             </div>
-            <p class="mt-2 text-sm text-gray-800 whitespace-pre-wrap wrap-break-word">{{ item.payload?.message ?? '—' }}</p>
-        </div>
+        </template>
 
-        <div v-else-if="item.kind === 'task_submitted'"
-            class="rounded-lg border px-3 py-2.5 shadow-sm"
-            :class="item.payload?.success ? 'border-green-200 bg-green-50/40' : 'border-red-200 bg-red-50/40'">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <Icon :icon="item.payload?.success ? 'mdi:check-circle' : 'mdi:alert-circle'"
-                    :class="item.payload?.success ? 'text-green-600' : 'text-red-600'" class="text-lg" />
-                <span class="font-semibold text-gray-900">任务结果已提交</span>
-                <span>{{ formatTime(item.ts) }}</span>
+        <template v-else-if="item.kind === 'assistant_stream'">
+            <div class="mb-2 flex items-center gap-2 text-xs text-gray-500">
+                <Icon icon="mdi:creation-outline" class="shrink-0 text-base text-blue-600" />
+                <span class="font-medium text-gray-700">分析引擎</span>
+                <span v-if="item.streaming" class="text-blue-600">正在输出</span>
+                <span class="hidden sm:inline">{{ formatTime(item.ts) }}</span>
             </div>
-            <p class="mt-2 text-sm text-gray-800 whitespace-pre-wrap wrap-break-word">{{ item.payload?.short_summary ?? '—' }}</p>
-        </div>
+            <div class="min-w-0">
+                <MarkdownViewer v-if="item.text" :content="item.text" :breaks="true" custom-class="min-w-0" />
+                <span v-else class="text-xs text-gray-400">等待输出…</span>
+                <span
+                    v-if="item.streaming"
+                    class="ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 rounded-sm bg-blue-500 align-middle animate-pulse"
+                    aria-hidden="true"
+                />
+            </div>
+        </template>
 
-        <div v-else-if="item.kind === 'result'"
-            class="rounded-xl border px-4 py-3 shadow-sm"
-            :class="resultBoxClass">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <Icon :icon="resultIcon" class="text-lg shrink-0" :class="resultIconClass" />
-                <span class="font-semibold text-gray-900">本轮结束</span>
-                <span v-if="resultStopReasonLabel"
-                    class="rounded-md bg-white/80 px-2 py-0.5 text-xs font-medium text-gray-800 ring-1 ring-gray-200/80">{{
-                    resultStopReasonLabel }}</span>
-                <span v-if="resultSessionStatusLabel"
-                    class="rounded-md px-2 py-0.5 font-mono text-xs font-medium ring-1"
-                    :class="resultSessionStatusBadgeClass">{{ resultSessionStatusLabel }}</span>
-                <span class="text-gray-400">{{ formatTime(item.ts) }}</span>
+        <template v-else-if="item.kind === 'progress'">
+            <div class="mb-2 flex items-center gap-2 text-xs text-gray-500">
+                <Icon icon="mdi:text-long" class="shrink-0 text-base text-blue-500" />
+                <span class="font-medium text-gray-700">进度更新</span>
+                <span v-if="item.payload?.tool_hint" class="text-amber-600">工具提示</span>
+                <span class="hidden sm:inline">{{ formatTime(item.ts) }}</span>
             </div>
-            <p v-if="resultSummary" class="mt-2 text-sm font-medium text-gray-900">{{ resultSummary }}</p>
             <MarkdownViewer
-                v-if="resultUserMarkdown"
-                :content="resultUserMarkdown"
-                custom-class="mt-2 rounded-lg border border-gray-100 bg-white/90 p-3"
+                :content="String(item.payload?.content ?? '—')"
+                :breaks="true"
+                custom-class="min-w-0 text-sm"
             />
-            <p v-if="resultToolsLine" class="mt-2 text-xs text-gray-600">
-                <span class="text-gray-500">使用工具：</span>{{ resultToolsLine }}
-            </p>
-            <div v-if="resultErrorText"
-                class="mt-3 rounded-lg border border-red-200/80 bg-red-50/90 px-3 py-2.5">
-                <p class="text-xs font-semibold text-red-800">错误信息</p>
-                <pre class="mt-1 text-xs text-red-900/90 whitespace-pre-wrap wrap-break-word">{{ resultErrorText }}</pre>
-            </div>
-        </div>
+        </template>
 
-        <div v-else-if="item.kind === 'debug_prompt'"
-            class="rounded-lg border border-violet-200 bg-violet-50/30 px-3 py-2.5 shadow-sm">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <Icon icon="mdi:bug" class="text-base text-violet-600" />
-                <span class="font-semibold text-gray-900">调试提示词</span>
-                <span v-if="item.payload?.model" class="font-mono text-[11px] text-gray-500">{{ item.payload.model }}</span>
-                <span>{{ formatTime(item.ts) }}</span>
+        <template v-else-if="item.kind === 'todos'">
+            <div class="flex min-w-0 items-start gap-2 text-sm text-gray-500">
+                <Icon icon="mdi:format-list-checks" class="mt-0.5 shrink-0 text-base text-emerald-600" />
+                <div class="min-w-0 flex-1">
+                    <p><span class="font-medium text-gray-700">更新了任务列表</span> · {{ item.todoCount ?? 0 }} 项</p>
+                    <p v-if="item.todoPreview" class="mt-1 text-xs text-gray-400 wrap-break-word">{{ item.todoPreview }}</p>
+                </div>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.ts) }}</span>
             </div>
-            <el-collapse v-model="debugCollapse" class="mt-2 border-0">
-                <el-collapse-item title="系统提示" name="sys">
+        </template>
+
+        <template v-else-if="item.kind === 'approval_required'">
+            <div class="flex min-w-0 items-start gap-2 text-sm" :class="approvalColorClass">
+                <Icon :icon="approvalIcon" class="mt-0.5 shrink-0 text-base" />
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium">
+                        {{ approvalPending ? '等待审批' : `审批${approvalResolutionLabel || '已处理'}` }}
+                        <span class="font-normal opacity-75">· {{ approvalSourceLabel }}</span>
+                    </p>
+                    <p v-if="approvalEntityLine" class="mt-1 text-xs opacity-80 wrap-break-word">{{ approvalEntityLine }}</p>
+                    <p v-if="approvalReasonText" class="mt-1 text-xs opacity-80 whitespace-pre-wrap wrap-break-word">说明：{{ approvalReasonText }}</p>
+                    <p v-if="rejectReasons.length" class="mt-1 text-xs opacity-80">审批意见：{{ rejectReasons.join('；') }}</p>
+                </div>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.ts) }}</span>
+            </div>
+        </template>
+
+        <template v-else-if="item.kind === 'notification'">
+            <div class="flex min-w-0 items-start gap-2 text-sm" :class="notificationTextClass">
+                <Icon :icon="notificationIcon" class="mt-0.5 shrink-0 text-base" />
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium">{{ notificationTitle }}</p>
+                    <p class="mt-1 whitespace-pre-wrap wrap-break-word">{{ item.payload?.message ?? '—' }}</p>
+                </div>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.payload?.created_at || item.ts) }}</span>
+            </div>
+        </template>
+
+        <template v-else-if="item.kind === 'task_submitted'">
+            <div class="flex min-w-0 items-start gap-2 text-sm" :class="item.payload?.success ? 'text-green-700' : 'text-red-700'">
+                <Icon :icon="item.payload?.success ? 'mdi:check-circle-outline' : 'mdi:alert-circle-outline'" class="mt-0.5 shrink-0 text-base" />
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium">任务结果{{ item.payload?.success ? '已提交' : '提交失败' }}</p>
+                    <p v-if="item.payload?.short_summary" class="mt-1 text-gray-700 whitespace-pre-wrap wrap-break-word">{{ item.payload.short_summary }}</p>
+                </div>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.ts) }}</span>
+            </div>
+        </template>
+
+        <template v-else-if="item.kind === 'result'">
+            <div class="flex min-w-0 items-start gap-2 text-sm">
+                <Icon :icon="resultIcon" class="mt-0.5 shrink-0 text-base" :class="resultIconClass" />
+                <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span class="font-medium text-gray-800">{{ resultStopReasonLabel || '本轮结束' }}</span>
+                        <span v-if="resultSessionStatusLabel" class="text-xs" :class="resultIconClass">{{ resultSessionStatusLabel }}</span>
+                    </div>
+                    <p v-if="resultSummary" class="mt-2 text-gray-700 whitespace-pre-wrap wrap-break-word">{{ resultSummary }}</p>
                     <MarkdownViewer
-                        v-if="item.payload?.system_prompt"
-                        :content="item.payload.system_prompt"
+                        v-if="resultUserMarkdown"
+                        :content="resultUserMarkdown"
                         :breaks="true"
-                        custom-class="rounded bg-white p-2 text-xs ring-1 ring-gray-100"
+                        custom-class="mt-3 min-w-0"
                     />
-                    <p v-else class="text-xs text-gray-500">—</p>
-                </el-collapse-item>
-                <el-collapse-item v-if="item.payload?.extra_system_suffix" title="系统后缀" name="suf">
-                    <MarkdownViewer
-                        :content="item.payload.extra_system_suffix"
-                        :breaks="true"
-                        custom-class="rounded bg-white p-2 text-xs ring-1 ring-gray-100"
-                    />
-                </el-collapse-item>
-                <el-collapse-item title="用户提示" name="usr">
-                    <MarkdownViewer
-                        v-if="item.payload?.user_prompt"
-                        :content="item.payload.user_prompt"
-                        :breaks="true"
-                        custom-class="rounded bg-white p-2 text-xs ring-1 ring-gray-100"
-                    />
-                    <p v-else class="text-xs text-gray-500">—</p>
-                </el-collapse-item>
-                <el-collapse-item title="内存快照" name="mem">
-                    <pre class="rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ memorySnapshotText }}</pre>
-                </el-collapse-item>
-            </el-collapse>
-        </div>
-
-        <div v-else-if="item.kind === 'system'"
-            class="rounded-md border border-dashed border-gray-200 bg-gray-50/80 px-3 py-2 text-xs text-gray-600">
-            <span class="font-mono text-[11px] text-gray-500">{{ item.systemSubtype || 'system' }}</span>
-            <span class="mx-2 text-gray-300">|</span>
-            <span>{{ formatTime(item.ts) }}</span>
-            <p class="mt-1 text-gray-700">{{ systemMessage }}</p>
-            <pre v-if="item.metaJson" class="mt-1 max-h-24 overflow-auto rounded bg-white p-1.5 text-[10px] text-gray-600">{{ item.metaJson }}</pre>
-        </div>
-
-        <div v-else-if="item.kind === 'parse_error'"
-            class="rounded-lg border border-red-100 bg-red-50/50 px-3 py-2.5 text-sm text-red-900">
-            <div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
-                <Icon icon="mdi:alert" class="text-lg" />
-                <span>{{ item.sseType }}</span>
-                <span class="font-normal text-red-700/80">解析失败：{{ item.error }}</span>
-                <span class="text-gray-500">{{ formatTime(item.ts) }}</span>
+                    <p v-if="resultToolsLine" class="mt-2 text-xs text-gray-400">使用工具：{{ resultToolsLine }}</p>
+                    <div v-if="resultErrorText" class="mt-3 border-l-2 border-red-400 pl-3">
+                        <p class="text-xs font-medium text-red-700">错误信息</p>
+                        <pre class="mt-1 text-xs text-red-700 whitespace-pre-wrap wrap-break-word">{{ resultErrorText }}</pre>
+                    </div>
+                </div>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.ts) }}</span>
             </div>
-            <pre class="mt-2 max-h-32 overflow-auto rounded bg-white p-2 text-xs text-gray-800 whitespace-pre-wrap">{{ item.rawSnippet }}</pre>
-        </div>
+        </template>
 
-        <div v-else class="rounded-lg border border-amber-100 bg-amber-50/40 px-3 py-2.5 shadow-sm">
-            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-700">
-                <Icon icon="mdi:help-circle-outline" class="text-base text-amber-700" />
-                <span class="font-mono font-semibold">{{ item.sseType }}</span>
-                <span>{{ formatTime(item.ts) }}</span>
+        <template v-else-if="item.kind === 'parse_error'">
+            <button
+                type="button"
+                class="flex w-full min-w-0 items-start gap-2 text-left text-sm text-red-700"
+                :aria-expanded="expanded"
+                @click="toggleExpanded"
+            >
+                <Icon icon="mdi:alert-outline" class="mt-0.5 shrink-0 text-base" />
+                <span class="min-w-0 flex-1 wrap-break-word">{{ item.sseType }} 解析失败：{{ item.error }}</span>
+                <Icon icon="mdi:chevron-right" class="shrink-0 text-base transition-transform duration-150" :class="expanded ? 'rotate-90' : ''" />
+            </button>
+            <pre v-if="expanded" class="mt-3 ml-6 max-h-56 overflow-auto rounded-md bg-red-50 px-3 py-2 text-xs text-red-800 whitespace-pre-wrap wrap-break-word">{{ item.rawSnippet }}</pre>
+        </template>
+
+        <template v-else-if="item.kind === 'system'">
+            <div class="flex min-w-0 items-start gap-2 text-sm text-red-700">
+                <Icon icon="mdi:alert-circle-outline" class="mt-0.5 shrink-0 text-base" />
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium">{{ item.systemSubtype || '系统错误' }}</p>
+                    <p class="mt-1 whitespace-pre-wrap wrap-break-word">{{ systemMessage }}</p>
+                    <pre v-if="item.metaJson" class="mt-2 max-h-48 overflow-auto rounded-md bg-red-50 px-3 py-2 text-xs whitespace-pre-wrap wrap-break-word">{{ item.metaJson }}</pre>
+                </div>
             </div>
-            <el-collapse v-model="unknownCollapse" class="mt-2 border-0">
-                <el-collapse-item title="原始数据" name="raw">
-                    <pre class="rounded bg-white p-2 text-xs whitespace-pre-wrap ring-1 ring-gray-100">{{ unknownRaw }}</pre>
-                </el-collapse-item>
-            </el-collapse>
-        </div>
-    </div>
+        </template>
+
+        <template v-else>
+            <button
+                type="button"
+                class="flex w-full min-w-0 items-start gap-2 text-left text-sm text-gray-500 hover:text-gray-800"
+                :aria-expanded="expanded"
+                @click="toggleExpanded"
+            >
+                <Icon icon="mdi:code-json" class="mt-0.5 shrink-0 text-base" />
+                <span class="min-w-0 flex-1 font-mono wrap-break-word">{{ item.sseType || item.kind || '未知事件' }}</span>
+                <span class="hidden shrink-0 text-xs text-gray-400 sm:inline">{{ formatTime(item.ts) }}</span>
+                <Icon icon="mdi:chevron-right" class="shrink-0 text-base transition-transform duration-150" :class="expanded ? 'rotate-90' : ''" />
+            </button>
+            <pre v-if="expanded" class="mt-3 ml-6 max-h-64 overflow-auto rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600 whitespace-pre-wrap wrap-break-word">{{ unknownRaw }}</pre>
+        </template>
+    </article>
 </template>
 
 <script setup>
@@ -315,9 +295,11 @@ const props = defineProps({
     },
 })
 
-const stepCollapse = ref([])
-const debugCollapse = ref([])
-const unknownCollapse = ref([])
+const expanded = ref(false)
+
+function toggleExpanded() {
+    expanded.value = !expanded.value
+}
 
 function formatTime(ts) {
     return formatDateTime(ts, { includeSecond: true })
@@ -343,322 +325,226 @@ const RESULT_STOP_REASON_LABEL = {
     awaiting_approval: '等待人工审批',
 }
 
-const statusText = computed(() => {
-    const s = props.item.payload?.status
-    const key = s != null ? String(s) : ''
-    return RUNTIME_STATUS_LABEL[key] || key || '—'
+const runTechnicalRows = computed(() => {
+    return (props.item.technicalItems || []).map((raw, index) => {
+        let label = raw.message || raw.systemSubtype || raw.sseType || raw.kind || '运行事件'
+        let icon = 'mdi:circle-small'
+        let iconClass = 'text-gray-400'
+        let detail = ''
+        if (raw.kind === 'status') {
+            const status = String(raw.payload?.status || 'unknown')
+            label = `会话状态 · ${RUNTIME_STATUS_LABEL[status] || status}`
+            icon = 'mdi:state-machine'
+            iconClass = 'text-blue-500'
+        } else if (raw.kind === 'debug_prompt') {
+            label = `调试提示词${raw.payload?.model ? ` · ${raw.payload.model}` : ''}`
+            icon = 'mdi:bug-outline'
+            iconClass = 'text-violet-500'
+            detail = stringifyJsonSafe(raw.payload, 2)
+        } else if (raw.kind === 'step') {
+            label = `迭代 #${raw.payload?.iteration ?? raw.payload?.step?.iteration ?? '—'}`
+            icon = 'mdi:stairs'
+            detail = stringifyJsonSafe(raw.payload, 2)
+        } else if (raw.kind === 'system') {
+            icon = raw.systemSubtype === 'sse_open' ? 'mdi:access-point-check' : 'mdi:cog-outline'
+            iconClass = raw.systemSubtype === 'sse_open' ? 'text-green-500' : 'text-gray-400'
+            detail = raw.metaJson || ''
+        }
+        return {
+            key: raw.displayKey || raw.id || `${raw.kind}-${index}`,
+            label,
+            icon,
+            iconClass,
+            raw: detail,
+            time: formatTime(raw.ts),
+        }
+    })
 })
 
-const userMessageContent = computed(() => {
-    const content = props.item.payload?.content
-    return content != null && String(content).length > 0 ? String(content) : '—'
+const runDetailsSummary = computed(() => {
+    const items = props.item.technicalItems || []
+    const connected = items.some((entry) => entry.kind === 'system' && entry.systemSubtype === 'sse_open')
+    const statusItem = [...items].reverse().find((entry) => entry.kind === 'status')
+    const status = String(props.item.runtimeStatus || statusItem?.payload?.status || '')
+    const parts = []
+    if (connected) parts.push('实时通道已建立')
+    if (status) parts.push(RUNTIME_STATUS_LABEL[status] || status)
+    parts.push(`${items.length} 条运行记录`)
+    return parts.join(' · ')
 })
 
-const phaseLabel = computed(() => {
-    const p = props.item.payload?.phase
-    if (p === 'before_tools') return '执行工具前'
-    if (p === 'after_iteration') return '迭代结束后'
-    return p ? String(p) : '—'
-})
+const userMessageContent = computed(() => String(props.item.payload?.content ?? '—'))
 
-const beforeToolCalls = computed(() => {
-    const list = props.item.payload?.tool_calls
-    return Array.isArray(list) ? list : []
-})
-
-const afterStepContent = computed(() => props.item.payload?.step?.content ?? '')
-
-const afterToolNames = computed(() => {
-    const calls = props.item.payload?.step?.tool_calls
-    if (!Array.isArray(calls)) return []
-    return calls.map((c) => c?.name).filter(Boolean)
-})
-
-const afterArgsJson = computed(() => {
-    const calls = props.item.payload?.step?.tool_calls
-    if (!Array.isArray(calls) || !calls.length) return ''
-    try {
-        const parts = calls.map((c) => `${c?.name || '?'}: ${JSON.stringify(c?.arguments ?? {}, null, 0)}`)
-        return parts.join('\n\n')
-    } catch {
-        return ''
+const toolDetails = computed(() => {
+    const calls = Array.isArray(props.item.toolCalls) ? props.item.toolCalls : []
+    const events = Array.isArray(props.item.toolEvents) ? props.item.toolEvents : []
+    const count = Math.max(calls.length, events.length)
+    const details = []
+    for (let index = 0; index < count; index++) {
+        const call = calls[index] || null
+        const event = events[index] || null
+        const status = event?.status || (props.item.running ? 'running' : 'unknown')
+        const args = call?.arguments
+        const hasArguments = args != null && (
+            typeof args !== 'object'
+            || Array.isArray(args)
+            || Object.keys(args).length > 0
+        )
+        details.push({
+            key: `${call?.name || event?.name || 'tool'}-${index}`,
+            name: call?.name || event?.name || '未知工具',
+            status,
+            statusLabel: status === 'ok' ? '已完成' : status === 'error' ? '失败' : status === 'running' ? '运行中' : '',
+            icon: status === 'ok' ? 'mdi:check-circle-outline' : status === 'error' ? 'mdi:alert-circle-outline' : 'mdi:progress-clock',
+            iconClass: status === 'ok' ? 'text-green-600' : status === 'error' ? 'text-red-600' : 'text-amber-500',
+            argumentsText: hasArguments ? stringifyJsonSafe(args, 2) : '',
+            detail: event?.detail ? String(event.detail) : '',
+        })
     }
+    return details
 })
 
-const stepFallbackJson = computed(() => stringifyJsonSafe(props.item.payload, 2))
+const toolActivityLabel = computed(() => {
+    const count = Math.max(props.item.toolCalls?.length || 0, props.item.toolEvents?.length || 0)
+    return `${props.item.running ? '正在运行' : '已运行'} ${count} 个工具`
+})
+
+const toolNames = computed(() => {
+    const names = toolDetails.value.map((tool) => tool.name).filter(Boolean)
+    return [...new Set(names)].join('、')
+})
+
+const toolUsageText = computed(() => {
+    const usage = props.item.usage
+    if (!usage || typeof usage !== 'object' || !Object.keys(usage).length) return ''
+    return Object.entries(usage).map(([key, value]) => `${key} ${value}`).join(' · ')
+})
+
+const toolErrorText = computed(() => {
+    const error = props.item.error
+    if (error == null || error === '') return ''
+    return typeof error === 'string' ? error : stringifyJsonSafe(error, 2)
+})
 
 const approvalPending = computed(() => isApprovalAwaitingUserAction(props.item.payload))
-
 const approvalSourceLabel = computed(() => getApprovalSourceLabel(props.item.payload?.source))
-
 const modifyEntityPayload = computed(() => getModifyEntityPayload(props.item.payload))
 const wikiCreatePayload = computed(() => getWikiCreatePayload(props.item.payload))
 const wikiEditPayload = computed(() => getWikiEditPayload(props.item.payload))
 
-const approvalEntityTypeLabel = computed(() => {
-    const type = modifyEntityPayload.value?.entity_type
-    return type ? getEntityTypeLabel(type) : ''
-})
-
-const approvalEntityUuidShort = computed(() => {
-    const uuid = modifyEntityPayload.value?.entity_uuid
-    return uuid ? truncateUuid(uuid) : ''
-})
-
-const approvalWikiCreateTitle = computed(() => wikiCreatePayload.value?.title ?? '')
-
-const approvalWikiEditLine = computed(() => {
-    const p = wikiEditPayload.value
-    if (!p) return ''
-    const op = getWikiEditOperationLabel(p.operation)
-    const wikiShort = p.wiki_id ? truncateUuid(p.wiki_id) : ''
-    const rev = p.expected_revision != null ? ` · 修订 ${p.expected_revision}` : ''
-    const parts = [op, wikiShort ? `页面 ${wikiShort}` : ''].filter(Boolean)
-    return parts.join(' · ') + rev
-})
-
-const approvalModificationCount = computed(() => {
-    const list = modifyEntityPayload.value?.modifications
-    return Array.isArray(list) ? list.length : 0
-})
-
-const approvalReasonText = computed(() => {
-    return (
-        modifyEntityPayload.value?.reason
-        ?? wikiCreatePayload.value?.reason
-        ?? wikiEditPayload.value?.reason
-        ?? ''
-    )
-})
-
-const rejectReasons = computed(() => {
-    const r = props.item.payload?.reject_reasons
-    return Array.isArray(r) ? r.filter(Boolean) : []
-})
-
-const RESOLUTION_LABEL = {
-    approved: '已通过',
-    rejected: '已拒绝',
-    mixed: '混合结果',
-}
-
 const approvalResolutionLabel = computed(() => {
-    const r = props.item.payload?.resolution
-    if (r == null) return ''
-    return RESOLUTION_LABEL[r] || String(r)
-})
-
-const APPROVAL_THEME_DEFAULT = {
-    card: 'border-gray-200 bg-gray-50/80',
-    icon: 'text-gray-600',
-    title: 'text-gray-900',
-    sourceTag: 'bg-white/80 text-gray-700',
-    time: 'text-gray-500',
-    meta: 'text-gray-800',
-    sub: 'text-gray-600',
-    reason: 'text-gray-700',
-    pendingHint: 'text-blue-700',
-    rejectList: 'text-gray-800',
-}
-
-const APPROVAL_THEME_PENDING = {
-    card: 'border-amber-200 bg-amber-50/50',
-    icon: 'text-amber-600',
-    title: 'text-amber-900',
-    sourceTag: 'bg-white/90 text-amber-800',
-    time: 'text-amber-700/80',
-    meta: 'text-gray-800',
-    sub: 'text-gray-600',
-    reason: 'text-gray-700',
-    pendingHint: 'text-blue-700',
-    rejectList: 'text-gray-800',
-}
-
-const APPROVAL_THEME_APPROVED = {
-    card: 'border-green-200 bg-green-50/50',
-    icon: 'text-green-600',
-    title: 'text-green-900',
-    sourceTag: 'bg-white/90 text-green-800',
-    time: 'text-green-700/80',
-    meta: 'text-green-900/90',
-    sub: 'text-green-800/80',
-    reason: 'text-green-900/80',
-    pendingHint: 'text-green-700',
-    rejectList: 'text-green-900/90',
-}
-
-const APPROVAL_THEME_REJECTED = {
-    card: 'border-red-200 bg-red-50/50',
-    icon: 'text-red-600',
-    title: 'text-red-900',
-    sourceTag: 'bg-white/90 text-red-800',
-    time: 'text-red-700/80',
-    meta: 'text-red-900/90',
-    sub: 'text-red-800/80',
-    reason: 'text-red-900/80',
-    pendingHint: 'text-red-700',
-    rejectList: 'text-red-800',
-}
-
-const approvalTheme = computed(() => {
-    if (approvalPending.value) return APPROVAL_THEME_PENDING
-    const r = props.item.payload?.resolution
-    if (r === 'approved') return APPROVAL_THEME_APPROVED
-    if (r === 'rejected') return APPROVAL_THEME_REJECTED
-    if (r === 'mixed') return APPROVAL_THEME_PENDING
-    return APPROVAL_THEME_DEFAULT
+    const labels = { approved: '已通过', rejected: '已拒绝', mixed: '混合处理' }
+    const resolution = props.item.payload?.resolution
+    return resolution ? labels[resolution] || String(resolution) : ''
 })
 
 const approvalIcon = computed(() => {
     if (approvalPending.value) return 'mdi:shield-alert-outline'
-    const r = props.item.payload?.resolution
-    if (r === 'approved') return 'mdi:shield-check'
-    if (r === 'rejected') return 'mdi:shield-remove'
-    if (r === 'mixed') return 'mdi:shield-half-full'
+    if (props.item.payload?.resolution === 'approved') return 'mdi:shield-check-outline'
+    if (props.item.payload?.resolution === 'rejected') return 'mdi:shield-remove-outline'
     return 'mdi:shield-outline'
 })
 
-const approvalBadgeClass = computed(() => {
-    const r = props.item.payload?.resolution
-    if (r === 'approved') return 'bg-white/90 text-green-800 ring-1 ring-green-200'
-    if (r === 'rejected') return 'bg-white/90 text-red-800 ring-1 ring-red-200'
-    if (r === 'mixed') return 'bg-white/90 text-amber-800 ring-1 ring-amber-200'
-    return 'bg-gray-200 text-gray-800'
+const approvalColorClass = computed(() => {
+    if (approvalPending.value) return 'text-amber-700'
+    if (props.item.payload?.resolution === 'approved') return 'text-green-700'
+    if (props.item.payload?.resolution === 'rejected') return 'text-red-700'
+    return 'text-gray-600'
 })
 
-const notificationBorderClass = computed(() => {
-    const lv = props.item.payload?.level
-    if (lv === 'error') return 'border-l-red-500'
-    if (lv === 'warning') return 'border-l-amber-500'
-    return 'border-l-blue-500'
+const approvalEntityLine = computed(() => {
+    if (modifyEntityPayload.value) {
+        const type = getEntityTypeLabel(modifyEntityPayload.value.entity_type)
+        const uuid = modifyEntityPayload.value.entity_uuid ? truncateUuid(modifyEntityPayload.value.entity_uuid) : ''
+        return ['实体', type, uuid].filter(Boolean).join(' · ')
+    }
+    if (wikiCreatePayload.value) return `新建页面 · ${wikiCreatePayload.value.title || '未命名'}`
+    if (wikiEditPayload.value) {
+        const operation = getWikiEditOperationLabel(wikiEditPayload.value.operation)
+        const wikiId = wikiEditPayload.value.wiki_id ? truncateUuid(wikiEditPayload.value.wiki_id) : ''
+        return ['编辑页面', operation, wikiId].filter(Boolean).join(' · ')
+    }
+    return ''
+})
+
+const approvalReasonText = computed(() => (
+    modifyEntityPayload.value?.reason
+    ?? wikiCreatePayload.value?.reason
+    ?? wikiEditPayload.value?.reason
+    ?? ''
+))
+
+const rejectReasons = computed(() => {
+    const reasons = props.item.payload?.reject_reasons
+    return Array.isArray(reasons) ? reasons.filter(Boolean) : []
 })
 
 const notificationIcon = computed(() => {
-    const lv = props.item.payload?.level
-    if (lv === 'error') return 'mdi:close-circle'
-    if (lv === 'warning') return 'mdi:alert'
-    return 'mdi:information'
+    if (props.item.payload?.level === 'error') return 'mdi:alert-circle-outline'
+    if (props.item.payload?.level === 'warning') return 'mdi:alert-outline'
+    return 'mdi:information-outline'
 })
 
-const notificationIconColor = computed(() => {
-    const lv = props.item.payload?.level
-    if (lv === 'error') return 'text-red-600'
-    if (lv === 'warning') return 'text-amber-600'
-    return 'text-blue-600'
+const notificationTextClass = computed(() => {
+    if (props.item.payload?.level === 'error') return 'text-red-700'
+    if (props.item.payload?.level === 'warning') return 'text-amber-700'
+    return 'text-blue-700'
 })
 
-const resultSummary = computed(() => props.item.payload?.result?.short_summary ?? '')
-const resultUserMarkdown = computed(() => props.item.payload?.result?.user_markdown ?? '')
+const notificationTitle = computed(() => {
+    if (props.item.payload?.level === 'error') return '运行错误'
+    if (props.item.payload?.level === 'warning') return '运行警告'
+    return '运行通知'
+})
+
+const resultSummary = computed(() => props.item.displaySummary ?? props.item.payload?.result?.short_summary ?? '')
+const resultUserMarkdown = computed(() => props.item.displayUserMarkdown ?? props.item.payload?.result?.user_markdown ?? '')
 
 const resultToolsLine = computed(() => {
-    const t = props.item.payload?.result?.tools_used
-    if (!Array.isArray(t) || !t.length) return ''
-    return t.join('、')
-})
-
-const resultStopReasonKey = computed(() => {
-    const s = props.item.payload?.result?.stop_reason
-    return s != null && String(s).trim() !== '' ? String(s).trim() : ''
+    const tools = props.item.payload?.result?.tools_used
+    return Array.isArray(tools) && tools.length ? [...new Set(tools)].join('、') : ''
 })
 
 const resultStopReasonLabel = computed(() => {
-    const key = resultStopReasonKey.value
-    if (!key) return ''
-    return RESULT_STOP_REASON_LABEL[key] || key
+    const reason = String(props.item.payload?.result?.stop_reason || '')
+    return RESULT_STOP_REASON_LABEL[reason] || reason
 })
 
-const resultStatusKey = computed(() => {
-    const s = props.item.payload?.status
-    return s != null && String(s).trim() !== '' ? String(s).trim() : ''
-})
-
-const resultSessionStatusLabel = computed(() => {
-    const key = resultStatusKey.value
-    if (!key) return ''
-    return RUNTIME_STATUS_LABEL[key] || key
-})
-
-const resultBoxClass = computed(() => {
-    switch (resultStatusKey.value) {
-        case 'completed':
-            return 'border-green-200 bg-linear-to-br from-green-50/90 to-white'
-        case 'failed':
-            return 'border-red-200 bg-linear-to-br from-red-50/90 to-white'
-        case 'cancelled':
-            return 'border-gray-200 bg-linear-to-br from-gray-50/90 to-white'
-        case 'paused':
-            return 'border-amber-200 bg-linear-to-br from-amber-50/90 to-white'
-        default:
-            return 'border-slate-200 bg-linear-to-br from-slate-50/80 to-white'
-    }
-})
+const resultStatusKey = computed(() => String(props.item.payload?.status || ''))
+const resultSessionStatusLabel = computed(() => RUNTIME_STATUS_LABEL[resultStatusKey.value] || resultStatusKey.value)
 
 const resultIcon = computed(() => {
-    switch (resultStatusKey.value) {
-        case 'completed':
-            return 'mdi:check-circle'
-        case 'failed':
-            return 'mdi:alert-circle'
-        case 'cancelled':
-            return 'mdi:cancel'
-        case 'paused':
-            return 'mdi:pause-circle'
-        default:
-            return 'mdi:flag-checkered'
-    }
+    if (resultStatusKey.value === 'completed') return 'mdi:check-circle-outline'
+    if (resultStatusKey.value === 'failed') return 'mdi:alert-circle-outline'
+    if (resultStatusKey.value === 'cancelled') return 'mdi:cancel'
+    if (resultStatusKey.value === 'paused') return 'mdi:pause-circle-outline'
+    return 'mdi:flag-checkered'
 })
 
 const resultIconClass = computed(() => {
-    switch (resultStatusKey.value) {
-        case 'completed':
-            return 'text-green-600'
-        case 'failed':
-            return 'text-red-600'
-        case 'cancelled':
-            return 'text-gray-500'
-        case 'paused':
-            return 'text-amber-600'
-        default:
-            return 'text-slate-600'
-    }
-})
-
-const resultSessionStatusBadgeClass = computed(() => {
-    switch (resultStatusKey.value) {
-        case 'completed':
-            return 'bg-green-100/90 text-green-900 ring-green-200/80'
-        case 'failed':
-            return 'bg-red-100/90 text-red-900 ring-red-200/80'
-        case 'cancelled':
-            return 'bg-gray-100/90 text-gray-700 ring-gray-200/80'
-        case 'paused':
-            return 'bg-amber-100/90 text-amber-900 ring-amber-200/80'
-        default:
-            return 'bg-white/80 text-gray-800 ring-gray-200/80'
-    }
+    if (resultStatusKey.value === 'completed') return 'text-green-600'
+    if (resultStatusKey.value === 'failed') return 'text-red-600'
+    if (resultStatusKey.value === 'paused') return 'text-amber-600'
+    return 'text-gray-500'
 })
 
 const resultErrorText = computed(() => {
     if (resultStatusKey.value !== 'failed') return ''
-    const err = props.item.payload?.error
-    if (err == null) return ''
-    return typeof err === 'string' ? err.trim() : stringifyJsonSafe(err, 2)
-})
-
-const memorySnapshotText = computed(() => {
-    const m = props.item.payload?.memory_snapshot
-    if (!m || typeof m !== 'object') return '—'
-    return stringifyJsonSafe(m, 2)
+    const error = props.item.payload?.error
+    if (error == null) return ''
+    return typeof error === 'string' ? error.trim() : stringifyJsonSafe(error, 2)
 })
 
 const systemMessage = computed(() => {
     if (props.item.message != null && props.item.message !== '') return String(props.item.message)
-    if (typeof props.item.payload === 'string') return props.item.payload
-    return stringifyJsonSafe(props.item.payload, 2)
+    return typeof props.item.payload === 'string'
+        ? props.item.payload
+        : stringifyJsonSafe(props.item.payload, 2)
 })
 
 const unknownRaw = computed(() => {
-    if (typeof props.item.payload === 'string') return props.item.payload
-    return stringifyJsonSafe(props.item.payload, 2)
+    return typeof props.item.payload === 'string'
+        ? props.item.payload
+        : stringifyJsonSafe(props.item.payload ?? props.item, 2)
 })
 </script>

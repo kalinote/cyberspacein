@@ -12,7 +12,7 @@
         </div>
         <div
             ref="scrollEl"
-            class="flex-1 min-h-0 overflow-y-auto px-3 pb-3"
+            class="flex-1 min-h-0 overflow-y-auto px-4 pb-5"
             :class="scrollClass"
             @scroll="onScroll"
         >
@@ -23,7 +23,7 @@
                 <Icon icon="mdi:access-point" class="text-2xl text-blue-500 mb-2" />
                 <p class="text-sm font-medium text-gray-500 text-center">{{ emptyText }}</p>
             </div>
-            <div v-else class="space-y-2 pt-2">
+            <div v-else class="mx-auto w-full max-w-3xl pt-3">
                 <div v-if="historyLoading" class="text-center text-xs text-gray-400 py-2">
                     加载更早事件...
                 </div>
@@ -33,12 +33,13 @@
                 >
                     向上滚动加载更多
                 </div>
-                <div
-                    v-for="ev in timelineItems"
-                    :key="ev.id"
-                    class="rounded-lg border border-gray-100 bg-gray-50/80 p-2.5 min-w-0"
-                >
-                    <AgentSseTimelineItem :item="ev" />
+                <AgentSseTimelineItem v-if="runDetails" :item="runDetails" class="mb-6" />
+                <div class="space-y-6 min-w-0">
+                    <AgentSseTimelineItem
+                        v-for="ev in activityItems"
+                        :key="ev.displayKey || ev.id"
+                        :item="ev"
+                    />
                 </div>
             </div>
         </div>
@@ -46,9 +47,10 @@
 </template>
 
 <script setup>
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import AgentSseTimelineItem from '@/components/agent/AgentSseTimelineItem.vue'
+import { buildAgentTimelineDisplay } from '@/utils/agentTimelineDisplay'
 
 const props = defineProps({
     timelineItems: {
@@ -86,6 +88,9 @@ const props = defineProps({
 })
 
 const scrollEl = ref(null)
+const displayTimeline = computed(() => buildAgentTimelineDisplay(props.timelineItems))
+const activityItems = computed(() => displayTimeline.value.activityItems)
+const runDetails = computed(() => displayTimeline.value.runDetails)
 
 watch(
     scrollEl,
