@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     COMPONENT_LOG_DATA_STREAM: str = "csi-component-logs"
     COMPONENT_HEARTBEAT_INTERVAL_SECONDS: int = 10
     COMPONENT_LEASE_SECONDS: int = 30
-    COMPONENT_RUN_TIMEOUT_SECONDS: int = 3600
+    COMPONENT_RUN_TIMEOUT_SECONDS: int = 0
+    ACTION_TIMEOUT_CHECK_INTERVAL_SECONDS: float = 1.0
     ACTION_SCHEDULER_POLL_SECONDS: int = 10
     ACTION_SCHEDULER_BATCH_SIZE: int = 100
     ACTION_SCHEDULER_LOCK_SECONDS: int = 30
@@ -138,6 +139,7 @@ class Settings(BaseSettings):
         if self.TEMPORARY_ACCOUNT_MAX_DAYS <= 0:
             raise RuntimeError("TEMPORARY_ACCOUNT_MAX_DAYS 必须大于 0")
         positive_fields = {
+            "ACTION_TIMEOUT_CHECK_INTERVAL_SECONDS": self.ACTION_TIMEOUT_CHECK_INTERVAL_SECONDS,
             "ACTION_SCHEDULER_POLL_SECONDS": self.ACTION_SCHEDULER_POLL_SECONDS,
             "ACTION_SCHEDULER_BATCH_SIZE": self.ACTION_SCHEDULER_BATCH_SIZE,
             "ACTION_SCHEDULER_LOCK_SECONDS": self.ACTION_SCHEDULER_LOCK_SECONDS,
@@ -152,6 +154,8 @@ class Settings(BaseSettings):
         invalid = [name for name, value in positive_fields.items() if value <= 0]
         if invalid:
             raise RuntimeError(f"认证防护配置必须大于 0: {', '.join(invalid)}")
+        if self.COMPONENT_RUN_TIMEOUT_SECONDS < 0:
+            raise RuntimeError("COMPONENT_RUN_TIMEOUT_SECONDS 不能小于 0")
         if self.normalized_environment == "production":
             forbidden_secrets = {
                 "please-change-auth-secret-key",

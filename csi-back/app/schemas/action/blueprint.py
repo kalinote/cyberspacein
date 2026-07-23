@@ -67,7 +67,7 @@ class ActionBlueprintSchema(BaseModel):
     description: str = Field(description="蓝图描述")
     version: str = Field(description="蓝图版本")
     target: str = Field(description="行动目标")
-    implementation_period: int = Field(description="执行期限(秒)")
+    implementation_period: int = Field(default=0, ge=0, description="执行期限(秒)，0表示不限制")
     resource: dict[str, Any] | None = Field(default=None, description="资源信息")
     graph: GraphSchema = Field(description="图结构")
     is_template: bool = Field(default=False, description="是否为模板")
@@ -79,6 +79,20 @@ class ActionBlueprintDetailResponseSchema(ActionBlueprintSchema):
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
 
+
+class BlueprintScheduleImpactSchema(BaseModel):
+    """蓝图更新导致停用的调度计划。"""
+    id: str = Field(description="调度计划ID")
+    name: str = Field(description="调度计划名称")
+    reason: str = Field(description="停用原因")
+
+
+class ActionBlueprintUpdateResponseSchema(BaseModel):
+    """行动蓝图更新响应。"""
+    blueprint: ActionBlueprintDetailResponseSchema
+    disabled_schedules: list[BlueprintScheduleImpactSchema] = Field(default_factory=list)
+
+
 class ActionBlueprintBaseInfoResponse(BaseModel):
     """行动蓝图基础信息响应"""
     id: str = Field(description="蓝图ID")
@@ -89,7 +103,7 @@ class ActionBlueprintBaseInfoResponse(BaseModel):
     type: str = Field(default="尚未实现", description="蓝图分类标签")
     type_tag_color: str = Field(default="#dbeafe", description="蓝图分类tag颜色") # TODO: 后续改为可配置
     type_text_color: str = Field(default="#1e40af", description="蓝图分类tag文字颜色") # TODO: 后续改为可配置
-    implementation_period: int = Field(description="执行期限(秒)")
+    implementation_period: int = Field(default=0, ge=0, description="执行期限(秒)，0表示不限制")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
     steps: int = Field(description="总步骤数量")

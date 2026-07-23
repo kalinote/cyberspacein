@@ -76,7 +76,9 @@
                             </div>
                             <div>
                                 <label class="text-xs text-gray-500">执行期限</label>
-                                <p class="text-sm text-gray-700 mt-1">{{ formatDuration(actionData.implementationPeriod) }}</p>
+                                <p class="text-sm text-gray-700 mt-1">
+                                    {{ actionData.implementationPeriod > 0 ? formatDuration(actionData.implementationPeriod) : '未限制' }}
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -517,7 +519,7 @@ const actionData = ref({
     progress: 0,
     startTime: null,
     endTime: null,
-    implementationPeriod: 3600,
+    implementationPeriod: 0,
     resource: {},
     graph: {
         nodes: [],
@@ -733,7 +735,7 @@ const loadActionData = async () => {
             progress: apiData.progress || 0,
             startTime: apiData.start_at || null,
             endTime: apiData.finished_at || null,
-            implementationPeriod: apiData.implementation_period || 3600,
+            implementationPeriod: apiData.implementation_period ?? 0,
             resource: apiData.resource || {},
             graph: apiData.graph || {
                 nodes: [],
@@ -748,7 +750,12 @@ const loadActionData = async () => {
                         startTime: detail.start_at || null,
                         endTime: detail.finished_at || null,
                         errorMessage: detail.error_message || null,
-                        finished: detail.status === ACTION_STATUS.COMPLETED || detail.status === ACTION_STATUS.FAILED
+                        finished: [
+                            ACTION_STATUS.COMPLETED,
+                            ACTION_STATUS.FAILED,
+                            ACTION_STATUS.CANCELLED,
+                            ACTION_STATUS.TIMEOUT
+                        ].includes(detail.status)
                     }
                 ])
             )
@@ -999,7 +1006,12 @@ const updateActionData = async () => {
                     startTime: detail.start_at || null,
                     endTime: detail.finished_at || null,
                     errorMessage: detail.error_message || null,
-                    finished: detail.status === ACTION_STATUS.COMPLETED || detail.status === ACTION_STATUS.FAILED
+                    finished: [
+                        ACTION_STATUS.COMPLETED,
+                        ACTION_STATUS.FAILED,
+                        ACTION_STATUS.CANCELLED,
+                        ACTION_STATUS.TIMEOUT
+                    ].includes(detail.status)
                 }
             ])
         )

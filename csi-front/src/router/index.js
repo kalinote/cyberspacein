@@ -71,6 +71,16 @@ const router = createRouter({
       meta: { requiresAuth: true, pagePermission: PERM.pages.action.create.access }
     },
     {
+      // 编辑行动蓝图
+      path: '/action/blueprints/:blueprintId/edit',
+      name: 'edit-action-blueprint',
+      component: NewActionBlueprint,
+      meta: {
+        requiresAuth: true,
+        pagePermission: PERM.operations.action.blueprint.update
+      }
+    },
+    {
       // 行动资源配置
       path: '/action/resource-config',
       name: 'action-resource-config',

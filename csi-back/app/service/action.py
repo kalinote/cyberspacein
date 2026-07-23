@@ -1,4 +1,5 @@
 
+import asyncio
 from datetime import datetime, timedelta
 import random
 from typing import Any
@@ -24,12 +25,16 @@ from app.schemas.constants import (
     ActionNodeTypeEnum,
     ComponentRunStatusEnum,
 )
-from app.service.component import dispatch_component_run
+from app.service.component import cancel_component_run, dispatch_component_run
 from app.utils.dict_helper import pack_dict, unpack_dict
 from app.utils.id_lib import generate_id
 from app.service.component_auth import issue_component_bootstrap
 from app.utils.workflow import find_start_nodes
-from app.models.action.blueprint import ActionBlueprintModel
+from app.models.action.blueprint import (
+    ActionBlueprintModel,
+    ActionBlueprintSnapshotModel,
+    create_blueprint_snapshot,
+)
 from app.db.rabbitmq import delete_queue
 from app.db.redis import get_redis
 
@@ -84,6 +89,7 @@ async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:
         inputs=inputs_response,
         default_configs=unpack_dict(node.default_configs),
         related_components=node.related_components,
+        component_timeouts=node.component_timeouts,
         command=node.command,
         command_args=node.command_args
     )
@@ -136,6 +142,16 @@ class ActionInstanceService:
                 logger.warning(f"写入Redis蓝图缓存失败: {e}")
         
         return blueprint
+
+    @staticmethod
+    async def get_action_blueprint(
+        action: ActionInstanceModel,
+    ) -> ActionBlueprintModel | ActionBlueprintSnapshotModel | None:
+        """优先返回行动快照，旧行动没有快照时回退读取当前蓝图。"""
+        blueprint_snapshot = getattr(action, "blueprint_snapshot", None)
+        if blueprint_snapshot is not None:
+            return blueprint_snapshot
+        return await ActionInstanceService.get_blueprint(action.blueprint_id)
     
     @staticmethod
     async def get_node_definition(node_definition_id: str) -> ActionNodeModel:
@@ -275,7 +291,9 @@ class ActionInstanceService:
         action_instance = ActionInstanceModel(
             id=action_id,
             blueprint_id=blueprint_id,
+            blueprint_snapshot=create_blueprint_snapshot(blueprint),
             status=ActionFlowStatusEnum.READY,
+            implementation_period=blueprint.implementation_period,
             nodes_id=[node.id for node in blueprint.graph.nodes],
             trigger_type=trigger_type or "manual",
             trigger_key=trigger_key,
@@ -350,14 +368,26 @@ class ActionInstanceService:
     async def start(action_id: str):
         """
         开始某个行动
-        """        
+        """
+        action = await ActionInstanceModel.find_one(
+            {"_id": action_id, "status": ActionFlowStatusEnum.READY}
+        )
+        if action is None:
+            logger.info(f"行动已启动或不存在，跳过重复启动: {action_id}")
+            return
+        now = datetime.now()
         claim = await ActionInstanceModel.find_one(
             {"_id": action_id, "status": ActionFlowStatusEnum.READY}
         ).update(
             {
                 "$set": {
                     "status": ActionFlowStatusEnum.RUNNING,
-                    "start_at": datetime.now(),
+                    "start_at": now,
+                    "deadline_at": (
+                        now + timedelta(seconds=action.implementation_period)
+                        if action.implementation_period > 0
+                        else None
+                    ),
                 }
             }
         )
@@ -441,7 +471,15 @@ class ActionInstanceService:
         if not action:
             logger.error(f"未找到行动，Action ID: {action_id}")
             return False
-        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
+        if action.status != ActionFlowStatusEnum.RUNNING:
+            node_instance.status = ActionInstanceNodeStatusEnum.CANCELLED
+            node_instance.finished_at = datetime.now()
+            node_instance.duration = (
+                datetime.now() - node_instance.start_at
+            ).total_seconds()
+            await node_instance.save()
+            return False
+        blueprint = await ActionInstanceService.get_action_blueprint(action)
         if not blueprint:
             logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
             return False
@@ -459,7 +497,16 @@ class ActionInstanceService:
                     logger.info(f"为节点 {node_instance.node_id} -> {edge.target} 生成队列: {queue_name}")
         
         if node_instance.reference_queues:
-            await node_instance.save()
+            reference_claim = await ActionInstanceNodeModel.find_one(
+                {
+                    "_id": node_instance.id,
+                    "status": ActionInstanceNodeStatusEnum.QUEUED,
+                }
+            ).update(
+                {"$set": {"reference_queues": node_instance.reference_queues}}
+            )
+            if not reference_claim or getattr(reference_claim, "modified_count", 0) != 1:
+                return False
         
         # 这里是开始运行，在此之前应该做好全部准备工作
         command = node_definition.command
@@ -506,12 +553,42 @@ class ActionInstanceService:
                 node_instance_id=node_instance.id,
                 component_id=component,
                 attempt=1,
+                timeout_seconds=(
+                    node_definition.component_timeouts.get(
+                        component, settings.COMPONENT_RUN_TIMEOUT_SECONDS
+                    )
+                    if node_definition.component_timeouts
+                    else settings.COMPONENT_RUN_TIMEOUT_SECONDS
+                ),
             )
             await component_run.insert()
             component_runs.append(component_run)
 
-        node_instance.status = ActionInstanceNodeStatusEnum.RUNNING
-        await node_instance.save()
+        running_claim = await ActionInstanceNodeModel.find_one(
+            {
+                "_id": node_instance.id,
+                "status": ActionInstanceNodeStatusEnum.QUEUED,
+                "finalization_claimed": False,
+            }
+        ).update({"$set": {"status": ActionInstanceNodeStatusEnum.RUNNING}})
+        if not running_claim or getattr(running_claim, "modified_count", 0) != 1:
+            await ComponentRunModel.find(
+                {
+                    "node_instance_id": node_instance.id,
+                    "status": ComponentRunStatusEnum.CREATED,
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ComponentRunStatusEnum.CANCELLED,
+                        "cancel_requested": True,
+                        "error_message": "节点已结束，组件不再派发",
+                        "finished_at": datetime.now(),
+                        "updated_at": datetime.now(),
+                    }
+                }
+            )
+            return False
 
         dispatch_failed = False
         for component_run in component_runs:
@@ -532,6 +609,12 @@ class ActionInstanceService:
                 priority=action.schedule_priority,
             )
             if not accepted:
+                current_action = await ActionInstanceModel.find_one({"_id": action.id})
+                if (
+                    current_action is None
+                    or current_action.status != ActionFlowStatusEnum.RUNNING
+                ):
+                    return False
                 logger.error(
                     "运行组件失败，调度平台无结果返回，Component ID: "
                     f"{component_run.component_id}"
@@ -567,6 +650,7 @@ class ActionInstanceService:
                 }
             ).update({"$set": {"cancel_requested": True}})
             node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+            node_instance.finalization_claimed = True
             node_instance.error_message = "运行组件失败，调度平台无结果返回"
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
@@ -655,6 +739,8 @@ class ActionInstanceService:
             return bool(current and current.result_id == result.result_id)
 
         component_run = await ComponentRunModel.find_one({"_id": component_run_id})
+        if component_run is None:
+            return False
         node_instance = await ActionInstanceNodeModel.find_one(
             {"_id": component_run.node_instance_id}
         )
@@ -664,7 +750,21 @@ class ActionInstanceService:
         component_runs = await ComponentRunModel.find(
             {"node_instance_id": node_instance.id}
         ).to_list()
-        failed = next(
+        active_statuses = {
+            ComponentRunStatusEnum.CREATED,
+            ComponentRunStatusEnum.DISPATCHED,
+            ComponentRunStatusEnum.RUNNING,
+        }
+        has_active_runs = any(run.status in active_statuses for run in component_runs)
+        timed_out_run = next(
+            (
+                run
+                for run in component_runs
+                if run.status == ComponentRunStatusEnum.TIMED_OUT
+            ),
+            None,
+        )
+        failed_run = next(
             (
                 run
                 for run in component_runs
@@ -672,11 +772,13 @@ class ActionInstanceService:
                 in {
                     ComponentRunStatusEnum.FAILED,
                     ComponentRunStatusEnum.CANCELLED,
-                    ComponentRunStatusEnum.TIMED_OUT,
                 }
             ),
             None,
         )
+        if has_active_runs and (timed_out_run is not None or failed_run is None):
+            return True
+        failed = timed_out_run or failed_run
         all_succeeded = bool(component_runs) and all(
             run.status == ComponentRunStatusEnum.SUCCEEDED for run in component_runs
         )
@@ -690,18 +792,13 @@ class ActionInstanceService:
             return True
 
         if failed:
-            await ComponentRunModel.find(
-                {
-                    "node_instance_id": node_instance.id,
-                    "status": {
-                        "$in": [
-                            ComponentRunStatusEnum.CREATED,
-                            ComponentRunStatusEnum.DISPATCHED,
-                            ComponentRunStatusEnum.RUNNING,
-                        ]
-                    },
-                }
-            ).update({"$set": {"cancel_requested": True}})
+            if failed.status != ComponentRunStatusEnum.TIMED_OUT:
+                await ComponentRunModel.find(
+                    {
+                        "node_instance_id": node_instance.id,
+                        "status": {"$in": list(active_statuses)},
+                    }
+                ).update({"$set": {"cancel_requested": True}})
             failed_status = {
                 ComponentRunStatusEnum.CANCELLED: "cancelled",
                 ComponentRunStatusEnum.TIMED_OUT: "timed_out",
@@ -735,26 +832,156 @@ class ActionInstanceService:
         return True
 
     @staticmethod
+    async def expire_stale_actions() -> int:
+        """将超过整体执行期限的行动收敛到超时，并停止其全部活动组件。"""
+        now = datetime.now()
+        running_actions = await ActionInstanceModel.find(
+            {
+                "status": ActionFlowStatusEnum.RUNNING,
+                "implementation_period": {"$gt": 0},
+            }
+        ).to_list()
+        expired = 0
+        for action in running_actions:
+            deadline_at = action.deadline_at
+            if deadline_at is None and action.start_at is not None:
+                deadline_at = action.start_at + timedelta(
+                    seconds=action.implementation_period
+                )
+            if deadline_at is None or deadline_at > now:
+                continue
+
+            claim = await ActionInstanceModel.find_one(
+                {"_id": action.id, "status": ActionFlowStatusEnum.RUNNING}
+            ).update(
+                {
+                    "$set": {
+                        "status": ActionFlowStatusEnum.TIMEOUT,
+                        "deadline_at": deadline_at,
+                        "finished_at": now,
+                        "duration": (
+                            (now - action.start_at).total_seconds()
+                            if action.start_at
+                            else 0
+                        ),
+                    }
+                }
+            )
+            if not claim or getattr(claim, "modified_count", 0) != 1:
+                continue
+
+            active_runs = await ComponentRunModel.find(
+                {
+                    "action_id": action.id,
+                    "status": {
+                        "$in": [
+                            ComponentRunStatusEnum.DISPATCHED,
+                            ComponentRunStatusEnum.RUNNING,
+                        ]
+                    },
+                }
+            ).to_list()
+            await ComponentRunModel.find(
+                {
+                    "action_id": action.id,
+                    "status": {
+                        "$in": [
+                            ComponentRunStatusEnum.CREATED,
+                            ComponentRunStatusEnum.DISPATCHED,
+                            ComponentRunStatusEnum.RUNNING,
+                        ]
+                    },
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ComponentRunStatusEnum.CANCELLED,
+                        "cancel_requested": True,
+                        "error_message": "行动整体执行超时",
+                        "finished_at": now,
+                        "updated_at": now,
+                    }
+                }
+            )
+            await ActionInstanceNodeModel.find(
+                {
+                    "action_id": action.id,
+                    "status": {
+                        "$in": [
+                            ActionInstanceNodeStatusEnum.QUEUED,
+                            ActionInstanceNodeStatusEnum.RUNNING,
+                        ]
+                    },
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ActionInstanceNodeStatusEnum.TIMEOUT,
+                        "error_message": "行动整体执行超时",
+                        "finished_at": now,
+                        "finalization_claimed": True,
+                    }
+                }
+            )
+            await ActionInstanceNodeModel.find(
+                {
+                    "action_id": action.id,
+                    "status": {
+                        "$in": [
+                            ActionInstanceNodeStatusEnum.PENDING,
+                            ActionInstanceNodeStatusEnum.UNREADY,
+                            ActionInstanceNodeStatusEnum.READY,
+                            ActionInstanceNodeStatusEnum.UNKNOWN,
+                            ActionInstanceNodeStatusEnum.PAUSED,
+                        ]
+                    },
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ActionInstanceNodeStatusEnum.CANCELLED,
+                        "error_message": "行动整体执行超时，节点未再运行",
+                        "finished_at": now,
+                        "finalization_claimed": True,
+                    }
+                }
+            )
+            if active_runs:
+                await asyncio.gather(
+                    *(cancel_component_run(run) for run in active_runs),
+                    return_exceptions=True,
+                )
+            await ActionInstanceService.cleanup_action_queues(action.id)
+            expired += 1
+        return expired
+
+    @staticmethod
     async def expire_stale_component_runs() -> int:
         """将心跳租约或最大运行时限已过期的 ComponentRun 收敛到超时终态。"""
         now = datetime.now()
-        timeout_started_before = now - timedelta(
-            seconds=settings.COMPONENT_RUN_TIMEOUT_SECONDS
-        )
-        stale_runs = await ComponentRunModel.find(
+        active_runs = await ComponentRunModel.find(
             {
                 "status": {
                     "$in": [
                         ComponentRunStatusEnum.DISPATCHED,
                         ComponentRunStatusEnum.RUNNING,
                     ]
-                },
-                "$or": [
-                    {"lease_expires_at": {"$lte": now}},
-                    {"started_at": {"$lte": timeout_started_before}},
-                ],
+                }
             }
         ).to_list()
+        stale_runs = [
+            run
+            for run in active_runs
+            if (
+                run.lease_expires_at is not None
+                and run.lease_expires_at <= now
+            )
+            or (
+                run.timeout_seconds > 0
+                and run.started_at is not None
+                and (now - run.started_at).total_seconds() >= run.timeout_seconds
+            )
+        ]
         expired = 0
         for component_run in stale_runs:
             accepted = await ActionInstanceService.finish_component_run(
@@ -768,6 +995,11 @@ class ActionInstanceService:
                 ),
             )
             expired += int(accepted)
+        if stale_runs:
+            await asyncio.gather(
+                *(cancel_component_run(run) for run in stale_runs),
+                return_exceptions=True,
+            )
         return expired
 
     @staticmethod
@@ -775,6 +1007,14 @@ class ActionInstanceService:
         node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
         if not node_instance:
             logger.error(f"上报节点实例不存在，ID: {node_instance_id}")
+            return False
+        current_action = await ActionInstanceModel.find_one(
+            {"_id": node_instance.action_id}
+        )
+        if (
+            current_action is None
+            or current_action.status != ActionFlowStatusEnum.RUNNING
+        ):
             return False
         
         if result.status == "success":
@@ -912,7 +1152,7 @@ class ActionInstanceService:
             logger.error(f"未找到行动，Action ID: {action_id}")
             return {}
         
-        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
+        blueprint = await ActionInstanceService.get_action_blueprint(action)
         if not blueprint:
             logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
             return {}
@@ -939,7 +1179,7 @@ class ActionInstanceService:
             logger.error(f"未找到行动，Action ID: {action_id}")
             return False
         
-        blueprint = await ActionInstanceService.get_blueprint(action.blueprint_id)
+        blueprint = await ActionInstanceService.get_action_blueprint(action)
         if not blueprint:
             logger.error(f"未找到蓝图，Blueprint ID: {action.blueprint_id}")
             return False
@@ -989,27 +1229,59 @@ class ActionInstanceService:
         if not action:
             logger.error(f"未找到行动，Action ID: {action_id}")
             return False
+        if action.status == ActionFlowStatusEnum.TIMEOUT:
+            return True
         
         await ActionInstanceService.cleanup_action_queues(action_id)
         
-        # 检查是否有失败、取消或超时的节点
+        timeout_count = await ActionInstanceNodeModel.find({
+            "action_id": action_id,
+            "status": ActionInstanceNodeStatusEnum.TIMEOUT,
+        }).count()
         failed_count = await ActionInstanceNodeModel.find({
             "action_id": action_id,
             "status": {
                 "$in": [
                     ActionInstanceNodeStatusEnum.FAILED,
                     ActionInstanceNodeStatusEnum.CANCELLED,
-                    ActionInstanceNodeStatusEnum.TIMEOUT
                 ]
             }
         }).count()
-        
-        action.status = ActionFlowStatusEnum.FAILED if failed_count > 0 else ActionFlowStatusEnum.COMPLETED
-        action.finished_at = datetime.now()
-        action.duration = (datetime.now() - action.start_at).total_seconds()
-        action.progress = round(len(action.finished_nodes_instance) / len(action.nodes_id) * 100, 2) if len(action.nodes_id) > 0 else 0.0
-        await action.save()
-        return True
+
+        status = (
+            ActionFlowStatusEnum.TIMEOUT
+            if timeout_count > 0
+            else ActionFlowStatusEnum.FAILED
+            if failed_count > 0
+            else ActionFlowStatusEnum.COMPLETED
+        )
+        now = datetime.now()
+        claim = await ActionInstanceModel.find_one(
+            {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
+        ).update(
+            {
+                "$set": {
+                    "status": status,
+                    "finished_at": now,
+                    "duration": (
+                        (now - action.start_at).total_seconds()
+                        if action.start_at
+                        else 0
+                    ),
+                    "progress": (
+                        round(
+                            len(action.finished_nodes_instance)
+                            / len(action.nodes_id)
+                            * 100,
+                            2,
+                        )
+                        if action.nodes_id
+                        else 0.0
+                    ),
+                }
+            }
+        )
+        return bool(claim and getattr(claim, "modified_count", 0) == 1)
 
     @staticmethod
     async def check_action_finished(action_id: str):

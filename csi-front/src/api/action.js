@@ -29,6 +29,10 @@ export const actionApi = {
   createActionBlueprint(data) {
     return request.post('/action/blueprint', data)
   },
+  // 更新行动蓝图
+  updateActionBlueprint(id, data) {
+    return request.put(`/action/blueprint/${id}`, data)
+  },
   // 获取行动蓝图详情
   getBlueprint(id) {
     return request.get(`/action/blueprint/detail/${id}`)

@@ -2,9 +2,13 @@
     <div class="h-screen flex flex-col bg-white">
         <Header />
 
-        <SimplePageHeader title="创建标准行动蓝图" />
+        <SimplePageHeader :title="pageTitle" />
 
-        <div class="flex-1 flex overflow-hidden">
+        <div
+            v-loading="loadingBlueprint"
+            element-loading-text="加载行动蓝图中..."
+            class="flex-1 flex overflow-hidden"
+        >
             <!-- 左侧边栏 -->
             <div class="bg-white flex flex-col border-r border-white relative shrink-0 group"
                 :style="{ width: sidebarWidth + 'px' }">
@@ -94,7 +98,8 @@
                         <template #label>
                             <span class="text-sm font-medium text-gray-700">执行期限(秒)</span>
                         </template>
-                        <el-input-number v-model="actionForm.implementation_period" :min="1" placeholder="请输入执行期限" class="w-full" />
+                        <el-input-number v-model="actionForm.implementation_period" :min="0" placeholder="请输入执行期限" class="w-full" />
+                        <div class="text-xs text-gray-400 mt-1">设置为 0 时不限制行动执行时间</div>
                     </el-form-item>
 
                     <!-- 详细信息输入框 -->
@@ -170,8 +175,14 @@
 
                 <!-- 底部保存按钮 -->
                 <div class="p-4 border-t border-gray-200 shrink-0">
-                    <el-button type="primary" class="w-full" @click="handleSaveAction">
-                        保存行动蓝图
+                    <el-button
+                        type="primary"
+                        class="w-full"
+                        :loading="saving"
+                        :disabled="loadingBlueprint"
+                        @click="handleSaveAction"
+                    >
+                        {{ saveButtonText }}
                     </el-button>
                 </div>
 
@@ -187,8 +198,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, markRaw, provide } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, markRaw, provide, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
 import SimplePageHeader from "@/components/page-header/SimplePageHeader.vue"
@@ -199,10 +210,11 @@ import GenericNode from "@/components/action/nodes/GenericNode.vue"
 import TemplateParamsManager from "@/components/action/template/TemplateParamsManager.vue"
 import ResourceConfigPanel from "@/components/action/ResourceConfigPanel.vue"
 import { actionApi } from '@/api/action'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 import {
     getDefaultData,
-    getNodeColor
+    getNodeColor,
+    normalizeDefaultValue
 } from '@/utils/action'
 import { useSidebarResize } from '@/utils/action/useSidebarResize'
 
@@ -210,6 +222,13 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 
 const router = useRouter()
+const route = useRoute()
+const blueprintId = computed(() => route.params.blueprintId || null)
+const isEditMode = computed(() => Boolean(blueprintId.value))
+const pageTitle = computed(() => isEditMode.value ? '编辑标准行动蓝图' : '创建标准行动蓝图')
+const saveButtonText = computed(() => isEditMode.value ? '保存蓝图修改' : '保存行动蓝图')
+const loadingBlueprint = ref(false)
+const saving = ref(false)
 
 const nodeTypeConfigs = ref([])
 const loadingNodeConfigs = ref(false)
@@ -295,7 +314,19 @@ const nodeTypes = computed(() => {
 })
 
 const elements = ref([])
-const { addEdges, addNodes, onConnect, screenToFlowCoordinate, onNodesInitialized, updateNode, isValidConnection, getNodes, getEdges, getViewport } = useVueFlow()
+const {
+    addEdges,
+    addNodes,
+    onConnect,
+    screenToFlowCoordinate,
+    onNodesInitialized,
+    updateNode,
+    isValidConnection,
+    getNodes,
+    getEdges,
+    getViewport,
+    setViewport
+} = useVueFlow()
 
 /**
  * 验证节点连接是否有效
@@ -332,6 +363,7 @@ isValidConnection.value = (connection) => {
     // 5. 检查 target handle 是否已被连接（每个输入只能有一个连接）
     const existingConnection = elements.value.find(el => 
         el.source && // 是边（edge），不是节点
+        el.id !== connection.id &&
         el.target === connection.target && 
         el.targetHandle === connection.targetHandle
     )
@@ -385,7 +417,7 @@ const actionFormRef = ref(null)
 const actionForm = ref({
     title: '',
     version: '1.0.0',
-    implementation_period: 3600,
+    implementation_period: 0,
     description: '',
     target: ''
 })
@@ -404,6 +436,7 @@ const actionFormRules = {
 
 const isTemplate = ref(false)
 const resourceConfigEnabled = ref(false)
+const resourceData = ref({})
 const templateParams = ref([])
 const templateBindings = ref({})
 
@@ -463,9 +496,138 @@ const getNodeWrapperStyle = computed(() => {
     }
 })
 
-onMounted(() => {
-    fetchNodeConfigs()
-})
+const resetEditor = () => {
+    actionForm.value = {
+        title: '',
+        version: '1.0.0',
+        implementation_period: 0,
+        description: '',
+        target: ''
+    }
+    isTemplate.value = false
+    resourceConfigEnabled.value = false
+    resourceData.value = {}
+    templateParams.value = []
+    templateBindings.value = {}
+    elements.value = []
+}
+
+const findNodeConfig = (node) => {
+    const definitionId = node.data?.definition_id
+    if (definitionId) {
+        const definition = nodeTypeConfigs.value.find(config => config.id === definitionId)
+        if (definition) return definition
+    }
+
+    const directMatch = nodeTypeConfigs.value.find(config => config.id === node.type)
+    if (directMatch) return directMatch
+
+    const candidates = nodeTypeConfigs.value.filter(config => config.type === node.type)
+    if (candidates.length === 1) return candidates[0]
+
+    const formDataKeys = Object.keys(node.data?.form_data || {})
+    return candidates
+        .map(config => ({
+            config,
+            matches: formDataKeys.filter(key =>
+                (config.inputs || []).some(input => (input.name || input.id) === key)
+            ).length
+        }))
+        .sort((left, right) => right.matches - left.matches)[0]?.config || null
+}
+
+const loadBlueprintForEdit = async () => {
+    if (!blueprintId.value) return
+
+    loadingBlueprint.value = true
+    try {
+        const response = await actionApi.getBlueprint(blueprintId.value)
+        const blueprint = response.data
+        if (response.code !== 0 || !blueprint) {
+            throw new Error(response.message || '获取行动蓝图失败')
+        }
+
+        actionForm.value = {
+            title: blueprint.name,
+            version: blueprint.version,
+            implementation_period: blueprint.implementation_period ?? 0,
+            description: blueprint.description || '',
+            target: blueprint.target
+        }
+        isTemplate.value = Boolean(blueprint.is_template)
+        templateParams.value = (blueprint.template?.params || []).map(param => ({ ...param }))
+        templateBindings.value = JSON.parse(JSON.stringify(blueprint.template?.bindings || {}))
+        resourceData.value = blueprint.resource ?? null
+        resourceConfigEnabled.value = Boolean(
+            blueprint.resource && Object.keys(blueprint.resource).length > 0
+        )
+
+        const processedNodes = (blueprint.graph?.nodes || []).map(node => {
+            const config = findNodeConfig(node)
+            if (!config) {
+                throw new Error(`节点定义不存在，无法编辑：${node.data?.definition_id || node.type}`)
+            }
+
+            const nodeData = getDefaultData(config)
+            for (const input of config.inputs || []) {
+                const fieldName = input.name || input.id
+                const value = node.data?.form_data?.[fieldName]
+                if (value !== undefined && value !== null) {
+                    nodeData[input.id] = normalizeDefaultValue(input.type, value)
+                }
+            }
+
+            return {
+                id: node.id,
+                type: config.id,
+                position: { ...node.position },
+                data: nodeData,
+                selected: false
+            }
+        })
+
+        const processedEdges = (blueprint.graph?.edges || []).map(edge => {
+            const sourceNode = processedNodes.find(node => node.id === edge.source)
+            const sourceHandle = sourceNode?.data?.config?.handles?.find(
+                handle => handle.id === edge.sourceHandle
+            )
+            return {
+                id: edge.id,
+                source: edge.source,
+                sourceHandle: edge.sourceHandle,
+                target: edge.target,
+                targetHandle: edge.targetHandle,
+                style: {
+                    stroke: sourceHandle?.color || '#909399',
+                    strokeWidth: 3
+                }
+            }
+        })
+
+        elements.value = [...processedNodes, ...processedEdges]
+        if (blueprint.graph?.viewport) {
+            setTimeout(() => setViewport(blueprint.graph.viewport), 0)
+        }
+    } catch (error) {
+        console.error('加载行动蓝图失败:', error)
+        if (!error?.code) {
+            ElMessage.error(error.message || '加载行动蓝图失败')
+        }
+    } finally {
+        loadingBlueprint.value = false
+    }
+}
+
+const initializeEditor = async () => {
+    resetEditor()
+    await fetchNodeConfigs()
+    if (isEditMode.value) {
+        await loadBlueprintForEdit()
+    }
+}
+
+onMounted(initializeEditor)
+watch(blueprintId, initializeEditor)
 
 
 // 流程图逻辑
@@ -534,7 +696,7 @@ const onDrop = (event) => {
 }
 
 const handleSaveAction = async () => {
-    if (!actionFormRef.value) return
+    if (!actionFormRef.value || saving.value) return
 
     try {
         await actionFormRef.value.validate()
@@ -593,7 +755,7 @@ const handleSaveAction = async () => {
         description: actionForm.value.description || '',
         target: actionForm.value.target,
         implementation_period: actionForm.value.implementation_period,
-        resource: {},
+        resource: isEditMode.value ? resourceData.value : {},
         is_template: isTemplate.value,
         ...(isTemplate.value && {
             template: {
@@ -618,12 +780,34 @@ const handleSaveAction = async () => {
         }
     }
 
-    const response = await actionApi.createActionBlueprint(actionData)
-    if (response.code === 0) {
-        ElMessage.success('新增行动蓝图成功')
-        router.push('/action')
-    } else {
-        ElMessage.error(`新增行动蓝图失败: ${response.message}`)
+    saving.value = true
+    try {
+        const response = isEditMode.value
+            ? await actionApi.updateActionBlueprint(blueprintId.value, actionData)
+            : await actionApi.createActionBlueprint(actionData)
+
+        if (response.code !== 0) {
+            ElMessage.error(response.message || `${isEditMode.value ? '更新' : '新增'}行动蓝图失败`)
+            return
+        }
+
+        ElMessage.success(isEditMode.value ? '行动蓝图更新成功' : '新增行动蓝图成功')
+        const disabledSchedules = response.data?.disabled_schedules || []
+        if (disabledSchedules.length > 0) {
+            ElNotification({
+                title: '部分调度计划已停用',
+                message: disabledSchedules
+                    .map(schedule => `${schedule.name}：${schedule.reason}`)
+                    .join('；'),
+                type: 'warning',
+                duration: 0
+            })
+        }
+        await router.push('/action/blueprints')
+    } catch (error) {
+        console.error(`${isEditMode.value ? '更新' : '新增'}行动蓝图失败:`, error)
+    } finally {
+        saving.value = false
     }
 }
 </script>

@@ -68,6 +68,7 @@ async def create_node(data: ActionNode):
         inputs=input_models,
         default_configs=pack_dict(data.default_configs),
         related_components=data.related_components,
+        component_timeouts=dict(data.component_timeouts),
         command=data.command,
         command_args=data.command_args
     )
@@ -127,6 +128,7 @@ async def update_node(node_id: str, data: ActionNode):
         ActionNodeModel.inputs: input_models,
         ActionNodeModel.default_configs: pack_dict(data.default_configs),
         ActionNodeModel.related_components: data.related_components,
+        ActionNodeModel.component_timeouts: dict(data.component_timeouts),
         ActionNodeModel.command: data.command,
         ActionNodeModel.command_args: data.command_args,
         ActionNodeModel.updated_at: now,

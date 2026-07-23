@@ -14,8 +14,10 @@ class ComponentRunModel(Document):
     node_instance_id: str
     component_id: str
     attempt: int = 1
+    timeout_seconds: int = 0
     status: ComponentRunStatusEnum = ComponentRunStatusEnum.CREATED
     dispatch_ref: str | None = None
+    platform_task_id: str | None = None
     progress: float = 0
     last_heartbeat_at: datetime | None = None
     lease_expires_at: datetime | None = None

@@ -6,7 +6,6 @@ from fastapi import APIRouter, Request
 from app.core.config import settings
 from app.core.security import create_component_token
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
-from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.component_run import ComponentRunModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
@@ -53,7 +52,7 @@ async def _build_io(node_instance: ActionInstanceNodeModel) -> tuple[dict, dict]
     outputs: dict[str, Any] = {}
     action_instance = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
     if action_instance:
-        blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
+        blueprint = await ActionInstanceService.get_action_blueprint(action_instance)
         if blueprint:
             handle_queues: dict[str, list[str]] = {}
             for edge in blueprint.graph.edges:
@@ -123,7 +122,7 @@ async def get_component_init(component_run_id: str):
             outputs=outputs,
             heartbeat_interval=settings.COMPONENT_HEARTBEAT_INTERVAL_SECONDS,
             lease_seconds=settings.COMPONENT_LEASE_SECONDS,
-            timeout_seconds=settings.COMPONENT_RUN_TIMEOUT_SECONDS,
+            timeout_seconds=component_run.timeout_seconds,
         )
     )
 

@@ -1,6 +1,6 @@
 from typing import Any, Literal
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeInt
 
 from app.schemas.constants import ActionNodeInputTypeEnum, ActionNodeTypeEnum
 
@@ -48,6 +48,10 @@ class ActionNode(BaseModel):
     inputs: list[ActionNodeInput] = Field(description="输入配置列表")
     default_configs: dict[str, Any] = Field(default={}, description="默认配置")
     related_components: list[str] = Field(description="相关组件列表")
+    component_timeouts: dict[str, NonNegativeInt] = Field(
+        default_factory=dict,
+        description="组件超时秒数，key为组件ID，0表示不限制",
+    )
     command: str = Field(description="执行命令")
     command_args: list[str] = Field(default=[], description="自定义执行命令参数")
 

@@ -476,6 +476,26 @@
               />
             </el-select>
           </el-form-item>
+          <div v-if="formData.related_components.length" class="mb-5 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div class="mb-2 text-sm font-medium text-gray-700">组件超时设置</div>
+            <div
+              v-for="componentId in formData.related_components"
+              :key="componentId"
+              class="mb-2 flex items-center justify-between gap-3 last:mb-0"
+            >
+              <span class="min-w-0 flex-1 truncate text-sm text-gray-600">
+                {{ componentNameMap[componentId] || componentId }}
+              </span>
+              <el-input-number
+                v-model="formData.component_timeouts[componentId]"
+                :min="0"
+                :step="1"
+                controls-position="right"
+                class="w-44"
+              />
+            </div>
+            <div class="mt-2 text-xs text-gray-400">单位为秒，设置为 0 时该组件不限制运行时间</div>
+          </div>
           <el-form-item label="运行命令" prop="command">
             <el-input v-model="formData.command" placeholder="csi-component" />
           </el-form-item>
@@ -669,6 +689,14 @@
             </el-descriptions-item>
             <el-descriptions-item label="关联组件" :span="2">
               {{ Array.isArray(nodeDetailData.related_components) && nodeDetailData.related_components.length ? nodeDetailData.related_components.join(', ') : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="组件超时" :span="2">
+              <template v-if="nodeDetailData.related_components?.length">
+                <span v-for="componentId in nodeDetailData.related_components" :key="componentId" class="mr-4">
+                  {{ componentNameMap[componentId] || componentId }}：{{ nodeDetailData.component_timeouts?.[componentId] > 0 ? `${nodeDetailData.component_timeouts[componentId]} 秒` : '未限制' }}
+                </span>
+              </template>
+              <span v-else>-</span>
             </el-descriptions-item>
           </el-descriptions>
 
@@ -1064,6 +1092,9 @@ const formRef = ref(null)
 const submitting = ref(false)
 const componentsLoading = ref(false)
 const componentListForSelect = ref([])
+const componentNameMap = computed(() => Object.fromEntries(
+  componentListForSelect.value.map(component => [component.id, component.name])
+))
 const nodeHandlesForSelect = ref([])
 const nodeTypeOptions = ref([])
 const nodeTypeOptionsLoading = ref(false)
@@ -1207,10 +1238,29 @@ const formData = ref({
   command: '',
   command_args: [],
   related_components: [],
+  component_timeouts: {},
   default_configs: {},
   handles: [],
   inputs: []
 })
+
+watch(
+  () => formData.value.related_components,
+  componentIds => {
+    const selected = new Set(componentIds || [])
+    for (const componentId of selected) {
+      if (formData.value.component_timeouts[componentId] === undefined) {
+        formData.value.component_timeouts[componentId] = 0
+      }
+    }
+    for (const componentId of Object.keys(formData.value.component_timeouts)) {
+      if (!selected.has(componentId)) {
+        delete formData.value.component_timeouts[componentId]
+      }
+    }
+  },
+  { deep: true }
+)
 
 const formRules = {
   name: [
@@ -1402,6 +1452,7 @@ const resetForm = () => {
     command: '',
     command_args: [],
     related_components: [],
+    component_timeouts: {},
     default_configs: {},
     handles: [],
     inputs: []
@@ -1430,6 +1481,9 @@ const loadNodeForEdit = async () => {
       command: d.command || '',
       command_args: Array.isArray(d.command_args) ? [...d.command_args] : [],
       related_components: Array.isArray(d.related_components) ? [...d.related_components] : [],
+      component_timeouts: d.component_timeouts && typeof d.component_timeouts === 'object'
+        ? { ...d.component_timeouts }
+        : {},
       default_configs: d.default_configs && typeof d.default_configs === 'object' ? { ...d.default_configs } : {},
       handles: (d.handles || []).map(h => ({
         id: h.id || '',
@@ -1575,6 +1629,12 @@ const handleSubmit = async () => {
       command: formData.value.command || '',
       command_args: formData.value.command_args || [],
       related_components: formData.value.related_components || [],
+      component_timeouts: Object.fromEntries(
+        (formData.value.related_components || []).map(componentId => [
+          componentId,
+          Number(formData.value.component_timeouts?.[componentId]) || 0
+        ])
+      ),
       default_configs: formData.value.default_configs || {},
       handles: formData.value.handles.map(handle => {
         const handleData = {

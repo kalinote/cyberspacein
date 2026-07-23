@@ -58,18 +58,19 @@ async def lifespan(app: FastAPI):
         analyst_runtime_worker = AnalystRuntimeWorker()
         await analyst_runtime_worker.start()
 
-    async def monitor_component_leases() -> None:
-        """周期收敛失去心跳或超过运行时限的组件运行。"""
+    async def monitor_action_timeouts() -> None:
+        """周期收敛行动整体超时和组件运行超时。"""
         from app.service.action import ActionInstanceService
 
         while True:
             try:
+                await ActionInstanceService.expire_stale_actions()
                 await ActionInstanceService.expire_stale_component_runs()
             except Exception as exc:
-                logger.error(f"组件运行租约检查失败: {exc}")
-            await asyncio.sleep(settings.COMPONENT_HEARTBEAT_INTERVAL_SECONDS)
+                logger.error(f"行动运行超时检查失败: {exc}")
+            await asyncio.sleep(settings.ACTION_TIMEOUT_CHECK_INTERVAL_SECONDS)
 
-    component_lease_task = asyncio.create_task(monitor_component_leases())
+    action_timeout_task = asyncio.create_task(monitor_action_timeouts())
 
     system_config_manager.commit_bootstrap()
     from app.service.system_config_history import SystemConfigHistoryService
@@ -78,9 +79,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    component_lease_task.cancel()
+    action_timeout_task.cancel()
     with suppress(asyncio.CancelledError):
-        await component_lease_task
+        await action_timeout_task
 
     system_config_manager.mark_not_ready()
 

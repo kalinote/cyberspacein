@@ -44,6 +44,10 @@ class ActionNodeModel(Document):
     inputs: list[ActionNodeInputModel] = Field(description="节点输入项")
     default_configs: list[DictModelSchema] | None = Field(default=None, description="默认配置")
     related_components: list[str] = Field(description="关联组件")
+    component_timeouts: dict[str, int] = Field(
+        default_factory=dict,
+        description="关联组件超时配置，key为组件ID，value为秒，0表示不限制",
+    )
     command: str = Field(description="执行命令")
     command_args: list[str] = Field(description="执行命令参数")
     is_deleted: bool = Field(default=False, description="是否已删除")

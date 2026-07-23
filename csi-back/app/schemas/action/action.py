@@ -54,7 +54,7 @@ class ActionDetailResponse(ActionInstanceBaseInfoResponse):
     """
     graph: GraphSchema = Field(description="行动蓝图，用于标识基本结构和布局")
     resource: dict[str, Any] = Field(default={}, description="分配资源，暂未实现")
-    implementation_period: int = Field(description="执行期限(秒)")
+    implementation_period: int = Field(default=0, ge=0, description="执行期限(秒)，0表示不限制")
     node_details: dict[str, ActionNodeDetailResponse] = Field(description="节点详细信息")
 
 class ActionConfigMeta(BaseModel):

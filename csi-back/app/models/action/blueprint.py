@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any
 from datetime import datetime
 from beanie import Document
@@ -61,6 +62,21 @@ class GraphModel(BaseModel):
     viewport: ViewportModel
 
 
+class ActionBlueprintSnapshotModel(BaseModel):
+    """行动实例使用的完整蓝图快照。"""
+
+    blueprint_id: str
+    name: str
+    version: str
+    description: str
+    target: str
+    implementation_period: int = 0
+    resource: dict[str, Any] | None = None
+    graph: GraphModel
+    is_template: bool = False
+    template: dict[str, Any] | None = None
+
+
 class ActionBlueprintModel(Document):
     """
     行动蓝图模型
@@ -70,7 +86,7 @@ class ActionBlueprintModel(Document):
     version: str
     description: str
     target: str
-    implementation_period: int
+    implementation_period: int = 0
     resource: dict[str, Any] | None = None
     graph: GraphModel
     is_deleted: bool = Field(default=False, description="是否已删除")
@@ -87,4 +103,22 @@ class ActionBlueprintModel(Document):
             "id",
             "name",
         ]
+
+
+def create_blueprint_snapshot(
+    blueprint: ActionBlueprintModel,
+) -> ActionBlueprintSnapshotModel:
+    """复制蓝图为独立的行动实例快照。"""
+    return ActionBlueprintSnapshotModel(
+        blueprint_id=blueprint.id,
+        name=blueprint.name,
+        version=blueprint.version,
+        description=blueprint.description,
+        target=blueprint.target,
+        implementation_period=blueprint.implementation_period,
+        resource=deepcopy(blueprint.resource),
+        graph=blueprint.graph.model_copy(deep=True),
+        is_template=blueprint.is_template,
+        template=deepcopy(blueprint.template),
+    )
 

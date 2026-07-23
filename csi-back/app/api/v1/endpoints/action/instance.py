@@ -56,7 +56,7 @@ async def get_action_instances(
 
     results: List[ActionInstanceBaseInfoResponse] = []
     for action_instance in action_instances:
-        blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
+        blueprint = await ActionInstanceService.get_action_blueprint(action_instance)
         if not blueprint:
             continue
 
@@ -90,7 +90,7 @@ async def get_action_detail(action_id: str):
     if not action_instance:
         return ApiResponseSchema.error(code=240412, message=f"行动不存在，ID: {action_id}")
 
-    blueprint = await ActionBlueprintModel.find_one({"_id": action_instance.blueprint_id})
+    blueprint = await ActionInstanceService.get_action_blueprint(action_instance)
     if not blueprint:
         return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
 
@@ -167,7 +167,7 @@ async def get_action_detail(action_id: str):
         description=blueprint.description,
         status=action_instance.status,
         resource=blueprint.resource,
-        implementation_period=blueprint.implementation_period,
+        implementation_period=action_instance.implementation_period,
         start_at=action_instance.start_at,
         finished_at=action_instance.finished_at,
         duration=action_instance.duration,

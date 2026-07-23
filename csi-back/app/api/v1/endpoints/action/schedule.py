@@ -18,9 +18,14 @@ from app.schemas.action.schedule import (
     ActionSchedulerStatusResponse,
     ActionScheduleUpdateRequest,
 )
-from app.schemas.constants import ActionFlowStatusEnum, ActionScheduleTypeEnum
+from app.schemas.constants import (
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ActionScheduleTypeEnum,
+)
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
+from app.service.action import ActionInstanceService
 from app.service.action_schedule import ActionScheduleService, calculate_next_runs, utc_now
 from app.utils.id_lib import generate_id
 
@@ -59,13 +64,21 @@ def schedule_response(schedule: ActionScheduleModel, blueprint: ActionBlueprintM
 
 async def run_response(action: ActionInstanceModel) -> ActionScheduleRunResponse | None:
     """将定时 Action 转换为任务执行记录。"""
-    blueprint = await ActionBlueprintModel.find_one({"_id": action.blueprint_id})
+    blueprint = await ActionInstanceService.get_action_blueprint(action)
     if blueprint is None or not action.schedule_id:
         return None
     error_message = None
-    if action.status == ActionFlowStatusEnum.FAILED:
+    if action.status in {ActionFlowStatusEnum.FAILED, ActionFlowStatusEnum.TIMEOUT}:
         failed_node = await ActionInstanceNodeModel.find_one(
-            {"action_id": action.id, "status": ActionFlowStatusEnum.FAILED.value}
+            {
+                "action_id": action.id,
+                "status": {
+                    "$in": [
+                        ActionInstanceNodeStatusEnum.FAILED.value,
+                        ActionInstanceNodeStatusEnum.TIMEOUT.value,
+                    ]
+                },
+            }
         )
         error_message = failed_node.error_message if failed_node else None
     return ActionScheduleRunResponse(
@@ -209,7 +222,14 @@ async def get_schedule_summary():
     pending_count = await ActionInstanceModel.find(
         {**base_filter, "status": {"$in": [ActionFlowStatusEnum.READY, ActionFlowStatusEnum.UNREADY]}}
     ).count()
-    failed_count = await ActionInstanceModel.find({**base_filter, "status": ActionFlowStatusEnum.FAILED}).count()
+    failed_count = await ActionInstanceModel.find(
+        {
+            **base_filter,
+            "status": {
+                "$in": [ActionFlowStatusEnum.FAILED, ActionFlowStatusEnum.TIMEOUT]
+            },
+        }
+    ).count()
     recent_actions = await ActionInstanceModel.find(base_filter).sort([("created_at", -1)]).limit(6).to_list()
     recent_runs = []
     for action in recent_actions:

@@ -58,6 +58,7 @@ routes:
   - {method: POST, path: "/action/blueprint", principal: user, permission: "operation:action:blueprint:create"}
   - {method: GET, path: "/action/blueprint/list", principal: user, permission: "operation:action:blueprint:read"}
   - {method: GET, path: "/action/blueprint/detail/{blueprint_id}", principal: user, permission: "operation:action:blueprint:read"}
+  - {method: PUT, path: "/action/blueprint/{blueprint_id}", principal: user, permission: "operation:action:blueprint:update"}
   - {method: DELETE, path: "/action/blueprint/{blueprint_id}", principal: user, permission: "operation:action:blueprint:delete"}
   - {method: GET, path: "/action/resource/nodes", principal: user, permission: "operation:action:node:read"}
   - {method: POST, path: "/action/resource/nodes", principal: user, permission: "operation:action:node:create"}

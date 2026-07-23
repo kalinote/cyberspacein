@@ -11,6 +11,7 @@ from app.schemas.constants import (
     ActionTriggerTypeEnum,
 )
 from app.schemas.general import DictModelSchema
+from app.models.action.blueprint import ActionBlueprintSnapshotModel
 
 class ActionInstanceModel(Document):
     """
@@ -18,11 +19,17 @@ class ActionInstanceModel(Document):
     """
     id: str = Field(alias="_id")
     blueprint_id: str = Field(description="蓝图ID")
+    blueprint_snapshot: ActionBlueprintSnapshotModel | None = Field(
+        default=None,
+        description="行动创建时使用的完整蓝图快照",
+    )
     is_deleted: bool = Field(default=False, description="是否已删除")
 
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
+    deadline_at: datetime | None = Field(default=None, description="行动执行截止时间")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")
     status: ActionFlowStatusEnum = Field(default=ActionFlowStatusEnum.READY, description="行动实例化流程状态")
+    implementation_period: int = Field(default=0, description="行动执行期限(秒)，0表示不限制")
 
     nodes_id: list[str] = Field(default_factory=list, description="节点ID列表，这是节点id")
     finished_nodes_instance: list[str] = Field(default_factory=list, description="已完成的节点ID列表，这是节点实例id")

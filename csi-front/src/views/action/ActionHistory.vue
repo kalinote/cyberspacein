@@ -422,7 +422,10 @@ const updateStatistics = () => {
   statistics.value.total = actions.value.length
   statistics.value.completed = actions.value.filter(a => a.status === ACTION_STATUS.COMPLETED).length
   statistics.value.running = actions.value.filter(a => a.status === ACTION_STATUS.RUNNING).length
-  statistics.value.failed = actions.value.filter(a => a.status === ACTION_STATUS.FAILED).length
+  statistics.value.failed = actions.value.filter(a => [
+    ACTION_STATUS.FAILED,
+    ACTION_STATUS.TIMEOUT
+  ].includes(a.status)).length
 }
 
 const handlePageChange = (page) => {

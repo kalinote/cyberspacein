@@ -146,18 +146,20 @@ async def test_run_node_keeps_leading_hyphen_bootstrap_as_option_value(monkeypat
         command="csi-component",
         command_args=["main:run"],
         related_components=["component-1"],
+        component_timeouts={"component-1": 30},
     )
     action = SimpleNamespace(
         id="action-1",
         blueprint_id="blueprint-1",
         schedule_priority=5,
+        status=action_service.ActionFlowStatusEnum.RUNNING,
     )
     find_one_calls = 0
 
     def find_one(_query):
         nonlocal find_one_calls
         find_one_calls += 1
-        if find_one_calls == 2:
+        if find_one_calls in {2, 4}:
             return _FindOne(modified_count=1)
         return _FindOne(node)
 
@@ -188,11 +190,8 @@ async def test_run_node_keeps_leading_hyphen_bootstrap_as_option_value(monkeypat
         AsyncMock(return_value=SimpleNamespace(graph=SimpleNamespace(edges=[]))),
     )
     component_run = SimpleNamespace(id="component-run-1", insert=AsyncMock())
-    monkeypatch.setattr(
-        action_service,
-        "ComponentRunModel",
-        MagicMock(return_value=component_run),
-    )
+    component_run_factory = MagicMock(return_value=component_run)
+    monkeypatch.setattr(action_service, "ComponentRunModel", component_run_factory)
     monkeypatch.setattr(
         action_service,
         "issue_component_bootstrap",
@@ -202,6 +201,7 @@ async def test_run_node_keeps_leading_hyphen_bootstrap_as_option_value(monkeypat
     monkeypatch.setattr(action_service, "dispatch_component_run", dispatch)
 
     assert await ActionInstanceService.run_node(node.id, action.id) is True
+    assert component_run_factory.call_args.kwargs["timeout_seconds"] == 30
     command_args = dispatch.await_args.args[2]
     assert "--component-bootstrap=-bootstrap" in command_args
     assert "--component-bootstrap" not in command_args

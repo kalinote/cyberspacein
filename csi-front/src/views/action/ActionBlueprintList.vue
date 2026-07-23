@@ -137,6 +137,15 @@
                     <template #icon><Icon icon="mdi:rocket-launch" /></template>
                     立即执行行动
                   </el-button>
+                  <el-button
+                    v-if="hasPerm(PERM.operations.action.blueprint.update)"
+                    plain
+                    class="w-full ml-0!"
+                    @click="editBlueprint(blueprint)"
+                  >
+                    <template #icon><Icon icon="mdi:pencil-outline" /></template>
+                    编辑该蓝图
+                  </el-button>
                   <el-button 
                     plain 
                     class="w-full ml-0!" 
@@ -197,7 +206,7 @@
                 </template>
               </el-table-column>
               <el-table-column prop="executionDeadline" label="执行期限" width="150" />
-              <el-table-column label="操作" width="300" fixed="right">
+              <el-table-column label="操作" width="360" fixed="right">
                 <template #default="{ row }">
                   <div class="flex items-center gap-2">
                     <el-button type="primary" link size="small" @click="viewBlueprint(row)">
@@ -207,6 +216,10 @@
                     <el-button type="primary" link size="small" @click="createActionFromBlueprint(row)">
                       <template #icon><Icon icon="mdi:rocket-launch" /></template>
                       执行
+                    </el-button>
+                    <el-button v-if="hasPerm(PERM.operations.action.blueprint.update)" type="primary" link size="small" @click="editBlueprint(row)">
+                      <template #icon><Icon icon="mdi:pencil" /></template>
+                      编辑
                     </el-button>
                     <el-button plain size="small" @click="createBranchVersion(row)">
                       <template #icon><Icon icon="mdi:source-branch" /></template>
@@ -418,6 +431,17 @@ const handleParamsSubmit = async (params) => {
 
 const createBranchVersion = (blueprint) => {
   ElMessage.info('创建分支版本功能开发中...')
+}
+
+const editBlueprint = (blueprint) => {
+  if (!blueprint?.id) {
+    ElMessage.error('蓝图ID不存在')
+    return
+  }
+  router.push({
+    name: 'edit-action-blueprint',
+    params: { blueprintId: blueprint.id }
+  })
 }
 
 const handleCreateBlueprint = () => {
