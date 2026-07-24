@@ -93,6 +93,8 @@ async def dispatch_component_run(
     # TODO(native-scheduler): Crawlab 仅用于开发阶段临时派发。自研 Worker
     # 接管组件运行后，用内部任务队列替换本函数实现并删除 Crawlab 配置。
     action = await ActionInstanceModel.find_one({"_id": component_run.action_id})
+    if action is not None and action.status == ActionFlowStatusEnum.PAUSED:
+        return False
     if action is None or action.status != ActionFlowStatusEnum.RUNNING:
         component_run.status = ComponentRunStatusEnum.CANCELLED
         component_run.cancel_requested = True

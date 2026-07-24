@@ -83,7 +83,13 @@ class RabbitMQClient:
             return None
         
         try:
-            self.channel.queue_declare(queue=queue_name, durable=True)
+            self.channel.queue_declare(
+                queue=queue_name,
+                durable=True,
+                exclusive=False,
+                auto_delete=False,
+                arguments={},
+            )
             method_frame, header_frame, body = self.channel.basic_get(queue=queue_name, auto_ack=False)
             
             if method_frame is None:
@@ -153,7 +159,13 @@ class RabbitMQClient:
             return False
         
         try:
-            self.channel.queue_declare(queue=queue_name, durable=True)
+            self.channel.queue_declare(
+                queue=queue_name,
+                durable=True,
+                exclusive=False,
+                auto_delete=False,
+                arguments={},
+            )
             self.channel.basic_publish(
                 exchange='',
                 routing_key=queue_name,
@@ -205,7 +217,13 @@ class RabbitMQClient:
         processed_count = 0
         
         try:
-            self.channel.queue_declare(queue=queue_name, durable=True)
+            self.channel.queue_declare(
+                queue=queue_name,
+                durable=True,
+                exclusive=False,
+                auto_delete=False,
+                arguments={},
+            )
             
             while True:
                 batch_messages = []
@@ -277,7 +295,13 @@ class RabbitMQClient:
         message_count = 0
         
         try:
-            self.channel.queue_declare(queue=queue_name, durable=True)
+            self.channel.queue_declare(
+                queue=queue_name,
+                durable=True,
+                exclusive=False,
+                auto_delete=False,
+                arguments={},
+            )
             method_frame, header_frame, body = self.channel.basic_get(queue=queue_name, auto_ack=False)
             
             while method_frame and message_count < batch_size:
@@ -343,7 +367,13 @@ class RabbitMQClient:
             return False
         
         try:
-            self.channel.queue_declare(queue=queue_name, durable=True)
+            self.channel.queue_declare(
+                queue=queue_name,
+                durable=True,
+                exclusive=False,
+                auto_delete=False,
+                arguments={},
+            )
             for message in messages:
                 message_body = json.dumps(message, ensure_ascii=False)
                 self.channel.basic_publish(

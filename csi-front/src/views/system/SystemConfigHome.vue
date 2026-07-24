@@ -36,7 +36,14 @@
         </div>
       </section>
 
-      <el-alert v-if="configData?.history_sync_status === 'conflict'" class="mb-5" title="配置文件与 MongoDB 历史存在冲突，已暂停保存、取消和还原操作，请先完成存储协调。" type="error" :closable="false" show-icon />
+      <el-alert v-if="configData?.history_sync_status === 'conflict'" class="mb-5" type="error" :closable="false" show-icon>
+        <template #title>
+          <div class="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pr-2">
+            <span>配置文件与 MongoDB 历史存在冲突，已暂停保存、取消和还原操作，请先完成存储协调。</span>
+            <el-button type="danger" size="small" :loading="coordinationLoading" @click.stop="openCoordination">强制同步</el-button>
+          </div>
+        </template>
+      </el-alert>
       <el-alert v-else-if="configData?.history_sync_status === 'pending'" class="mb-5" title="配置已保存，MongoDB 历史正在等待同步。" type="info" :closable="false" show-icon />
       <div v-if="configData?.restart_required" class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-amber-800">
         <div class="flex gap-3"><Icon icon="mdi:restart-alert" class="text-2xl shrink-0" /><div><p class="font-semibold">{{ configData.pending_status === 'baseline_conflict' ? '部署环境已变化，待重启配置未应用' : '配置已保存，需要重启服务' }}</p><p class="text-sm mt-1">{{ configData.pending_status === 'baseline_conflict' ? '请取消当前待重启配置，并基于最新环境重新编辑和保存。' : `版本 v${configData.pending_version} 的 ${configData.pending_fields?.length || 0} 项配置将在下次服务重启后生效。` }}</p></div></div>
@@ -113,6 +120,59 @@
       <template #footer><el-button @click="previewVisible = false">取消</el-button><el-button :type="previewMode === 'restart' ? 'warning' : 'primary'" :loading="applyLoading" @click="applyChanges">{{ previewMode === 'restart' ? '确认保存待重启配置' : '确认保存' }}</el-button></template>
     </el-dialog>
 
+    <el-dialog v-model="coordinationVisible" title="系统配置存储协调" width="min(1180px, 96vw)" top="3vh" destroy-on-close :close-on-click-modal="false">
+      <div v-loading="coordinationLoading" class="min-h-56">
+        <div v-if="coordinationData" class="space-y-5">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="rounded-xl border border-purple-200 bg-purple-50 p-4"><p class="text-xs text-purple-600">MongoDB 最新历史</p><p class="text-xl font-bold text-purple-900 mt-1">v{{ coordinationData.database.version }}</p><p class="text-xs text-purple-700 mt-1">{{ operationLabel(coordinationData.database.operation) }} · {{ historyStatusLabel(coordinationData.database.status) }}</p></div>
+            <div class="rounded-xl border border-blue-200 bg-blue-50 p-4"><p class="text-xs text-blue-600">data 配置文件</p><p class="text-xl font-bold text-blue-900 mt-1">v{{ coordinationData.file.version }}</p><p class="text-xs text-blue-700 mt-1">{{ coordinationData.file.outbox_count }} 条待处理 outbox</p></div>
+            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p class="text-xs text-emerald-600">拟生成协调版本</p><p class="text-xl font-bold text-emerald-900 mt-1">v{{ coordinationData.proposed_version }}</p><p class="text-xs text-emerald-700 mt-1">{{ coordinationImpactData.runtime.length }} 项立即生效 · {{ coordinationImpactData.restart.length }} 项等待重启</p></div>
+          </div>
+
+          <el-alert v-for="warning in coordinationData.warnings || []" :key="warning" :title="warning" type="warning" :closable="false" show-icon />
+
+          <section>
+            <div class="grid grid-cols-2 gap-4 mb-2 text-sm font-semibold text-gray-700"><span>MongoDB 最新 v{{ coordinationData.database.version }}</span><span class="text-right">data/system-config.json v{{ coordinationData.file.version }}</span></div>
+            <MonacoDiffEditor
+              :key="coordinationData.coordination_token"
+              :original="coordinationDatabaseJson"
+              :modified="coordinationFileJson"
+              language="json"
+              :min-height="360"
+            />
+          </section>
+
+          <section class="rounded-xl border border-gray-200 overflow-hidden">
+            <div class="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div><h3 class="font-semibold text-gray-900">选择差异字段来源</h3><p class="text-sm text-gray-500 mt-1">还需选择 {{ unresolvedCoordinationCount }} 项；数据库缺失字段会自动保留文件侧值。</p></div>
+              <div class="flex flex-wrap gap-2"><el-button size="small" @click="selectAllCoordination('database')">全部采用数据库</el-button><el-button size="small" @click="selectAllCoordination('file')">全部采用文件</el-button><el-button size="small" @click="clearCoordinationResolutions">清空</el-button></div>
+            </div>
+            <div v-if="coordinationData.differences?.length" class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+              <div v-for="item in coordinationData.differences" :key="item.key" class="p-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-4 lg:items-center">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap"><span class="font-medium text-gray-900">{{ item.label }}</span><el-tag :type="modeTagType(item.apply_mode)" size="small">{{ modeLabel(item.apply_mode) }}</el-tag><el-tag v-if="item.sensitive" type="warning" size="small">敏感值已隐藏</el-tag><el-tag v-if="!item.database_available" type="danger" size="small">数据库缺失</el-tag></div>
+                  <p class="text-xs text-gray-400 font-mono mt-1">{{ item.key }}</p>
+                  <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <p class="rounded bg-purple-50 px-2 py-1.5 text-purple-800">数据库：{{ coordinationValue(item, 'database') }}</p>
+                    <p class="rounded bg-blue-50 px-2 py-1.5 text-blue-800">文件：{{ coordinationValue(item, 'file') }}</p>
+                  </div>
+                </div>
+                <el-radio-group v-model="coordinationResolutions[item.key]" size="small">
+                  <el-radio-button value="database" :disabled="!item.database_available">采用数据库</el-radio-button>
+                  <el-radio-button value="file">采用文件</el-radio-button>
+                </el-radio-group>
+              </div>
+            </div>
+            <div v-else class="p-8 text-center text-gray-500">配置值一致，仅版本历史需要协调。</div>
+          </section>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="coordinationVisible = false">取消</el-button>
+        <el-button type="danger" :loading="coordinationCommitLoading" :disabled="!coordinationData || unresolvedCoordinationCount > 0" @click="commitCoordination">确认生成协调版本</el-button>
+      </template>
+    </el-dialog>
+
     <el-drawer v-model="historyVisible" title="配置历史" size="min(760px, 94vw)" destroy-on-close>
       <div v-loading="historyLoading" class="h-full flex flex-col">
         <el-table :data="historyItems" class="flex-1" empty-text="暂无配置历史">
@@ -136,6 +196,11 @@
             <div v-for="change in historyDetail.changes" :key="change.key" class="border border-gray-200 rounded-lg p-3"><div class="flex items-center justify-between gap-3"><div><p class="font-medium text-gray-900">{{ change.label }}</p><p class="text-xs text-gray-400 font-mono">{{ change.key }}</p></div><el-tag :type="modeTagType(change.apply_mode)" size="small">{{ modeLabel(change.apply_mode) }}</el-tag></div><div class="mt-2 text-sm grid grid-cols-[1fr_auto_1fr] gap-2 items-center"><span class="truncate text-gray-500">{{ historyValue(change, 'before') }}</span><Icon icon="mdi:arrow-right" class="text-gray-400" /><span class="truncate text-gray-900">{{ historyValue(change, 'after') }}</span></div></div>
           </div>
           <p v-else class="text-center text-gray-500 py-8">该版本为历史基线，没有字段变更记录。</p>
+          <div v-if="historyDetail.coordination" class="rounded-lg bg-purple-50 border border-purple-100 p-3 space-y-2 text-sm">
+            <p class="font-medium text-purple-900">存储协调来源</p>
+            <p class="text-purple-800">data 文件 v{{ historyDetail.coordination.file_version }} · MongoDB v{{ historyDetail.coordination.database_version }}</p>
+            <p class="text-purple-700">采用文件 {{ historyDetail.coordination.file_fields?.length || 0 }} 项，采用数据库 {{ historyDetail.coordination.database_fields?.length || 0 }} 项，取代 outbox {{ historyDetail.coordination.discarded_outbox_ids?.length || 0 }} 条。</p>
+          </div>
           <div v-if="historyDetail.restore_runtime_fields?.length || historyDetail.restore_restart_fields?.length" class="rounded-lg bg-blue-50 border border-blue-100 p-3 space-y-3"><p class="font-medium text-blue-900">还原影响</p><div v-if="historyDetail.restore_runtime_fields?.length"><p class="text-xs text-gray-500 mb-1">立即恢复</p><div class="flex flex-wrap gap-1"><el-tag v-for="key in historyDetail.restore_runtime_fields" :key="key" type="success" size="small">{{ fieldLabel(key) }}</el-tag></div></div><div v-if="historyDetail.restore_restart_fields?.length"><p class="text-xs text-gray-500 mb-1">重启后恢复</p><div class="flex flex-wrap gap-1"><el-tag v-for="key in historyDetail.restore_restart_fields" :key="key" type="warning" size="small">{{ fieldLabel(key) }}</el-tag></div></div></div>
         </div>
       </div>
@@ -149,9 +214,16 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import MonacoDiffEditor from '@/components/MonacoDiffEditor.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
 import { systemApi } from '@/api/system'
 import { buildConfigChanges, countConfigModes, selectConfigChangesByMode } from '@/utils/systemConfigPolicy'
+import {
+  buildCoordinationResolutions,
+  coordinationImpact,
+  formatCoordinationSnapshot,
+  unresolvedCoordinationKeys
+} from '@/utils/systemConfigCoordination'
 
 defineOptions({ name: 'SystemConfigHome' })
 
@@ -162,6 +234,8 @@ const cancelLoading = ref(false)
 const historyLoading = ref(false)
 const historyDetailLoading = ref(false)
 const restoreLoading = ref(false)
+const coordinationLoading = ref(false)
+const coordinationCommitLoading = ref(false)
 const configData = ref(null)
 const form = reactive({})
 const original = reactive({})
@@ -178,6 +252,9 @@ const historyPage = ref(1)
 const historyPageSize = 20
 const historyDetailVisible = ref(false)
 const historyDetail = ref(null)
+const coordinationVisible = ref(false)
+const coordinationData = ref(null)
+const coordinationResolutions = reactive({})
 
 const fields = computed(() => configData.value?.fields || [])
 const fieldMap = computed(() => Object.fromEntries(fields.value.map(item => [item.key, item])))
@@ -196,6 +273,10 @@ const runtimeDirtyCount = computed(() => Object.keys(runtimeChanges.value).lengt
 const restartDirtyCount = computed(() => Object.keys(restartChanges.value).length)
 const activeDirtyCount = computed(() => activeMode.value === 'runtime' ? runtimeDirtyCount.value : activeMode.value === 'restart' ? restartDirtyCount.value : 0)
 const historyConflict = computed(() => configData.value?.history_sync_status === 'conflict')
+const coordinationDatabaseJson = computed(() => formatCoordinationSnapshot(coordinationData.value?.database?.display_snapshot))
+const coordinationFileJson = computed(() => formatCoordinationSnapshot(coordinationData.value?.file?.display_snapshot))
+const unresolvedCoordinationCount = computed(() => unresolvedCoordinationKeys(coordinationData.value?.differences, coordinationResolutions).length)
+const coordinationImpactData = computed(() => coordinationImpact(coordinationData.value?.differences, coordinationResolutions, coordinationData.value?.fixed_impact))
 const modeSummary = computed(() => {
   const counts = countConfigModes(fields.value)
   return [
@@ -316,6 +397,59 @@ async function cancelPending() {
     if (historyVisible.value) await loadHistory()
   } finally { cancelLoading.value = false }
 }
+function replaceCoordinationResolutions(values) {
+  for (const key of Object.keys(coordinationResolutions)) delete coordinationResolutions[key]
+  Object.assign(coordinationResolutions, values)
+}
+async function openCoordination() {
+  coordinationLoading.value = true
+  try {
+    const response = await systemApi.previewSystemConfigCoordination({ silent: true })
+    coordinationData.value = response.data
+    replaceCoordinationResolutions({})
+    coordinationVisible.value = true
+  } catch (error) {
+    ElMessage.error(error?.message || '存储协调预览加载失败')
+    await loadConfig()
+  } finally { coordinationLoading.value = false }
+}
+function selectAllCoordination(source) {
+  replaceCoordinationResolutions(buildCoordinationResolutions(coordinationData.value?.differences, source))
+}
+function clearCoordinationResolutions() {
+  replaceCoordinationResolutions({})
+}
+function coordinationValue(item, side) {
+  if (side === 'database' && !item.database_available) return '缺失'
+  if (item.sensitive) return item[`${side}_configured`] ? '已配置（内容已隐藏）' : '未配置'
+  return formatDisplayValue(item[`${side}_value`])
+}
+async function commitCoordination() {
+  if (!coordinationData.value || unresolvedCoordinationCount.value) return
+  const impact = coordinationImpactData.value
+  await ElMessageBox.confirm(
+    `将生成配置版本 v${coordinationData.value.proposed_version}：${impact.runtime.length} 项实时配置立即生效，${impact.restart.length} 项配置等待重启。`,
+    '确认强制同步',
+    { confirmButtonText: '确认生成协调版本', cancelButtonText: '返回检查', type: 'error' }
+  )
+  coordinationCommitLoading.value = true
+  try {
+    const response = await systemApi.commitSystemConfigCoordination({
+      coordination_token: coordinationData.value.coordination_token,
+      resolutions: { ...coordinationResolutions },
+      confirmed: true
+    }, { silent: true })
+    coordinationVisible.value = false
+    const syncPending = response.data.history_sync_status === 'pending'
+    ElMessage[syncPending ? 'warning' : 'success'](
+      syncPending ? '协调版本已写入，MongoDB 历史等待同步' : '系统配置存储协调完成'
+    )
+    await loadConfig()
+    if (historyVisible.value) await loadHistory()
+  } catch (error) {
+    ElMessage.error(error?.message || '存储协调提交失败，请重新加载对比')
+  } finally { coordinationCommitLoading.value = false }
+}
 async function openHistory() {
   historyVisible.value = true
   historyPage.value = 1
@@ -352,7 +486,7 @@ async function restoreHistory() {
     await loadHistory()
   } finally { restoreLoading.value = false }
 }
-function operationLabel(value) { return ({ runtime_update: '实时修改', restart_update: '待重启修改', restore: '版本还原', cancel_pending: '取消待重启', environment_rebase: '环境基线变化', migration_baseline: '历史基线' }[value] || value) }
+function operationLabel(value) { return ({ runtime_update: '实时修改', restart_update: '待重启修改', restore: '版本还原', cancel_pending: '取消待重启', environment_rebase: '环境基线变化', migration_baseline: '历史基线', storage_reconcile: '存储协调' }[value] || value) }
 function historyStatusLabel(value) { return ({ applied: '已生效', pending_restart: '待重启', superseded: '已取代', rolled_back: '已回滚', baseline_conflict: '基线冲突', applying: '应用中' }[value] || value) }
 function historyStatusType(value) { return ({ applied: 'success', pending_restart: 'warning', superseded: 'info', rolled_back: 'danger', baseline_conflict: 'danger', applying: 'primary' }[value] || 'info') }
 function historyValue(change, side) {

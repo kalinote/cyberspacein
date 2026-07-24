@@ -44,6 +44,7 @@ class ActionFlowStatusEnum(str, Enum):
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
     PAUSED = "paused"
+    STOPPED = "stopped"
     
 class ActionInstanceNodeStatusEnum(str, Enum):
     """

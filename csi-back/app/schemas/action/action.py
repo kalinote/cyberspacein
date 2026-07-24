@@ -14,6 +14,11 @@ class StartActionRequest(BaseModel):
     
 class StartActionResponse(BaseModel):
     action_id: str = Field(description="行动ID")
+
+
+class ActionControlResponse(BaseModel):
+    action_id: str = Field(description="行动ID")
+    status: ActionFlowStatusEnum = Field(description="行动当前状态")
     
 class ActionInstanceBaseInfoResponse(BaseModel):
     id: str = Field(description="行动ID")
@@ -21,6 +26,7 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     description: str = Field(description="行动描述")
     status: ActionFlowStatusEnum = Field(description="行动实例化流程状态")
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
+    paused_at: datetime | None = Field(default=None, description="行动最近一次暂停时间")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")
     duration: float = Field(description="行动执行时长(秒)")
     progress: int = Field(description="行动实例化流程进度(%)")

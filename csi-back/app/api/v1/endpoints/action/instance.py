@@ -5,6 +5,7 @@ from app.models.action.component_run import ComponentRunModel
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.schemas.action.action import (
+    ActionControlResponse,
     ActionDetailResponse,
     ActionInstanceBaseInfoResponse,
     ActionNodeDetailResponse,
@@ -69,6 +70,7 @@ async def get_action_instances(
             description=blueprint.description,
             status=action_instance.status,
             start_at=action_instance.start_at,
+            paused_at=action_instance.paused_at,
             finished_at=action_instance.finished_at,
             duration=action_instance.duration,
             progress=action_instance.progress,
@@ -169,6 +171,7 @@ async def get_action_detail(action_id: str):
         resource=blueprint.resource,
         implementation_period=action_instance.implementation_period,
         start_at=action_instance.start_at,
+        paused_at=action_instance.paused_at,
         finished_at=action_instance.finished_at,
         duration=action_instance.duration,
         progress=action_instance.progress,
@@ -182,3 +185,50 @@ async def get_action_detail(action_id: str):
         graph=graph,
         node_details=node_details
     ))
+
+
+async def _control_action(
+    action_id: str,
+    operation: str,
+) -> ApiResponseSchema[ActionControlResponse]:
+    """执行行动控制操作并统一返回状态。"""
+    handlers = {
+        "pause": ActionInstanceService.pause,
+        "resume": ActionInstanceService.resume,
+        "stop": ActionInstanceService.stop,
+    }
+    success, message = await handlers[operation](action_id)
+    action = await ActionInstanceModel.find_one({"_id": action_id})
+    if not success or action is None:
+        return ApiResponseSchema.error(code=240424, message=message)
+    return ApiResponseSchema.success(
+        data=ActionControlResponse(action_id=action_id, status=action.status),
+        message=message,
+    )
+
+
+@router.post(
+    "/{action_id}/pause",
+    response_model=ApiResponseSchema[ActionControlResponse],
+    summary="暂停行动",
+)
+async def pause_action(action_id: str):
+    return await _control_action(action_id, "pause")
+
+
+@router.post(
+    "/{action_id}/resume",
+    response_model=ApiResponseSchema[ActionControlResponse],
+    summary="恢复行动",
+)
+async def resume_action(action_id: str):
+    return await _control_action(action_id, "resume")
+
+
+@router.post(
+    "/{action_id}/stop",
+    response_model=ApiResponseSchema[ActionControlResponse],
+    summary="停止行动",
+)
+async def stop_action(action_id: str):
+    return await _control_action(action_id, "stop")

@@ -27,6 +27,8 @@ class ActionInstanceModel(Document):
 
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
     deadline_at: datetime | None = Field(default=None, description="行动执行截止时间")
+    paused_at: datetime | None = Field(default=None, description="行动最近一次暂停时间")
+    paused_duration: float = Field(default=0, description="行动累计暂停时长(秒)")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")
     status: ActionFlowStatusEnum = Field(default=ActionFlowStatusEnum.READY, description="行动实例化流程状态")
     implementation_period: int = Field(default=0, description="行动执行期限(秒)，0表示不限制")

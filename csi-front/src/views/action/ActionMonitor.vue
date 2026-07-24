@@ -399,9 +399,25 @@
                     <template #icon><Icon icon="mdi:eye" /></template>
                     查看详情
                   </el-button>
-                  <el-button type="warning" link size="small" @click="pauseAction(action.id)">
+                  <el-button
+                    v-if="action.status === ACTION_STATUS.RUNNING"
+                    type="warning"
+                    link
+                    size="small"
+                    @click="pauseAction(action.id)"
+                  >
                     <template #icon><Icon icon="mdi:pause" /></template>
                     暂停
+                  </el-button>
+                  <el-button
+                    v-else-if="action.status === ACTION_STATUS.PAUSED"
+                    type="success"
+                    link
+                    size="small"
+                    @click="resumeAction(action.id)"
+                  >
+                    <template #icon><Icon icon="mdi:play" /></template>
+                    恢复
                   </el-button>
                   <el-button type="danger" link size="small" @click="stopAction(action.id)">
                     <template #icon><Icon icon="mdi:stop" /></template>
@@ -528,7 +544,7 @@ import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import TemplateParamsDialog from '@/components/action/template/TemplateParamsDialog.vue'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
-import { getActionStatusIcon } from '@/utils/action'
+import { ACTION_STATUS, getActionStatusIcon } from '@/utils/action'
 
 defineOptions({ name: 'Action' })
 
@@ -631,17 +647,20 @@ async function fetchRunningActions() {
   try {
     const result = await getPaginatedData(actionApi.getActionHistory, {
       page: 1,
-      page_size: 3
+      page_size: 100
     })
-    runningActions.value = (result.items || []).map(item => ({
-      ...item,
-      startTime: item.start_at || null,
-      endTime: item.finished_at || null,
-      completedSteps: item.completed_steps || 0,
-      totalSteps: item.total_steps || 0,
-      duration: item.duration ? item.duration * 1000 : 0,
-      progress: item.progress ?? 0
-    }))
+    runningActions.value = (result.items || [])
+      .filter(item => [ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED].includes(item.status))
+      .slice(0, 3)
+      .map(item => ({
+        ...item,
+        startTime: item.start_at || null,
+        endTime: item.finished_at || null,
+        completedSteps: item.completed_steps || 0,
+        totalSteps: item.total_steps || 0,
+        duration: item.duration ? item.duration * 1000 : 0,
+        progress: item.progress ?? 0
+      }))
   } catch (error) {
     console.error('获取行动列表失败:', error)
     runningActions.value = []
@@ -711,28 +730,60 @@ function viewActionDetail(actionId) {
   router.push(`/action/${actionId}`)
 }
 
-function pauseAction(actionId) {
-  ElMessageBox.confirm('确定要暂停此行动吗？', '确认暂停', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    ElMessage.success('行动已暂停')
-  }).catch(() => {
-    ElMessage.info('已取消暂停')
-  })
+async function pauseAction(actionId) {
+  try {
+    await ElMessageBox.confirm('确定要暂停此行动吗？', '确认暂停', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const response = await actionApi.pauseAction(actionId)
+    if (response.code !== 0) {
+      ElMessage.error(response.message || '暂停行动失败')
+      return
+    }
+    ElMessage.success(response.message || '行动已暂停')
+    await fetchRunningActions()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.message || '暂停行动失败')
+    }
+  }
 }
 
-function stopAction(actionId) {
-  ElMessageBox.confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
-    confirmButtonText: '确定停止',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    ElMessage.success('行动已停止')
-  }).catch(() => {
-    ElMessage.info('已取消停止')
-  })
+async function resumeAction(actionId) {
+  try {
+    const response = await actionApi.resumeAction(actionId)
+    if (response.code !== 0) {
+      ElMessage.error(response.message || '恢复行动失败')
+      return
+    }
+    ElMessage.success(response.message || '行动已恢复')
+    await fetchRunningActions()
+  } catch (error) {
+    ElMessage.error(error?.message || '恢复行动失败')
+  }
+}
+
+async function stopAction(actionId) {
+  try {
+    await ElMessageBox.confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
+      confirmButtonText: '确定停止',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const response = await actionApi.stopAction(actionId)
+    if (response.code !== 0) {
+      ElMessage.error(response.message || '停止行动失败')
+      return
+    }
+    ElMessage.success(response.message || '行动已停止')
+    await fetchRunningActions()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.message || '停止行动失败')
+    }
+  }
 }
 
 function handleBlueprintDialogOpen() {

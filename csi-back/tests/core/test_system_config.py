@@ -7,6 +7,7 @@ import pytest
 from app.core.config import Settings, SettingsProxy
 from app.core.system_config import (
     CONFIG_FIELD_MAP,
+    ConfigConflictError,
     ConfigError,
     SystemConfigManager,
 )
@@ -193,3 +194,58 @@ def test_outbox_is_persisted_until_acknowledged(monkeypatch: pytest.MonkeyPatch,
     assert len(events) == 1
     manager.ack_outbox([events[0]["outbox_id"]])
     assert manager.outbox() == []
+
+
+def test_storage_coordination_uses_highest_version_and_preserves_apply_modes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    apply_minimal_settings_env(monkeypatch)
+    manager, proxy = make_manager(monkeypatch, tmp_path / "config.json")
+    source = manager.coordination_source()
+    database_snapshot = dict(source["desired_snapshot"])
+    database_snapshot["RRF_K"] = 93
+    database_snapshot["APP_NAME"] = "database-name"
+
+    result = manager.apply_storage_coordination(
+        merged_snapshot=database_snapshot,
+        database_snapshot=database_snapshot,
+        database_version=5,
+        database_checksum=manager._checksum(database_snapshot),
+        proposed_version=6,
+        expected_file_signature=source["signature"],
+        resolutions={"RRF_K": "database", "APP_NAME": "database"},
+        actor="system",
+    )
+
+    state = result["state"]
+    assert state["version"] == 6
+    assert proxy.RRF_K == 93
+    assert proxy.APP_NAME == "test-app"
+    assert state["desired"]["APP_NAME"] == "database-name"
+    assert state["pending_version"] == 6
+    assert "APP_NAME" in state["pending_fields"]
+    assert result["runtime_fields"] == ["RRF_K"]
+    event = state["audit_outbox"][-1]["payload"]
+    assert event["operation"] == "storage_reconcile"
+    assert event["parent_version"] == 5
+    assert event["coordination"]["database_version"] == 5
+
+
+def test_storage_coordination_rejects_stale_file_signature(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    apply_minimal_settings_env(monkeypatch)
+    manager, _ = make_manager(monkeypatch, tmp_path / "config.json")
+    source = manager.coordination_source()
+
+    with pytest.raises(ConfigConflictError, match="配置文件已变化"):
+        manager.apply_storage_coordination(
+            merged_snapshot=source["desired_snapshot"],
+            database_snapshot=source["desired_snapshot"],
+            database_version=5,
+            database_checksum=source["desired_checksum"],
+            proposed_version=6,
+            expected_file_signature="stale",
+            resolutions={},
+            actor="system",
+        )

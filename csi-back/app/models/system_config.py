@@ -20,6 +20,16 @@ class SystemConfigChangeModel(BaseModel):
     sensitive: bool = False
 
 
+class SystemConfigCoordinationModel(BaseModel):
+    file_version: int
+    database_version: int
+    file_checksum: str
+    database_checksum: str
+    file_fields: list[str] = Field(default_factory=list)
+    database_fields: list[str] = Field(default_factory=list)
+    discarded_outbox_ids: list[str] = Field(default_factory=list)
+
+
 class SystemConfigVersionModel(Document):
     id: str = Field(alias="_id")
     event_id: str
@@ -37,6 +47,7 @@ class SystemConfigVersionModel(Document):
     restored_from_version: int | None = None
     baseline_fingerprint: str | None = None
     message: str | None = None
+    coordination: SystemConfigCoordinationModel | None = None
 
     class Settings:
         name = "system_config_versions"

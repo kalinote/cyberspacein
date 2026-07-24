@@ -66,6 +66,15 @@ async def test_run_node_dispatch_claim_accepts_pending_node(monkeypatch):
         "get_node_definition",
         staticmethod(_node_definition),
     )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                status=action_service.ActionFlowStatusEnum.RUNNING
+            )
+        ),
+    )
 
     async def no_previous_nodes(_action_id, _node_id):
         return []
@@ -112,6 +121,15 @@ async def test_run_node_can_move_pending_join_node_to_unready(monkeypatch):
         ActionInstanceService,
         "get_node_definition",
         staticmethod(_node_definition),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                status=action_service.ActionFlowStatusEnum.RUNNING
+            )
+        ),
     )
 
     async def previous_nodes(_action_id, _node_id):

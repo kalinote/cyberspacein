@@ -15,6 +15,8 @@ const props = defineProps({
 
 const container = ref(null)
 let diffEditor = null
+let originalModel = null
+let modifiedModel = null
 
 const formatContent = async (monaco, content, language) => {
     const uri = monaco.Uri.parse(`inmemory://format/${Math.random().toString(36).slice(2)}`)
@@ -52,8 +54,8 @@ onMounted(async () => {
         scrollBeyondLastLine: false
     })
 
-    const originalModel = monaco.editor.createModel(formattedOriginal, props.language)
-    const modifiedModel = monaco.editor.createModel(formattedModified, props.language)
+    originalModel = monaco.editor.createModel(formattedOriginal, props.language)
+    modifiedModel = monaco.editor.createModel(formattedModified, props.language)
 
     diffEditor.setModel({ original: originalModel, modified: modifiedModel })
 })
@@ -62,6 +64,8 @@ onBeforeUnmount(() => {
     if (diffEditor) {
         diffEditor.dispose()
     }
+    originalModel?.dispose()
+    modifiedModel?.dispose()
 })
 </script>
 

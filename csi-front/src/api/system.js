@@ -100,6 +100,12 @@ export const systemApi = {
   cancelPendingSystemConfig(data) {
     return request.post('/system/config/pending/cancel', data)
   },
+  previewSystemConfigCoordination(config = {}) {
+    return request.get('/system/config/coordination/preview', undefined, config)
+  },
+  commitSystemConfigCoordination(data, config = {}) {
+    return request.post('/system/config/coordination/commit', data, config)
+  },
   getSystemConfigHistory(params) {
     return request.get('/system/config/history', params)
   },

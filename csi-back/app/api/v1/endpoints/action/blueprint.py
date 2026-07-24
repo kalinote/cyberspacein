@@ -318,6 +318,7 @@ async def delete_blueprint(blueprint_id: str):
         ActionFlowStatusEnum.FAILED.value,
         ActionFlowStatusEnum.CANCELLED.value,
         ActionFlowStatusEnum.TIMEOUT.value,
+        ActionFlowStatusEnum.STOPPED.value,
     ]
     active_action = await ActionInstanceModel.find_one({
         "blueprint_id": blueprint_id,

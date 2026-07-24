@@ -32,6 +32,7 @@ const STATUS_TEXT_MAP = {
   [ACTION_STATUS.CANCELLED]: '已取消',
   [ACTION_STATUS.TIMEOUT]: '超时',
   [ACTION_STATUS.PAUSED]: '已暂停',
+  [ACTION_STATUS.STOPPED]: '已停止',
 }
 
 // 状态标签类型映射
@@ -44,6 +45,7 @@ const STATUS_TAG_TYPE_MAP = {
   [ACTION_STATUS.RUNNING]: 'primary',
   [ACTION_STATUS.COMPLETED]: 'success',
   [ACTION_STATUS.PAUSED]: 'warning',
+  [ACTION_STATUS.STOPPED]: 'info',
   [ACTION_STATUS.CANCELLED]: 'danger',
   [ACTION_STATUS.TIMEOUT]: 'danger',
   [ACTION_STATUS.FAILED]: 'danger',

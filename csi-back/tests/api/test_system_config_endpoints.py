@@ -178,3 +178,71 @@ def test_history_detail_masks_sensitive_values(monkeypatch: pytest.MonkeyPatch) 
     assert payload["changes"][0]["before_configured"] is True
     assert "old-secret" not in str(payload)
     assert "new-secret" not in str(payload)
+
+
+def test_coordination_preview_returns_service_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def preview(_):
+        return {
+            "coordination_token": "a" * 64,
+            "proposed_version": 6,
+            "differences": [],
+        }
+
+    monkeypatch.setattr(
+        config_ep.SystemConfigHistoryService, "coordination_preview", preview
+    )
+
+    body = _client().get("/api/v1/system/config/coordination/preview").json()
+
+    assert body["code"] == 0
+    assert body["data"]["proposed_version"] == 6
+
+
+def test_coordination_commit_returns_apply_impact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def commit(_, **kwargs):
+        assert kwargs["coordination_token"] == "a" * 64
+        assert kwargs["resolutions"] == {"RRF_K": "database"}
+        return {
+            "state": {
+                "version": 6,
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "updated_by": "system",
+                "restart_required": True,
+                "pending_version": 6,
+                "pending_fields": ["APP_NAME"],
+            },
+            "history_sync_status": "ok",
+            "runtime_fields": ["RRF_K"],
+            "restart_fields": ["APP_NAME"],
+            "source_file_version": 0,
+            "source_database_version": 5,
+        }
+
+    monkeypatch.setattr(
+        config_ep.SystemConfigHistoryService, "commit_coordination", commit
+    )
+    monkeypatch.setattr(
+        config_ep.system_config_manager,
+        "public_config",
+        lambda: {"history_sync_status": "ok"},
+    )
+
+    body = _client().post(
+        "/api/v1/system/config/coordination/commit",
+        json={
+            "coordination_token": "a" * 64,
+            "resolutions": {"RRF_K": "database"},
+            "confirmed": True,
+        },
+    ).json()
+
+    assert body["code"] == 0
+    assert body["data"]["version"] == 6
+    assert body["data"]["resolved_from"] == {
+        "file_version": 0,
+        "database_version": 5,
+    }

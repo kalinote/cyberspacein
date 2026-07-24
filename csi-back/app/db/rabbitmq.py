@@ -32,18 +32,26 @@ async def close_rabbitmq():
         logger.info("已关闭RabbitMQ连接")
 
 
-async def delete_queue(queue_name: str):
+async def delete_queue(queue_name: str) -> bool:
     """删除指定名称的队列"""
     global rabbitmq_connection
     if not rabbitmq_connection:
         logger.warning("RabbitMQ连接未初始化，无法删除队列")
-        return
+        return False
     
+    channel = None
     try:
         channel = await rabbitmq_connection.channel()
         await channel.queue_delete(queue_name)
-        await channel.close()
         logger.info(f"已删除队列: {queue_name}")
+        return True
     except Exception as e:
         logger.error(f"删除队列失败 {queue_name}: {str(e)}")
+        return False
+    finally:
+        if channel is not None and not channel.is_closed:
+            try:
+                await channel.close()
+            except Exception as e:
+                logger.warning(f"关闭RabbitMQ队列清理通道失败: {str(e)}")
 

@@ -437,16 +437,36 @@ class SystemConfigManager:
         self,
         *,
         version: int,
-        parent_version: int,
+        parent_version: int | None,
         operation: str,
         status: str,
         before: Any,
         after: Any,
         actor: str,
         restored_from_version: int | None = None,
+        history_before_snapshot: dict[str, Any] | None = None,
+        coordination: dict[str, Any] | None = None,
+        message: str | None = None,
     ) -> dict[str, Any]:
         snapshot = self._editable_snapshot(after)
         event_id = uuid.uuid4().hex
+        changes = self._build_changes(before, after)
+        if history_before_snapshot is not None:
+            changes = [
+                {
+                    "key": meta.key,
+                    "apply_mode": meta.apply_mode,
+                    "before": history_before_snapshot.get(meta.key),
+                    "after": snapshot[meta.key],
+                    "sensitive": meta.sensitive,
+                }
+                for meta in CONFIG_FIELDS
+                if meta.apply_mode != "readonly"
+                and (
+                    meta.key not in history_before_snapshot
+                    or history_before_snapshot[meta.key] != snapshot[meta.key]
+                )
+            ]
         payload = {
             "id": event_id,
             "event_id": event_id,
@@ -454,7 +474,7 @@ class SystemConfigManager:
             "parent_version": parent_version,
             "operation": operation,
             "status": status,
-            "changes": self._build_changes(before, after),
+            "changes": changes,
             "snapshot": snapshot,
             "snapshot_checksum": self._checksum(snapshot),
             "created_by": actor,
@@ -463,7 +483,8 @@ class SystemConfigManager:
             "boot_id": self.boot_id,
             "restored_from_version": restored_from_version,
             "baseline_fingerprint": self._baseline_fingerprint(),
-            "message": None,
+            "message": message,
+            "coordination": coordination,
         }
         return {"kind": "version", "outbox_id": uuid.uuid4().hex, "payload": payload}
 
@@ -501,9 +522,15 @@ class SystemConfigManager:
         operation: str,
         actor: str,
         restored_from_version: int | None = None,
+        *,
+        version_override: int | None = None,
+        parent_version: int | None = None,
+        history_before_snapshot: dict[str, Any] | None = None,
+        coordination: dict[str, Any] | None = None,
+        message: str | None = None,
     ) -> int:
-        parent = int(state["version"])
-        version = parent + 1
+        parent = int(state["version"]) if parent_version is None else parent_version
+        version = int(state["version"]) + 1 if version_override is None else version_override
         active_candidate = self._candidate(state.get("active") or {})
         pending_fields = self._pending_fields(active_candidate, after)
         if state.get("restart_required") and state.get("pending_version"):
@@ -530,7 +557,7 @@ class SystemConfigManager:
             "status": status,
             "version": version,
             "at": state["updated_at"],
-            "message": (
+            "message": message or (
                 "配置已保存，等待服务重启" if restart_required else "配置已生效"
             ),
         }
@@ -544,6 +571,9 @@ class SystemConfigManager:
                 after=after,
                 actor=actor,
                 restored_from_version=restored_from_version,
+                history_before_snapshot=history_before_snapshot,
+                coordination=coordination,
+                message=message,
             )
         )
         return version
@@ -670,6 +700,136 @@ class SystemConfigManager:
             if getattr(current, meta.key) != snapshot[meta.key]:
                 modes[meta.apply_mode].append(meta.key)
         return modes
+
+    def _coordination_source_from_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        """构造存储协调使用的文件侧快照和并发校验签名。"""
+        active_snapshot = self._editable_snapshot(
+            self._candidate(state.get("active") or {})
+        )
+        desired_snapshot = self._editable_snapshot(
+            self._candidate(state.get("desired") or {})
+        )
+        outbox_ids = [
+            str(event.get("outbox_id"))
+            for event in state.get("audit_outbox") or []
+            if event.get("outbox_id")
+        ]
+        signature_payload = {
+            "version": int(state["version"]),
+            "active_checksum": self._checksum(active_snapshot),
+            "desired_checksum": self._checksum(desired_snapshot),
+            "restart_required": bool(state.get("restart_required")),
+            "pending_version": state.get("pending_version"),
+            "pending_status": state.get("pending_status"),
+            "outbox_ids": outbox_ids,
+        }
+        return {
+            **signature_payload,
+            "signature": self._checksum(signature_payload),
+            "active_snapshot": active_snapshot,
+            "desired_snapshot": desired_snapshot,
+        }
+
+    def coordination_source(self) -> dict[str, Any]:
+        """读取存储协调所需的文件侧一致性快照。"""
+        with self.lock:
+            return self._coordination_source_from_state(self._read_unlocked())
+
+    def apply_storage_coordination(
+        self,
+        *,
+        merged_snapshot: dict[str, Any],
+        database_snapshot: dict[str, Any],
+        database_version: int,
+        database_checksum: str,
+        proposed_version: int,
+        expected_file_signature: str,
+        resolutions: dict[str, str],
+        actor: str,
+    ) -> dict[str, Any]:
+        """
+        原子写入存储协调结果。
+
+        提交前重新校验文件侧签名，按字段生效模式更新 active/desired，
+        清理无法继续重放的旧 outbox，并创建可审计的新配置版本。
+        """
+        editable_keys = {
+            meta.key for meta in CONFIG_FIELDS if meta.apply_mode != "readonly"
+        }
+        if set(merged_snapshot) != editable_keys:
+            raise ConfigError("协调结果快照不完整，无法写入")
+        with self._state_lock, self.lock:
+            state = self._read_unlocked()
+            source = self._coordination_source_from_state(state)
+            if source["signature"] != expected_file_signature:
+                raise ConfigConflictError("配置文件已变化，请重新加载存储对比")
+            expected_version = max(int(source["version"]), int(database_version)) + 1
+            if proposed_version != expected_version:
+                raise ConfigConflictError("协调版本已变化，请重新加载存储对比")
+
+            before = self._candidate(state.get("desired") or {})
+            old_active = self._candidate(state.get("active") or {})
+            active = dict(state.get("active") or {})
+            desired = dict(state.get("desired") or {})
+            for meta in CONFIG_FIELDS:
+                if meta.apply_mode == "runtime":
+                    active[meta.key] = merged_snapshot[meta.key]
+                    desired[meta.key] = merged_snapshot[meta.key]
+                elif meta.apply_mode == "restart":
+                    desired[meta.key] = merged_snapshot[meta.key]
+
+            active_candidate = self._candidate(active)
+            desired_candidate = self._candidate(desired)
+            runtime_fields = [
+                meta.key
+                for meta in CONFIG_FIELDS
+                if meta.apply_mode == "runtime"
+                and getattr(old_active, meta.key) != getattr(active_candidate, meta.key)
+            ]
+            discarded_outbox_ids = list(source["outbox_ids"])
+            state["audit_outbox"] = []
+            state["active"] = active
+            state["desired"] = desired
+            coordination = {
+                "file_version": int(source["version"]),
+                "database_version": int(database_version),
+                "file_checksum": source["desired_checksum"],
+                "database_checksum": database_checksum,
+                "file_fields": sorted(
+                    key for key, value in resolutions.items() if value == "file"
+                ),
+                "database_fields": sorted(
+                    key for key, value in resolutions.items() if value == "database"
+                ),
+                "discarded_outbox_ids": discarded_outbox_ids,
+            }
+            message = (
+                f"存储协调完成：文件 v{source['version']} 与 "
+                f"MongoDB v{database_version} 已合并"
+            )
+            self._prepare_version(
+                state,
+                before,
+                desired_candidate,
+                "storage_reconcile",
+                actor,
+                version_override=proposed_version,
+                parent_version=database_version,
+                history_before_snapshot=database_snapshot,
+                coordination=coordination,
+                message=message,
+            )
+            self._write_unlocked(state)
+            self._settings_ref.swap(active_candidate)
+            self._version = int(state["version"])
+            self._history_sync_status = "pending"
+            return {
+                "state": state,
+                "runtime_fields": runtime_fields,
+                "restart_fields": list(state.get("pending_fields") or []),
+                "source_file_version": int(source["version"]),
+                "source_database_version": int(database_version),
+            }
 
     def commit_bootstrap(self) -> None:
         if self._boot_pending_version is None:

@@ -400,6 +400,427 @@ class ActionInstanceService:
         for node in ready_nodes:
             await ActionInstanceService.run_node(node.id, action_id)
 
+    @staticmethod
+    async def pause(action_id: str) -> tuple[bool, str]:
+        """暂停运行中的行动，并保留其引用队列和当前组件运行。"""
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if action is None:
+            return False, f"行动不存在，ID: {action_id}"
+        if action.status == ActionFlowStatusEnum.PAUSED:
+            return True, "行动已处于暂停状态"
+        if action.status != ActionFlowStatusEnum.RUNNING:
+            return False, f"当前状态不允许暂停: {action.status.value}"
+
+        now = datetime.now()
+        claim = await ActionInstanceModel.find_one(
+            {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
+        ).update(
+            {
+                "$set": {
+                    "status": ActionFlowStatusEnum.PAUSED,
+                    "paused_at": now,
+                    "updated_at": now,
+                }
+            }
+        )
+        if not claim or getattr(claim, "modified_count", 0) != 1:
+            return False, "行动状态已变化，暂停失败"
+
+        await ActionInstanceNodeModel.find(
+            {
+                "action_id": action_id,
+                "status": {
+                    "$in": [
+                        ActionInstanceNodeStatusEnum.PENDING,
+                        ActionInstanceNodeStatusEnum.UNREADY,
+                        ActionInstanceNodeStatusEnum.READY,
+                        ActionInstanceNodeStatusEnum.QUEUED,
+                        ActionInstanceNodeStatusEnum.UNKNOWN,
+                    ]
+                },
+            }
+        ).update({"$set": {"status": ActionInstanceNodeStatusEnum.PAUSED}})
+        return True, "行动已暂停，引用队列将持续保留"
+
+    @staticmethod
+    async def resume(action_id: str) -> tuple[bool, str]:
+        """恢复暂停行动，重新派发未启动组件并继续执行就绪节点。"""
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if action is None:
+            return False, f"行动不存在，ID: {action_id}"
+        if action.status == ActionFlowStatusEnum.STOPPED:
+            return False, "已停止的行动无法恢复"
+        if action.status != ActionFlowStatusEnum.PAUSED:
+            return False, f"当前状态不允许恢复: {action.status.value}"
+
+        now = datetime.now()
+        paused_seconds = (
+            max((now - action.paused_at).total_seconds(), 0)
+            if action.paused_at
+            else 0
+        )
+        update_fields = {
+            "status": ActionFlowStatusEnum.RUNNING,
+            "paused_at": None,
+            "paused_duration": getattr(action, "paused_duration", 0) + paused_seconds,
+            "updated_at": now,
+        }
+        if action.deadline_at is not None:
+            update_fields["deadline_at"] = action.deadline_at + timedelta(
+                seconds=paused_seconds
+            )
+        claim = await ActionInstanceModel.find_one(
+            {"_id": action_id, "status": ActionFlowStatusEnum.PAUSED}
+        ).update({"$set": update_fields})
+        if not claim or getattr(claim, "modified_count", 0) != 1:
+            return False, "行动状态已变化，恢复失败"
+
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if action is None:
+            return False, "行动在恢复过程中被删除"
+        blueprint = await ActionInstanceService.get_action_blueprint(action)
+        if blueprint is None:
+            await ActionInstanceModel.find_one(
+                {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
+            ).update(
+                {
+                    "$set": {
+                        "status": ActionFlowStatusEnum.PAUSED,
+                        "paused_at": now,
+                        "updated_at": now,
+                    }
+                }
+            )
+            return False, "行动蓝图不存在，无法恢复"
+
+        node_instances = await ActionInstanceNodeModel.find(
+            {"action_id": action_id}
+        ).to_list()
+        node_by_id = {node.node_id: node for node in node_instances}
+        previous_by_node: dict[str, list[str]] = {}
+        for edge in blueprint.graph.edges:
+            previous_by_node.setdefault(edge.target, []).append(edge.source)
+
+        for node_instance in node_instances:
+            if node_instance.status != ActionInstanceNodeStatusEnum.PAUSED:
+                continue
+            previous_nodes = [
+                node_by_id[node_id]
+                for node_id in previous_by_node.get(node_instance.node_id, [])
+                if node_id in node_by_id
+            ]
+            failed_previous = next(
+                (
+                    node
+                    for node in previous_nodes
+                    if node.status
+                    in {
+                        ActionInstanceNodeStatusEnum.FAILED,
+                        ActionInstanceNodeStatusEnum.CANCELLED,
+                        ActionInstanceNodeStatusEnum.TIMEOUT,
+                    }
+                ),
+                None,
+            )
+            if failed_previous is not None:
+                node_status = ActionInstanceNodeStatusEnum.CANCELLED
+                node_update = {
+                    "status": node_status,
+                    "error_message": "前置节点未成功完成，节点不再运行",
+                    "finished_at": now,
+                    "finalization_claimed": True,
+                }
+            else:
+                node_status = (
+                    ActionInstanceNodeStatusEnum.READY
+                    if all(
+                        node.status == ActionInstanceNodeStatusEnum.COMPLETED
+                        for node in previous_nodes
+                    )
+                    else ActionInstanceNodeStatusEnum.UNREADY
+                )
+                node_update = {
+                    "status": node_status,
+                    "start_at": None,
+                }
+            await ActionInstanceNodeModel.find_one(
+                {
+                    "_id": node_instance.id,
+                    "status": ActionInstanceNodeStatusEnum.PAUSED,
+                }
+            ).update({"$set": node_update})
+
+        action = await ActionInstanceModel.find_one(
+            {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
+        )
+        if action is None:
+            return False, "行动恢复过程中状态已变化"
+
+        running_nodes = await ActionInstanceNodeModel.find(
+            {
+                "action_id": action_id,
+                "status": ActionInstanceNodeStatusEnum.RUNNING,
+            }
+        ).to_list()
+        for node_instance in running_nodes:
+            component_runs = await ComponentRunModel.find(
+                {
+                    "node_instance_id": node_instance.id,
+                    "status": ComponentRunStatusEnum.CREATED,
+                    "cancel_requested": False,
+                }
+            ).to_list()
+            if not component_runs:
+                continue
+            node_definition = await ActionInstanceService.get_node_definition(
+                node_instance.definition_id
+            )
+            if node_definition is not None:
+                await ActionInstanceService._dispatch_component_runs(
+                    action,
+                    node_instance,
+                    node_definition,
+                    component_runs,
+                )
+
+        ready_nodes = await ActionInstanceNodeModel.find(
+            {
+                "action_id": action_id,
+                "status": ActionInstanceNodeStatusEnum.READY,
+            }
+        ).to_list()
+        for node_instance in ready_nodes:
+            await ActionInstanceService.run_node(node_instance.id, action_id)
+
+        current_action = await ActionInstanceModel.find_one({"_id": action_id})
+        if (
+            current_action is not None
+            and current_action.status == ActionFlowStatusEnum.RUNNING
+            and await ActionInstanceService.check_action_finished(action_id)
+        ):
+            await ActionInstanceService.finish_action(action_id)
+        return True, "行动已恢复运行"
+
+    @staticmethod
+    async def stop(action_id: str) -> tuple[bool, str]:
+        """不可逆地停止行动、终止活动组件并立即清理引用队列。"""
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if action is None:
+            return False, f"行动不存在，ID: {action_id}"
+        if action.status == ActionFlowStatusEnum.STOPPED:
+            queues_cleaned = await ActionInstanceService.cleanup_action_queues(
+                action_id
+            )
+            if not queues_cleaned:
+                return True, "行动已停止，但部分引用队列清理仍然失败"
+            return True, "行动已处于停止状态，引用队列已清理"
+
+        stoppable_statuses = {
+            ActionFlowStatusEnum.UNKNOWN,
+            ActionFlowStatusEnum.UNREADY,
+            ActionFlowStatusEnum.READY,
+            ActionFlowStatusEnum.RUNNING,
+            ActionFlowStatusEnum.PAUSED,
+        }
+        if action.status not in stoppable_statuses:
+            return False, f"当前状态不允许停止: {action.status.value}"
+
+        now = datetime.now()
+        current_pause_seconds = (
+            max((now - action.paused_at).total_seconds(), 0)
+            if action.status == ActionFlowStatusEnum.PAUSED and action.paused_at
+            else 0
+        )
+        paused_duration = getattr(action, "paused_duration", 0) + current_pause_seconds
+        duration = (
+            max((now - action.start_at).total_seconds() - paused_duration, 0)
+            if action.start_at
+            else 0
+        )
+        claim = await ActionInstanceModel.find_one(
+            {"_id": action_id, "status": {"$in": list(stoppable_statuses)}}
+        ).update(
+            {
+                "$set": {
+                    "status": ActionFlowStatusEnum.STOPPED,
+                    "paused_at": None,
+                    "paused_duration": paused_duration,
+                    "finished_at": now,
+                    "duration": duration,
+                    "updated_at": now,
+                }
+            }
+        )
+        if not claim or getattr(claim, "modified_count", 0) != 1:
+            return False, "行动状态已变化，停止失败"
+
+        active_runs = await ComponentRunModel.find(
+            {
+                "action_id": action_id,
+                "status": {
+                    "$in": [
+                        ComponentRunStatusEnum.DISPATCHED,
+                        ComponentRunStatusEnum.RUNNING,
+                    ]
+                },
+            }
+        ).to_list()
+        await ComponentRunModel.find(
+            {
+                "action_id": action_id,
+                "status": {
+                    "$in": [
+                        ComponentRunStatusEnum.CREATED,
+                        ComponentRunStatusEnum.DISPATCHED,
+                        ComponentRunStatusEnum.RUNNING,
+                    ]
+                },
+            }
+        ).update(
+            {
+                "$set": {
+                    "status": ComponentRunStatusEnum.CANCELLED,
+                    "cancel_requested": True,
+                    "error_message": "行动已停止",
+                    "finished_at": now,
+                    "updated_at": now,
+                }
+            }
+        )
+        await ActionInstanceNodeModel.find(
+            {
+                "action_id": action_id,
+                "status": {
+                    "$in": [
+                        ActionInstanceNodeStatusEnum.PENDING,
+                        ActionInstanceNodeStatusEnum.UNREADY,
+                        ActionInstanceNodeStatusEnum.READY,
+                        ActionInstanceNodeStatusEnum.QUEUED,
+                        ActionInstanceNodeStatusEnum.RUNNING,
+                        ActionInstanceNodeStatusEnum.UNKNOWN,
+                        ActionInstanceNodeStatusEnum.PAUSED,
+                    ]
+                },
+            }
+        ).update(
+            {
+                "$set": {
+                    "status": ActionInstanceNodeStatusEnum.CANCELLED,
+                    "error_message": "行动已停止",
+                    "finished_at": now,
+                    "finalization_claimed": True,
+                }
+            }
+        )
+        if active_runs:
+            await asyncio.gather(
+                *(cancel_component_run(run) for run in active_runs),
+                return_exceptions=True,
+            )
+        queues_cleaned = await ActionInstanceService.cleanup_action_queues(action_id)
+        if not queues_cleaned:
+            return True, "行动已停止，但部分引用队列清理失败"
+        return True, "行动已停止，引用队列已清理"
+
+    @staticmethod
+    async def _dispatch_component_runs(
+        action: ActionInstanceModel,
+        node_instance: ActionInstanceNodeModel,
+        node_definition: ActionNodeModel,
+        component_runs: list[ComponentRunModel],
+    ) -> bool:
+        """派发节点中尚未启动的组件运行。
+
+        暂停发生在派发过程中时保留 CREATED 记录，恢复行动后继续派发；
+        调度平台本身拒绝任务时则按既有失败语义收敛整个节点。
+        """
+        command = node_definition.command
+        command_args = [
+            "run",
+            *node_definition.command_args,
+            "--api-base-url",
+            settings.api_base_url,
+        ]
+        dispatch_failed = False
+        for component_run in component_runs:
+            component_bootstrap = await issue_component_bootstrap(
+                action.id,
+                node_instance.id,
+                component_run.id,
+            )
+            component_args = command_args + [
+                "--component-run-id",
+                component_run.id,
+                f"--component-bootstrap={component_bootstrap}",
+            ]
+            accepted = await dispatch_component_run(
+                component_run,
+                command,
+                component_args,
+                priority=action.schedule_priority,
+            )
+            if not accepted:
+                current_action = await ActionInstanceModel.find_one(
+                    {"_id": action.id}
+                )
+                if (
+                    current_action is None
+                    or current_action.status != ActionFlowStatusEnum.RUNNING
+                ):
+                    return False
+                logger.error(
+                    "运行组件失败，调度平台无结果返回，Component ID: "
+                    f"{component_run.component_id}"
+                )
+                dispatch_failed = True
+                break
+
+        if not dispatch_failed:
+            return True
+
+        await ComponentRunModel.find(
+            {
+                "node_instance_id": node_instance.id,
+                "status": ComponentRunStatusEnum.CREATED,
+            }
+        ).update(
+            {
+                "$set": {
+                    "status": ComponentRunStatusEnum.CANCELLED,
+                    "error_message": "同节点组件派发失败，运行已取消",
+                    "finished_at": datetime.now(),
+                    "updated_at": datetime.now(),
+                }
+            }
+        )
+        await ComponentRunModel.find(
+            {
+                "node_instance_id": node_instance.id,
+                "status": {
+                    "$in": [
+                        ComponentRunStatusEnum.DISPATCHED,
+                        ComponentRunStatusEnum.RUNNING,
+                    ]
+                },
+            }
+        ).update({"$set": {"cancel_requested": True}})
+        node_instance.status = ActionInstanceNodeStatusEnum.FAILED
+        node_instance.finalization_claimed = True
+        node_instance.error_message = "运行组件失败，调度平台无结果返回"
+        node_instance.finished_at = datetime.now()
+        node_instance.duration = (
+            (datetime.now() - node_instance.start_at).total_seconds()
+            if node_instance.start_at
+            else 0
+        )
+        await node_instance.save()
+        await ActionInstanceService.cancel_following_nodes(
+            action.id, node_instance.node_id
+        )
+        if await ActionInstanceService.check_action_finished(action.id):
+            await ActionInstanceService.finish_action(action.id)
+        return False
+
 
     @staticmethod
     async def run_node(node_instance_id: str, action_id: str):
@@ -415,6 +836,31 @@ class ActionInstanceService:
         node_definition = await ActionInstanceService.get_node_definition(node_instance.definition_id)
         if not node_definition:
             logger.error(f"未找到节点定义，Node Instance ID: {node_instance_id}")
+            return False
+
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if action is None:
+            logger.error(f"未找到行动，Action ID: {action_id}")
+            return False
+        if action.status != ActionFlowStatusEnum.RUNNING:
+            target_status = (
+                ActionInstanceNodeStatusEnum.PAUSED
+                if action.status == ActionFlowStatusEnum.PAUSED
+                else ActionInstanceNodeStatusEnum.CANCELLED
+            )
+            await ActionInstanceNodeModel.find_one(
+                {
+                    "_id": node_instance_id,
+                    "status": {
+                        "$in": [
+                            ActionInstanceNodeStatusEnum.PENDING,
+                            ActionInstanceNodeStatusEnum.UNKNOWN,
+                            ActionInstanceNodeStatusEnum.UNREADY,
+                            ActionInstanceNodeStatusEnum.READY,
+                        ]
+                    },
+                }
+            ).update({"$set": {"status": target_status}})
             return False
         
         # 检查前置节点是否全部完成
@@ -472,12 +918,22 @@ class ActionInstanceService:
             logger.error(f"未找到行动，Action ID: {action_id}")
             return False
         if action.status != ActionFlowStatusEnum.RUNNING:
-            node_instance.status = ActionInstanceNodeStatusEnum.CANCELLED
-            node_instance.finished_at = datetime.now()
-            node_instance.duration = (
-                datetime.now() - node_instance.start_at
-            ).total_seconds()
-            await node_instance.save()
+            target_status = (
+                ActionInstanceNodeStatusEnum.PAUSED
+                if action.status == ActionFlowStatusEnum.PAUSED
+                else ActionInstanceNodeStatusEnum.CANCELLED
+            )
+            node_update = {"status": target_status}
+            if target_status == ActionInstanceNodeStatusEnum.PAUSED:
+                node_update["start_at"] = None
+            else:
+                node_update["finished_at"] = datetime.now()
+            await ActionInstanceNodeModel.find_one(
+                {
+                    "_id": node_instance.id,
+                    "status": ActionInstanceNodeStatusEnum.QUEUED,
+                }
+            ).update({"$set": node_update})
             return False
         blueprint = await ActionInstanceService.get_action_blueprint(action)
         if not blueprint:
@@ -492,9 +948,10 @@ class ActionInstanceService:
                     continue
                 
                 if handle_definition.type == ActionConfigIOTypeEnum.REFERENCE:
-                    queue_name = generate_id(action_id + edge.target + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
-                    node_instance.reference_queues[edge.target] = queue_name
-                    logger.info(f"为节点 {node_instance.node_id} -> {edge.target} 生成队列: {queue_name}")
+                    if edge.target not in node_instance.reference_queues:
+                        queue_name = generate_id(action_id + edge.target + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
+                        node_instance.reference_queues[edge.target] = queue_name
+                        logger.info(f"为节点 {node_instance.node_id} -> {edge.target} 生成队列: {queue_name}")
         
         if node_instance.reference_queues:
             reference_claim = await ActionInstanceNodeModel.find_one(
@@ -526,12 +983,6 @@ class ActionInstanceService:
             if await ActionInstanceService.check_action_finished(action.id):
                 await ActionInstanceService.finish_action(action.id)
             return False
-        command_args = [
-            "run",
-            *node_definition.command_args,
-            "--api-base-url",
-            settings.api_base_url,
-        ]
         related_components = node_definition.related_components
 
         if not related_components:
@@ -543,6 +994,16 @@ class ActionInstanceService:
             await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
             if await ActionInstanceService.check_action_finished(action.id):
                 await ActionInstanceService.finish_action(action.id)
+            return False
+
+        running_claim = await ActionInstanceNodeModel.find_one(
+            {
+                "_id": node_instance.id,
+                "status": ActionInstanceNodeStatusEnum.QUEUED,
+                "finalization_claimed": False,
+            }
+        ).update({"$set": {"status": ActionInstanceNodeStatusEnum.RUNNING}})
+        if not running_claim or getattr(running_claim, "modified_count", 0) != 1:
             return False
 
         component_runs: list[ComponentRunModel] = []
@@ -564,103 +1025,12 @@ class ActionInstanceService:
             await component_run.insert()
             component_runs.append(component_run)
 
-        running_claim = await ActionInstanceNodeModel.find_one(
-            {
-                "_id": node_instance.id,
-                "status": ActionInstanceNodeStatusEnum.QUEUED,
-                "finalization_claimed": False,
-            }
-        ).update({"$set": {"status": ActionInstanceNodeStatusEnum.RUNNING}})
-        if not running_claim or getattr(running_claim, "modified_count", 0) != 1:
-            await ComponentRunModel.find(
-                {
-                    "node_instance_id": node_instance.id,
-                    "status": ComponentRunStatusEnum.CREATED,
-                }
-            ).update(
-                {
-                    "$set": {
-                        "status": ComponentRunStatusEnum.CANCELLED,
-                        "cancel_requested": True,
-                        "error_message": "节点已结束，组件不再派发",
-                        "finished_at": datetime.now(),
-                        "updated_at": datetime.now(),
-                    }
-                }
-            )
-            return False
-
-        dispatch_failed = False
-        for component_run in component_runs:
-            component_bootstrap = await issue_component_bootstrap(
-                action.id,
-                node_instance.id,
-                component_run.id,
-            )
-            component_args = command_args + [
-                "--component-run-id",
-                component_run.id,
-                f"--component-bootstrap={component_bootstrap}",
-            ]
-            accepted = await dispatch_component_run(
-                component_run,
-                command,
-                component_args,
-                priority=action.schedule_priority,
-            )
-            if not accepted:
-                current_action = await ActionInstanceModel.find_one({"_id": action.id})
-                if (
-                    current_action is None
-                    or current_action.status != ActionFlowStatusEnum.RUNNING
-                ):
-                    return False
-                logger.error(
-                    "运行组件失败，调度平台无结果返回，Component ID: "
-                    f"{component_run.component_id}"
-                )
-                dispatch_failed = True
-                break
-
-        if dispatch_failed:
-            await ComponentRunModel.find(
-                {
-                    "node_instance_id": node_instance.id,
-                    "status": ComponentRunStatusEnum.CREATED,
-                }
-            ).update(
-                {
-                    "$set": {
-                        "status": ComponentRunStatusEnum.CANCELLED,
-                        "error_message": "同节点组件派发失败，运行已取消",
-                        "finished_at": datetime.now(),
-                        "updated_at": datetime.now(),
-                    }
-                }
-            )
-            await ComponentRunModel.find(
-                {
-                    "node_instance_id": node_instance.id,
-                    "status": {
-                        "$in": [
-                            ComponentRunStatusEnum.DISPATCHED,
-                            ComponentRunStatusEnum.RUNNING,
-                        ]
-                    },
-                }
-            ).update({"$set": {"cancel_requested": True}})
-            node_instance.status = ActionInstanceNodeStatusEnum.FAILED
-            node_instance.finalization_claimed = True
-            node_instance.error_message = "运行组件失败，调度平台无结果返回"
-            node_instance.finished_at = datetime.now()
-            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-            await node_instance.save()
-            await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
-            if await ActionInstanceService.check_action_finished(action.id):
-                await ActionInstanceService.finish_action(action.id)
-            return False
-
-        return True
+        return await ActionInstanceService._dispatch_component_runs(
+            action,
+            node_instance,
+            node_definition,
+            component_runs,
+        )
 
     @staticmethod
     async def cancel_following_nodes(action_id: str, node_id: str):
@@ -681,7 +1051,8 @@ class ActionInstanceService:
                 ActionInstanceNodeStatusEnum.UNREADY, 
                 ActionInstanceNodeStatusEnum.READY,
                 ActionInstanceNodeStatusEnum.QUEUED,
-                ActionInstanceNodeStatusEnum.UNKNOWN
+                ActionInstanceNodeStatusEnum.UNKNOWN,
+                ActionInstanceNodeStatusEnum.PAUSED,
             ]:
                 node_instance.status = ActionInstanceNodeStatusEnum.CANCELLED
                 node_instance.finished_at = datetime.now()
@@ -860,7 +1231,11 @@ class ActionInstanceService:
                         "deadline_at": deadline_at,
                         "finished_at": now,
                         "duration": (
-                            (now - action.start_at).total_seconds()
+                            max(
+                                (now - action.start_at).total_seconds()
+                                - getattr(action, "paused_duration", 0),
+                                0,
+                            )
                             if action.start_at
                             else 0
                         ),
@@ -1013,7 +1388,11 @@ class ActionInstanceService:
         )
         if (
             current_action is None
-            or current_action.status != ActionFlowStatusEnum.RUNNING
+            or current_action.status
+            not in {
+                ActionFlowStatusEnum.RUNNING,
+                ActionFlowStatusEnum.PAUSED,
+            }
         ):
             return False
         
@@ -1021,7 +1400,11 @@ class ActionInstanceService:
             node_instance.status = ActionInstanceNodeStatusEnum.COMPLETED
             node_instance.progress = 100.0
             node_instance.finished_at = datetime.now()
-            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            node_instance.duration = (
+                (datetime.now() - node_instance.start_at).total_seconds()
+                if node_instance.start_at
+                else 0
+            )
             for handle_name, value in result.outputs.items():
                 handle_definition = await ActionInstanceService.get_handle_definition_by_name(handle_name)
                 if not handle_definition:
@@ -1038,8 +1421,13 @@ class ActionInstanceService:
                 )
                 
             await node_instance.save()
-            
+
             action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
+            if action is None or action.status not in {
+                ActionFlowStatusEnum.RUNNING,
+                ActionFlowStatusEnum.PAUSED,
+            }:
+                return False
             action.finished_nodes_instance.append(node_instance.id)
             node_instance.progress = 100.0
             await action.save()
@@ -1051,7 +1439,11 @@ class ActionInstanceService:
             }[result.status]
             node_instance.error_message = result.error
             node_instance.finished_at = datetime.now()
-            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
+            node_instance.duration = (
+                (datetime.now() - node_instance.start_at).total_seconds()
+                if node_instance.start_at
+                else 0
+            )
             await node_instance.save()
             
             # 更新行动进度
@@ -1062,9 +1454,18 @@ class ActionInstanceService:
             
             # 取消后续节点
             await ActionInstanceService.cancel_following_nodes(node_instance.action_id, node_instance.node_id)
-            
+
             # 检查行动是否完成
-            if await ActionInstanceService.check_action_finished(node_instance.action_id):
+            action = await ActionInstanceModel.find_one(
+                {"_id": node_instance.action_id}
+            )
+            if (
+                action is not None
+                and action.status == ActionFlowStatusEnum.RUNNING
+                and await ActionInstanceService.check_action_finished(
+                    node_instance.action_id
+                )
+            ):
                 await ActionInstanceService.finish_action(node_instance.action_id)
             
             return False
@@ -1079,6 +1480,11 @@ class ActionInstanceService:
         if not action:
             logger.error(f"未找到行动，Action ID: {node_instance.action_id}")
             return False
+        if action.status not in {
+            ActionFlowStatusEnum.RUNNING,
+            ActionFlowStatusEnum.PAUSED,
+        }:
+            return False
             
         node_definition = await ActionInstanceService.get_node_definition(node_instance.definition_id)
         if not node_definition:
@@ -1087,8 +1493,13 @@ class ActionInstanceService:
         
         next_nodes = await ActionInstanceService.find_next_node(action.id, node_instance.node_id)
         if not next_nodes:
-            if await ActionInstanceService.check_action_finished(action.id):
+            if (
+                action.status == ActionFlowStatusEnum.RUNNING
+                and await ActionInstanceService.check_action_finished(action.id)
+            ):
                 await ActionInstanceService.finish_action(action.id)
+                return True
+            if action.status == ActionFlowStatusEnum.PAUSED:
                 return True
             else:
                 logger.warning(f"行动未完成，但无法找到下一个节点，Action ID: {action.id}, Node Instance ID: {node_instance.id}")
@@ -1134,10 +1545,13 @@ class ActionInstanceService:
                     else:
                         logger.error(f"未找到源连接点的输出数据，Source Handle ID: {source_handle_id}")
 
-            await next_node_instance.save()
-            
+            await ActionInstanceNodeModel.find_one(
+                {"_id": next_node_instance.id}
+            ).update({"$set": {"inputs": next_node_instance.inputs}})
+
             # 运行下一个节点
-            await ActionInstanceService.run_node(next_node_instance.id, action.id)
+            if action.status == ActionFlowStatusEnum.RUNNING:
+                await ActionInstanceService.run_node(next_node_instance.id, action.id)
         
         return True
     
@@ -1203,7 +1617,7 @@ class ActionInstanceService:
         return True
 
     @staticmethod
-    async def cleanup_action_queues(action_id: str):
+    async def cleanup_action_queues(action_id: str) -> bool:
         """
         清理行动相关的所有临时队列
         """
@@ -1213,12 +1627,17 @@ class ActionInstanceService:
             for queue_name in node_instance.reference_queues.values():
                 queue_names.add(queue_name)
         
+        cleanup_results = []
         for queue_name in queue_names:
             try:
-                await delete_queue(queue_name)
-                logger.info(f"已清理队列: {queue_name}")
+                deleted = await delete_queue(queue_name)
+                cleanup_results.append(deleted)
+                if deleted:
+                    logger.info(f"已清理队列: {queue_name}")
             except Exception as e:
+                cleanup_results.append(False)
                 logger.error(f"清理队列失败，队列名: {queue_name}, 错误: {str(e)}")
+        return all(cleanup_results)
     
     @staticmethod
     async def finish_action(action_id: str):
@@ -1231,9 +1650,7 @@ class ActionInstanceService:
             return False
         if action.status == ActionFlowStatusEnum.TIMEOUT:
             return True
-        
-        await ActionInstanceService.cleanup_action_queues(action_id)
-        
+
         timeout_count = await ActionInstanceNodeModel.find({
             "action_id": action_id,
             "status": ActionInstanceNodeStatusEnum.TIMEOUT,
@@ -1264,7 +1681,11 @@ class ActionInstanceService:
                     "status": status,
                     "finished_at": now,
                     "duration": (
-                        (now - action.start_at).total_seconds()
+                        max(
+                            (now - action.start_at).total_seconds()
+                            - getattr(action, "paused_duration", 0),
+                            0,
+                        )
                         if action.start_at
                         else 0
                     ),
@@ -1278,10 +1699,14 @@ class ActionInstanceService:
                         if action.nodes_id
                         else 0.0
                     ),
+                    "updated_at": now,
                 }
             }
         )
-        return bool(claim and getattr(claim, "modified_count", 0) == 1)
+        if not claim or getattr(claim, "modified_count", 0) != 1:
+            return False
+        await ActionInstanceService.cleanup_action_queues(action_id)
+        return True
 
     @staticmethod
     async def check_action_finished(action_id: str):

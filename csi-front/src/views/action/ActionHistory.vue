@@ -183,7 +183,10 @@
                   </div>
                 </div>
 
-                <div v-if="action.status === ACTION_STATUS.RUNNING || action.status === ACTION_STATUS.COMPLETED" class="mb-4">
+                <div
+                  v-if="[ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED, ACTION_STATUS.COMPLETED].includes(action.status)"
+                  class="mb-4"
+                >
                   <div class="flex justify-between text-xs text-gray-600 mb-1">
                     <span>执行进度</span>
                     <span v-if="action.completedSteps && action.totalSteps">
@@ -212,6 +215,36 @@
                   >
                     <template #icon><Icon icon="mdi:replay" /></template>
                     重新执行
+                  </el-button>
+                  <el-button
+                    v-if="action.status === ACTION_STATUS.RUNNING"
+                    type="warning"
+                    link
+                    size="small"
+                    @click.stop="pauseAction(action.id)"
+                  >
+                    <template #icon><Icon icon="mdi:pause" /></template>
+                    暂停
+                  </el-button>
+                  <el-button
+                    v-if="action.status === ACTION_STATUS.PAUSED"
+                    type="success"
+                    link
+                    size="small"
+                    @click.stop="resumeAction(action.id)"
+                  >
+                    <template #icon><Icon icon="mdi:play" /></template>
+                    恢复
+                  </el-button>
+                  <el-button
+                    v-if="[ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED].includes(action.status)"
+                    type="danger"
+                    link
+                    size="small"
+                    @click.stop="stopAction(action.id)"
+                  >
+                    <template #icon><Icon icon="mdi:stop" /></template>
+                    停止
                   </el-button>
                   <el-button type="danger" link size="small" @click.stop="deleteAction(action.id)">
                     <template #icon><Icon icon="mdi:delete" /></template>
@@ -265,7 +298,7 @@
                   <span v-else class="text-gray-400">-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="200" fixed="right">
+              <el-table-column label="操作" width="320" fixed="right">
                 <template #default="{ row }">
                   <div class="flex items-center gap-2">
                     <el-button type="primary" link size="small" @click="viewActionDetail(row.id)">
@@ -281,6 +314,36 @@
                     >
                       <template #icon><Icon icon="mdi:replay" /></template>
                       重跑
+                    </el-button>
+                    <el-button
+                      v-if="row.status === ACTION_STATUS.RUNNING"
+                      type="warning"
+                      link
+                      size="small"
+                      @click="pauseAction(row.id)"
+                    >
+                      <template #icon><Icon icon="mdi:pause" /></template>
+                      暂停
+                    </el-button>
+                    <el-button
+                      v-if="row.status === ACTION_STATUS.PAUSED"
+                      type="success"
+                      link
+                      size="small"
+                      @click="resumeAction(row.id)"
+                    >
+                      <template #icon><Icon icon="mdi:play" /></template>
+                      恢复
+                    </el-button>
+                    <el-button
+                      v-if="[ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED].includes(row.status)"
+                      type="danger"
+                      link
+                      size="small"
+                      @click="stopAction(row.id)"
+                    >
+                      <template #icon><Icon icon="mdi:stop" /></template>
+                      停止
                     </el-button>
                     <el-button type="danger" link size="small" @click="deleteAction(row.id)">
                       <template #icon><Icon icon="mdi:delete" /></template>
@@ -441,6 +504,50 @@ const handlePageSizeChange = (pageSize) => {
 
 const viewActionDetail = (actionId) => {
   router.push(`/action/${actionId}`)
+}
+
+const pauseAction = async (actionId) => {
+  try {
+    await ElMessageBox.confirm('确定要暂停此行动吗？', '确认暂停', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const response = await actionApi.pauseAction(actionId)
+    ElMessage.success(response.message || '行动已暂停')
+    await fetchActions(false)
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.message || '暂停行动失败')
+    }
+  }
+}
+
+const resumeAction = async (actionId) => {
+  try {
+    const response = await actionApi.resumeAction(actionId)
+    ElMessage.success(response.message || '行动已恢复')
+    await fetchActions(false)
+  } catch (error) {
+    ElMessage.error(error?.message || '恢复行动失败')
+  }
+}
+
+const stopAction = async (actionId) => {
+  try {
+    await ElMessageBox.confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
+      confirmButtonText: '确定停止',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const response = await actionApi.stopAction(actionId)
+    ElMessage.success(response.message || '行动已停止')
+    await fetchActions(false)
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.message || '停止行动失败')
+    }
+  }
 }
 
 // 占位方法：重新执行行动，等待后端API完成

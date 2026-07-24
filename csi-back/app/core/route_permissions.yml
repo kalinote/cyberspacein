@@ -54,6 +54,9 @@ routes:
   - {method: POST, path: "/action/start", principal: user, permission: "operation:action:instance:execute"}
   - {method: GET, path: "/action/list", principal: user, permission: "operation:action:instance:read"}
   - {method: GET, path: "/action/detail/{action_id}", principal: user, permission: "operation:action:instance:read"}
+  - {method: POST, path: "/action/{action_id}/pause", principal: user, permission: "operation:action:instance:execute"}
+  - {method: POST, path: "/action/{action_id}/resume", principal: user, permission: "operation:action:instance:execute"}
+  - {method: POST, path: "/action/{action_id}/stop", principal: user, permission: "operation:action:instance:execute"}
   - {method: GET, path: "/action/nodes/{node_instance_id}/logs", principal: user, permission: "operation:action:instance-log:read"}
   - {method: POST, path: "/action/blueprint", principal: user, permission: "operation:action:blueprint:create"}
   - {method: GET, path: "/action/blueprint/list", principal: user, permission: "operation:action:blueprint:read"}
@@ -179,6 +182,8 @@ routes:
   - {method: PATCH, path: "/system/config/runtime", principal: user, permission: "operation:system:config:update"}
   - {method: PATCH, path: "/system/config/pending", principal: user, permission: "operation:system:config:update"}
   - {method: POST, path: "/system/config/pending/cancel", principal: user, permission: "operation:system:config:execute"}
+  - {method: GET, path: "/system/config/coordination/preview", principal: user, permission: "operation:system:config:execute"}
+  - {method: POST, path: "/system/config/coordination/commit", principal: user, permission: "operation:system:config:execute"}
   - {method: GET, path: "/system/config/history", principal: user, permission: "operation:system:config:read"}
   - {method: GET, path: "/system/config/history/{version}", principal: user, permission: "operation:system:config:read"}
   - {method: POST, path: "/system/config/history/{version}/restore", principal: user, permission: "operation:system:config:execute"}

@@ -53,6 +53,18 @@ export const actionApi = {
   runAction(data) {
     return request.post(`/action/start`, data)
   },
+  // 暂停行动
+  pauseAction(id) {
+    return request.post(`/action/${id}/pause`)
+  },
+  // 恢复行动
+  resumeAction(id) {
+    return request.post(`/action/${id}/resume`)
+  },
+  // 不可逆停止行动
+  stopAction(id) {
+    return request.post(`/action/${id}/stop`)
+  },
   // 获取行动详情
   getActionDetail(id) {
     return request.get(`/action/detail/${id}`)

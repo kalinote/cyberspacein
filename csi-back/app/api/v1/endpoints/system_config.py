@@ -16,7 +16,11 @@ from app.core.system_config import (
 from app.dependencies.auth import get_current_user
 from app.models.auth.user import UserModel
 from app.schemas.response import ApiResponseSchema
-from app.schemas.system_config import ConfigChangesRequest, ConfigVersionActionRequest
+from app.schemas.system_config import (
+    ConfigChangesRequest,
+    ConfigCoordinationRequest,
+    ConfigVersionActionRequest,
+)
 from app.service.system_config_history import SystemConfigHistoryService
 
 
@@ -87,6 +91,10 @@ def _history_item(document: Any, *, detail: bool = False) -> dict[str, Any]:
         restore_modes = system_config_manager.restore_modes(document.snapshot)
         item["restore_runtime_fields"] = restore_modes["runtime"]
         item["restore_restart_fields"] = restore_modes["restart"]
+        coordination = getattr(document, "coordination", None)
+        item["coordination"] = (
+            coordination.model_dump() if coordination is not None else None
+        )
     return item
 
 
@@ -188,6 +196,64 @@ async def cancel_pending_system_config(
     return ApiResponseSchema.success(
         data=_mutation_response(state), message="待重启配置已取消"
     )
+
+
+@router.get(
+    "/coordination/preview",
+    response_model=ApiResponseSchema[dict[str, Any]],
+    summary="预览系统配置存储协调",
+)
+async def preview_system_config_coordination(
+    _: UserModel = Depends(require_system_account),
+):
+    try:
+        data = await SystemConfigHistoryService.coordination_preview(
+            system_config_manager
+        )
+    except ConfigError as exc:
+        _raise_config_error(exc)
+    return ApiResponseSchema.success(data=data)
+
+
+@router.post(
+    "/coordination/commit",
+    response_model=ApiResponseSchema[dict[str, Any]],
+    summary="提交系统配置存储协调",
+)
+async def commit_system_config_coordination(
+    request: ConfigCoordinationRequest,
+    current_user: UserModel = Depends(require_system_account),
+):
+    if not request.confirmed:
+        raise BadRequestException("必须确认后才能执行存储协调")
+    try:
+        result = await SystemConfigHistoryService.commit_coordination(
+            system_config_manager,
+            coordination_token=request.coordination_token,
+            resolutions=request.resolutions,
+            actor=current_user.username,
+        )
+    except ConfigError as exc:
+        _raise_config_error(exc)
+    data = _mutation_response(result["state"])
+    data.update(
+        {
+            "history_sync_status": result["history_sync_status"],
+            "operation": "storage_reconcile",
+            "runtime_fields": result["runtime_fields"],
+            "restart_fields": result["restart_fields"],
+            "resolved_from": {
+                "file_version": result["source_file_version"],
+                "database_version": result["source_database_version"],
+            },
+        }
+    )
+    message = (
+        "存储协调版本已保存，MongoDB 历史等待同步"
+        if result["history_sync_status"] == "pending"
+        else "系统配置存储协调完成"
+    )
+    return ApiResponseSchema.success(data=data, message=message)
 
 
 @router.get("/history", response_model=ApiResponseSchema[dict[str, Any]], summary="读取系统配置历史")
