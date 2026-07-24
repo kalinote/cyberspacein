@@ -48,8 +48,11 @@ class ActionNodeModel(Document):
         default_factory=dict,
         description="关联组件超时配置，key为组件ID，value为秒，0表示不限制",
     )
-    command: str = Field(description="执行命令")
-    command_args: list[str] = Field(description="执行命令参数")
+    command: str = Field(default="csi-component", description="执行命令")
+    command_args: list[str] = Field(
+        default_factory=lambda: ["main:run"],
+        description="执行命令参数",
+    )
     is_deleted: bool = Field(default=False, description="是否已删除")
     
     created_at: datetime = Field(default_factory=lambda: datetime.now())

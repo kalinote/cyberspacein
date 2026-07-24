@@ -52,8 +52,11 @@ class ActionNode(BaseModel):
         default_factory=dict,
         description="组件超时秒数，key为组件ID，0表示不限制",
     )
-    command: str = Field(description="执行命令")
-    command_args: list[str] = Field(default=[], description="自定义执行命令参数")
+    command: str = Field(default="csi-component", description="执行命令")
+    command_args: list[str] = Field(
+        default_factory=lambda: ["main:run"],
+        description="自定义执行命令参数",
+    )
 
 
 class ActionNodeResponse(ActionNode):

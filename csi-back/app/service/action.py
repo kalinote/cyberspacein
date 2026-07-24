@@ -966,23 +966,6 @@ class ActionInstanceService:
                 return False
         
         # 这里是开始运行，在此之前应该做好全部准备工作
-        command = node_definition.command
-        if (
-            command != "csi-component"
-            or not node_definition.command_args
-            or node_definition.command_args[0] != "main:run"
-        ):
-            node_instance.status = ActionInstanceNodeStatusEnum.FAILED
-            node_instance.error_message = (
-                "节点运行命令必须为 csi-component，运行参数首项必须为 main:run"
-            )
-            node_instance.finished_at = datetime.now()
-            node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-            await node_instance.save()
-            await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
-            if await ActionInstanceService.check_action_finished(action.id):
-                await ActionInstanceService.finish_action(action.id)
-            return False
         related_components = node_definition.related_components
 
         if not related_components:

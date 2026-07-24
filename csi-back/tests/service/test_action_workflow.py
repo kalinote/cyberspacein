@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
-from app.schemas.constants import ActionInstanceNodeStatusEnum
+from app.schemas.action.node import ActionNode
+from app.schemas.constants import ActionInstanceNodeStatusEnum, ActionNodeTypeEnum
 from app.service import action as action_service
 from app.service.action import ActionInstanceService
 
@@ -38,6 +39,21 @@ class _FindMany:
 
 async def _node_definition(_definition_id):
     return SimpleNamespace(id="definition-1")
+
+
+def test_action_node_uses_default_component_command():
+    node = ActionNode(
+        name="分析节点",
+        description="测试默认运行命令",
+        type=ActionNodeTypeEnum.PROCESSOR,
+        version="1.0.0",
+        handles=[],
+        inputs=[],
+        related_components=[],
+    )
+
+    assert node.command == "csi-component"
+    assert node.command_args == ["main:run"]
 
 
 @pytest.mark.asyncio
@@ -150,7 +166,7 @@ async def test_run_node_can_move_pending_join_node_to_unready(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_node_keeps_leading_hyphen_bootstrap_as_option_value(monkeypatch):
+async def test_run_node_dispatches_custom_command_and_keeps_bootstrap_value(monkeypatch):
     node = SimpleNamespace(
         id="node-instance-1",
         node_id="start-node",
@@ -161,8 +177,8 @@ async def test_run_node_keeps_leading_hyphen_bootstrap_as_option_value(monkeypat
         save=AsyncMock(),
     )
     node_definition = SimpleNamespace(
-        command="csi-component",
-        command_args=["main:run"],
+        command="python",
+        command_args=["worker.py"],
         related_components=["component-1"],
         component_timeouts={"component-1": 30},
     )
@@ -220,6 +236,8 @@ async def test_run_node_keeps_leading_hyphen_bootstrap_as_option_value(monkeypat
 
     assert await ActionInstanceService.run_node(node.id, action.id) is True
     assert component_run_factory.call_args.kwargs["timeout_seconds"] == 30
+    assert dispatch.await_args.args[1] == "python"
     command_args = dispatch.await_args.args[2]
+    assert "worker.py" in command_args
     assert "--component-bootstrap=-bootstrap" in command_args
     assert "--component-bootstrap" not in command_args
