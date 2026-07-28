@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from loguru import logger
 from app.core.config import settings
 from app.models.action.action import ActionInstanceModel
@@ -116,7 +116,10 @@ async def dispatch_component_run(
             "$set": {
                 "status": ComponentRunStatusEnum.DISPATCHED,
                 "dispatch_ref": dispatch_key,
-                "lease_expires_at": None,
+                "lease_expires_at": now
+                + timedelta(
+                    seconds=settings.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS
+                ),
                 "updated_at": now,
             }
         }

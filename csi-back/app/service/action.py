@@ -2608,6 +2608,14 @@ class ActionInstanceService:
                 and run.lease_expires_at <= now
             )
             or (
+                run.status == ComponentRunStatusEnum.DISPATCHED
+                and run.lease_expires_at is None
+                and (
+                    now - run.updated_at
+                ).total_seconds()
+                >= settings.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS
+            )
+            or (
                 run.timeout_seconds > 0
                 and run.started_at is not None
                 and (now - run.started_at).total_seconds() >= run.timeout_seconds
@@ -2615,13 +2623,21 @@ class ActionInstanceService:
         ]
         expired = 0
         for component_run in stale_runs:
+            error_message = (
+                "组件启动超时，未在引导凭证有效期内完成初始化"
+                if (
+                    component_run.status == ComponentRunStatusEnum.DISPATCHED
+                    and component_run.started_at is None
+                )
+                else "组件心跳租约或运行时限已过期"
+            )
             accepted = await ActionInstanceService.finish_component_run(
                 component_run.id,
                 SDKResultRequest(
                     result_id=f"timeout:{component_run.id}:{component_run.attempt}",
                     attempt=component_run.attempt,
                     status="timed_out",
-                    error="组件心跳租约或运行时限已过期",
+                    error=error_message,
                     exit_code=1,
                 ),
             )

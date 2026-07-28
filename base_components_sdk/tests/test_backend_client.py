@@ -41,3 +41,24 @@ def test_initialize_requests_component_context(monkeypatch) -> None:
         "init",
         timeout=15,
     )
+
+
+def test_exchange_token_records_component_attempt(monkeypatch) -> None:
+    client = BackendClient("http://localhost:8000/api/v1", "test-run")
+    request = MagicMock(
+        return_value={"component_token": "component-token", "attempt": 3}
+    )
+    monkeypatch.setattr(client, "_request", request)
+
+    try:
+        assert client.exchange_token("bootstrap") == "component-token"
+        assert client.attempt == 3
+    finally:
+        client.close()
+
+    request.assert_called_once_with(
+        "POST",
+        "token",
+        headers={"X-Component-Bootstrap": "bootstrap"},
+        timeout=10,
+    )

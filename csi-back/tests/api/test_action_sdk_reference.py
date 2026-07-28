@@ -20,6 +20,35 @@ class _FindMany:
 
 
 @pytest.mark.asyncio
+async def test_token_exchange_returns_component_attempt(monkeypatch):
+    request = SimpleNamespace(
+        state=SimpleNamespace(
+            component_bootstrap_context=SimpleNamespace(
+                action_id="action-1",
+                node_instance_id="node-1",
+            )
+        )
+    )
+    monkeypatch.setattr(
+        sdk_endpoint.ComponentRunModel,
+        "find_one",
+        AsyncMock(return_value=SimpleNamespace(attempt=3)),
+    )
+    monkeypatch.setattr(
+        sdk_endpoint,
+        "create_component_token",
+        lambda *_args: "component-token",
+    )
+
+    response = await sdk_endpoint.exchange_component_token("run-1", request)
+
+    assert response.data == {
+        "component_token": "component-token",
+        "attempt": 3,
+    }
+
+
+@pytest.mark.asyncio
 async def test_build_io_exposes_reference_input_stream_contract(monkeypatch):
     binding = ReferenceQueueBinding(
         edge_id="edge-a",
@@ -73,3 +102,97 @@ async def test_build_io_exposes_reference_input_stream_contract(monkeypatch):
             }
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_build_io_keeps_value_list_without_queue_lookup(monkeypatch):
+    target = SimpleNamespace(
+        id="target-instance",
+        action_id="action-1",
+        node_id="target",
+        inputs={
+            "keywords": ActionConfigIOModel(
+                type=ActionConfigIOTypeEnum.VALUE,
+                key="keywords",
+                value=["莫菁"],
+            ),
+            "platforms": ActionConfigIOModel(
+                type=ActionConfigIOTypeEnum.VALUE,
+                key="platforms",
+                value=["javbus"],
+            ),
+        },
+        outputs={},
+        reference_queue_bindings={},
+    )
+    find_nodes = AsyncMock()
+    monkeypatch.setattr(ActionInstanceNodeModel, "find", find_nodes)
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceModel,
+        "find_one",
+        AsyncMock(return_value=None),
+    )
+
+    inputs, outputs = await sdk_endpoint._build_io(target)
+
+    assert outputs == {}
+    assert inputs == {
+        "keywords": {"type": "value", "value": ["莫菁"]},
+        "platforms": {"type": "value", "value": ["javbus"]},
+    }
+    find_nodes.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_io_exposes_all_reference_input_streams(monkeypatch):
+    bindings = [
+        ReferenceQueueBinding(
+            edge_id=f"edge-{suffix}",
+            stream_id=f"stream-{suffix}",
+            queue_name=f"queue-{suffix}",
+            owner_action_id="action-1",
+            source_node_id=f"source-{suffix}",
+            source_port_id="out",
+            target_node_id="target",
+            target_port_id="in",
+            expected_producer_ids=[f"run-{suffix}"],
+        )
+        for suffix in ("a", "b")
+    ]
+    source = SimpleNamespace(
+        reference_queue_bindings={
+            binding.edge_id: binding for binding in bindings
+        }
+    )
+    target = SimpleNamespace(
+        id="target-instance",
+        action_id="action-1",
+        node_id="target",
+        inputs={
+            "in": ActionConfigIOModel(
+                type=ActionConfigIOTypeEnum.REFERENCE,
+                key="items",
+                value=["queue-a", "queue-b"],
+            )
+        },
+        outputs={},
+        reference_queue_bindings={},
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([source, target])),
+    )
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceModel,
+        "find_one",
+        AsyncMock(return_value=None),
+    )
+
+    inputs, _ = await sdk_endpoint._build_io(target)
+
+    assert inputs["items"]["value"] == ["queue-a", "queue-b"]
+    assert [stream["queue_name"] for stream in inputs["items"]["streams"]] == [
+        "queue-a",
+        "queue-b",
+    ]

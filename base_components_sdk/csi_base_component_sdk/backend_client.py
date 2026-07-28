@@ -24,6 +24,7 @@ class BackendClient:
         _suppress_internal_http_debug_logs()
         self.api_base_url = api_base_url.rstrip("/")
         self.component_run_id = component_run_id
+        self.attempt: int | None = None
         self._session = requests.Session()
         self._lock = threading.Lock()
 
@@ -49,6 +50,10 @@ class BackendClient:
         token = data.get("component_token")
         if not token:
             raise RuntimeError("组件短期凭证交换失败")
+        attempt = data.get("attempt")
+        if not isinstance(attempt, int) or attempt < 1:
+            raise RuntimeError("组件短期凭证响应缺少有效运行次数")
+        self.attempt = attempt
         self.set_token(token)
         return token
 

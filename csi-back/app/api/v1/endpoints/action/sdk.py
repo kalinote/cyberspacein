@@ -27,18 +27,22 @@ router = APIRouter(prefix="/sdk", tags=["行动SDK"])
 
 @router.post(
     "/{component_run_id}/token",
-    response_model=ApiResponseSchema[dict[str, str]],
+    response_model=ApiResponseSchema[dict[str, Any]],
     summary="交换组件运行短期凭证",
 )
 async def exchange_component_token(component_run_id: str, request: Request):
     context = request.state.component_bootstrap_context
+    component_run = await ComponentRunModel.find_one({"_id": component_run_id})
+    if component_run is None:
+        return ApiResponseSchema.error(code=240417, message="组件运行实例不存在")
     return ApiResponseSchema.success(
         data={
             "component_token": create_component_token(
                 context.action_id,
                 context.node_instance_id,
                 component_run_id,
-            )
+            ),
+            "attempt": component_run.attempt,
         }
     )
 
@@ -64,16 +68,29 @@ async def _build_io(
     inputs: dict[str, Any] = {}
     for value in node_instance.inputs.values():
         input_payload = {"type": value.type.value, "value": value.value}
-        binding = binding_by_queue.get(value.value)
-        if binding is not None:
-            input_payload["streams"] = [
-                {
-                    "queue_name": binding.queue_name,
-                    "stream_id": binding.stream_id,
-                    "protocol": binding.protocol_version.value,
-                    "expected_producer_ids": binding.expected_producer_ids,
-                }
-            ]
+        if value.type == ActionConfigIOTypeEnum.REFERENCE:
+            queue_names = (
+                value.value
+                if isinstance(value.value, list)
+                else [value.value]
+            )
+            streams = []
+            for queue_name in queue_names:
+                if not isinstance(queue_name, str):
+                    continue
+                binding = binding_by_queue.get(queue_name)
+                if binding is None:
+                    continue
+                streams.append(
+                    {
+                        "queue_name": binding.queue_name,
+                        "stream_id": binding.stream_id,
+                        "protocol": binding.protocol_version.value,
+                        "expected_producer_ids": binding.expected_producer_ids,
+                    }
+                )
+            if streams:
+                input_payload["streams"] = streams
         inputs[value.key] = input_payload
 
     outputs: dict[str, Any] = {}

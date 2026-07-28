@@ -205,6 +205,7 @@ async def test_component_runtime_timeout_uses_own_limit_and_keeps_zero_unlimited
     unlimited = SimpleNamespace(
         id="run-unlimited",
         attempt=1,
+        status=ComponentRunStatusEnum.RUNNING,
         timeout_seconds=0,
         started_at=now - timedelta(hours=3),
         lease_expires_at=now + timedelta(minutes=1),
@@ -212,6 +213,7 @@ async def test_component_runtime_timeout_uses_own_limit_and_keeps_zero_unlimited
     expired = SimpleNamespace(
         id="run-expired",
         attempt=1,
+        status=ComponentRunStatusEnum.RUNNING,
         timeout_seconds=5,
         started_at=now - timedelta(seconds=10),
         lease_expires_at=now + timedelta(minutes=1),
@@ -229,6 +231,66 @@ async def test_component_runtime_timeout_uses_own_limit_and_keeps_zero_unlimited
     assert await ActionInstanceService.expire_stale_component_runs() == 1
     assert finish_run.await_args.args[0] == "run-expired"
     assert stop_run.await_args.args[0].id == "run-expired"
+
+
+@pytest.mark.asyncio
+async def test_dispatched_component_expires_when_sdk_never_initializes(monkeypatch):
+    now = datetime.now()
+    dispatched = SimpleNamespace(
+        id="run-dispatched",
+        attempt=1,
+        status=ComponentRunStatusEnum.DISPATCHED,
+        timeout_seconds=0,
+        started_at=None,
+        lease_expires_at=now - timedelta(seconds=1),
+    )
+    monkeypatch.setattr(
+        ComponentRunModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([dispatched])),
+    )
+    finish_run = AsyncMock(return_value=True)
+    stop_run = AsyncMock(return_value=True)
+    monkeypatch.setattr(ActionInstanceService, "finish_component_run", finish_run)
+    monkeypatch.setattr(action_service, "cancel_component_run", stop_run)
+
+    assert await ActionInstanceService.expire_stale_component_runs() == 1
+    result = finish_run.await_args.args[1]
+    assert result.status == "timed_out"
+    assert "完成初始化" in result.error
+    stop_run.assert_awaited_once_with(dispatched)
+
+
+@pytest.mark.asyncio
+async def test_legacy_dispatched_component_without_lease_is_recovered(monkeypatch):
+    now = datetime.now()
+    dispatched = SimpleNamespace(
+        id="run-without-lease",
+        attempt=1,
+        status=ComponentRunStatusEnum.DISPATCHED,
+        timeout_seconds=0,
+        started_at=None,
+        lease_expires_at=None,
+        updated_at=now
+        - timedelta(
+            seconds=action_service.settings.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS
+            + 1
+        ),
+    )
+    monkeypatch.setattr(
+        ComponentRunModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([dispatched])),
+    )
+    finish_run = AsyncMock(return_value=True)
+    stop_run = AsyncMock(return_value=True)
+    monkeypatch.setattr(ActionInstanceService, "finish_component_run", finish_run)
+    monkeypatch.setattr(action_service, "cancel_component_run", stop_run)
+
+    assert await ActionInstanceService.expire_stale_component_runs() == 1
+    assert finish_run.await_args.args[0] == "run-without-lease"
+    assert "完成初始化" in finish_run.await_args.args[1].error
+    stop_run.assert_awaited_once_with(dispatched)
 
 
 @pytest.mark.asyncio
@@ -362,6 +424,59 @@ async def test_cancel_component_run_calls_platform_cancel_endpoint(monkeypatch):
 
     assert await component_service.cancel_component_run(component_run) is True
     assert post.await_args.args[0].endswith("/tasks/platform-task-1/cancel")
+
+
+@pytest.mark.asyncio
+async def test_dispatch_assigns_sdk_startup_lease(monkeypatch):
+    now_before = datetime.now()
+    claim_updates = []
+    active_run = SimpleNamespace(
+        id="run-1",
+        action_id="action-1",
+        component_id="component-1",
+        status=ComponentRunStatusEnum.DISPATCHED,
+        cancel_requested=False,
+    )
+    component_run = SimpleNamespace(
+        id=active_run.id,
+        action_id=active_run.action_id,
+        component_id=active_run.component_id,
+    )
+
+    def find_component(query):
+        if query.get("status") == ComponentRunStatusEnum.CREATED:
+            return _FindOne(modified_count=1, updates=claim_updates)
+        return _FindOne(active_run)
+
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        AsyncMock(
+            return_value=SimpleNamespace(status=ActionFlowStatusEnum.RUNNING)
+        ),
+    )
+    monkeypatch.setattr(
+        ComponentRunModel,
+        "find_one",
+        staticmethod(find_component),
+    )
+    monkeypatch.setattr(
+        component_service,
+        "run_component",
+        AsyncMock(return_value={"_id": "platform-task-1"}),
+    )
+
+    accepted = await component_service.dispatch_component_run(
+        component_run,
+        "csi-component",
+        ["run", "main:run"],
+    )
+
+    assert accepted is True
+    lease_expires_at = claim_updates[0]["$set"]["lease_expires_at"]
+    expected_seconds = component_service.settings.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS
+    assert timedelta(seconds=expected_seconds - 1) <= lease_expires_at - now_before
+    assert lease_expires_at - now_before <= timedelta(seconds=expected_seconds + 1)
 
 
 @pytest.mark.asyncio

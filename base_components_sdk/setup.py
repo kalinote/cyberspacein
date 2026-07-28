@@ -1,5 +1,4 @@
 from setuptools import setup, find_packages
-import os
 
 with open("requirements.txt", "r", encoding="utf-8") as f:
     requirements = [line.strip() for line in f if line.strip() and not line.startswith("#")]
@@ -9,7 +8,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="csi-base-component-sdk",
-    version="2.1.0",
+    version="2.1.1",
     author="kalinote",
     author_email="knote840746219@gmail.com",
     description="csi基本组件开发工具包",

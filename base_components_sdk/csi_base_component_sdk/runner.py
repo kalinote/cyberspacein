@@ -50,6 +50,28 @@ def _diagnostic(message: str, fd: int | None = None) -> None:
         pass
 
 
+def _submit_initialization_failure(
+    backend: BackendClient,
+    attempt: int,
+    error_message: str,
+    diagnostic_fd: int | None = None,
+) -> None:
+    """在组件业务代码启动前将初始化失败收敛到后端终态。"""
+    try:
+        backend.submit_result(
+            {
+                "result_id": str(uuid.uuid4()),
+                "attempt": attempt,
+                "status": "failed",
+                "outputs": {},
+                "error": error_message,
+                "exit_code": 2,
+            }
+        )
+    except Exception as exc:
+        _diagnostic(f"初始化失败结果提交失败: {exc}", diagnostic_fd)
+
+
 def _load_entrypoint(spec: str) -> Callable[[ComponentContext], Any]:
     module_name, separator, function_name = spec.partition(":")
     if not separator or not module_name or not function_name:
@@ -121,11 +143,20 @@ def run_component(args: argparse.Namespace) -> int:
             _diagnostic("远程运行缺少 api-base-url、component-run-id 或 component-bootstrap")
             return 2
         backend = BackendClient(args.api_base_url, args.component_run_id)
+        token_exchanged = False
         try:
             backend.exchange_token(args.component_bootstrap)
+            token_exchanged = True
             init_data = backend.initialize()
         except Exception as exc:
-            _diagnostic(f"运行上下文初始化失败: {exc}")
+            error_message = f"运行上下文初始化失败: {exc}"
+            _diagnostic(error_message)
+            if token_exchanged and backend.attempt is not None:
+                _submit_initialization_failure(
+                    backend,
+                    backend.attempt,
+                    error_message,
+                )
             backend.close()
             return 2
     else:
@@ -157,12 +188,20 @@ def run_component(args: argparse.Namespace) -> int:
         else:
             context = _local_context(args.local_config, structured_logger)
     except Exception as exc:
+        error_message = f"运行上下文无效: {exc}"
         capture.stop()
         transport.close(timeout=1)
         root.removeHandler(handler)
+        if remote and backend.attempt is not None:
+            _submit_initialization_failure(
+                backend,
+                backend.attempt,
+                error_message,
+                capture.original_stderr_fd,
+            )
         backend.close()
         capture.close_original_fds()
-        _diagnostic(f"运行上下文无效: {exc}")
+        _diagnostic(error_message)
         return 2
 
     heartbeat_stop = threading.Event()

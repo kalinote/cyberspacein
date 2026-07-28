@@ -2,4 +2,4 @@ from .context import ComponentCancelled, ComponentContext, ComponentFailure, Com
 from .rabbitmq import RabbitMQClient
 
 __all__ = ["ComponentCancelled", "ComponentContext", "ComponentFailure", "ComponentTimedOut", "RabbitMQClient"]
-__version__ = "2.1.0"
+__version__ = "2.1.1"
