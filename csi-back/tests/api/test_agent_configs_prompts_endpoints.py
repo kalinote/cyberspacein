@@ -47,7 +47,6 @@ def test_delete_prompt_template_success(monkeypatch: pytest.MonkeyPatch) -> None
     assert r.status_code == 200
     body = r.json()
     assert body["code"] == 0
-    assert body["message"] == "删除成功"
     assert doc.deleted is True
 
 

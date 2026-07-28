@@ -1,0 +1,43 @@
+name: CSI 前端测试
+
+on:
+  push:
+    paths:
+      - "csi-front/**"
+      - ".github/workflows/csi-front-tests.yml"
+  pull_request:
+    paths:
+      - "csi-front/**"
+      - ".github/workflows/csi-front-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csi-front-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: csi-front
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: csi-front/pnpm-lock.yaml
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - name: 运行测试
+        run: pnpm test
+      - name: 验证生产构建
+        run: pnpm build

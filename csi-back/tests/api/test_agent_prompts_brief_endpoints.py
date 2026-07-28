@@ -13,18 +13,13 @@ from app.main import app
 client = TestClient(app)
 
 
-@pytest.mark.parametrize(
-    "items",
-    [
-        [
-            {"id": "111", "name": "identity", "description": "默认"},
-            {"id": "222", "name": "_internal", "description": "应被过滤"},
-        ],
-    ],
-)
-def test_list_agent_prompt_brief(monkeypatch: pytest.MonkeyPatch, items: list[dict]) -> None:
+def test_list_agent_prompt_brief(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.api.v1.endpoints.agent import configs_templates as ep
 
+    items = [
+        {"id": "111", "name": "identity", "description": "默认"},
+        {"id": "222", "name": "_internal", "description": "内部提示词"},
+    ]
     monkeypatch.setitem(app.dependency_overrides, authorize_registered_route, lambda: None)
     monkeypatch.setattr(
         ep.SystemPromptService,

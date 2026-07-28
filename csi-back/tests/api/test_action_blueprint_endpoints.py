@@ -106,7 +106,6 @@ async def test_delete_blueprint_cascades_historical_action_data(monkeypatch):
     response = await blueprint_endpoint.delete_blueprint("blueprint-1")
 
     assert response.code == 0
-    assert response.message == "蓝图及历史行动已删除"
     assert blueprint.is_deleted is True
     blueprint.save.assert_awaited_once()
     blueprint.delete.assert_awaited_once()

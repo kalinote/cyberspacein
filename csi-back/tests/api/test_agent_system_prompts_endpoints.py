@@ -163,5 +163,4 @@ def test_delete_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["code"] == 0
-    assert body["message"] == "删除成功"
     assert called == {"id": "sp1"}

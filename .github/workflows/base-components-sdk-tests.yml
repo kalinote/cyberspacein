@@ -1,0 +1,50 @@
+name: 基础组件 SDK 测试
+
+on:
+  push:
+    paths:
+      - "base_components_sdk/**"
+      - ".github/workflows/base-components-sdk-tests.yml"
+  pull_request:
+    paths:
+      - "base_components_sdk/**"
+      - ".github/workflows/base-components-sdk-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: base-components-sdk-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: base_components_sdk
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: base_components_sdk/requirements.txt
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . "pytest>=8,<9"
+      - name: 运行测试
+        run: python -m pytest tests
+      - name: 验证 SDK 构建
+        if: matrix.python-version == '3.13'
+        run: python -m build

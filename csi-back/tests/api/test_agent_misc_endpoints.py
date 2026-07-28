@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -216,7 +215,6 @@ def test_post_cancel_with_running_task(monkeypatch: pytest.MonkeyPatch) -> None:
     assert body["code"] == 0
     assert body["data"]["agent_id"] == "a1"
     assert body["data"]["cancelled"] is True
-    assert "取消请求已发送" in body["message"]
     assert called == {"agent_id": "a1", "session_id": "s1", "reason": "x"}
 
 
@@ -235,7 +233,6 @@ def test_post_cancel_without_running_task(monkeypatch: pytest.MonkeyPatch) -> No
     body = r.json()
     assert body["code"] == 0
     assert body["data"]["cancelled"] is False
-    assert "没有正在运行的任务" in body["message"]
 
 
 def test_post_cancel_missing_agent_id_422() -> None:

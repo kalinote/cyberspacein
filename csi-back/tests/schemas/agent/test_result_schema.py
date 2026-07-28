@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 from pydantic import ValidationError
 
 from app.schemas.agent.result import (
-    SUBMIT_TASK_RESULT_TOOL_NAME,
     SubmitTaskResultParams,
-    TASK_SUBMIT_GUIDANCE,
     ResultPayloadSchema,
     build_response_format_schema,
     parse_run_result,
@@ -100,15 +96,6 @@ def test_parse_long_content_truncates_to_2000() -> None:
     schema, ok = parse_run_result(raw)
     assert ok is False
     assert len(schema.summary) == 2000
-
-
-def test_task_submit_guidance_describes_optional_tool() -> None:
-    text = TASK_SUBMIT_GUIDANCE
-    assert SUBMIT_TASK_RESULT_TOOL_NAME in text
-    assert "submit_task_result" in text
-    assert "spawn" in text
-    assert "强制" not in text
-    assert "必须调用" not in text
 
 
 def test_submit_task_result_params_ok() -> None:

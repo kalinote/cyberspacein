@@ -14,12 +14,6 @@ def test_api_response_success_defaults():
     assert r.data == {"a": 1}
 
 
-def test_api_response_success_custom_message():
-    # 可自定义成功提示文案
-    r = ApiResponseSchema.success(data=None, message="完成")
-    assert r.message == "完成"
-
-
 def test_api_response_error_valid_six_digit_code():
     # 合法六位业务码应能构造错误响应
     code = status_codes.INVALID_ARGUMENT

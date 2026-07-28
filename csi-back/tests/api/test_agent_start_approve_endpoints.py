@@ -10,6 +10,21 @@ import app.utils.status_codes as status_codes
 from app.api.v1.endpoints import agent as agent_ep
 import app.api.v1.endpoints.agent.runtime as runtime_ep
 from app.schemas.agent.nanobot_agent import AgentServiceError
+from app.service import analysis_invocation
+
+
+@pytest.fixture(autouse=True)
+def _mock_session_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """阻止路由契约测试访问真实 Beanie 会话集合。"""
+
+    async def _find_one(_query: dict):
+        return None
+
+    monkeypatch.setattr(
+        analysis_invocation.NanobotSessionModel,
+        "find_one",
+        _find_one,
+    )
 
 
 def _app() -> TestClient:
