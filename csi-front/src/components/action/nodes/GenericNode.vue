@@ -7,9 +7,17 @@
         }"
         :style="{
             ...computedNodeStyle,
-            border: executionStatusBorderColor ? `1.5px solid ${executionStatusBorderColor}` : '1px solid #e5e7eb'
+            ...bindingTargetStyle,
+            border: executionStatusBorderColor
+                ? `1.5px solid ${executionStatusBorderColor}`
+                : bindingTargetBorder || computedNodeStyle.border || '1px solid #e5e7eb'
         }"
     >
+        <BoundaryBindingAnchor
+            v-if="shouldShowBindingAnchor"
+            :state="bindingTargetState"
+            @select="handleBindingAnchorSelect"
+        />
         <template v-if="showHandle && nodeConfig">
             <HandleRenderer
                 v-for="(handle, index) in leftHandles"
@@ -17,6 +25,7 @@
                 :handle-config="handle"
                 :handle-index="index"
                 :total-handles="leftHandles.length"
+                @handle-click="handleDataHandleClick"
             />
             
             <HandleRenderer
@@ -25,6 +34,7 @@
                 :handle-config="handle"
                 :handle-index="index"
                 :total-handles="rightHandles.length"
+                @handle-click="handleDataHandleClick"
             />
             
             <HandleRenderer
@@ -33,6 +43,7 @@
                 :handle-config="handle"
                 :handle-index="index"
                 :total-handles="topHandles.length"
+                @handle-click="handleDataHandleClick"
             />
             
             <HandleRenderer
@@ -41,16 +52,44 @@
                 :handle-config="handle"
                 :handle-index="index"
                 :total-handles="bottomHandles.length"
+                @handle-click="handleDataHandleClick"
             />
         </template>
         
         <div v-if="nodeConfig" class="text-sm text-gray-600 font-medium mb-3 text-center border-b border-gray-100 pb-2">
             {{ nodeConfig.name }}
         </div>
-        
+
+        <div
+            v-if="data.bindingDisplay || data.bindingValidationIssues?.length"
+            class="mb-3 rounded-md px-2.5 py-2 text-xs"
+            :class="data.bindingValidationIssues?.length
+                ? 'bg-red-100/90 text-red-700'
+                : data.bindingDisplay?.direction === 'input'
+                    ? 'bg-blue-100/80 text-blue-700'
+                    : 'bg-violet-100/80 text-violet-700'"
+        >
+            <div class="flex items-center gap-1 font-medium">
+                <Icon icon="mdi:link-variant" class="shrink-0 text-sm" />
+                <span v-if="data.bindingDisplay" class="truncate">
+                    已绑定：{{ data.bindingDisplay.targetNodeName }}
+                </span>
+                <span v-else>绑定关系无效</span>
+            </div>
+            <div v-if="data.bindingDisplay" class="mt-1 truncate opacity-80">
+                {{ data.bindingDisplay.portDescription }}
+            </div>
+            <div
+                v-if="data.bindingValidationIssues?.length"
+                class="mt-1 font-medium"
+            >
+                {{ data.bindingValidationIssues[0].message }}
+            </div>
+        </div>
+
         <div v-if="nodeConfig" class="inputs-container">
             <InputRenderer
-                v-for="input in nodeConfig.inputs"
+                v-for="input in visibleInputs"
                 :key="input.id"
                 :input-config="input"
                 :model-value="data[input.id]"
@@ -63,11 +102,14 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
+import { Icon } from '@iconify/vue'
 import { ACTION_STATUS } from '@/utils/action'
 import { useVueFlow } from '@vue-flow/core'
 import HandleRenderer from './components/HandleRenderer.vue'
 import InputRenderer from './components/InputRenderer.vue'
+import BoundaryBindingAnchor from './components/BoundaryBindingAnchor.vue'
+import { isBoundaryConfig } from '@/utils/action/boundaryBinding'
 
 const props = defineProps({
     id: {
@@ -89,8 +131,15 @@ const props = defineProps({
 })
 
 const { updateNodeData } = useVueFlow()
+const bindingController = inject('boundaryBindingController', null)
 
 const nodeConfig = computed(() => props.data?.config || null)
+const visibleInputs = computed(() => (
+    (nodeConfig.value?.inputs || []).filter(input => (
+        input.name !== 'public_handle_config_id'
+        || !props.data?.boundaryBinding
+    ))
+))
 const executionStatus = computed(() => props.data?.executionStatus || null)
 const executionStatusBorderColor = computed(() => {
     if (!executionStatus.value) return null
@@ -110,6 +159,40 @@ const executionStatusBorderColor = computed(() => {
     }
     return colorMap[status] || null
 })
+const bindingTargetKinds = computed(() => props.data?.bindingTargetKinds || [])
+const bindingTargetState = computed(() => props.data?.bindingTargetState || null)
+const shouldShowBindingAnchor = computed(() => (
+    props.showHandle
+    && nodeConfig.value
+    && !isBoundaryConfig(nodeConfig.value)
+    && bindingTargetState.value
+    && (
+        bindingTargetState.value.relationCount > 0
+        || bindingTargetState.value.canAcceptInput
+        || bindingTargetState.value.canAcceptOutput
+    )
+))
+const bindingTargetBorder = computed(() => {
+    if (bindingTargetState.value && !bindingTargetState.value.valid) {
+        return '2px solid #ef4444'
+    }
+    if (bindingTargetKinds.value.includes('input')) return '2px solid #93c5fd'
+    if (bindingTargetKinds.value.includes('output')) return '2px solid #c4b5fd'
+    return null
+})
+const bindingTargetStyle = computed(() => {
+    if (
+        executionStatusBorderColor.value
+        || (bindingTargetState.value && !bindingTargetState.value.valid)
+        || bindingTargetKinds.value.length < 2
+    ) {
+        return {}
+    }
+    return {
+        outline: '2px solid #c4b5fd',
+        outlineOffset: '2px'
+    }
+})
 
 const defaultNodeStyle = {
     minWidth: '250px',
@@ -118,9 +201,13 @@ const defaultNodeStyle = {
 
 const computedNodeStyle = computed(() => {
     if (!nodeConfig.value) return defaultNodeStyle
-    
+
+    const rendererStyle = (
+        nodeConfig.value.extension?.config?.renderer?.node_style || {}
+    )
     return {
         ...defaultNodeStyle,
+        ...rendererStyle,
         ...(nodeConfig.value.node_style || {})
     }
 })
@@ -152,6 +239,19 @@ const updateInputValue = (inputId, value) => {
     if (!props.disabled) {
         updateNodeData(props.id, { [inputId]: value })
     }
+}
+
+const handleDataHandleClick = () => {
+    if (
+        isBoundaryConfig(nodeConfig.value)
+        && nodeConfig.value?.builtin_key === 'blueprint.output'
+    ) {
+        bindingController?.startOutputBinding?.(props.id)
+    }
+}
+
+const handleBindingAnchorSelect = () => {
+    bindingController?.selectBindingTarget?.(props.id)
 }
 </script>
 

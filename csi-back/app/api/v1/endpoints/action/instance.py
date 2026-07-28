@@ -1,8 +1,8 @@
 from typing import List
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
-from app.models.action.configs import ActionNodesHandleConfigModel
+from app.models.action.node_execution import ActionNodeExecutionModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.schemas.action.action import (
     ActionControlResponse,
@@ -13,9 +13,14 @@ from app.schemas.action.action import (
     StartActionResponse,
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
+from app.schemas.action.log import ActionNodeLogPage
 from app.schemas.response import ApiResponseSchema
-from app.schemas.constants import ActionInstanceNodeStatusEnum
-from app.service.action import ActionInstanceService
+from app.schemas.constants import (
+    ActionInstanceNodeStatusEnum,
+    ActionVisibilityEnum,
+)
+from app.service.action import ActionInstanceService, node_model_to_response
+from app.service.action_log import ActionLogService
 from app.utils.dict_helper import unpack_dict
 from app.utils.workflow import graph_model2schemas
 
@@ -25,21 +30,19 @@ router = APIRouter(tags=["行动实例"])
 @router.post("/start", response_model=ApiResponseSchema[StartActionResponse], summary="开始行动")
 async def start_action(
     data: StartActionRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    request: Request,
 ):
     blueprint = await ActionBlueprintModel.find_one({"_id": data.blueprint_id, "is_deleted": False})
     if not blueprint:
         return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {data.blueprint_id}")
 
-    if not data.params:
-        result, message = await ActionInstanceService.init(
-            data.blueprint_id,
-        )
-    else:
-        result, message = await ActionInstanceService.init(
-            data.blueprint_id,
-            data.params,
-        )
+    user = getattr(getattr(request.state, "auth_context", None), "user", None)
+    result, message = await ActionInstanceService.init(
+        data.blueprint_id,
+        data.params,
+        initiator_user_id=getattr(user, "id", None),
+    )
     if not result:
         return ApiResponseSchema.error(code=250004, message=message)
     background_tasks.add_task(ActionInstanceService.start, message)
@@ -52,17 +55,20 @@ async def get_action_instances(
     params: PageParamsSchema = Depends()
 ):
     skip = (params.page - 1) * params.page_size
-    total = await ActionInstanceModel.find_all().count()
-    action_instances = await ActionInstanceModel.find_all().sort("-created_at").skip(skip).limit(params.page_size).to_list()
+    if ActionInstanceModel._document_settings is None:
+        query = ActionInstanceModel.find_all()
+    else:
+        query = ActionInstanceModel.find(
+            {"visibility": {"$ne": ActionVisibilityEnum.EMBEDDED}}
+        )
+    total = await query.count()
+    action_instances = await query.sort("-created_at").skip(skip).limit(params.page_size).to_list()
 
     results: List[ActionInstanceBaseInfoResponse] = []
     for action_instance in action_instances:
         blueprint = await ActionInstanceService.get_action_blueprint(action_instance)
-        if not blueprint:
-            continue
-
         completed_steps = len(action_instance.finished_nodes_instance) if action_instance.finished_nodes_instance else 0
-        total_steps = len(action_instance.nodes_id) if action_instance.nodes_id else 0
+        total_steps = len(action_instance.execution_plan_snapshot.nodes)
 
         results.append(ActionInstanceBaseInfoResponse(
             id=action_instance.id,
@@ -93,11 +99,8 @@ async def get_action_detail(action_id: str):
         return ApiResponseSchema.error(code=240412, message=f"行动不存在，ID: {action_id}")
 
     blueprint = await ActionInstanceService.get_action_blueprint(action_instance)
-    if not blueprint:
-        return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {action_instance.blueprint_id}")
-
     completed_steps = len(action_instance.finished_nodes_instance) if action_instance.finished_nodes_instance else 0
-    total_steps = len(action_instance.nodes_id) if action_instance.nodes_id else 0
+    total_steps = len(action_instance.execution_plan_snapshot.nodes)
 
     graph = graph_model2schemas(blueprint.graph)
 
@@ -113,6 +116,10 @@ async def get_action_detail(action_id: str):
             node.data.form_data = unpack_dict(node_instance.configs) or {}
 
     node_details = {}
+    plan_node_map = {
+        node.id: node
+        for node in action_instance.execution_plan_snapshot.nodes
+    }
     for node_id in action_instance.nodes_id:
         if node_id not in node_instance_map:
             node_details[node_id] = ActionNodeDetailResponse(
@@ -121,22 +128,45 @@ async def get_action_detail(action_id: str):
             continue
 
         node_instance = node_instance_map[node_id]
+        node_definition = await ActionInstanceService.get_instance_node_definition(
+            node_instance
+        )
+        plan_node = plan_node_map.get(node_id)
         component_runs = await ComponentRunModel.find(
             {"node_instance_id": node_instance.id}
         ).to_list()
+        execution = (
+            await ActionNodeExecutionModel.find_one(
+                {"_id": getattr(node_instance, "current_execution_id", None)}
+            )
+            if getattr(node_instance, "current_execution_id", None)
+            else None
+        )
+        child_action = (
+            await ActionInstanceModel.find_one({"_id": execution.child_action_id})
+            if execution and execution.child_action_id
+            else None
+        )
 
         combined_outputs = dict(node_instance.outputs)
-        for target_node_id, queue_name in node_instance.reference_queues.items():
-            for edge in blueprint.graph.edges:
-                if edge.source == node_id and edge.target == target_node_id:
-                    handle_config = await ActionNodesHandleConfigModel.find_one({"_id": edge.sourceHandle})
-                    if handle_config:
-                        combined_outputs[edge.sourceHandle] = {
-                            "type": "reference",
-                            "key": handle_config.handle_name,
-                            "value": queue_name
-                        }
-                    break
+        reference_outputs: dict[str, list[str]] = {}
+        for binding in node_instance.reference_queue_bindings.values():
+            reference_outputs.setdefault(binding.source_port_id, []).append(
+                binding.queue_name
+            )
+        for source_port_id, queue_names in reference_outputs.items():
+            _, handle_config = await (
+                ActionInstanceService.resolve_node_handle_definition(
+                    node_definition,
+                    source_port_id,
+                )
+            )
+            if handle_config:
+                combined_outputs[source_port_id] = {
+                    "type": "reference",
+                    "key": handle_config.handle_name,
+                    "value": queue_names,
+                }
 
         node_details[node_id] = ActionNodeDetailResponse(
             node_instance_id=node_instance.id,
@@ -161,6 +191,60 @@ async def get_action_detail(action_id: str):
             log_count=sum(run.log_count for run in component_runs),
             error_log_count=sum(run.error_log_count for run in component_runs),
             dropped_log_count=sum(run.dropped_log_count for run in component_runs),
+            driver=(
+                execution.driver
+                if execution
+                else node_instance.execution_spec_snapshot.driver.value
+            ),
+            handler=(
+                execution.handler
+                if execution
+                else node_instance.execution_spec_snapshot.handler
+            ),
+            node_kind=(
+                plan_node.node_kind
+                if plan_node
+                else node_definition.node_kind
+                if node_definition
+                else None
+            ),
+            definition_origin=(
+                node_definition.definition_origin if node_definition else None
+            ),
+            definition=(
+                (
+                    await node_model_to_response(node_definition)
+                ).model_dump(mode="json")
+                if node_definition
+                else None
+            ),
+            current_execution_id=getattr(node_instance, "current_execution_id", None),
+            execution_ids=getattr(node_instance, "execution_ids", []),
+            provider_run_id=execution.provider_run_id if execution else None,
+            extension_state=execution.extension_state if execution else {},
+            extension_result=execution.extension_result if execution else {},
+            skip_reason=getattr(node_instance, "skip_reason", None),
+            embedded_action_id=execution.child_action_id if execution else None,
+            source_blueprint_id=(
+                node_definition.source_blueprint_id
+                if node_definition
+                else (
+                    plan_node.execution.config.get("blueprint_id")
+                    if plan_node
+                    else None
+                )
+            ),
+            source_revision_id=(
+                node_definition.source_revision_id
+                if node_definition
+                else (
+                    plan_node.execution.config.get("revision_id")
+                    if plan_node
+                    else None
+                )
+            ),
+            child_status=child_action.status.value if child_action else None,
+            child_progress=child_action.progress if child_action else None,
         )
 
     return ApiResponseSchema.success(data=ActionDetailResponse(
@@ -185,6 +269,95 @@ async def get_action_detail(action_id: str):
         graph=graph,
         node_details=node_details
     ))
+
+
+@router.get(
+    "/instances/{action_id}/nodes/{node_id}/embedded",
+    response_model=ApiResponseSchema[ActionDetailResponse],
+    summary="获取封装节点嵌入式行动详情",
+)
+async def get_embedded_action_detail(action_id: str, node_id: str):
+    parent_node = await ActionInstanceNodeModel.find_one(
+        {"action_id": action_id, "node_id": node_id}
+    )
+    if parent_node is None or not parent_node.current_execution_id:
+        return ApiResponseSchema.error(code=240417, message="封装节点执行记录不存在")
+    execution = await ActionNodeExecutionModel.find_one(
+        {
+            "_id": parent_node.current_execution_id,
+            "action_id": action_id,
+            "node_instance_id": parent_node.id,
+        }
+    )
+    if execution is None or not execution.child_action_id:
+        return ApiResponseSchema.error(code=240412, message="嵌入式行动不存在")
+    child = await ActionInstanceModel.find_one(
+        {
+            "_id": execution.child_action_id,
+            "visibility": ActionVisibilityEnum.EMBEDDED,
+            "parent_action_id": action_id,
+            "parent_node_instance_id": parent_node.id,
+        }
+    )
+    if child is None:
+        return ApiResponseSchema.error(code=240412, message="嵌入式行动关系无效")
+    return await get_action_detail(child.id)
+
+
+@router.get(
+    "/instances/{action_id}/nodes/{node_id}/embedded/logs",
+    response_model=ApiResponseSchema[ActionNodeLogPage],
+    summary="聚合查询封装节点内部日志",
+)
+async def get_embedded_action_logs(
+    action_id: str,
+    node_id: str,
+    cursor: str | None = None,
+    before_cursor: str | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    levels: list[str] | None = Query(default=None),
+    sources: list[str] | None = Query(default=None),
+    component_run_id: str | None = None,
+    keyword: str | None = Query(default=None, max_length=256),
+):
+    parent_node = await ActionInstanceNodeModel.find_one(
+        {"action_id": action_id, "node_id": node_id}
+    )
+    execution = (
+        await ActionNodeExecutionModel.find_one(
+            {"_id": parent_node.current_execution_id}
+        )
+        if parent_node and parent_node.current_execution_id
+        else None
+    )
+    child = (
+        await ActionInstanceModel.find_one(
+            {
+                "_id": execution.child_action_id,
+                "visibility": ActionVisibilityEnum.EMBEDDED,
+                "parent_action_id": action_id,
+                "parent_node_instance_id": parent_node.id,
+            }
+        )
+        if execution and execution.child_action_id
+        else None
+    )
+    if child is None:
+        return ApiResponseSchema.error(code=240412, message="嵌入式行动不存在")
+    try:
+        page = await ActionLogService.query_action(
+            child.id,
+            cursor=cursor,
+            before_cursor=before_cursor,
+            limit=limit,
+            levels=levels,
+            sources=sources,
+            component_run_id=component_run_id,
+            keyword=keyword,
+        )
+    except ValueError as exc:
+        return ApiResponseSchema.error(code=240420, message=str(exc))
+    return ApiResponseSchema.success(data=page)
 
 
 async def _control_action(

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.constants import ActionConfigIOTypeEnum
@@ -17,7 +17,21 @@ class ActionNodesHandleConfigResponse(ActionNodesHandleConfigRequest):
 class ActionNodesHandleConfigAllResponse(BaseModel):
     id: str = Field(description="handle配置ID")
     label: str = Field(description="标签")
-    
+
+
+class ActionHandleOptionResponse(BaseModel):
+    """蓝图独立IO节点可选择的动态Handle配置。"""
+
+    id: str
+    handle_name: str
+    label: str
+    direction: Literal["source", "target"]
+    data_type: ActionConfigIOTypeEnum
+    interface_type_id: str
+    compatible_interface_type_ids: list[str] = Field(default_factory=list)
+    color: str
+
+
 class ActionConfigsStatisticsResponse(BaseModel):
     node_count: int = Field(default=-1, description="节点数量")
     base_component_count: int = Field(default=-1, description="基础组件数量")
@@ -26,4 +40,3 @@ class ActionConfigsStatisticsResponse(BaseModel):
     account_count: int = Field(default=-1, description="账号数量")
     corpus_count: int = Field(default=-1, description="语料库数量")
     container_count: int = Field(default=-1, description="沙盒容器数量")
-    

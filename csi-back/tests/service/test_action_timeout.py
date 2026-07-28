@@ -295,6 +295,9 @@ async def test_finish_action_prefers_timeout_status(monkeypatch):
         start_at=datetime.now() - timedelta(seconds=3),
         finished_nodes_instance=[],
         nodes_id=["node-1"],
+        execution_plan_snapshot=SimpleNamespace(
+            nodes=[SimpleNamespace(id="node-1")]
+        ),
     )
     action_updates = []
     find_action_calls = 0

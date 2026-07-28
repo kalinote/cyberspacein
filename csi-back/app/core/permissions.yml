@@ -1,4 +1,4 @@
-version: "2026-07-22.1"
+version: "2026-07-25.1"
 
 # 新增权限维护说明：
 # 1. 页面权限使用 page:<模块>[:<页面或Tab>]:visible/access，仅控制前端展示和访问，backend_enforced 必须为 false。
@@ -29,6 +29,8 @@ permissions:
   - {code: "page:action:tasks:access", name: "行动任务页面访问", module: "action", resource: "tasks-page", description: "访问行动任务页面", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:action:resource:nodes:visible", name: "行动节点 Tab 可见", module: "action", resource: "nodes-tab", description: "显示行动节点 Tab", tags: [page, tab], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:action:resource:nodes:access", name: "行动节点 Tab 访问", module: "action", resource: "nodes-tab", description: "访问行动节点 Tab", tags: [page, tab], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
+  - {code: "page:action:resource:encapsulated-nodes:visible", name: "封装节点 Tab 可见", module: "action", resource: "encapsulated-nodes-tab", description: "显示封装节点管理 Tab", tags: [page, tab], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
+  - {code: "page:action:resource:encapsulated-nodes:access", name: "封装节点 Tab 访问", module: "action", resource: "encapsulated-nodes-tab", description: "访问封装节点管理 Tab", tags: [page, tab], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:action:resource:components:visible", name: "基础组件 Tab 可见", module: "action", resource: "components-tab", description: "显示基础组件 Tab", tags: [page, tab], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:action:resource:components:access", name: "基础组件 Tab 访问", module: "action", resource: "components-tab", description: "访问基础组件 Tab", tags: [page, tab], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
   - {code: "page:action:resource:handles:visible", name: "节点接口 Tab 可见", module: "action", resource: "handles-tab", description: "显示节点接口配置 Tab", tags: [page, tab], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
@@ -113,10 +115,12 @@ permissions:
   - {code: "operation:action:blueprint:read", name: "读取行动蓝图", module: "action", resource: "blueprint", description: "读取行动蓝图", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:blueprint:create", name: "创建行动蓝图", module: "action", resource: "blueprint", description: "创建行动蓝图", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:blueprint:update", name: "更新行动蓝图", module: "action", resource: "blueprint", description: "更新行动蓝图及其流程配置", tags: [update], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:blueprint-release:execute", name: "发布行动蓝图", module: "action", resource: "blueprint-release", description: "校验并发布不可变行动蓝图版本", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:blueprint:delete", name: "删除行动蓝图", module: "action", resource: "blueprint", description: "删除行动蓝图及其历史行动", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:node:read", name: "读取行动节点", module: "action", resource: "node", description: "读取行动节点与基础组件", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:node:create", name: "创建行动节点", module: "action", resource: "node", description: "创建行动节点", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:node:update", name: "更新行动节点", module: "action", resource: "node", description: "更新行动节点", tags: [update], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:action:native-node-status:update", name: "启停后端原生节点", module: "action", resource: "native-node-status", description: "启用或禁用后端原生节点并记录审计信息", tags: [update, sensitive], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:node:delete", name: "删除行动节点", module: "action", resource: "node", description: "删除行动节点", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:config:read", name: "读取行动配置", module: "action", resource: "config", description: "读取节点连接配置", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "operation:action:config:create", name: "创建行动配置", module: "action", resource: "config", description: "创建节点连接配置", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}

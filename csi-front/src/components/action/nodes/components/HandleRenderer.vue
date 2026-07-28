@@ -5,6 +5,7 @@
             :type="handleConfig.type" 
             :position="handleConfig.position"
             :style="computedHandleStyle"
+            @click.stop="emit('handle-click', handleConfig)"
         />
         <span 
             class="absolute text-xs"
@@ -18,6 +19,8 @@
 <script setup>
 import { computed } from 'vue'
 import { Handle } from '@vue-flow/core'
+
+const emit = defineEmits(['handle-click'])
 
 const props = defineProps({
     handleConfig: {

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from enum import Enum
 
+DEFAULT_COMPONENT_COMMAND = "csi-component"
+DEFAULT_COMPONENT_COMMAND_ARGS = ["main:run"]
+
 _ACTION_NODE_TYPE_LABELS = {
     "construct": "构造器",
     "crawler": "采集节点",
@@ -10,8 +13,9 @@ _ACTION_NODE_TYPE_LABELS = {
     "processor": "处理器节点",
     "logic": "基本逻辑节点",
     "simple_operation": "简单运算节点",
-    "output": "输出节点",
-    "input": "输入节点",
+    "io": "IO节点",
+    "analysis": "分析引擎节点",
+    "subflow": "封装节点",
 }
 
 
@@ -23,12 +27,51 @@ class ActionNodeTypeEnum(str, Enum):
     PROCESSOR = "processor"
     LOGIC = "logic"
     SIMPLE_OPERATION = "simple_operation"
-    OUTPUT = "output"
-    INPUT = "input"
+    IO = "io"
+    ANALYSIS = "analysis"
+    SUBFLOW = "subflow"
 
     @property
     def label(self) -> str:
         return _ACTION_NODE_TYPE_LABELS.get(self.value, self.value)
+
+
+class ActionNodeKindEnum(str, Enum):
+    """行动节点一级类型。"""
+
+    ORDINARY = "ordinary"
+    BACKEND_NATIVE = "backend_native"
+    ENCAPSULATED = "encapsulated"
+
+
+class ActionExecutionDriverEnum(str, Enum):
+    """行动节点执行驱动。"""
+
+    COMPONENT = "component"
+    BACKEND_NATIVE = "backend_native"
+    SUBFLOW = "subflow"
+
+
+class ActionNodeDefinitionOriginEnum(str, Enum):
+    """行动节点定义来源。"""
+
+    USER = "user"
+    BACKEND_BUILTIN = "backend_builtin"
+    BLUEPRINT = "blueprint"
+
+
+class ActionInvocationModeEnum(str, Enum):
+    """蓝图调用模式。"""
+
+    STANDALONE = "standalone"
+    SUBFLOW = "subflow"
+
+
+class ActionVisibilityEnum(str, Enum):
+    """行动历史可见性。"""
+
+    NORMAL = "normal"
+    EMBEDDED = "embedded"
 
 
 class ActionFlowStatusEnum(str, Enum):
@@ -67,11 +110,14 @@ class ActionInstanceNodeStatusEnum(str, Enum):
     READY = "ready"
     QUEUED = "queued"
     RUNNING = "running"
+    WAITING = "waiting"
+    AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
     PAUSED = "paused"
+    SKIPPED = "skipped"
 
 
 class ComponentRunStatusEnum(str, Enum):
@@ -114,7 +160,8 @@ ActionNodeFinishStatusList = [
     ActionInstanceNodeStatusEnum.COMPLETED,
     ActionInstanceNodeStatusEnum.FAILED,
     ActionInstanceNodeStatusEnum.CANCELLED,
-    ActionInstanceNodeStatusEnum.TIMEOUT
+    ActionInstanceNodeStatusEnum.TIMEOUT,
+    ActionInstanceNodeStatusEnum.SKIPPED,
 ]
     
 class ActionConfigIOTypeEnum(str, Enum):
@@ -145,6 +192,7 @@ class ActionNodeInputTypeEnum(str, Enum):
     DATETIME = "datetime"
     TAGS = "tags"
     CONDITIONS = "conditions"
+    KEY_VALUE = "key-value"
     COMMENT = "comment"
     
 class EntityType(str, Enum):

@@ -5,10 +5,12 @@ import json
 from datetime import datetime, timezone
 
 from elasticsearch import ApiError
+from loguru import logger
 
 from app.core.config import settings
 from app.db.elasticsearch import get_es
 from app.models.action.component_run import ComponentRunModel
+from app.models.action.node_execution import ActionNodeExecutionModel
 from app.schemas.action.log import (
     ActionNodeLogItem,
     ActionNodeLogPage,
@@ -52,10 +54,16 @@ class ActionLogService:
                         "occurred_at": {"type": "date"},
                         "ingested_at": {"type": "date"},
                         "action_id": {"type": "keyword"},
+                        "root_action_id": {"type": "keyword"},
+                        "parent_action_id": {"type": "keyword"},
                         "node_instance_id": {"type": "keyword"},
+                        "node_execution_id": {"type": "keyword"},
                         "component_run_id": {"type": "keyword"},
                         "component_id": {"type": "keyword"},
                         "attempt": {"type": "integer"},
+                        "driver": {"type": "keyword"},
+                        "handler": {"type": "keyword"},
+                        "provider_run_id": {"type": "keyword"},
                         "level": {"type": "keyword"},
                         "source": {"type": "keyword"},
                         "logger": {"type": "keyword"},
@@ -138,6 +146,66 @@ class ActionLogService:
         return ComponentLogBatchResponse(accepted=accepted, duplicated=duplicated)
 
     @staticmethod
+    async def ingest_node_event(
+        execution: ActionNodeExecutionModel,
+        *,
+        event_key: str,
+        level: str,
+        source: str,
+        message: str,
+        fields: dict | None = None,
+        exception: str | None = None,
+        root_action_id: str | None = None,
+        parent_action_id: str | None = None,
+    ) -> bool:
+        """幂等写入原生节点和子流程的通用编排日志。"""
+        es = get_es()
+        if es is None:
+            return False
+        now = datetime.now(timezone.utc)
+        event_id = f"{execution.id}:{event_key}"
+        document = {
+            "@timestamp": now.isoformat(),
+            "event_id": event_id,
+            "sequence": 0,
+            "occurred_at": now.isoformat(),
+            "ingested_at": now.isoformat(),
+            "action_id": execution.action_id,
+            "root_action_id": root_action_id,
+            "parent_action_id": parent_action_id,
+            "node_instance_id": execution.node_instance_id,
+            "node_execution_id": execution.id,
+            "component_run_id": None,
+            "component_id": None,
+            "attempt": execution.attempt,
+            "driver": execution.driver,
+            "handler": execution.handler,
+            "provider_run_id": execution.provider_run_id,
+            "level": level,
+            "source": source,
+            "logger": "action.orchestrator",
+            "message": message,
+            "fields": fields or {},
+            "exception": exception,
+            "truncated": False,
+        }
+        try:
+            response = await es.create(
+                index=settings.COMPONENT_LOG_DATA_STREAM,
+                id=event_id,
+                document=document,
+            )
+        except ApiError as exc:
+            if getattr(exc, "status_code", None) == 409:
+                return True
+            logger.warning(f"节点编排日志写入失败，事件 {event_id}: {exc}")
+            return False
+        except Exception as exc:
+            logger.warning(f"节点编排日志写入失败，事件 {event_id}: {exc}")
+            return False
+        return str(response.get("result", "")) in {"created", "updated"}
+
+    @staticmethod
     def _encode_cursor(sort: list) -> str:
         raw = json.dumps(sort, separators=(",", ":")).encode("utf-8")
         return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
@@ -175,6 +243,55 @@ class ActionLogService:
             filters.append({"terms": {"source": sources}})
         if component_run_id:
             filters.append({"term": {"component_run_id": component_run_id}})
+        return await ActionLogService._query(
+            filters,
+            cursor=cursor,
+            before_cursor=before_cursor,
+            limit=limit,
+            keyword=keyword,
+        )
+
+    @staticmethod
+    async def query_action(
+        action_id: str,
+        *,
+        cursor: str | None,
+        before_cursor: str | None,
+        limit: int,
+        levels: list[str] | None,
+        sources: list[str] | None,
+        component_run_id: str | None,
+        keyword: str | None,
+    ) -> ActionNodeLogPage:
+        """按行动ID聚合查询全部节点日志。"""
+        filters: list[dict] = [{"term": {"action_id": action_id}}]
+        if levels:
+            filters.append({"terms": {"level": levels}})
+        if sources:
+            filters.append({"terms": {"source": sources}})
+        if component_run_id:
+            filters.append({"term": {"component_run_id": component_run_id}})
+        return await ActionLogService._query(
+            filters,
+            cursor=cursor,
+            before_cursor=before_cursor,
+            limit=limit,
+            keyword=keyword,
+        )
+
+    @staticmethod
+    async def _query(
+        filters: list[dict],
+        *,
+        cursor: str | None,
+        before_cursor: str | None,
+        limit: int,
+        keyword: str | None,
+    ) -> ActionNodeLogPage:
+        """执行统一的日志游标查询。"""
+        es = get_es()
+        if es is None:
+            raise RuntimeError("Elasticsearch 未初始化")
         must = [{"match": {"message": keyword}}] if keyword else []
         body: dict = {
             "size": limit + 1,

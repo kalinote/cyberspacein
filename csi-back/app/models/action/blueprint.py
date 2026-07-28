@@ -3,6 +3,7 @@ from typing import Any
 from datetime import datetime
 from beanie import Document
 from pydantic import BaseModel, Field
+from app.schemas.action.interface import BlueprintInterfaceSpec, BoundaryBinding
 from app.schemas.general import DictModelSchema
 
 
@@ -21,6 +22,10 @@ class NodeDataModel(BaseModel):
     definition_id: str
     version: str
     form_data: list[DictModelSchema]
+    node_definition_version: int = 1
+    instance_config: dict[str, Any] = Field(default_factory=dict)
+    interface_port_id: str | None = None
+    boundary_binding: BoundaryBinding | None = None
 
 
 class GraphNodeModel(BaseModel):
@@ -42,6 +47,8 @@ class GraphEdgeModel(BaseModel):
     sourceHandle: str
     target: str
     targetHandle: str
+    source_port_id: str | None = None
+    target_port_id: str | None = None
 
 
 class ViewportModel(BaseModel):
@@ -75,6 +82,7 @@ class ActionBlueprintSnapshotModel(BaseModel):
     graph: GraphModel
     is_template: bool = False
     template: dict[str, Any] | None = None
+    interface: BlueprintInterfaceSpec = Field(default_factory=BlueprintInterfaceSpec)
 
 
 class ActionBlueprintModel(Document):
@@ -93,6 +101,10 @@ class ActionBlueprintModel(Document):
     is_template: bool = Field(default=False, description="是否为模板")
     # TODO: 后续增加对应的模型
     template: dict[str, Any] | None = Field(default=None, description="模板配置")
+    interface: BlueprintInterfaceSpec = Field(
+        default_factory=BlueprintInterfaceSpec,
+        description="根据边界节点生成的公开接口",
+    )
     
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     updated_at: datetime = Field(default_factory=lambda: datetime.now())
@@ -120,5 +132,10 @@ def create_blueprint_snapshot(
         graph=blueprint.graph.model_copy(deep=True),
         is_template=blueprint.is_template,
         template=deepcopy(blueprint.template),
+        interface=getattr(
+            blueprint,
+            "interface",
+            BlueprintInterfaceSpec(),
+        ).model_copy(deep=True),
     )
 

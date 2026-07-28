@@ -180,6 +180,7 @@ import { Icon } from '@iconify/vue'
 import { Link, Edit } from '@element-plus/icons-vue'
 import TagInput from './TagInput.vue'
 import ConditionInput from './ConditionInput.vue'
+import KeyValueEditor from './KeyValueEditor.vue'
 import ParamSelector from '@/components/action/template/ParamSelector.vue'
 import { PARAM_MODE } from '@/utils/action/constants'
 
@@ -196,19 +197,20 @@ const INPUT_TYPE_MAP = {
     'datetime': 'el-date-picker',
     'tags': TagInput,
     'conditions': ConditionInput,
+    'key-value': KeyValueEditor,
     'comment': 'comment-display'
 }
 
 const INPUT_DEFAULT_PROPS = {
     'int': { controlsPosition: 'right' },
-    'string': { clearable: true },
+    'string': { clearable: false },
     'textarea': { type: 'textarea', rows: 3 },
     'select': { clearable: true },
     'boolean': { activeValue: true, inactiveValue: false },
     'datetime': { type: 'datetime', valueFormat: 'YYYY-MM-DD HH:mm:ss' }
 }
 
-const MULTI_LINE_TYPES = ['textarea', 'checkbox-group', 'radio-group', 'tags', 'conditions']
+const MULTI_LINE_TYPES = ['textarea', 'checkbox-group', 'radio-group', 'tags', 'conditions', 'key-value']
 
 const props = defineProps({
     inputConfig: {

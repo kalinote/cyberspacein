@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 from fastapi import APIRouter, Depends
 from app.models.action.accounts import AccountModel
 from app.models.action.configs import ActionNodesHandleConfigModel
@@ -7,6 +7,7 @@ from app.models.action.sandbox import SandboxModel
 from app.schemas.constants import ActionNodeTypeEnum
 from app.schemas.action.configs import (
     ActionConfigsStatisticsResponse,
+    ActionHandleOptionResponse,
     ActionNodesHandleConfigAllResponse,
     ActionNodesHandleConfigRequest,
     ActionNodesHandleConfigResponse,
@@ -46,6 +47,70 @@ async def get_all_node_configs_handles():
             id=handle.id,
             label=handle.label
         ))
+    return ApiResponseSchema.success(data=results)
+
+
+@router.get(
+    "/handles/options",
+    response_model=ApiResponseSchema[List[ActionHandleOptionResponse]],
+    summary="获取蓝图IO节点可选择的Handle配置",
+)
+async def get_node_handle_options(
+    direction: Literal["source", "target"],
+):
+    """按端口方向聚合有效节点使用的动态Handle配置。"""
+    nodes = await ActionNodeModel.find(
+        {
+            "is_deleted": False,
+            "enabled": True,
+            "node_kind": {"$ne": "encapsulated"},
+        }
+    ).to_list()
+    usages = {}
+    for node in nodes:
+        if node.builtin_key in {"blueprint.input", "blueprint.output"}:
+            continue
+        for handle in node.handles:
+            if handle.type != direction:
+                continue
+            config_id = handle.handle_config_id or handle.id
+            usages.setdefault(config_id, []).append(handle)
+    if not usages:
+        return ApiResponseSchema.success(data=[])
+
+    configs = await ActionNodesHandleConfigModel.find(
+        {"_id": {"$in": sorted(usages)}}
+    ).to_list()
+    results = []
+    for config in sorted(configs, key=lambda item: (item.label, item.id)):
+        handles = usages[config.id]
+        interface_types = {
+            handle.interface_type_id or config.id for handle in handles
+        }
+        if len(interface_types) != 1:
+            continue
+        compatible = {
+            *config.other_compatible_interfaces,
+            *(
+                interface_id
+                for handle in handles
+                for interface_id in handle.compatible_interface_type_ids
+            ),
+        }
+        results.append(
+            ActionHandleOptionResponse(
+                id=config.id,
+                handle_name=config.handle_name,
+                label=config.label,
+                direction=direction,
+                data_type=config.type,
+                interface_type_id=(
+                    next(iter(interface_types))
+                ),
+                compatible_interface_type_ids=sorted(compatible),
+                color=config.color,
+            )
+        )
     return ApiResponseSchema.success(data=results)
 
 

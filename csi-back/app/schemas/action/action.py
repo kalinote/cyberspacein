@@ -6,6 +6,8 @@ from app.schemas.constants import (
     ActionConfigIOTypeEnum,
     ActionFlowStatusEnum,
     ActionInstanceNodeStatusEnum,
+    ActionNodeDefinitionOriginEnum,
+    ActionNodeKindEnum,
 )
 
 class StartActionRequest(BaseModel):
@@ -53,13 +55,32 @@ class ActionNodeDetailResponse(BaseModel):
     log_count: int = 0
     error_log_count: int = 0
     dropped_log_count: int = 0
+    driver: str | None = None
+    handler: str | None = None
+    node_kind: ActionNodeKindEnum | None = None
+    definition_origin: ActionNodeDefinitionOriginEnum | None = None
+    definition: dict[str, Any] | None = None
+    current_execution_id: str | None = None
+    execution_ids: list[str] = Field(default_factory=list)
+    provider_run_id: str | None = None
+    extension_state: dict[str, Any] = Field(default_factory=dict)
+    extension_result: dict[str, Any] = Field(default_factory=dict)
+    skip_reason: str | None = None
+    embedded_action_id: str | None = None
+    source_blueprint_id: str | None = None
+    source_revision_id: str | None = None
+    child_status: str | None = None
+    child_progress: float | None = None
 
 class ActionDetailResponse(ActionInstanceBaseInfoResponse):
     """
     行动详细信息的响应，用于正在执行的行动详细的信息页
     """
     graph: GraphSchema = Field(description="行动蓝图，用于标识基本结构和布局")
-    resource: dict[str, Any] = Field(default={}, description="分配资源，暂未实现")
+    resource: dict[str, Any] = Field(
+        default_factory=dict,
+        description="分配资源，暂未实现",
+    )
     implementation_period: int = Field(default=0, ge=0, description="执行期限(秒)，0表示不限制")
     node_details: dict[str, ActionNodeDetailResponse] = Field(description="节点详细信息")
 
@@ -76,6 +97,12 @@ class ActionNodeConfigInitResponse(BaseModel):
     节点配置初始化响应，用于基础构建SDK获取基本节点参数配置
     """
     meta: ActionConfigMeta = Field(description="节点配置元数据")
-    config: dict[str, Any] = Field(default={}, description="节点配置")
-    inputs: dict[str, ActionConfigIO] = Field(default={}, description="节点输入配置")
-    outputs: dict[str, ActionConfigIO] = Field(default={}, description="节点输出配置")
+    config: dict[str, Any] = Field(default_factory=dict, description="节点配置")
+    inputs: dict[str, ActionConfigIO] = Field(
+        default_factory=dict,
+        description="节点输入配置",
+    )
+    outputs: dict[str, ActionConfigIO] = Field(
+        default_factory=dict,
+        description="节点输出配置",
+    )

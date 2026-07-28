@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from unittest.mock import MagicMock
 
 from csi_base_component_sdk.backend_client import BackendClient
 
@@ -23,3 +24,20 @@ def test_backend_client_suppresses_internal_http_debug_logs() -> None:
             client.close()
         for logger, level in zip(loggers, original_levels):
             logger.setLevel(level)
+
+
+def test_initialize_requests_component_context(monkeypatch) -> None:
+    client = BackendClient("http://localhost:8000/api/v1", "test-run")
+    request = MagicMock(return_value={})
+    monkeypatch.setattr(client, "_request", request)
+
+    try:
+        client.initialize()
+    finally:
+        client.close()
+
+    request.assert_called_once_with(
+        "GET",
+        "init",
+        timeout=15,
+    )

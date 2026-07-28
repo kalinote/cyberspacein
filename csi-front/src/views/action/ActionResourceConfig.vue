@@ -85,10 +85,19 @@
                       <el-tag size="small" class="border-0">
                         v{{ node.version }}
                       </el-tag>
+                      <el-tag v-if="node.definition_origin === 'backend_builtin'" size="small" type="warning">
+                        系统内置
+                      </el-tag>
+                      <el-tag v-else-if="node.node_kind === 'encapsulated'" size="small" type="success">
+                        封装节点
+                      </el-tag>
+                      <el-tag size="small" :type="node.enabled ? 'success' : 'danger'">
+                        {{ node.enabled ? '已启用' : '已禁用' }}
+                      </el-tag>
                     </div>
                     <p class="text-sm text-gray-600 mb-3">{{ node.description }}</p>
                     <div class="flex items-center gap-6 text-sm">
-                      <div class="flex items-center gap-2">
+                      <div v-if="node.node_kind === 'ordinary'" class="flex items-center gap-2">
                         <Icon icon="mdi:power-plug" class="text-blue-500" />
                         <span class="text-gray-600">接口数量:</span>
                         <span class="font-medium text-gray-900">{{ node.handles?.length || 0 }}</span>
@@ -118,13 +127,21 @@
                     </template>
                     查看
                   </el-button>
-                  <el-button v-if="hasPerm(PERM.operations.action.node.update)" type="primary" link @click="handleEdit(node)">
+                  <el-button
+                    v-if="node.definition_origin === 'backend_builtin' && hasPerm(PERM.operations.action.node.nativeStatusUpdate)"
+                    :type="node.enabled ? 'danger' : 'success'"
+                    link
+                    @click="handleToggleNativeNode(node)"
+                  >
+                    {{ node.enabled ? '禁用' : '启用' }}
+                  </el-button>
+                  <el-button v-if="node.definition_origin === 'user' && hasPerm(PERM.operations.action.node.update)" type="primary" link @click="handleEdit(node)">
                     <template #icon>
                       <Icon icon="mdi:pencil" />
                     </template>
                     编辑
                   </el-button>
-                  <el-button v-if="hasPerm(PERM.operations.action.node.delete)" type="danger" link @click="handleDelete(node)">
+                  <el-button v-if="node.definition_origin === 'user' && hasPerm(PERM.operations.action.node.delete)" type="danger" link @click="handleDelete(node)">
                     <template #icon>
                       <Icon icon="mdi:delete" />
                     </template>
@@ -140,6 +157,11 @@
               </div>
             </div>
           </div>
+
+          <EncapsulatedNodeManager
+            v-else-if="activeTab === 'encapsulatedNodes'"
+            :keyword="searchKeyword"
+          />
 
           <!-- 基础组件列表 -->
           <div v-else-if="activeTab === 'baseComponents'" class="space-y-4">
@@ -681,16 +703,23 @@
             <el-descriptions-item label="节点ID">{{ nodeDetailData.id }}</el-descriptions-item>
             <el-descriptions-item label="节点名称">{{ nodeDetailData.name }}</el-descriptions-item>
             <el-descriptions-item label="节点类型">{{ nodeDetailData.type }}</el-descriptions-item>
+            <el-descriptions-item label="一级类型">{{ nodeDetailData.node_kind }}</el-descriptions-item>
+            <el-descriptions-item label="定义来源">
+              {{ nodeDetailData.definition_origin === 'backend_builtin' ? '系统内置' : nodeDetailData.definition_origin }}
+            </el-descriptions-item>
             <el-descriptions-item label="版本">{{ nodeDetailData.version }}</el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">{{ nodeDetailData.description || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="运行命令">{{ nodeDetailData.command || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="运行参数">
+            <el-descriptions-item v-if="nodeDetailData.node_kind === 'ordinary'" label="运行命令">{{ nodeDetailData.command || '-' }}</el-descriptions-item>
+            <el-descriptions-item v-if="nodeDetailData.node_kind === 'ordinary'" label="运行参数">
               {{ Array.isArray(nodeDetailData.command_args) ? nodeDetailData.command_args.join(' ') : '-' }}
             </el-descriptions-item>
-            <el-descriptions-item label="关联组件" :span="2">
+            <el-descriptions-item v-else label="执行 Handler">
+              {{ nodeDetailData.execution?.handler || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item v-if="nodeDetailData.node_kind === 'ordinary'" label="关联组件" :span="2">
               {{ Array.isArray(nodeDetailData.related_components) && nodeDetailData.related_components.length ? nodeDetailData.related_components.join(', ') : '-' }}
             </el-descriptions-item>
-            <el-descriptions-item label="组件超时" :span="2">
+            <el-descriptions-item v-if="nodeDetailData.node_kind === 'ordinary'" label="组件超时" :span="2">
               <template v-if="nodeDetailData.related_components?.length">
                 <span v-for="componentId in nodeDetailData.related_components" :key="componentId" class="mr-4">
                   {{ componentNameMap[componentId] || componentId }}：{{ nodeDetailData.component_timeouts?.[componentId] > 0 ? `${nodeDetailData.component_timeouts[componentId]} 秒` : '未限制' }}
@@ -847,8 +876,9 @@
 
           <el-divider content-position="left">节点预览</el-divider>
           <div class="flex justify-center py-4">
-            <GenericNode
+            <component
               v-if="nodePreviewData"
+              :is="nodePreviewComponent"
               :id="`preview-${nodeDetailData.id}`"
               :data="nodePreviewData"
               :show-handle="false"
@@ -1064,6 +1094,10 @@ import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
 import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData, ACTION_STATUS } from '@/utils/action'
 import GenericNode from '@/components/action/nodes/GenericNode.vue'
+import SubflowNode from '@/components/action/nodes/SubflowNode.vue'
+import EncapsulatedNodeManager from '@/components/action/EncapsulatedNodeManager.vue'
+import UnsupportedNativeNode from '@/components/action/nodes/UnsupportedNativeNode.vue'
+import { resolveNativeNodeRenderer } from '@/components/action/nodes/nativeNodeRendererRegistry'
 import { PERM } from '@/utils/permissions'
 import { hasPerm } from '@/utils/permissionKit'
 
@@ -1109,6 +1143,7 @@ const pagination = ref({
 
 const actionTabPermissions = {
   nodes: PERM.pages.action.resource.nodes,
+  encapsulatedNodes: PERM.pages.action.resource.encapsulatedNodes,
   baseComponents: PERM.pages.action.resource.components,
   nodeHandles: PERM.pages.action.resource.handles,
   proxy: PERM.pages.action.resource.proxy,
@@ -1118,6 +1153,7 @@ const actionTabPermissions = {
 
 const actionTabReadPermissions = {
   nodes: PERM.operations.action.node.read,
+  encapsulatedNodes: PERM.operations.action.node.read,
   baseComponents: PERM.operations.action.node.read,
   nodeHandles: PERM.operations.action.config.read,
   accounts: PERM.operations.action.account.listRead
@@ -1131,6 +1167,7 @@ const actionTabCreatePermissions = {
 
 const baseResourceTabs = [
   { key: 'nodes', label: '行动节点', icon: 'mdi:chart-tree', children: [
+    { key: 'encapsulatedNodes', label: '封装节点', icon: 'mdi:package-variant-closed' },
     { key: 'baseComponents', label: '基础组件', icon: 'mdi:cog' },
     { key: 'nodeHandles', label: '节点接口配置', icon: 'mdi:link-variant' }
   ]},
@@ -1329,7 +1366,11 @@ const handleFormRules = {
   ]
 }
 
-const filteredNodeList = computed(() => filterByKeyword(nodeList.value, ['name', 'description', 'id', 'type'], searchKeyword.value))
+const filteredNodeList = computed(() => filterByKeyword(
+  nodeList.value.filter(node => node.node_kind !== 'encapsulated'),
+  ['name', 'description', 'id', 'type', 'node_kind', 'definition_origin'],
+  searchKeyword.value
+))
 const filteredComponentList = computed(() => filterByKeyword(componentList.value, ['name', 'description', 'id', 'status'], searchKeyword.value))
 const filteredHandleList = computed(() => filterByKeyword(handleList.value, ['handle_name', 'type', 'label', 'id'], searchKeyword.value))
 const filteredAccountList = computed(() => filterByKeyword(accountList.value, ['account_name', 'id'], searchKeyword.value))
@@ -1337,6 +1378,13 @@ const filteredAccountList = computed(() => filterByKeyword(accountList.value, ['
 const nodePreviewData = computed(() => {
   if (!nodeDetailData.value) return null
   return getDefaultData(nodeDetailData.value)
+})
+const nodePreviewComponent = computed(() => {
+  if (nodeDetailData.value?.node_kind === 'encapsulated') return SubflowNode
+  if (nodeDetailData.value?.node_kind === 'backend_native') {
+    return resolveNativeNodeRenderer(nodeDetailData.value) || UnsupportedNativeNode
+  }
+  return GenericNode
 })
 
 const getResourceCount = (tabKey) => {
@@ -1756,6 +1804,34 @@ const handleDelete = (item) => {
     .catch(() => {
       ElMessage.info('已取消删除')
     })
+}
+
+const handleToggleNativeNode = async (node) => {
+  const nextEnabled = !node.enabled
+  try {
+    await ElMessageBox.confirm(
+      nextEnabled
+        ? `启用“${node.name}”后可在新蓝图中使用。`
+        : `禁用“${node.name}”后将从节点面板隐藏，且不能启动新的相关行动；在途行动不受影响。`,
+      nextEnabled ? '确认启用' : '确认禁用',
+      {
+        confirmButtonText: nextEnabled ? '启用' : '禁用',
+        cancelButtonText: '取消',
+        type: nextEnabled ? 'success' : 'warning'
+      }
+    )
+    const response = await actionApi.setNativeNodeEnabled(node.id, nextEnabled)
+    if (response.code !== 0) {
+      ElMessage.error(response.message || '修改节点启用状态失败')
+      return
+    }
+    ElMessage.success(nextEnabled ? '节点已启用' : '节点已禁用')
+    await fetchNodeList()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.message || '修改节点启用状态失败')
+    }
+  }
 }
 
 // 组件状态配置

@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="csi-base-component-sdk",
-    version="2.0.2",
+    version="2.1.0",
     author="kalinote",
     author_email="knote840746219@gmail.com",
     description="csi基本组件开发工具包",

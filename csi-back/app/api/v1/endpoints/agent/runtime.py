@@ -6,8 +6,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 
-from app.models.agent.configs import AgentPromptTemplateModel
-from app.models.agent.nanobot import NanobotAgentModel
+from app.models.agent.configs import AgentPromptTemplateModel  # noqa: F401
+from app.models.agent.nanobot import NanobotAgentModel  # noqa: F401
 from app.schemas.agent.agent import (
     AgentRuntimeRequestSchema,
     ApproveRequestSchema,
@@ -19,37 +19,16 @@ from app.schemas.agent.agent import (
 from app.schemas.agent.nanobot_agent import AgentServiceError
 from app.schemas.response import ApiResponseSchema
 from app.service.analyst.service import AnalystService
-from app.utils.jinja_injection import merge_rendered_user_prompts, render_user_prompt
+from app.service.analysis_invocation import (
+    AnalysisInvocationRequest,
+    AnalysisInvocationService,
+)
+from app.utils.jinja_injection import render_user_prompt
 import app.utils.status_codes as status_codes
 
 logger = logger.bind(name=__name__)
 
 router = APIRouter()
-
-
-async def _fetch_agent_template_user_prompt(agent_id: str) -> str:
-    agent = await NanobotAgentModel.find_one({"_id": agent_id})
-    if not agent:
-        raise AgentServiceError(
-            status_codes.NOT_FOUND_AGENT,
-            f"Agent 不存在: {agent_id}",
-        )
-
-    tpl = await AgentPromptTemplateModel.find_one({"_id": agent.prompt_template_id})
-    if not tpl:
-        raise AgentServiceError(
-            status_codes.NOT_FOUND_TEMPLATE,
-            f"Agent 绑定的提示词模板不存在: {agent.prompt_template_id}",
-        )
-
-    prompt = str(tpl.user_prompt or "").strip()
-    if not prompt:
-        raise AgentServiceError(
-            status_codes.INVALID_ARGUMENT,
-            "该 Agent 的提示词模板默认 user_prompt 为空",
-            data={"prompt_template_id": agent.prompt_template_id},
-        )
-    return prompt
 
 
 @router.post(
@@ -68,65 +47,31 @@ async def _fetch_agent_template_user_prompt(agent_id: str) -> str:
 )
 async def start_agent(data: AgentRuntimeRequestSchema, request: Request):
     try:
-        injection_param = dict(data.injection_param)
-        request_user_prompt = str(data.user_prompt or "").strip()
-
-        if data.merge_user_prompts:
-            if not request_user_prompt:
-                raise AgentServiceError(
-                    status_codes.INVALID_ARGUMENT,
-                    "merge_user_prompts 启用时 user_prompt 不能为空",
-                )
-            tpl_user_prompt = await _fetch_agent_template_user_prompt(data.agent_id)
-            rendered_tpl = render_user_prompt(
-                tpl_user_prompt, injection_param
-            ).strip()
-            rendered_req = render_user_prompt(
-                request_user_prompt, injection_param
-            ).strip()
-            if not rendered_tpl:
-                raise AgentServiceError(
-                    status_codes.INVALID_ARGUMENT,
-                    "提示词模板 user_prompt 渲染后为空",
-                )
-            if not rendered_req:
-                raise AgentServiceError(
-                    status_codes.INVALID_ARGUMENT,
-                    "用户提示词渲染后为空",
-                )
-            final_user_prompt = merge_rendered_user_prompts(
-                rendered_tpl, rendered_req
+        ref = await AnalysisInvocationService.submit(
+            AnalysisInvocationRequest(
+                agent_id=data.agent_id,
+                user_prompt=data.user_prompt,
+                injection_param=dict(data.injection_param),
+                merge_user_prompts=data.merge_user_prompts,
+                auto_approve=data.auto_approve,
+                initiator_user_id=getattr(
+                    getattr(
+                        getattr(request.state, "auth_context", None),
+                        "user",
+                        None,
+                    ),
+                    "id",
+                    None,
+                ),
             )
-        else:
-            raw_user_prompt = request_user_prompt
-            if not raw_user_prompt:
-                raw_user_prompt = await _fetch_agent_template_user_prompt(
-                    data.agent_id
-                )
-            final_user_prompt = render_user_prompt(
-                raw_user_prompt, injection_param
-            ).strip()
-            if not final_user_prompt:
-                raise AgentServiceError(
-                    status_codes.INVALID_ARGUMENT,
-                    "用户提示词为空，且模板渲染后仍为空",
-                )
-
-        session_id = await AnalystService.start_agent(
-            agent_id=data.agent_id,
-            user_prompt=final_user_prompt,
-            context=injection_param,
-            auto_approve=data.auto_approve,
-            initiator_user_id=getattr(
-                getattr(getattr(request.state, "auth_context", None), "user", None),
-                "id",
-                None,
-            ),
         )
     except AgentServiceError as exc:
         return ApiResponseSchema.error(code=exc.code, message=exc.message, data=exc.data)
     return ApiResponseSchema.success(
-        data=StartAgentResponseSchema(agent_id=data.agent_id, session_id=session_id)
+        data=StartAgentResponseSchema(
+            agent_id=data.agent_id,
+            session_id=ref.session_id,
+        )
     )
 
 

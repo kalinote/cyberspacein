@@ -33,7 +33,9 @@
                             <el-tooltip v-for="node in category.nodes" :key="node.key" :content="node.description"
                                 placement="right" :show-after="300">
                                 <div class="cursor-grab active:cursor-grabbing origin-top-left transition-transform duration-75"
-                                    draggable="true" @dragstart="onDragStart($event, node.key)"
+                                    draggable="true"
+                                    @dragstart="onDragStart($event, node.key)"
+                                    @dragend="clearBindingCandidate"
                                     :style="getNodeWrapperStyle">
                                     <div class="pointer-events-none w-full">
                                         <div v-if="isCompact"
@@ -62,8 +64,16 @@
 
             <!-- 流程图 -->
             <div class="flex-1 h-full relative bg-gray-50" @drop="onDrop" @dragover="onDragOver">
-                <VueFlow v-model="elements" :node-types="nodeTypes" :default-zoom="1.5" :min-zoom="0.2" :max-zoom="4"
-                    fit-view-on-init class="h-full w-full">
+                <div
+                    v-if="pendingOutputBindingNodeId"
+                    class="absolute left-1/2 top-3 z-50 -translate-x-1/2 rounded-full bg-violet-600 px-4 py-2 text-xs font-medium text-white shadow-lg"
+                >
+                    已选择蓝图输出，请点击结束节点顶部的绑定 Handle；按 Esc 取消
+                </div>
+                <VueFlow v-model="elements" :node-types="nodeTypes" :edge-types="edgeTypes" :default-zoom="1.5" :min-zoom="0.2" :max-zoom="4"
+                    fit-view-on-init class="h-full w-full"
+                    @node-click="selectedGraphNodeId = $event.node.id"
+                    @pane-click="handlePaneClick">
                     <Background pattern-color="#aaa" :gap="18" />
                     <Controls />
                 </VueFlow>
@@ -173,8 +183,44 @@
                     />
                 </div>
 
+                <BlueprintInterfacePanel
+                    :ports="publicInterfaces"
+                    @unbind="handleUnbindBoundary"
+                />
+                <div
+                    v-if="selectedEncapsulatedUpgrade"
+                    class="mx-4 mb-3 rounded-lg border border-teal-200 bg-teal-50 p-3"
+                >
+                    <p class="text-sm font-medium text-teal-900">发现新的封装节点版本</p>
+                    <p class="mt-1 text-xs text-teal-700">
+                        当前 v{{ selectedNodeConfig.definition_version }}，可显式升级到
+                        v{{ selectedEncapsulatedUpgrade.definition_version }}。
+                    </p>
+                    <el-button class="mt-2" size="small" type="success" @click="upgradeSelectedEncapsulatedNode">
+                        升级并按稳定端口重连
+                    </el-button>
+                </div>
+
                 <!-- 底部保存按钮 -->
-                <div class="p-4 border-t border-gray-200 shrink-0">
+                <div class="p-4 border-t border-gray-200 shrink-0 space-y-2">
+                    <div v-if="isEditMode" class="grid grid-cols-2 gap-2">
+                        <el-button
+                            v-if="hasPerm(PERM.operations.action.blueprint.publish)"
+                            class="w-full"
+                            @click="publishDialogVisible = true"
+                        >
+                            发布版本
+                        </el-button>
+                        <el-button
+                            v-if="canEncapsulate"
+                            class="w-full"
+                            type="success"
+                            plain
+                            @click="encapsulateDialogVisible = true"
+                        >
+                            封装为节点
+                        </el-button>
+                    </div>
                     <el-button
                         type="primary"
                         class="w-full"
@@ -194,11 +240,41 @@
                 </div>
             </div>
         </div>
+
+        <BoundaryBindingDialog
+            v-model="bindingDialogVisible"
+            :boundary-node="pendingBoundaryNode"
+            :target-node="pendingTargetNode"
+            :available-handles="pendingBindableHandles"
+            @confirm="handleConfirmBinding"
+            @cancel="handleCancelBinding"
+        />
+        <BlueprintPublishDialog
+            v-model="publishDialogVisible"
+            :submitting="publishing"
+            @submit="handlePublishBlueprint"
+        />
+        <BlueprintEncapsulateDialog
+            v-model="encapsulateDialogVisible"
+            :interfaces="publicInterfaces"
+            :target-nodes="encapsulatedTargetNodes"
+            :submitting="encapsulating"
+            @submit="handleEncapsulateBlueprint"
+        />
     </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, markRaw, provide, watch } from 'vue'
+import {
+    ref,
+    computed,
+    onMounted,
+    onBeforeUnmount,
+    markRaw,
+    nextTick,
+    provide,
+    watch
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
@@ -207,15 +283,39 @@ import { VueFlow, useVueFlow } from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
+import SubflowNode from "@/components/action/nodes/SubflowNode.vue"
+import BoundaryBindingEdge from "@/components/action/edges/BoundaryBindingEdge.vue"
+import { resolveNativeNodeRenderer } from "@/components/action/nodes/nativeNodeRendererRegistry"
+import BlueprintInterfacePanel from "@/components/action/BlueprintInterfacePanel.vue"
+import BoundaryBindingDialog from "@/components/action/BoundaryBindingDialog.vue"
+import BlueprintPublishDialog from "@/components/action/BlueprintPublishDialog.vue"
+import BlueprintEncapsulateDialog from "@/components/action/BlueprintEncapsulateDialog.vue"
 import TemplateParamsManager from "@/components/action/template/TemplateParamsManager.vue"
 import ResourceConfigPanel from "@/components/action/ResourceConfigPanel.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage, ElNotification } from 'element-plus'
+import { hasAll, hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
 import {
     getDefaultData,
     getNodeColor,
     normalizeDefaultValue
 } from '@/utils/action'
+import {
+    BINDING_SOURCE_HANDLE_ID,
+    BINDING_TARGET_HANDLE_ID,
+    buildBindingDisplay,
+    buildBindingRelationEdges,
+    collectBindingTargetKinds,
+    getBoundaryDirection,
+    getBoundaryExposedHandles,
+    getBoundaryInitialPosition,
+    isBindingProtocolHandle,
+    isBoundaryConfig,
+    resolveBindingTargetStates,
+    validateBindingCandidate,
+    validateBoundaryBindings
+} from '@/utils/action/boundaryBinding'
 import { useSidebarResize } from '@/utils/action/useSidebarResize'
 
 import '@vue-flow/core/dist/style.css'
@@ -229,16 +329,44 @@ const pageTitle = computed(() => isEditMode.value ? '编辑标准行动蓝图' :
 const saveButtonText = computed(() => isEditMode.value ? '保存蓝图修改' : '保存行动蓝图')
 const loadingBlueprint = ref(false)
 const saving = ref(false)
+const canEncapsulate = computed(() => hasAll([
+    PERM.operations.action.blueprint.read,
+    PERM.operations.action.blueprint.publish,
+    PERM.operations.action.node.create
+]))
 
 const nodeTypeConfigs = ref([])
+const handleOptionsById = ref({})
 const loadingNodeConfigs = ref(false)
 
 const fetchNodeConfigs = async () => {
     loadingNodeConfigs.value = true
     try {
-        const response = await actionApi.getNodes()
+        const [response, inputOptionsResponse, outputOptionsResponse] = await Promise.all([
+            actionApi.getNodes(),
+            actionApi.getNodeHandleOptions('target'),
+            actionApi.getNodeHandleOptions('source')
+        ])
         if (response.code === 0) {
             const nodes = response.data || []
+            const handleOptions = {
+                'blueprint.input': (inputOptionsResponse.data || []).map(option => ({
+                    label: `${option.label}（${option.handle_name}）`,
+                    value: option.id
+                })),
+                'blueprint.output': (outputOptionsResponse.data || []).map(option => ({
+                    label: `${option.label}（${option.handle_name}）`,
+                    value: option.id
+                }))
+            }
+            handleOptionsById.value = {
+                input: Object.fromEntries(
+                    (inputOptionsResponse.data || []).map(option => [option.id, option])
+                ),
+                output: Object.fromEntries(
+                    (outputOptionsResponse.data || []).map(option => [option.id, option])
+                )
+            }
             nodeTypeConfigs.value = nodes.map(node => {
                 const processedNode = { ...node }
 
@@ -252,32 +380,51 @@ const fetchNodeConfigs = async () => {
                 if (processedNode.inputs) {
                     processedNode.inputs = processedNode.inputs.map(input => ({
                         ...input,
-                        id: input.id || input.name
+                        id: input.id || input.name,
+                        options: input.name === 'public_handle_config_id'
+                            ? handleOptions[processedNode.builtin_key] || []
+                            : input.options
                     }))
                 }
+                processedNode.rendererUnsupported = (
+                    processedNode.node_kind === 'backend_native'
+                    && !resolveNativeNodeRenderer(processedNode)
+                )
 
                 return processedNode
             })
         } else {
             ElMessage.error(`获取节点配置失败: ${response.message}`)
             nodeTypeConfigs.value = []
+            handleOptionsById.value = {}
         }
     } catch (error) {
         ElMessage.error('获取节点配置失败')
         nodeTypeConfigs.value = []
+        handleOptionsById.value = {}
     } finally {
         loadingNodeConfigs.value = false
     }
 }
 
+const componentForConfig = (config) => {
+    if (config.node_kind === 'encapsulated') return markRaw(SubflowNode)
+    if (config.node_kind === 'backend_native') {
+        return resolveNativeNodeRenderer(config)
+    }
+    return markRaw(GenericNode)
+}
+
 const sidebarNodes = computed(() => {
-    return nodeTypeConfigs.value.map(config => ({
+    return nodeTypeConfigs.value.filter(config => (
+        !config.rendererUnsupported && config.enabled && config.is_latest
+    )).map(config => ({
         key: config.id,
         label: config.name,
         type: config.type,
         color: getNodeColor(config),
         description: config.description,
-        component: markRaw(GenericNode),
+        component: componentForConfig(config),
         data: getDefaultData(config)
     }))
 })
@@ -308,25 +455,290 @@ const toggleCategory = (type) => {
 const nodeTypes = computed(() => {
     const types = {}
     nodeTypeConfigs.value.forEach(config => {
-        types[config.id] = markRaw(GenericNode)
+        const component = componentForConfig(config)
+        if (component) types[config.id] = component
     })
     return types
 })
+const edgeTypes = {
+    boundaryBinding: markRaw(BoundaryBindingEdge)
+}
 
 const elements = ref([])
+const selectedGraphNodeId = ref(null)
 const {
     addEdges,
     addNodes,
     onConnect,
     screenToFlowCoordinate,
     onNodesInitialized,
+    updateNodeInternals,
     updateNode,
+    updateNodeData,
+    onNodeDrag,
+    onNodeDragStop,
     isValidConnection,
     getNodes,
     getEdges,
     getViewport,
     setViewport
 } = useVueFlow()
+
+const getDataEdges = () => getEdges.value.filter(
+    edge => edge.data?.relationKind !== 'boundary-binding'
+)
+
+const resolveBindingDisplay = (boundaryNode, graphNodes = elements.value) => {
+    const binding = boundaryNode?.data?.boundaryBinding
+    if (!binding?.bound_node_id) return null
+    const targetNode = graphNodes.find(node => node.id === binding.bound_node_id)
+    if (!targetNode) return null
+    return buildBindingDisplay(
+        boundaryNode,
+        targetNode,
+        (binding.port_mappings || []).map(mapping => mapping.target_port_id)
+    )
+}
+
+const publicInterfaces = computed(() => {
+    const graphNodes = elements.value.filter(element => !element.source)
+    const graphEdges = elements.value.filter(element => (
+        element.source && element.data?.relationKind !== 'boundary-binding'
+    ))
+    return graphNodes
+        .filter(node => isBoundaryConfig(node.data?.config))
+        .map(node => {
+            const config = node.data.config
+            const nameInput = (config.inputs || []).find(input => input.name === 'interface_name')
+            const handleInput = (config.inputs || []).find(
+                input => input.name === 'public_handle_config_id'
+            )
+            const direction = config.builtin_key === 'blueprint.input'
+                ? 'input'
+                : 'output'
+            const selectedHandle = handleOptionsById.value[direction]?.[
+                handleInput ? node.data[handleInput.id] : ''
+            ]
+            const exposedHandles = getBoundaryExposedHandles(
+                node,
+                graphNodes,
+                graphEdges
+            )
+            const handle = exposedHandles[0] || selectedHandle || null
+            const bindingDisplay = resolveBindingDisplay(node)
+            return {
+                nodeId: node.id,
+                name: nameInput ? node.data[nameInput.id] : '',
+                direction,
+                handleConfigId: handle?.handle_config_id || handle?.id || null,
+                interfaceTypeId: handle?.interface_type_id
+                    || handle?.id
+                    || null,
+                dataType: handle?.data_type || 'value',
+                boundNodeId: node.data.boundaryBinding?.bound_node_id || null,
+                bindingDisplay
+            }
+        })
+})
+
+const refreshBindingDerivedState = (rebuildRelations = true) => {
+    const graphNodes = getNodes.value
+    const graphEdges = getDataEdges()
+    const kindsByTarget = collectBindingTargetKinds(graphNodes)
+    const statesByTarget = resolveBindingTargetStates(graphNodes, graphEdges)
+    const bindingIssues = validateBoundaryBindings(graphNodes, graphEdges)
+    graphNodes
+        .filter(node => !isBoundaryConfig(node.data?.config))
+        .forEach(node => {
+            const nextKinds = kindsByTarget[node.id] || []
+            const currentKinds = node.data?.bindingTargetKinds || []
+            const nextState = statesByTarget[node.id]
+            const currentState = node.data?.bindingTargetState || null
+            if (
+                nextKinds.join('|') !== currentKinds.join('|')
+                || JSON.stringify(nextState) !== JSON.stringify(currentState)
+            ) {
+                updateNodeData(node.id, {
+                    bindingTargetKinds: nextKinds,
+                    bindingTargetState: nextState
+                })
+            }
+        })
+    graphNodes
+        .filter(node => isBoundaryConfig(node.data?.config))
+        .forEach(node => {
+            const nextDisplay = resolveBindingDisplay(node, graphNodes)
+            const nextIssues = bindingIssues.filter(issue => issue.nodeId === node.id)
+            if (
+                JSON.stringify(nextDisplay) !== JSON.stringify(node.data?.bindingDisplay || null)
+                || JSON.stringify(nextIssues) !== JSON.stringify(
+                    node.data?.bindingValidationIssues || []
+                )
+            ) {
+                updateNodeData(node.id, {
+                    bindingDisplay: nextDisplay,
+                    bindingValidationIssues: nextIssues
+                })
+            }
+        })
+
+    if (!rebuildRelations) return
+    const relationEdges = buildBindingRelationEdges(graphNodes, statesByTarget)
+    const currentRelationEdges = getEdges.value.filter(
+        edge => edge.data?.relationKind === 'boundary-binding'
+    )
+    const relationSignature = edges => edges
+        .map(edge => [
+            edge.id,
+            edge.source,
+            edge.sourceHandle,
+            edge.target,
+            edge.targetHandle,
+            edge.style?.stroke
+        ].join(':'))
+        .sort()
+        .join('|')
+    if (relationSignature(relationEdges) !== relationSignature(currentRelationEdges)) {
+        elements.value = [
+            ...elements.value.filter(
+                element => element.data?.relationKind !== 'boundary-binding'
+            ),
+            ...relationEdges
+        ]
+    }
+}
+
+watch(
+    () => JSON.stringify({
+        nodes: elements.value
+            .filter(element => !element.source)
+            .map(node => ({
+                id: node.id,
+                definitionId: node.data?.config?.id,
+                handles: (node.data?.config?.handles || []).map(handle => (
+                    handle.port_id || handle.id
+                ))
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
+        bindings: elements.value
+            .filter(element => !element.source && isBoundaryConfig(element.data?.config))
+            .map(node => ({
+                id: node.id,
+                binding: node.data?.boundaryBinding || null
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
+        edges: elements.value
+            .filter(element => (
+                element.source
+                && element.data?.relationKind !== 'boundary-binding'
+            ))
+            .map(edge => ({
+                id: edge.id,
+                source: edge.source,
+                sourceHandle: edge.sourceHandle,
+                target: edge.target,
+                targetHandle: edge.targetHandle
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id))
+    }),
+    () => refreshBindingDerivedState(),
+    { flush: 'post' }
+)
+
+const restoreBindingRelations = async () => {
+    refreshBindingDerivedState(false)
+    await nextTick()
+    const relationNodeIds = getNodes.value
+        .filter(node => (
+            node.data?.boundaryBinding?.bound_node_id
+            || node.data?.bindingTargetState?.relationCount > 0
+        ))
+        .map(node => node.id)
+    if (relationNodeIds.length > 0) {
+        updateNodeInternals(relationNodeIds)
+    }
+    await nextTick()
+    refreshBindingDerivedState()
+}
+
+const encapsulatedTargetNodes = computed(() => nodeTypeConfigs.value.filter(config => (
+    config.node_kind === 'encapsulated'
+    && config.source_blueprint_id === blueprintId.value
+    && config.is_latest
+)))
+const selectedGraphNode = computed(() => (
+    elements.value.find(element => !element.source && element.id === selectedGraphNodeId.value)
+    || null
+))
+const selectedNodeConfig = computed(() => selectedGraphNode.value?.data?.config || null)
+const selectedEncapsulatedUpgrade = computed(() => {
+    const current = selectedNodeConfig.value
+    if (current?.node_kind !== 'encapsulated' || !current.node_family_id) return null
+    return nodeTypeConfigs.value
+        .filter(config => (
+            config.node_family_id === current.node_family_id
+            && config.definition_version > current.definition_version
+            && config.enabled
+        ))
+        .sort((left, right) => right.definition_version - left.definition_version)[0] || null
+})
+
+const upgradeSelectedEncapsulatedNode = () => {
+    const node = selectedGraphNode.value
+    const oldConfig = selectedNodeConfig.value
+    const newConfig = selectedEncapsulatedUpgrade.value
+    if (!node || !oldConfig || !newConfig) return
+    const newData = getDefaultData(newConfig)
+    for (const oldInput of oldConfig.inputs || []) {
+        const newInput = (newConfig.inputs || []).find(item => item.name === oldInput.name)
+        if (newInput && node.data[oldInput.id] !== undefined) {
+            newData[newInput.id] = node.data[oldInput.id]
+        }
+    }
+    const newHandleByPort = Object.fromEntries(
+        (newConfig.handles || []).map(handle => [handle.port_id || handle.id, handle])
+    )
+    const oldHandleById = Object.fromEntries(
+        (oldConfig.handles || []).map(handle => [handle.id, handle])
+    )
+    elements.value = elements.value.map(element => {
+        if (!element.source && element.id === node.id) {
+            return {
+                ...element,
+                type: newConfig.id,
+                data: {
+                    ...newData,
+                    interfacePortId: element.data.interfacePortId || null,
+                    boundaryBinding: element.data.boundaryBinding || null
+                }
+            }
+        }
+        if (!element.source) return element
+        const updated = { ...element }
+        if (element.source === node.id) {
+            const oldHandle = oldHandleById[element.sourceHandle]
+            const replacement = newHandleByPort[oldHandle?.port_id || oldHandle?.id]
+            if (replacement) updated.sourceHandle = replacement.id
+        }
+        if (element.target === node.id) {
+            const oldHandle = oldHandleById[element.targetHandle]
+            const replacement = newHandleByPort[oldHandle?.port_id || oldHandle?.id]
+            if (replacement) updated.targetHandle = replacement.id
+        }
+        return updated
+    })
+    ElMessage.success(`封装节点已升级到 v${newConfig.definition_version}`)
+}
+
+const bindingDialogVisible = ref(false)
+const pendingBoundaryNode = ref(null)
+const pendingTargetNode = ref(null)
+const pendingBindableHandles = ref([])
+const pendingOutputBindingNodeId = ref(null)
+const publishDialogVisible = ref(false)
+const encapsulateDialogVisible = ref(false)
+const publishing = ref(false)
+const encapsulating = ref(false)
 
 /**
  * 验证节点连接是否有效
@@ -342,6 +754,42 @@ isValidConnection.value = (connection) => {
     const targetNode = elements.value.find(el => el.id === connection.target)
 
     if (!sourceNode || !targetNode) return false
+    if (connection.targetHandle === BINDING_TARGET_HANDLE_ID) {
+        return (
+            isBoundaryConfig(sourceNode.data?.config)
+            && getBoundaryDirection(sourceNode) === 'input'
+            && validateBindingCandidate(
+                sourceNode,
+                targetNode,
+                getNodes.value,
+                getDataEdges()
+            ).valid
+        )
+    }
+    if (connection.sourceHandle === BINDING_SOURCE_HANDLE_ID) {
+        return (
+            isBoundaryConfig(targetNode.data?.config)
+            && getBoundaryDirection(targetNode) === 'output'
+            && validateBindingCandidate(
+                targetNode,
+                sourceNode,
+                getNodes.value,
+                getDataEdges()
+            ).valid
+        )
+    }
+    if (
+        isBindingProtocolHandle(connection.sourceHandle)
+        || isBindingProtocolHandle(connection.targetHandle)
+    ) {
+        return false
+    }
+    if (
+        sourceNode.data?.boundaryBinding
+        || targetNode.data?.boundaryBinding
+    ) {
+        return false
+    }
 
     // 2. 获取节点配置
     const sourceConfig = nodeTypeConfigs.value.find(c => c.id === sourceNode.type)
@@ -361,40 +809,57 @@ isValidConnection.value = (connection) => {
     }
 
     // 5. 检查 target handle 是否已被连接（每个输入只能有一个连接）
-    const existingConnection = elements.value.find(el => 
-        el.source && // 是边（edge），不是节点
+    const existingConnection = getDataEdges().find(el =>
         el.id !== connection.id &&
         el.target === connection.target && 
         el.targetHandle === connection.targetHandle
     )
     
-    if (existingConnection) {
+    const allowsMultipleInputs = targetConfig.builtin_key === 'blueprint.output'
+    if (existingConnection && !allowsMultipleInputs) {
         return false // target handle 已有连接，不允许重复连接
     }
 
     // 6. Handle 兼容性检查
-    const sourceHandleId = sourceHandle.id
-    const targetHandleId = targetHandle.id
+    const sourceHandleId = sourceHandle.interface_type_id || sourceHandle.id
+    const targetHandleId = targetHandle.interface_type_id || targetHandle.id
 
     // 如果两者id相同，允许连接
     if (sourceHandleId === targetHandleId) {
         return true
     }
 
-    // 检查目标handle的other_compatible_interfaces是否包含源handle的id
-    const targetCompatibleInterfaces = targetHandle.other_compatible_interfaces || []
-    return targetCompatibleInterfaces.includes(sourceHandleId)
+    const sourceCompatibleInterfaces = [
+        ...(sourceHandle.compatible_interface_type_ids || []),
+        ...(sourceHandle.other_compatible_interfaces || [])
+    ]
+    const targetCompatibleInterfaces = [
+        ...(targetHandle.compatible_interface_type_ids || []),
+        ...(targetHandle.other_compatible_interfaces || [])
+    ]
+    return sourceCompatibleInterfaces.includes('*')
+        || targetCompatibleInterfaces.includes('*')
+        || sourceCompatibleInterfaces.includes(targetHandleId)
+        || sourceCompatibleInterfaces.includes(targetHandle.id)
+        || targetCompatibleInterfaces.includes(sourceHandleId)
+        || targetCompatibleInterfaces.includes(sourceHandle.id)
 }
 
 const createNodeFromConfig = (configId, position) => {
     const config = nodeTypeConfigs.value.find(c => c.id === configId)
     if (!config) return null
 
+    const data = getDefaultData(config)
+    if (isBoundaryConfig(config)) {
+        data.interfacePortId = globalThis.crypto?.randomUUID?.()
+            || `interface-${Date.now()}-${Math.random().toString(16).slice(2)}`
+        data.boundaryBinding = null
+    }
     return {
         id: `node-${Date.now()}`,
         type: config.id,
         position: position,
-        data: getDefaultData(config)
+        data
     }
 }
 
@@ -461,6 +926,7 @@ provide('templateContext', {
 
 // 配置常量
 const BASE_NODE_WIDTH = 300   // 节点组件的最小设计宽度
+const MAX_NODE_WIDTH = 400    // 与 GenericNode 的最大宽度保持一致
 const SIDEBAR_PADDING = 32    // p-4 * 2
 const COMPACT_THRESHOLD = 240 // 低于此宽度切换为标题模式
 
@@ -478,7 +944,7 @@ const getNodeWrapperStyle = computed(() => {
     //节点拉伸
     if (availableWidth >= BASE_NODE_WIDTH) {
         return {
-            width: '100%', // 强制填满容器，配合内部组件的 block 属性实现拉伸
+            width: `${Math.min(availableWidth, MAX_NODE_WIDTH)}px`,
             transform: 'scale(1)',
             marginBottom: '0px'
         }
@@ -497,6 +963,9 @@ const getNodeWrapperStyle = computed(() => {
 })
 
 const resetEditor = () => {
+    clearBindingCandidate()
+    draggedSidebarBoundaryNode.value = null
+    pendingOutputBindingNodeId.value = null
     actionForm.value = {
         title: '',
         version: '1.0.0',
@@ -510,6 +979,7 @@ const resetEditor = () => {
     templateParams.value = []
     templateBindings.value = {}
     elements.value = []
+    selectedGraphNodeId.value = null
 }
 
 const findNodeConfig = (node) => {
@@ -567,8 +1037,13 @@ const loadBlueprintForEdit = async () => {
             if (!config) {
                 throw new Error(`节点定义不存在，无法编辑：${node.data?.definition_id || node.type}`)
             }
+            if (config.rendererUnsupported) {
+                throw new Error(`当前前端不支持节点渲染器：${config.extension?.renderer_key || config.id}`)
+            }
 
             const nodeData = getDefaultData(config)
+            nodeData.interfacePortId = node.data?.interface_port_id || null
+            nodeData.boundaryBinding = node.data?.boundary_binding || null
             for (const input of config.inputs || []) {
                 const fieldName = input.name || input.id
                 const value = node.data?.form_data?.[fieldName]
@@ -583,6 +1058,11 @@ const loadBlueprintForEdit = async () => {
                 position: { ...node.position },
                 data: nodeData,
                 selected: false
+            }
+        })
+        processedNodes.forEach(node => {
+            if (isBoundaryConfig(node.data?.config)) {
+                node.data.bindingDisplay = resolveBindingDisplay(node, processedNodes)
             }
         })
 
@@ -604,7 +1084,12 @@ const loadBlueprintForEdit = async () => {
             }
         })
 
+        const { off: stopRestoreListener } = onNodesInitialized(() => {
+            stopRestoreListener()
+            restoreBindingRelations()
+        })
         elements.value = [...processedNodes, ...processedEdges]
+        await restoreBindingRelations()
         if (blueprint.graph?.viewport) {
             setTimeout(() => setViewport(blueprint.graph.viewport), 0)
         }
@@ -626,13 +1111,63 @@ const initializeEditor = async () => {
     }
 }
 
-onMounted(initializeEditor)
+const handleBindingKeydown = (event) => {
+    if (event.key === 'Escape') {
+        pendingOutputBindingNodeId.value = null
+        clearBindingCandidate()
+    }
+}
+
+onMounted(() => {
+    window.addEventListener('keydown', handleBindingKeydown)
+    initializeEditor()
+})
+onBeforeUnmount(() => {
+    window.removeEventListener('keydown', handleBindingKeydown)
+})
 watch(blueprintId, initializeEditor)
 
 
 // 流程图逻辑
 onConnect((params) => {
     const sourceNode = elements.value.find(el => el.id === params.source)
+    const targetNode = elements.value.find(el => el.id === params.target)
+    if (params.targetHandle === BINDING_TARGET_HANDLE_ID) {
+        if (
+            sourceNode
+            && targetNode
+            && isBoundaryConfig(sourceNode.data?.config)
+            && getBoundaryDirection(sourceNode) === 'input'
+        ) {
+            openBoundaryBinding(sourceNode, targetNode)
+        }
+        return
+    }
+    if (params.sourceHandle === BINDING_SOURCE_HANDLE_ID) {
+        if (
+            sourceNode
+            && targetNode
+            && isBoundaryConfig(targetNode.data?.config)
+            && getBoundaryDirection(targetNode) === 'output'
+        ) {
+            openBoundaryBinding(targetNode, sourceNode)
+        }
+        return
+    }
+    if (
+        isBindingProtocolHandle(params.sourceHandle)
+        || isBindingProtocolHandle(params.targetHandle)
+    ) {
+        ElMessage.warning('绑定 Handle 只能连接方向匹配的蓝图 IO 节点')
+        return
+    }
+    if (
+        sourceNode?.data?.boundaryBinding
+        || targetNode?.data?.boundaryBinding
+    ) {
+        ElMessage.warning('已绑定 IO 节点不能创建普通数据边，请先解绑')
+        return
+    }
     if (!sourceNode) {
         addEdges(params)
         return
@@ -663,17 +1198,152 @@ onConnect((params) => {
     addEdges([edgeWithStyle])
 })
 
+const draggedSidebarBoundaryNode = ref(null)
+const bindingCandidate = ref(null)
+
+const clearBindingCandidate = () => {
+    if (bindingCandidate.value) {
+        updateNode(bindingCandidate.value.nodeId, {
+            class: bindingCandidate.value.originalClass
+        })
+    }
+    bindingCandidate.value = null
+}
+
+const setBindingCandidate = (boundaryNode, targetNode) => {
+    const validation = validateBindingCandidate(
+        boundaryNode,
+        targetNode,
+        getNodes.value,
+        getDataEdges()
+    )
+    if (!validation.valid) {
+        clearBindingCandidate()
+        return
+    }
+    const direction = getBoundaryDirection(boundaryNode)
+    if (
+        bindingCandidate.value?.nodeId === targetNode.id
+        && bindingCandidate.value?.direction === direction
+    ) {
+        return
+    }
+    clearBindingCandidate()
+    const originalClass = targetNode.class
+    const classList = Array.isArray(originalClass)
+        ? [...originalClass]
+        : originalClass ? [originalClass] : []
+    updateNode(targetNode.id, {
+        class: [
+            ...classList,
+            'boundary-binding-candidate',
+            `boundary-binding-candidate-${direction}`
+        ]
+    })
+    bindingCandidate.value = {
+        nodeId: targetNode.id,
+        direction,
+        originalClass
+    }
+}
+
 const onDragStart = (event, nodeType) => {
+    clearBindingCandidate()
     if (event.dataTransfer) {
         event.dataTransfer.setData('application/vueflow', nodeType)
         event.dataTransfer.effectAllowed = 'move'
     }
+    const config = nodeTypeConfigs.value.find(node => node.id === nodeType)
+    draggedSidebarBoundaryNode.value = isBoundaryConfig(config)
+        ? {
+            id: 'sidebar-boundary-preview',
+            data: getDefaultData(config)
+        }
+        : null
 }
 
 const onDragOver = (event) => {
     event.preventDefault()
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    if (!draggedSidebarBoundaryNode.value) return
+    setBindingCandidate(
+        draggedSidebarBoundaryNode.value,
+        findDropTargetNode(event.clientX, event.clientY)
+    )
 }
+
+const findDropTargetNode = (clientX, clientY, excludedNodeId = null) => {
+    const nodeElement = document
+        .elementsFromPoint(clientX, clientY)
+        .map(element => element.closest?.('.vue-flow__node'))
+        .find(element => {
+            const nodeId = element?.dataset?.id || element?.getAttribute?.('data-id')
+            return nodeId && nodeId !== excludedNodeId
+        })
+    const nodeId = nodeElement?.dataset?.id || nodeElement?.getAttribute?.('data-id')
+    return elements.value.find(element => !element.source && element.id === nodeId) || null
+}
+
+const openBoundaryBinding = (boundaryNode, targetNode) => {
+    const validation = validateBindingCandidate(
+        boundaryNode,
+        targetNode,
+        getNodes.value,
+        getDataEdges()
+    )
+    if (!validation.valid) {
+        ElMessage.warning(
+            validation.issues[0]?.message || '当前节点不能建立该绑定关系'
+        )
+        return
+    }
+    pendingBoundaryNode.value = boundaryNode
+    pendingTargetNode.value = targetNode
+    pendingBindableHandles.value = validation.bindableHandles
+    bindingDialogVisible.value = true
+}
+
+const startOutputBinding = (boundaryNodeId) => {
+    const boundaryNode = getNodes.value.find(node => node.id === boundaryNodeId)
+    if (
+        !boundaryNode
+        || !isBoundaryConfig(boundaryNode.data?.config)
+        || getBoundaryDirection(boundaryNode) !== 'output'
+    ) {
+        return
+    }
+    const hasDataEdge = getDataEdges().some(
+        edge => edge.source === boundaryNodeId || edge.target === boundaryNodeId
+    )
+    if (hasDataEdge) {
+        ElMessage.warning('IO 节点已有普通数据连线，请先删除连线再建立绑定')
+        return
+    }
+    pendingOutputBindingNodeId.value = boundaryNodeId
+    ElMessage.info('请选择结束节点顶部的绑定 Handle')
+}
+
+const selectBindingTarget = (targetNodeId) => {
+    if (!pendingOutputBindingNodeId.value) return
+    const boundaryNode = getNodes.value.find(
+        node => node.id === pendingOutputBindingNodeId.value
+    )
+    const targetNode = getNodes.value.find(node => node.id === targetNodeId)
+    pendingOutputBindingNodeId.value = null
+    if (boundaryNode && targetNode) {
+        openBoundaryBinding(boundaryNode, targetNode)
+    }
+}
+
+const handlePaneClick = () => {
+    selectedGraphNodeId.value = null
+    pendingOutputBindingNodeId.value = null
+}
+
+provide('boundaryBindingController', {
+    startOutputBinding,
+    selectBindingTarget
+})
 
 const onDrop = (event) => {
     event.preventDefault()
@@ -682,6 +1352,11 @@ const onDrop = (event) => {
         const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
         const newNode = createNodeFromConfig(nodeKey, position)
         if (!newNode) return
+        const candidateNodeId = bindingCandidate.value?.nodeId
+        const targetNode = elements.value.find(element => element.id === candidateNodeId)
+            || findDropTargetNode(event.clientX, event.clientY)
+        clearBindingCandidate()
+        draggedSidebarBoundaryNode.value = null
         const { off } = onNodesInitialized(() => {
             updateNode(newNode.id, (node) => ({
                 position: {
@@ -692,25 +1367,144 @@ const onDrop = (event) => {
             off()
         })
         addNodes([newNode])
+        if (isBoundaryConfig(newNode.data?.config) && targetNode) {
+            openBoundaryBinding(newNode, targetNode)
+        }
     }
 }
 
-const handleSaveAction = async () => {
+onNodeDrag(({ event, node }) => {
+    if (isBoundaryConfig(node?.data?.config)) {
+        setBindingCandidate(
+            node,
+            event ? findDropTargetNode(event.clientX, event.clientY, node.id) : null
+        )
+    }
+})
+
+onNodeDragStop(({ event, node }) => {
+    if (!isBoundaryConfig(node?.data?.config)) return
+    const candidateNodeId = bindingCandidate.value?.nodeId
+    const targetNode = elements.value.find(element => element.id === candidateNodeId)
+        || (
+            event
+                ? findDropTargetNode(event.clientX, event.clientY, node.id)
+                : null
+        )
+    clearBindingCandidate()
+    if (targetNode) {
+        openBoundaryBinding(node, targetNode)
+    }
+})
+
+const handleConfirmBinding = (binding) => {
+    const boundaryNode = pendingBoundaryNode.value
+    const targetNode = pendingTargetNode.value
+    if (!boundaryNode || !targetNode) return
+    const nameInput = (boundaryNode.data?.config?.inputs || []).find(
+        input => input.name === 'interface_name'
+    )
+    const previousTargetId = boundaryNode.data?.boundaryBinding?.bound_node_id
+    const boundaryBinding = {
+        bound_node_id: targetNode.id,
+        port_mappings: binding.targetPortIds.map(targetPortId => ({
+            interface_port_id: binding.interfacePortId,
+            target_port_id: targetPortId
+        }))
+    }
+    updateNodeData(boundaryNode.id, {
+        ...(nameInput ? { [nameInput.id]: binding.interfaceName } : {}),
+        boundaryBinding,
+        bindingDisplay: buildBindingDisplay(
+            boundaryNode,
+            targetNode,
+            binding.targetPortIds
+        )
+    })
+    if (previousTargetId !== targetNode.id) {
+        const direction = getBoundaryDirection(boundaryNode)
+        const siblingCount = getNodes.value.filter(node => (
+            node.id !== boundaryNode.id
+            && isBoundaryConfig(node.data?.config)
+            && getBoundaryDirection(node) === direction
+            && node.data?.boundaryBinding?.bound_node_id === targetNode.id
+        )).length
+        const position = getBoundaryInitialPosition(boundaryNode, targetNode)
+        const boundaryWidth = boundaryNode?.dimensions?.width || 300
+        position.x += (
+            direction === 'input' ? -1 : 1
+        ) * siblingCount * (boundaryWidth + 20)
+        updateNode(boundaryNode.id, { position })
+    }
+    pendingBoundaryNode.value = null
+    pendingTargetNode.value = null
+    pendingBindableHandles.value = []
+}
+
+const handleCancelBinding = () => {
+    pendingBoundaryNode.value = null
+    pendingTargetNode.value = null
+    pendingBindableHandles.value = []
+}
+
+const handleUnbindBoundary = (nodeId) => {
+    updateNodeData(nodeId, {
+        boundaryBinding: null,
+        bindingDisplay: null
+    })
+    ElMessage.success('边界节点已解绑，将作为独立公开接口保留')
+}
+
+const persistBlueprint = async ({ navigate = true, notify = true } = {}) => {
+    /** 校验并保存当前编辑器草稿，可供发布和封装流程复用。 */
     if (!actionFormRef.value || saving.value) return
 
     try {
         await actionFormRef.value.validate()
     } catch {
-        return
+        return false
     }
 
     const nodes = getNodes.value
-    const edges = getEdges.value
+    const edges = getDataEdges()
     const viewport = getViewport()
 
     if (!nodes || nodes.length === 0) {
         ElMessage.error('请至少添加一个节点')
-        return
+        return false
+    }
+    const unsupportedNode = nodes.find(node => node.data?.config?.rendererUnsupported)
+    if (unsupportedNode) {
+        ElMessage.error('蓝图包含当前前端不支持的原生节点版本，无法保存')
+        return false
+    }
+    const bindingIssues = validateBoundaryBindings(nodes, edges)
+    if (bindingIssues.length > 0) {
+        selectedGraphNodeId.value = bindingIssues[0].nodeId || null
+        ElMessage.error(bindingIssues[0].message)
+        return false
+    }
+    const unnamedInterface = publicInterfaces.value.find(port => !port.name?.trim())
+    if (unnamedInterface) {
+        ElMessage.error('蓝图输入和输出节点必须填写接口名称')
+        return false
+    }
+    const unresolvedInterface = publicInterfaces.value.find(
+        port => !port.handleConfigId || !port.interfaceTypeId
+    )
+    if (unresolvedInterface) {
+        selectedGraphNodeId.value = unresolvedInterface.nodeId
+        ElMessage.error('未绑定且没有数据连线的 IO 节点必须选择接口类型')
+        return false
+    }
+    for (const direction of ['input', 'output']) {
+        const names = publicInterfaces.value
+            .filter(port => port.direction === direction)
+            .map(port => port.name.trim())
+        if (names.length !== new Set(names).size) {
+            ElMessage.error(`${direction === 'input' ? '输入' : '输出'}接口名称不能重复`)
+            return false
+        }
     }
 
     const processedNodes = nodes.map(node => {
@@ -736,18 +1530,34 @@ const handleSaveAction = async () => {
             data: {
                 definition_id: config.id,
                 version: config.version,
-                form_data: formData
+                form_data: formData,
+                node_definition_version: config.definition_version || 1,
+                instance_config: formData,
+                interface_port_id: node.data.interfacePortId || null,
+                boundary_binding: node.data.boundaryBinding || null
             }
         }
     }).filter(node => node !== null)
 
-    const processedEdges = edges.map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        sourceHandle: edge.sourceHandle,
-        target: edge.target,
-        targetHandle: edge.targetHandle
-    }))
+    const processedEdges = edges.map(edge => {
+        const sourceNode = nodes.find(node => node.id === edge.source)
+        const targetNode = nodes.find(node => node.id === edge.target)
+        const sourceHandle = sourceNode?.data?.config?.handles?.find(
+            handle => handle.id === edge.sourceHandle
+        )
+        const targetHandle = targetNode?.data?.config?.handles?.find(
+            handle => handle.id === edge.targetHandle
+        )
+        return {
+            id: edge.id,
+            source: edge.source,
+            sourceHandle: edge.sourceHandle,
+            source_port_id: sourceHandle?.port_id || edge.sourceHandle,
+            target: edge.target,
+            targetHandle: edge.targetHandle,
+            target_port_id: targetHandle?.port_id || edge.targetHandle
+        }
+    })
 
     const actionData = {
         name: actionForm.value.title,
@@ -760,11 +1570,15 @@ const handleSaveAction = async () => {
         ...(isTemplate.value && {
             template: {
                 params: templateParams.value.map(p => ({
+                    id: p.id || p.name,
                     name: p.name,
                     type: p.type,
                     label: p.label,
                     required: p.required,
-                    description: p.description
+                    description: p.description,
+                    default: p.default ?? null,
+                    options: p.options || [],
+                    validation: p.validation || {}
                 })),
                 bindings: templateBindings.value
             }
@@ -788,10 +1602,12 @@ const handleSaveAction = async () => {
 
         if (response.code !== 0) {
             ElMessage.error(response.message || `${isEditMode.value ? '更新' : '新增'}行动蓝图失败`)
-            return
+            return false
         }
 
-        ElMessage.success(isEditMode.value ? '行动蓝图更新成功' : '新增行动蓝图成功')
+        if (notify) {
+            ElMessage.success(isEditMode.value ? '行动蓝图更新成功' : '新增行动蓝图成功')
+        }
         const disabledSchedules = response.data?.disabled_schedules || []
         if (disabledSchedules.length > 0) {
             ElNotification({
@@ -803,11 +1619,105 @@ const handleSaveAction = async () => {
                 duration: 0
             })
         }
-        await router.push('/action/blueprints')
+        if (navigate) {
+            await router.push('/action/blueprints')
+        }
+        return true
     } catch (error) {
         console.error(`${isEditMode.value ? '更新' : '新增'}行动蓝图失败:`, error)
+        return false
     } finally {
         saving.value = false
     }
 }
+
+const handleSaveAction = () => persistBlueprint()
+
+const handlePublishBlueprint = async () => {
+    if (!blueprintId.value || publishing.value) return
+    publishing.value = true
+    try {
+        if (!await persistBlueprint({ navigate: false, notify: false })) {
+            return
+        }
+        const response = await actionApi.publishBlueprint(blueprintId.value)
+        if (response.code !== 0) {
+            ElMessage.error(response.message || '发布蓝图版本失败')
+            return
+        }
+        publishDialogVisible.value = false
+        ElMessage.success(`已发布 Revision ${response.data?.revision?.revision_number || ''}`)
+    } catch (error) {
+        console.error('发布蓝图版本失败:', error)
+    } finally {
+        publishing.value = false
+    }
+}
+
+const handleEncapsulateBlueprint = async (payload) => {
+    if (!blueprintId.value || encapsulating.value) return
+    encapsulating.value = true
+    try {
+        if (!await persistBlueprint({ navigate: false, notify: false })) {
+            return
+        }
+        const response = await actionApi.encapsulateBlueprint(blueprintId.value, payload)
+        if (response.code !== 0) {
+            ElMessage.error(response.message || '封装蓝图失败')
+            return
+        }
+        encapsulateDialogVisible.value = false
+        ElMessage.success('蓝图已封装为节点，可在其他蓝图中使用')
+        await fetchNodeConfigs()
+    } catch (error) {
+        console.error('封装蓝图失败:', error)
+    } finally {
+        encapsulating.value = false
+    }
+}
 </script>
+
+<style scoped>
+:deep(.vue-flow__node.boundary-binding-candidate) {
+    z-index: 1000 !important;
+}
+
+:deep(.vue-flow__node.boundary-binding-candidate .generic-node) {
+    transform: translateY(-2px);
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+:deep(.vue-flow__node.boundary-binding-candidate-input .generic-node) {
+    box-shadow: 0 0 0 3px rgb(96 165 250 / 65%), 0 12px 28px rgb(37 99 235 / 20%);
+}
+
+:deep(.vue-flow__node.boundary-binding-candidate-output .generic-node) {
+    box-shadow: 0 0 0 3px rgb(167 139 250 / 65%), 0 12px 28px rgb(124 58 237 / 20%);
+}
+
+:deep(.vue-flow__node.boundary-binding-candidate::after) {
+    position: absolute;
+    top: -36px;
+    left: 50%;
+    z-index: 20;
+    width: max-content;
+    max-width: 240px;
+    transform: translateX(-50%);
+    border-radius: 9999px;
+    padding: 6px 12px;
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    pointer-events: none;
+}
+
+:deep(.vue-flow__node.boundary-binding-candidate-input::after) {
+    background: #2563eb;
+    content: '松开以绑定蓝图输入';
+}
+
+:deep(.vue-flow__node.boundary-binding-candidate-output::after) {
+    background: #7c3aed;
+    content: '松开以绑定蓝图输出';
+}
+</style>

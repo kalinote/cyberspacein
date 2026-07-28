@@ -1,4 +1,4 @@
-version: "2026-07-22.1"
+version: "2026-07-25.1"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -54,6 +54,8 @@ routes:
   - {method: POST, path: "/action/start", principal: user, permission: "operation:action:instance:execute"}
   - {method: GET, path: "/action/list", principal: user, permission: "operation:action:instance:read"}
   - {method: GET, path: "/action/detail/{action_id}", principal: user, permission: "operation:action:instance:read"}
+  - {method: GET, path: "/action/instances/{action_id}/nodes/{node_id}/embedded", principal: user, permission: "operation:action:instance:read"}
+  - {method: GET, path: "/action/instances/{action_id}/nodes/{node_id}/embedded/logs", principal: user, permission: "operation:action:instance-log:read"}
   - {method: POST, path: "/action/{action_id}/pause", principal: user, permission: "operation:action:instance:execute"}
   - {method: POST, path: "/action/{action_id}/resume", principal: user, permission: "operation:action:instance:execute"}
   - {method: POST, path: "/action/{action_id}/stop", principal: user, permission: "operation:action:instance:execute"}
@@ -62,15 +64,25 @@ routes:
   - {method: GET, path: "/action/blueprint/list", principal: user, permission: "operation:action:blueprint:read"}
   - {method: GET, path: "/action/blueprint/detail/{blueprint_id}", principal: user, permission: "operation:action:blueprint:read"}
   - {method: PUT, path: "/action/blueprint/{blueprint_id}", principal: user, permission: "operation:action:blueprint:update"}
+  - {method: POST, path: "/action/blueprint/{blueprint_id}/validate", principal: user, permission: "operation:action:blueprint:read"}
+  - {method: POST, path: "/action/blueprint/{blueprint_id}/publish", principal: user, permission: "operation:action:blueprint-release:execute"}
+  - {method: POST, path: "/action/blueprint/{blueprint_id}/encapsulate", principal: user, permission: "operation:action:blueprint-release:execute"}
+  - {method: GET, path: "/action/blueprint/{blueprint_id}/revisions", principal: user, permission: "operation:action:blueprint:read"}
+  - {method: GET, path: "/action/blueprint/revisions/{revision_id}", principal: user, permission: "operation:action:blueprint:read"}
   - {method: DELETE, path: "/action/blueprint/{blueprint_id}", principal: user, permission: "operation:action:blueprint:delete"}
+  - {method: GET, path: "/action/resource/encapsulated-nodes", principal: user, permission: "operation:action:node:read"}
+  - {method: GET, path: "/action/resource/encapsulated-nodes/{node_id}", principal: user, permission: "operation:action:node:read"}
+  - {method: DELETE, path: "/action/resource/encapsulated-nodes/{node_id}", principal: user, permission: "operation:action:node:delete"}
   - {method: GET, path: "/action/resource/nodes", principal: user, permission: "operation:action:node:read"}
   - {method: POST, path: "/action/resource/nodes", principal: user, permission: "operation:action:node:create"}
   - {method: GET, path: "/action/resource/nodes/{node_id}", principal: user, permission: "operation:action:node:read"}
   - {method: PUT, path: "/action/resource/nodes/{node_id}", principal: user, permission: "operation:action:node:update"}
+  - {method: PATCH, path: "/action/resource/nodes/{node_id}/enabled", principal: user, permission: "operation:action:native-node-status:update"}
   - {method: DELETE, path: "/action/resource/nodes/{node_id}", principal: user, permission: "operation:action:node:delete"}
   - {method: GET, path: "/action/resource/base_components", principal: user, permission: "operation:action:node:read"}
   - {method: GET, path: "/action/configs/statistics", principal: user, permission: "operation:action:config:read"}
   - {method: GET, path: "/action/configs/handles/all", principal: user, permission: "operation:action:config:read"}
+  - {method: GET, path: "/action/configs/handles/options", principal: user, permission: "operation:action:node:read"}
   - {method: GET, path: "/action/configs/handles", principal: user, permission: "operation:action:config:read"}
   - {method: POST, path: "/action/configs/handles", principal: user, permission: "operation:action:config:create"}
   - {method: GET, path: "/action/configs/filter/node_type", principal: user, permission: "operation:action:config:read"}

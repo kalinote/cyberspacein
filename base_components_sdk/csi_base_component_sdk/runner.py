@@ -207,6 +207,7 @@ def run_component(args: argparse.Namespace) -> int:
         context.logger.info("组件运行开始", entrypoint=args.entrypoint)
         outputs = _run_callable(_load_entrypoint(args.entrypoint), context)
         context.raise_if_cancelled()
+        context.close_reference_outputs("success")
         context.logger.info("组件运行成功")
     except ComponentCancelled as exc:
         status = "cancelled"
@@ -243,6 +244,14 @@ def run_component(args: argparse.Namespace) -> int:
         heartbeat_stop.set()
         if heartbeat_thread:
             heartbeat_thread.join(timeout=2)
+        if status != "success":
+            try:
+                context.close_reference_outputs(status)
+            except Exception as exc:
+                _diagnostic(
+                    f"REFERENCE 输出流 ABORT 发送失败: {exc}",
+                    capture.original_stderr_fd,
+                )
         context.close()
         capture.stop()
         transport.close(timeout=5)

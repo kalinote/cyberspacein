@@ -5,12 +5,15 @@ export const ACTION_STATUS = Object.freeze({
   READY: 'ready',
   QUEUED: 'queued',
   RUNNING: 'running',
+  WAITING: 'waiting',
+  AWAITING_APPROVAL: 'awaiting_approval',
   COMPLETED: 'completed',
   FAILED: 'failed',
   CANCELLED: 'cancelled',
   TIMEOUT: 'timeout',
   PAUSED: 'paused',
   STOPPED: 'stopped',
+  SKIPPED: 'skipped',
 })
 
 export const TODO_ITEM_STATUS = Object.freeze({
@@ -27,12 +30,15 @@ const STATUS_TEXT_MAP = {
   [ACTION_STATUS.READY]: '已就绪',
   [ACTION_STATUS.QUEUED]: '排队中',
   [ACTION_STATUS.RUNNING]: '执行中',
+  [ACTION_STATUS.WAITING]: '等待外部结果',
+  [ACTION_STATUS.AWAITING_APPROVAL]: '等待审批',
   [ACTION_STATUS.COMPLETED]: '已完成',
   [ACTION_STATUS.FAILED]: '失败',
   [ACTION_STATUS.CANCELLED]: '已取消',
   [ACTION_STATUS.TIMEOUT]: '超时',
   [ACTION_STATUS.PAUSED]: '已暂停',
   [ACTION_STATUS.STOPPED]: '已停止',
+  [ACTION_STATUS.SKIPPED]: '已跳过',
 }
 
 // 状态标签类型映射
@@ -43,9 +49,12 @@ const STATUS_TAG_TYPE_MAP = {
   [ACTION_STATUS.READY]: 'success',
   [ACTION_STATUS.QUEUED]: 'primary',
   [ACTION_STATUS.RUNNING]: 'primary',
+  [ACTION_STATUS.WAITING]: 'warning',
+  [ACTION_STATUS.AWAITING_APPROVAL]: 'warning',
   [ACTION_STATUS.COMPLETED]: 'success',
   [ACTION_STATUS.PAUSED]: 'warning',
   [ACTION_STATUS.STOPPED]: 'info',
+  [ACTION_STATUS.SKIPPED]: 'info',
   [ACTION_STATUS.CANCELLED]: 'danger',
   [ACTION_STATUS.TIMEOUT]: 'danger',
   [ACTION_STATUS.FAILED]: 'danger',
@@ -65,9 +74,14 @@ export const getStatusTagType = (status) => {
 export const getStatusDotClass = (status) => {
   const classMap = {
     [ACTION_STATUS.RUNNING]: 'bg-blue-500 animate-pulse',
+    [ACTION_STATUS.WAITING]: 'bg-amber-500 animate-pulse',
+    [ACTION_STATUS.AWAITING_APPROVAL]: 'bg-amber-500 animate-pulse',
     [ACTION_STATUS.COMPLETED]: 'bg-green-500',
     [ACTION_STATUS.PAUSED]: 'bg-amber-500',
     [ACTION_STATUS.STOPPED]: 'bg-gray-500',
+    [ACTION_STATUS.SKIPPED]: 'bg-gray-400',
+    [ACTION_STATUS.CANCELLED]: 'bg-gray-500',
+    [ACTION_STATUS.TIMEOUT]: 'bg-red-500',
     [ACTION_STATUS.FAILED]: 'bg-red-500',
     [ACTION_STATUS.PENDING]: 'bg-gray-400'
   }
@@ -77,10 +91,13 @@ export const getStatusDotClass = (status) => {
 export const getActionStatusIcon = (status) => {
   const map = {
     [ACTION_STATUS.RUNNING]: { icon: 'mdi:loading', bgClass: 'bg-blue-100', iconClass: 'text-blue-600 animate-spin' },
+    [ACTION_STATUS.WAITING]: { icon: 'mdi:timer-sand', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
+    [ACTION_STATUS.AWAITING_APPROVAL]: { icon: 'mdi:account-clock', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
     [ACTION_STATUS.COMPLETED]: { icon: 'mdi:check-circle', bgClass: 'bg-green-100', iconClass: 'text-green-600' },
     [ACTION_STATUS.PAUSED]: { icon: 'mdi:pause', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
     [ACTION_STATUS.STOPPED]: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
     [ACTION_STATUS.CANCELLED]: { icon: 'mdi:stop', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
+    [ACTION_STATUS.SKIPPED]: { icon: 'mdi:skip-next-circle', bgClass: 'bg-gray-100', iconClass: 'text-gray-600' },
     [ACTION_STATUS.FAILED]: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' },
     [ACTION_STATUS.TIMEOUT]: { icon: 'mdi:alert-circle', bgClass: 'bg-red-100', iconClass: 'text-red-600' }
   }

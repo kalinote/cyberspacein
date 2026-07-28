@@ -7,6 +7,9 @@ from app.models.action.schedule import ActionScheduleModel
 from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
+from app.models.action.node_execution import ActionNodeExecutionModel
+from app.models.action.blueprint_revision import ActionBlueprintRevisionModel
+from app.models.action.reference_bridge import ReferenceBridgeModel
 from app.models.action.accounts import AccountModel
 from app.models.action.sandbox import SandboxModel
 from app.models.platform.platform import PlatformModel
@@ -38,6 +41,7 @@ from app.models.auth.permission_code import PermissionCodeModel
 from app.models.auth.session import LoginSessionModel
 from app.models.wiki import WikiPageModel, WikiPageRevisionModel
 from app.models.system_config import SystemConfigVersionModel
+from app.models.runtime_event import RuntimeDomainEventModel
 
 def get_all_models() -> List[Type[Document]]:
     """获取所有需要注册的 Beanie Document 模型"""
@@ -48,6 +52,9 @@ def get_all_models() -> List[Type[Document]]:
         ActionInstanceNodeModel,
         ActionScheduleModel,
         ComponentRunModel,
+        ActionNodeExecutionModel,
+        ActionBlueprintRevisionModel,
+        ReferenceBridgeModel,
         AccountModel,
         SandboxModel,
         ActionNodesHandleConfigModel,
@@ -77,4 +84,5 @@ def get_all_models() -> List[Type[Document]]:
         WikiPageModel,
         WikiPageRevisionModel,
         SystemConfigVersionModel,
+        RuntimeDomainEventModel,
     ]

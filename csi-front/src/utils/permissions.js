@@ -14,6 +14,7 @@ export const PERM = Object.freeze({
         visible: 'page:action:resource:visible',
         access: 'page:action:resource:access',
         nodes: { visible: 'page:action:resource:nodes:visible', access: 'page:action:resource:nodes:access' },
+        encapsulatedNodes: { visible: 'page:action:resource:encapsulated-nodes:visible', access: 'page:action:resource:encapsulated-nodes:access' },
         components: { visible: 'page:action:resource:components:visible', access: 'page:action:resource:components:access' },
         handles: { visible: 'page:action:resource:handles:visible', access: 'page:action:resource:handles:access' },
         proxy: { visible: 'page:action:resource:proxy:visible', access: 'page:action:resource:proxy:access' },
@@ -101,12 +102,14 @@ export const PERM = Object.freeze({
         read: 'operation:action:blueprint:read',
         create: 'operation:action:blueprint:create',
         update: 'operation:action:blueprint:update',
+        publish: 'operation:action:blueprint-release:execute',
         delete: 'operation:action:blueprint:delete'
       },
       node: {
         read: 'operation:action:node:read',
         create: 'operation:action:node:create',
         update: 'operation:action:node:update',
+        nativeStatusUpdate: 'operation:action:native-node-status:update',
         delete: 'operation:action:node:delete'
       },
       config: { read: 'operation:action:config:read', create: 'operation:action:config:create' },

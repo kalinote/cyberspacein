@@ -18,9 +18,9 @@
                 </div>
 
                 <div v-else class="flex-1 relative bg-gray-50 min-h-0">
-                    <VueFlow v-model="elements" :node-types="nodeTypes" :default-zoom="1.5" :min-zoom="0.2"
-                        :max-zoom="4" :nodes-draggable="false" :nodes-connectable="false" :elements-selectable="false"
-                        class="h-full w-full" @init="handleFlowInit">
+                    <VueFlow v-model="elements" :node-types="nodeTypes" :edge-types="edgeTypes" :default-zoom="1.5"
+                        :min-zoom="0.2" :max-zoom="4" :nodes-draggable="false" :nodes-connectable="false"
+                        :elements-selectable="false" class="h-full w-full" @init="handleFlowInit">
                         <Background pattern-color="#aaa" :gap="18" />
                         <Controls />
                     </VueFlow>
@@ -56,6 +56,7 @@ import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import GenericNode from '@/components/action/nodes/GenericNode.vue'
+import BoundaryBindingEdge from '@/components/action/edges/BoundaryBindingEdge.vue'
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
 import {
@@ -63,6 +64,14 @@ import {
     getDefaultData,
     formatDateTime
 } from '@/utils/action'
+import {
+    buildBindingDisplay,
+    buildBindingRelationEdges,
+    collectBindingTargetKinds,
+    isBoundaryConfig,
+    resolveBindingTargetStates,
+    validateBoundaryBindings
+} from '@/utils/action/boundaryBinding'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -126,6 +135,9 @@ const nodeTypes = computed(() => {
     }
     return types
 })
+const edgeTypes = {
+    boundaryBinding: markRaw(BoundaryBindingEdge)
+}
 
 const fetchNodeConfigs = async () => {
     try {
@@ -259,6 +271,8 @@ const loadBlueprintData = () => {
         }
 
         const nodeData = getDefaultData(config)
+        nodeData.interfacePortId = node.data?.interface_port_id || null
+        nodeData.boundaryBinding = node.data?.boundary_binding || null
 
         if (config.inputs && !blueprintData.value?.is_template) {
             config.inputs.forEach(input => {
@@ -334,7 +348,47 @@ const loadBlueprintData = () => {
         }
     })
 
-    elements.value = [...processedNodes, ...processedEdges]
+    const bindingKindsByTarget = collectBindingTargetKinds(processedNodes)
+    const bindingTargetStates = resolveBindingTargetStates(
+        processedNodes,
+        processedEdges
+    )
+    const bindingIssues = validateBoundaryBindings(
+        processedNodes,
+        processedEdges
+    )
+    processedNodes.forEach(node => {
+        if (isBoundaryConfig(node.data?.config)) {
+            const binding = node.data?.boundaryBinding
+            const targetNode = binding?.bound_node_id
+                ? processedNodes.find(item => item.id === binding.bound_node_id)
+                : null
+            node.data.bindingDisplay = targetNode
+                ? buildBindingDisplay(
+                    node,
+                    targetNode,
+                    (binding.port_mappings || []).map(
+                        mapping => mapping.target_port_id
+                    )
+                )
+                : null
+            node.data.bindingValidationIssues = bindingIssues.filter(
+                issue => issue.nodeId === node.id
+            )
+            return
+        }
+        node.data.bindingTargetKinds = bindingKindsByTarget[node.id] || []
+        node.data.bindingTargetState = bindingTargetStates[node.id] || null
+    })
+    const bindingEdges = buildBindingRelationEdges(
+        processedNodes,
+        bindingTargetStates
+    )
+    elements.value = [
+        ...processedNodes,
+        ...processedEdges,
+        ...bindingEdges
+    ]
 
     if (graph.viewport) {
         setViewport(graph.viewport)

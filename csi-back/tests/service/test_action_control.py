@@ -96,6 +96,10 @@ async def test_resume_extends_deadline_and_restores_ready_node(monkeypatch):
         paused_at=paused_at,
         paused_duration=3,
         deadline_at=deadline_at,
+        execution_plan_snapshot=SimpleNamespace(
+            edges=[],
+            nodes=[SimpleNamespace(id="node-1")],
+        ),
     )
     running_action = SimpleNamespace(
         **{
@@ -235,6 +239,9 @@ async def test_paused_action_cannot_lose_queues_to_finish_race(monkeypatch):
         paused_duration=0,
         finished_nodes_instance=[],
         nodes_id=["node-1"],
+        execution_plan_snapshot=SimpleNamespace(
+            nodes=[SimpleNamespace(id="node-1")]
+        ),
     )
     find_action_calls = 0
 

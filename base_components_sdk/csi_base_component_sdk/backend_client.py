@@ -7,7 +7,6 @@ from typing import Any
 
 import requests
 
-
 def _suppress_internal_http_debug_logs() -> None:
     """Prevent SDK transport diagnostics from feeding back into component logs.
 
@@ -57,7 +56,11 @@ class BackendClient:
         self._session.headers.update({"Authorization": f"Bearer {token}"})
 
     def initialize(self) -> dict[str, Any]:
-        return self._request("GET", "init", timeout=15)
+        return self._request(
+            "GET",
+            "init",
+            timeout=15,
+        )
 
     def heartbeat(self, progress: float, message: str) -> dict[str, Any]:
         data = self._request(

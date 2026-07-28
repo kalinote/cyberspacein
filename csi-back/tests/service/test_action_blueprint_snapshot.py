@@ -59,7 +59,7 @@ async def test_init_action_persists_blueprint_snapshot(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_find_next_node_uses_action_snapshot(monkeypatch):
+async def test_find_next_node_uses_execution_plan_snapshot(monkeypatch):
     old_edge = GraphEdgeModel(
         id="edge-old",
         source="node-1",
@@ -80,6 +80,16 @@ async def test_find_next_node_uses_action_snapshot(monkeypatch):
         blueprint_snapshot=create_blueprint_snapshot(
             blueprint_stub(name="旧蓝图", edges=[old_edge])
         ),
+        execution_plan_snapshot=SimpleNamespace(
+            edges=[
+                SimpleNamespace(
+                    source="node-1",
+                    source_port_id="output",
+                    target="node-old",
+                    target_port_id="input",
+                )
+            ]
+        ),
     )
     monkeypatch.setattr(
         ActionInstanceModel,
@@ -94,19 +104,3 @@ async def test_find_next_node_uses_action_snapshot(monkeypatch):
     assert generate_id("action-1node-old") in next_nodes
     assert generate_id("action-1node-new") not in next_nodes
     get_blueprint.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_legacy_action_without_snapshot_falls_back_to_current_blueprint(monkeypatch):
-    action = SimpleNamespace(
-        blueprint_id="blueprint-1",
-        blueprint_snapshot=None,
-    )
-    blueprint = blueprint_stub()
-    get_blueprint = AsyncMock(return_value=blueprint)
-    monkeypatch.setattr(ActionInstanceService, "get_blueprint", get_blueprint)
-
-    result = await ActionInstanceService.get_action_blueprint(action)
-
-    assert result is blueprint
-    get_blueprint.assert_awaited_once_with("blueprint-1")

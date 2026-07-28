@@ -17,6 +17,18 @@ export const actionApi = {
   getNodeDetail(nodeId) {
     return request.get(`/action/resource/nodes/${nodeId}`)
   },
+  // 获取封装节点资源族列表
+  getEncapsulatedNodes(params = {}) {
+    return request.get('/action/resource/encapsulated-nodes', params)
+  },
+  // 获取封装节点版本详情
+  getEncapsulatedNodeDetail(nodeId) {
+    return request.get(`/action/resource/encapsulated-nodes/${nodeId}`)
+  },
+  // 删除封装节点版本；最后一个有效版本会清理整个资源族
+  deleteEncapsulatedNode(nodeId, config = {}) {
+    return request.delete(`/action/resource/encapsulated-nodes/${nodeId}`, config)
+  },
   // 更新行动节点
   updateNode(nodeId, data) {
     return request.put(`/action/resource/nodes/${nodeId}`, data)
@@ -24,6 +36,10 @@ export const actionApi = {
   // 删除行动节点（逻辑删除）
   deleteNode(nodeId) {
     return request.delete(`/action/resource/nodes/${nodeId}`)
+  },
+  // 启用或禁用后端原生节点
+  setNativeNodeEnabled(nodeId, enabled) {
+    return request.patch(`/action/resource/nodes/${nodeId}/enabled`, { enabled })
   },
   // 创建行动蓝图
   createActionBlueprint(data) {
@@ -40,6 +56,26 @@ export const actionApi = {
   // 获取行动蓝图列表
   getBlueprintsBaseInfo(params = {page: 1, page_size: 10}) {
     return request.get('/action/blueprint/list', params)
+  },
+  // 校验蓝图执行图
+  validateBlueprint(id) {
+    return request.post(`/action/blueprint/${id}/validate`)
+  },
+  // 发布不可变蓝图版本
+  publishBlueprint(id) {
+    return request.post(`/action/blueprint/${id}/publish`)
+  },
+  // 封装蓝图为节点
+  encapsulateBlueprint(id, data) {
+    return request.post(`/action/blueprint/${id}/encapsulate`, data)
+  },
+  // 获取蓝图版本列表
+  getBlueprintRevisions(id) {
+    return request.get(`/action/blueprint/${id}/revisions`)
+  },
+  // 获取不可变蓝图版本
+  getBlueprintRevision(revisionId) {
+    return request.get(`/action/blueprint/revisions/${revisionId}`)
   },
   // 删除行动蓝图及其历史行动
   deleteBlueprint(id) {
@@ -73,6 +109,14 @@ export const actionApi = {
   getNodeLogs(nodeInstanceId, params = {}) {
     return request.get(`/action/nodes/${nodeInstanceId}/logs`, params)
   },
+  // 获取封装节点内部行动
+  getEmbeddedAction(actionId, nodeId) {
+    return request.get(`/action/instances/${actionId}/nodes/${nodeId}/embedded`)
+  },
+  // 聚合查询封装节点内部日志
+  getEmbeddedActionLogs(actionId, nodeId, params = {}) {
+    return request.get(`/action/instances/${actionId}/nodes/${nodeId}/embedded/logs`, params)
+  },
   // 获取行动节点接口列表
   getNodeHandles(params = { page: 1, page_size: 10 }) {
     return request.get(`/action/configs/handles`, params)
@@ -84,6 +128,10 @@ export const actionApi = {
   // 获取所有节点接口列表
   getAllNodeHandles() {
     return request.get(`/action/configs/handles/all`)
+  },
+  // 获取独立IO节点可选择的动态Handle配置
+  getNodeHandleOptions(direction) {
+    return request.get('/action/configs/handles/options', { direction })
   },
   // 获取资源统计数据
   getStatistics() {

@@ -216,6 +216,18 @@
                                         </el-tag>
                                     </div>
                                 </div>
+                                <div v-if="selectedNodeDetail.node_kind">
+                                    <label class="text-xs text-gray-500">节点一级类型</label>
+                                    <p class="text-sm text-gray-700 mt-1">{{ selectedNodeDetail.node_kind }}</p>
+                                </div>
+                                <div v-if="selectedNodeDetail.driver">
+                                    <label class="text-xs text-gray-500">执行驱动</label>
+                                    <p class="text-sm text-gray-700 mt-1">{{ selectedNodeDetail.driver }}</p>
+                                </div>
+                                <div v-if="selectedNodeDetail.handler">
+                                    <label class="text-xs text-gray-500">执行 Handler</label>
+                                    <p class="text-sm text-gray-700 mt-1">{{ selectedNodeDetail.handler }}</p>
+                                </div>
                                 <div v-if="selectedNodeDetail.startTime">
                                     <label class="text-xs text-gray-500">开始时间</label>
                                     <p class="text-sm text-gray-700 mt-1">{{ formatDateTime(selectedNodeDetail.startTime, { includeSecond: true }) }}</p>
@@ -227,6 +239,47 @@
                             </div>
                         </div>
 
+                        <el-alert
+                            v-if="selectedNodeDetail.skip_reason"
+                            :title="selectedNodeDetail.skip_reason"
+                            type="info"
+                            show-icon
+                            :closable="false"
+                        />
+
+                        <div
+                            v-if="selectedNodeDetail.embedded_action_id || selectedNodeDetail.node_kind === 'encapsulated'"
+                            class="rounded-lg border border-teal-200 bg-teal-50 p-4"
+                        >
+                            <div class="flex items-center justify-between gap-4">
+                                <div>
+                                    <p class="text-sm font-semibold text-teal-900">嵌入式子行动</p>
+                                    <p class="mt-1 text-xs text-teal-700">
+                                        状态 {{ selectedNodeDetail.child_status || '尚未启动' }}，
+                                        进度 {{ selectedNodeDetail.child_progress || 0 }}%
+                                    </p>
+                                </div>
+                                <el-button
+                                    type="primary"
+                                    :disabled="!selectedNodeDetail.embedded_action_id"
+                                    @click="embeddedDetailVisible = true"
+                                >
+                                    查看内部蓝图与日志
+                                </el-button>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="selectedNodeDetail.status === ACTION_STATUS.AWAITING_APPROVAL"
+                            class="rounded-lg border border-amber-200 bg-amber-50 p-4"
+                        >
+                            <p class="text-sm font-semibold text-amber-900">分析节点正在等待人工审批</p>
+                            <p class="mt-1 text-xs text-amber-700">请进入对应分析会话查看变更内容并完成审批。</p>
+                            <el-button class="mt-3" type="warning" @click="openAnalysisSession">
+                                打开审批会话
+                            </el-button>
+                        </div>
+
                         <!-- 执行结果 -->
                         <div v-if="selectedNodeDetail.finished || selectedNodeDetail.errorMessage">
                             <h4 class="text-sm font-semibold text-gray-800 mb-3">执行结果</h4>
@@ -236,9 +289,17 @@
                                     <span class="font-medium">错误信息：</span>
                                     <p class="mt-1 whitespace-pre-wrap">{{ selectedNodeDetail.errorMessage }}</p>
                                 </div>
-                                <div v-else-if="selectedNodeDetail.finished" class="text-sm text-green-600">
-                                    <Icon icon="mdi:check-circle" class="inline mr-2" />
-                                    <span class="font-medium">执行成功</span>
+                                <div
+                                    v-else-if="selectedNodeDetail.finished"
+                                    :class="selectedNodeDetail.status === ACTION_STATUS.SKIPPED ? 'text-sm text-gray-600' : 'text-sm text-green-600'"
+                                >
+                                    <Icon
+                                        :icon="selectedNodeDetail.status === ACTION_STATUS.SKIPPED ? 'mdi:skip-next-circle' : 'mdi:check-circle'"
+                                        class="inline mr-2"
+                                    />
+                                    <span class="font-medium">
+                                        {{ selectedNodeDetail.status === ACTION_STATUS.SKIPPED ? '节点已跳过' : '执行成功' }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -289,7 +350,6 @@
                         </div>
 
                         <!-- 执行日志 -->
-                         <!-- TODO: 添加分页 -->
                         <div>
                             <h4 class="text-sm font-semibold text-gray-800 mb-3">执行日志</h4>
                             <div class="grid grid-cols-4 gap-2 mb-3">
@@ -361,12 +421,17 @@
                 </div>
             </div>
         </div>
+        <EmbeddedActionDetail
+            v-model="embeddedDetailVisible"
+            :parent-action-id="actionId"
+            :node-id="selectedNodeId || ''"
+        />
     </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, markRaw, h } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
 import SimplePageHeader from "@/components/page-header/SimplePageHeader.vue"
@@ -374,6 +439,10 @@ import { VueFlow, useVueFlow } from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
 import GenericNode from "@/components/action/nodes/GenericNode.vue"
+import SubflowNode from "@/components/action/nodes/SubflowNode.vue"
+import UnsupportedNativeNode from "@/components/action/nodes/UnsupportedNativeNode.vue"
+import { resolveNativeNodeRenderer } from "@/components/action/nodes/nativeNodeRendererRegistry"
+import EmbeddedActionDetail from "@/views/action/EmbeddedActionDetail.vue"
 import { actionApi } from '@/api/action'
 import { ElMessage } from 'element-plus'
 import hljs from 'highlight.js/lib/core'
@@ -401,6 +470,7 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 
 const route = useRoute()
+const router = useRouter()
 const actionId = computed(() => route.params.id)
 
 const nodeTypeConfigs = ref([])
@@ -464,6 +534,14 @@ const StatusAwareNode = {
         const nodeStatus = computed(() => executionStatus.value?.status || ACTION_STATUS.PENDING)
         const progress = computed(() => executionStatus.value?.progress || 0)
         const isSelected = computed(() => props.selected)
+        const renderer = computed(() => {
+            const config = props.data?.config || {}
+            if (config.node_kind === 'encapsulated') return SubflowNode
+            if (config.node_kind === 'backend_native') {
+                return resolveNativeNodeRenderer(config) || UnsupportedNativeNode
+            }
+            return GenericNode
+        })
 
         return () => {
             return h('div', {
@@ -472,7 +550,7 @@ const StatusAwareNode = {
                     'relative'
                 ].filter(Boolean).join(' '),
             }, [
-                h(GenericNode, {
+                h(renderer.value, {
                     id: props.id,
                     data: props.data,
                     disabled: true,
@@ -495,6 +573,7 @@ const StatusAwareNode = {
 
 const nodeTypes = computed(() => {
     const types = {}
+    types['status-aware'] = markRaw(StatusAwareNode)
     nodeTypeConfigs.value.forEach(config => {
         types[config.id] = markRaw(StatusAwareNode)
         if (config.type) {
@@ -530,6 +609,7 @@ const actionData = ref({
 })
 
 const selectedNodeId = ref(null)
+const embeddedDetailVisible = ref(false)
 
 // 统一管理折叠状态
 const collapsedState = ref({
@@ -560,6 +640,19 @@ const selectedNodeConfigs = computed(() => {
     const node = actionData.value.graph.nodes.find(n => n.id === selectedNodeId.value)
     return node?.data?.form_data || null
 })
+
+const openAnalysisSession = () => {
+    const state = selectedNodeDetail.value?.extension_state || {}
+    if (!state.session_id) {
+        ElMessage.warning('分析会话尚未创建或已不可用')
+        return
+    }
+    router.push({
+        name: 'agent-analysis-detail',
+        params: { sessionId: state.session_id },
+        query: state.agent_id ? { agent_id: state.agent_id } : {}
+    })
+}
 
 const selectedNodeLogs = computed(() => {
     if (!selectedNodeId.value) return []
@@ -708,10 +801,6 @@ const highlightJSON = (obj) => {
 
 
 const loadActionData = async () => {
-    if (nodeTypeConfigs.value.length === 0) {
-        return
-    }
-    
     loadingActionData.value = true
     try {
         const response = await actionApi.getActionDetail(actionId.value)
@@ -754,7 +843,8 @@ const loadActionData = async () => {
                             ACTION_STATUS.COMPLETED,
                             ACTION_STATUS.FAILED,
                             ACTION_STATUS.CANCELLED,
-                            ACTION_STATUS.TIMEOUT
+                            ACTION_STATUS.TIMEOUT,
+                            ACTION_STATUS.SKIPPED
                         ].includes(detail.status)
                     }
                 ])
@@ -763,13 +853,8 @@ const loadActionData = async () => {
         
         actionData.value = transformedData
     /**
-     * 临时方案：通过formData的key来匹配节点配置
-     * 
-     * 说明：由于后端返回的节点数据中可能缺少明确的definition_id，
-     * 这个函数通过比较formData的key和节点配置的inputs来"猜测"最匹配的节点配置。
-     * 
-     * TODO: 后端应该在返回数据时明确提供definition_id，避免这种猜测式匹配
-     * 
+     * 旧行动没有定义快照时，通过表单字段匹配最接近的历史节点配置。
+     *
      * @param {Object} formData - 表单数据对象
      * @param {string} nodeType - 节点类型
      * @returns {Object|null} 最匹配的节点配置，如果没有找到则返回null
@@ -814,7 +899,8 @@ const loadActionData = async () => {
     }
     
     const processedNodes = transformedData.graph.nodes.map(node => {
-        let config = null
+        const nodeDetail = transformedData.node_details[node.id]
+        let config = nodeDetail?.definition || null
         
         if (node.data?.definition_id) {
             config = nodeTypeConfigs.value.find(c => c.id === node.data.definition_id)
@@ -841,8 +927,16 @@ const loadActionData = async () => {
             config = fallbackConfig
         }
         
+        config = {
+            ...config,
+            node_kind: nodeDetail?.node_kind || config.node_kind,
+            execution: {
+                ...(config.execution || {}),
+                driver: nodeDetail?.driver || config.execution?.driver,
+                handler: nodeDetail?.handler || config.execution?.handler
+            }
+        }
         const nodeData = getDefaultData(config)
-        const nodeDetail = transformedData.node_details[node.id]
         if (nodeDetail) {
             nodeData.executionStatus = {
                 status: nodeDetail.status,
@@ -865,7 +959,7 @@ const loadActionData = async () => {
         
         return {
             id: node.id,
-            type: config.id,
+            type: 'status-aware',
             position: node.position,
             data: nodeData,
             selected: false
@@ -983,10 +1077,6 @@ const loadActionData = async () => {
 }
 
 const updateActionData = async () => {
-    if (nodeTypeConfigs.value.length === 0) {
-        return
-    }
-    
     try {
         const response = await actionApi.getActionDetail(actionId.value)
         if (response.code !== 0) {
@@ -1010,7 +1100,8 @@ const updateActionData = async () => {
                         ACTION_STATUS.COMPLETED,
                         ACTION_STATUS.FAILED,
                         ACTION_STATUS.CANCELLED,
-                        ACTION_STATUS.TIMEOUT
+                        ACTION_STATUS.TIMEOUT,
+                        ACTION_STATUS.SKIPPED
                     ].includes(detail.status)
                 }
             ])
@@ -1105,12 +1196,8 @@ watch(
 
 onMounted(async () => {
     await Promise.all([fetchNodeConfigs(), fetchComponentNames()])
-    if (nodeTypeConfigs.value.length > 0) {
-        await loadActionData()
-        startPolling()
-    } else {
-        ElMessage.error('节点配置加载失败，请刷新页面重试')
-    }
+    await loadActionData()
+    startPolling()
     document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 

@@ -81,10 +81,36 @@ class ComponentContext:
     def rabbitmq(self) -> RabbitMQClient:
         if self._rabbitmq is None:
             client = RabbitMQClient()
+            client.configure_reference_streams(
+                self.inputs,
+                self.outputs,
+                self.raise_if_cancelled,
+            )
             if not client.connect():
                 raise ComponentFailure("无法连接 RabbitMQ")
             self._rabbitmq = client
         return self._rabbitmq
+
+    def close_reference_outputs(self, status: str) -> None:
+        """由 Runner 自动关闭当前组件声明的 REFERENCE 输出流。"""
+        has_eos_output = any(
+            isinstance(value, dict)
+            and value.get("type") == "reference"
+            and any(
+                isinstance(stream, dict) and stream.get("protocol") == "eos-v1"
+                for stream in value.get("streams") or []
+            )
+            for value in self.outputs.values()
+        )
+        if not has_eos_output:
+            return
+        published = self.rabbitmq.close_reference_outputs(
+            action_id=self.action_id,
+            producer_id=self.component_run_id,
+            status=status,
+        )
+        if status == "success" and not published:
+            raise ComponentFailure("REFERENCE 输出流 EOS 发送失败")
 
     def close(self) -> None:
         if self._rabbitmq is not None:

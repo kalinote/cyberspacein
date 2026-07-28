@@ -98,3 +98,5 @@ tmp_docs/
 # Runtime system configuration (contains secrets)
 csi-back/data/
 .uv-cache/
+
+.ruff_cache/

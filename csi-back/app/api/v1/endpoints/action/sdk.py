@@ -7,7 +7,6 @@ from app.core.config import settings
 from app.core.security import create_component_token
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
-from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeModel
 from app.schemas.action.log import ComponentLogBatchRequest, ComponentLogBatchResponse
 from app.schemas.action.sdk import (
@@ -44,30 +43,79 @@ async def exchange_component_token(component_run_id: str, request: Request):
     )
 
 
-async def _build_io(node_instance: ActionInstanceNodeModel) -> tuple[dict, dict]:
+async def _build_io(
+    node_instance: ActionInstanceNodeModel,
+    definition: ActionNodeModel | None = None,
+) -> tuple[dict, dict]:
+    """从行动执行计划和队列绑定构造组件输入输出。"""
+    binding_by_queue = {}
+    if any(
+        value.type == ActionConfigIOTypeEnum.REFERENCE
+        for value in node_instance.inputs.values()
+    ):
+        action_nodes = await ActionInstanceNodeModel.find(
+            {"action_id": node_instance.action_id}
+        ).to_list()
+        binding_by_queue = {
+            binding.queue_name: binding
+            for action_node in action_nodes
+            for binding in action_node.reference_queue_bindings.values()
+        }
     inputs: dict[str, Any] = {}
     for value in node_instance.inputs.values():
-        inputs[value.key] = {"type": value.type.value, "value": value.value}
+        input_payload = {"type": value.type.value, "value": value.value}
+        binding = binding_by_queue.get(value.value)
+        if binding is not None:
+            input_payload["streams"] = [
+                {
+                    "queue_name": binding.queue_name,
+                    "stream_id": binding.stream_id,
+                    "protocol": binding.protocol_version.value,
+                    "expected_producer_ids": binding.expected_producer_ids,
+                }
+            ]
+        inputs[value.key] = input_payload
 
     outputs: dict[str, Any] = {}
     action_instance = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
     if action_instance:
-        blueprint = await ActionInstanceService.get_action_blueprint(action_instance)
-        if blueprint:
-            handle_queues: dict[str, list[str]] = {}
-            for edge in blueprint.graph.edges:
-                if edge.source != node_instance.node_id:
-                    continue
-                queue_name = node_instance.reference_queues.get(edge.target)
-                if queue_name:
-                    handle_queues.setdefault(edge.sourceHandle, []).append(queue_name)
-            for handle_id, queue_names in handle_queues.items():
-                handle = await ActionNodesHandleConfigModel.find_one({"_id": handle_id})
-                if handle:
-                    outputs[handle.handle_name] = {
-                        "type": "reference",
-                        "value": queue_names,
-                    }
+        handle_queues: dict[str, list[str]] = {}
+        handle_streams: dict[str, list[dict[str, Any]]] = {}
+        for binding in node_instance.reference_queue_bindings.values():
+            handle_queues.setdefault(
+                binding.source_port_id,
+                [],
+            ).append(binding.queue_name)
+            handle_streams.setdefault(
+                binding.source_port_id,
+                [],
+            ).append(
+                {
+                    "queue_name": binding.queue_name,
+                    "stream_id": binding.stream_id,
+                    "protocol": binding.protocol_version.value,
+                }
+            )
+        for handle_id, queue_names in handle_queues.items():
+            snapshot_handle, handle = await (
+                ActionInstanceService.resolve_node_handle_definition(
+                    definition,
+                    handle_id,
+                )
+            )
+            handle_name = (
+                handle.handle_name
+                if handle
+                else snapshot_handle.relabel
+                if snapshot_handle and snapshot_handle.relabel
+                else handle_id
+            )
+            if handle_name:
+                outputs[handle_name] = {
+                    "type": "reference",
+                    "value": queue_names,
+                    "streams": handle_streams[handle_id],
+                }
     for value in node_instance.outputs.values():
         if value.type != ActionConfigIOTypeEnum.REFERENCE:
             outputs[value.key] = {"type": value.type.value, "value": value.value}
@@ -93,14 +141,13 @@ async def get_component_init(component_run_id: str):
     )
     if node_instance is None:
         return ApiResponseSchema.error(code=240417, message="节点实例不存在")
-
-    definition = await ActionNodeModel.find_one(
-        {"_id": node_instance.definition_id, "is_deleted": False}
+    definition = await ActionInstanceService.get_instance_node_definition(
+        node_instance
     )
     if definition is None:
         return ApiResponseSchema.error(code=240418, message="节点定义不存在")
     config = unpack_dict(node_instance.configs) or {}
-    inputs, outputs = await _build_io(node_instance)
+    inputs, outputs = await _build_io(node_instance, definition)
 
     now = datetime.now()
     component_run.status = ComponentRunStatusEnum.RUNNING

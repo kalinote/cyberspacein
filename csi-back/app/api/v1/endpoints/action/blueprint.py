@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 from elasticsearch import ApiError
 from loguru import logger
 from fastapi import APIRouter, Depends
+from fastapi import Request
 from app.core.config import settings
+from app.core.exceptions import ForbiddenException
 from app.db.elasticsearch import get_es
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.blueprint import (
     ActionBlueprintModel,
-    create_blueprint_snapshot,
     PositionModel,
     NodeDataModel,
     GraphNodeModel,
@@ -23,14 +24,29 @@ from app.schemas.action.blueprint import (
     ActionBlueprintBaseInfoResponse,
     ActionBlueprintDetailResponseSchema,
     ActionBlueprintUpdateResponseSchema,
+    BlueprintEncapsulateRequest,
+    BlueprintEncapsulateResponse,
+    BlueprintPublishResponse,
+    BlueprintRevisionResponse,
     BlueprintScheduleImpactSchema,
+    BlueprintValidateResponse,
     TemplateSpecSchema,
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.schemas.constants import ActionFlowStatusEnum
-from app.service.action import ActionInstanceService
+from app.service.action import ActionInstanceService, node_model_to_response
+from app.service.action_compiler import BlueprintCompiler
 from app.service.action_schedule import validate_blueprint_params
+from app.service.auth import has_backend_permissions
+from app.service.blueprint_revision import BlueprintRevisionService
+from app.service.boundary_binding_validator import (
+    BlueprintBindingValidationError,
+)
+from app.models.action.blueprint_revision import ActionBlueprintRevisionModel
+from app.models.action.node import ActionNodeModel
+from app.schemas.action.interface import BlueprintInterfaceSpec
+from app.schemas.constants import ActionInvocationModeEnum
 from app.utils.id_lib import generate_id
 from app.utils.dict_helper import pack_dict
 from app.utils.workflow import count_workflow_paths, graph_model2schemas
@@ -69,6 +85,10 @@ def _graph_schema_to_model(data: ActionBlueprintSchema) -> GraphModel:
                 definition_id=node.data.definition_id,
                 version=node.data.version,
                 form_data=pack_dict(node.data.form_data),
+                node_definition_version=node.data.node_definition_version,
+                instance_config=node.data.instance_config,
+                interface_port_id=node.data.interface_port_id,
+                boundary_binding=node.data.boundary_binding,
             ),
         )
         for node in data.graph.nodes
@@ -78,8 +98,10 @@ def _graph_schema_to_model(data: ActionBlueprintSchema) -> GraphModel:
             id=edge.id,
             source=edge.source,
             sourceHandle=edge.sourceHandle,
+            source_port_id=edge.source_port_id,
             target=edge.target,
             targetHandle=edge.targetHandle,
+            target_port_id=edge.target_port_id,
         )
         for edge in data.graph.edges
     ]
@@ -91,6 +113,44 @@ def _graph_schema_to_model(data: ActionBlueprintSchema) -> GraphModel:
             y=data.graph.viewport.y,
             zoom=data.graph.viewport.zoom,
         ),
+    )
+
+
+async def _compile_blueprint_graph(graph: GraphModel):
+    """校验蓝图两种调用模式并返回公开接口。"""
+    definitions = await BlueprintCompiler.load_definitions(graph)
+    await BlueprintCompiler.hydrate_interface_handle_selections(
+        graph,
+        definitions,
+    )
+    BlueprintCompiler.compile(
+        graph,
+        definitions,
+        ActionInvocationModeEnum.STANDALONE,
+    )
+    subflow_plan = BlueprintCompiler.compile(
+        graph,
+        definitions,
+        ActionInvocationModeEnum.SUBFLOW,
+    )
+    return BlueprintInterfaceSpec.model_validate(
+        subflow_plan.public_interface_snapshot
+    )
+
+
+def _revision_response(
+    revision: ActionBlueprintRevisionModel,
+) -> BlueprintRevisionResponse:
+    """转换不可变Revision响应。"""
+    return BlueprintRevisionResponse(
+        id=revision.id,
+        blueprint_id=revision.blueprint_id,
+        version=revision.version,
+        revision_number=revision.revision_number,
+        content_hash=revision.content_hash,
+        interface_snapshot=revision.interface_snapshot,
+        published_at=revision.published_at,
+        published_by=revision.published_by,
     )
 
 
@@ -111,6 +171,7 @@ def _blueprint_detail(
         updated_at=blueprint.updated_at,
         is_template=blueprint.is_template,
         template=TemplateSpecSchema(**blueprint.template) if blueprint.template else None,
+        interface=getattr(blueprint, "interface", BlueprintInterfaceSpec()),
     )
 
 
@@ -119,6 +180,12 @@ async def create_blueprint(data: ActionBlueprintSchema):
     validation_error = _validate_template(data)
     if validation_error:
         return ApiResponseSchema.error(code=240001, message=validation_error)
+
+    graph = _graph_schema_to_model(data)
+    try:
+        interface = await _compile_blueprint_graph(graph)
+    except ValueError as exc:
+        return ApiResponseSchema.error(code=240001, message=str(exc))
 
     blueprint_id = generate_id(data.name + data.version + str(len(data.graph.nodes)) + str(len(data.graph.edges)))
 
@@ -134,9 +201,10 @@ async def create_blueprint(data: ActionBlueprintSchema):
         target=data.target,
         implementation_period=data.implementation_period,
         resource=data.resource,
-        graph=_graph_schema_to_model(data),
+        graph=graph,
         is_template=data.is_template,
         template=data.template.model_dump() if data.is_template and data.template else None,
+        interface=interface,
     )
 
     await blueprint_model.insert()
@@ -161,6 +229,16 @@ async def get_blueprints(
     for blueprint in blueprints:
         steps = len(blueprint.graph.nodes)
         branches = count_workflow_paths(blueprint)
+        latest_revision = await ActionBlueprintRevisionModel.find(
+            {"blueprint_id": blueprint.id, "is_active": True}
+        ).sort("-revision_number").first_or_none()
+        encapsulated_node_count = await ActionNodeModel.find(
+            {
+                "source_blueprint_id": blueprint.id,
+                "node_kind": "encapsulated",
+                "is_deleted": False,
+            }
+        ).count()
 
         results.append(ActionBlueprintBaseInfoResponse(
             id=blueprint.id,
@@ -174,6 +252,10 @@ async def get_blueprints(
             steps=steps,
             branches=branches,
             is_template=blueprint.is_template,
+            latest_revision_number=(
+                latest_revision.revision_number if latest_revision else None
+            ),
+            encapsulated_node_count=encapsulated_node_count,
         ))
 
     return PageResponseSchema.create(results, total, params.page, params.page_size)
@@ -208,23 +290,11 @@ async def update_blueprint(blueprint_id: str, data: ActionBlueprintSchema):
     if validation_error:
         return ApiResponseSchema.error(code=240001, message=validation_error)
 
-    old_snapshot = create_blueprint_snapshot(blueprint)
-    snapshot_result = await ActionInstanceModel.find(
-        {
-            "blueprint_id": blueprint_id,
-            "$or": [
-                {"blueprint_snapshot": {"$exists": False}},
-                {"blueprint_snapshot": None},
-            ],
-        }
-    ).update(
-        {
-            "$set": {
-                "blueprint_snapshot": old_snapshot.model_dump(mode="python"),
-            }
-        }
-    )
-    snapshotted_action_count = getattr(snapshot_result, "modified_count", 0)
+    new_graph = _graph_schema_to_model(data)
+    try:
+        interface = await _compile_blueprint_graph(new_graph)
+    except ValueError as exc:
+        return ApiResponseSchema.error(code=240001, message=str(exc))
 
     blueprint.name = data.name
     blueprint.version = data.version
@@ -232,13 +302,14 @@ async def update_blueprint(blueprint_id: str, data: ActionBlueprintSchema):
     blueprint.target = data.target
     blueprint.implementation_period = data.implementation_period
     blueprint.resource = data.resource
-    blueprint.graph = _graph_schema_to_model(data)
+    blueprint.graph = new_graph
     blueprint.is_template = data.is_template
     blueprint.template = (
         data.template.model_dump()
         if data.is_template and data.template
         else None
     )
+    blueprint.interface = interface
     blueprint.updated_at = datetime.now()
 
     incompatible_schedules = []
@@ -275,8 +346,7 @@ async def update_blueprint(blueprint_id: str, data: ActionBlueprintSchema):
         )
 
     logger.info(
-        f"成功更新蓝图: {blueprint_id}，补齐行动快照: {snapshotted_action_count}，"
-        f"停用调度计划: {len(disabled_schedules)}"
+        f"成功更新蓝图: {blueprint_id}，停用调度计划: {len(disabled_schedules)}"
     )
     message = "蓝图更新成功"
     if disabled_schedules:
@@ -288,6 +358,170 @@ async def update_blueprint(blueprint_id: str, data: ActionBlueprintSchema):
             disabled_schedules=disabled_schedules,
         ),
     )
+
+
+@router.post(
+    "/{blueprint_id}/validate",
+    response_model=ApiResponseSchema[BlueprintValidateResponse],
+    summary="校验蓝图执行图",
+)
+async def validate_blueprint(blueprint_id: str):
+    blueprint = await ActionBlueprintModel.find_one(
+        {"_id": blueprint_id, "is_deleted": False}
+    )
+    if not blueprint:
+        return ApiResponseSchema.error(
+            code=240411,
+            message=f"蓝图不存在，ID: {blueprint_id}",
+        )
+    try:
+        _, subflow, _ = await BlueprintRevisionService.validate(blueprint)
+    except BlueprintBindingValidationError as exc:
+        return ApiResponseSchema.success(
+            data=BlueprintValidateResponse(
+                valid=False,
+                errors=[
+                    issue.model_dump(mode="python")
+                    for issue in exc.issues
+                ],
+            )
+        )
+    except ValueError as exc:
+        return ApiResponseSchema.success(
+            data=BlueprintValidateResponse(
+                valid=False,
+                errors=[{"code": "blueprint_invalid", "message": str(exc)}],
+            )
+        )
+    return ApiResponseSchema.success(
+        data=BlueprintValidateResponse(
+            valid=True,
+            interface=BlueprintInterfaceSpec.model_validate(
+                subflow.public_interface_snapshot
+            ),
+        )
+    )
+
+
+@router.post(
+    "/{blueprint_id}/publish",
+    response_model=ApiResponseSchema[BlueprintPublishResponse],
+    summary="发布不可变蓝图Revision",
+)
+async def publish_blueprint(blueprint_id: str, request: Request):
+    blueprint = await ActionBlueprintModel.find_one(
+        {"_id": blueprint_id, "is_deleted": False}
+    )
+    if not blueprint:
+        return ApiResponseSchema.error(
+            code=240411,
+            message=f"蓝图不存在，ID: {blueprint_id}",
+        )
+    user = getattr(getattr(request.state, "auth_context", None), "user", None)
+    try:
+        revision = await BlueprintRevisionService.publish(
+            blueprint,
+            published_by=getattr(user, "id", None),
+        )
+    except ValueError as exc:
+        return ApiResponseSchema.error(code=240001, message=str(exc))
+    await ActionInstanceService._clear_cache("blueprint", blueprint_id)
+    return ApiResponseSchema.success(
+        data=BlueprintPublishResponse(
+            revision=_revision_response(revision),
+        )
+    )
+
+
+@router.post(
+    "/{blueprint_id}/encapsulate",
+    response_model=ApiResponseSchema[BlueprintEncapsulateResponse],
+    summary="封装蓝图为节点",
+)
+async def encapsulate_blueprint(
+    blueprint_id: str,
+    data: BlueprintEncapsulateRequest,
+    request: Request,
+):
+    blueprint = await ActionBlueprintModel.find_one(
+        {"_id": blueprint_id, "is_deleted": False}
+    )
+    if not blueprint:
+        return ApiResponseSchema.error(
+            code=240411,
+            message=f"蓝图不存在，ID: {blueprint_id}",
+        )
+    user = getattr(getattr(request.state, "auth_context", None), "user", None)
+    if user is None or not await has_backend_permissions(
+        user,
+        [
+            "operation:action:blueprint:read",
+            "operation:action:node:create",
+        ],
+    ):
+        raise ForbiddenException("封装蓝图需要蓝图读取和节点创建权限")
+    try:
+        revision = await BlueprintRevisionService.publish(
+            blueprint,
+            published_by=getattr(user, "id", None),
+        )
+        node = await BlueprintRevisionService.encapsulate(
+            blueprint,
+            revision,
+            node_name=data.node_name,
+            description=data.description,
+            category=data.category.value,
+            mode=data.mode,
+            target_encapsulated_node_id=data.target_encapsulated_node_id,
+        )
+    except ValueError as exc:
+        return ApiResponseSchema.error(code=240001, message=str(exc))
+    node_response = await node_model_to_response(node)
+    return ApiResponseSchema.success(
+        data=BlueprintEncapsulateResponse(
+            revision=_revision_response(revision),
+            encapsulated_node=node_response.model_dump(mode="python"),
+            generated_handles=[
+                handle.model_dump(mode="python")
+                for handle in node_response.handles
+            ],
+            generated_inputs=[
+                input_item.model_dump(mode="python")
+                for input_item in node_response.inputs
+            ],
+        )
+    )
+
+
+@router.get(
+    "/{blueprint_id}/revisions",
+    response_model=ApiResponseSchema[list[BlueprintRevisionResponse]],
+    summary="获取蓝图Revision列表",
+)
+async def get_blueprint_revisions(blueprint_id: str):
+    revisions = await ActionBlueprintRevisionModel.find(
+        {"blueprint_id": blueprint_id, "is_active": True}
+    ).sort("-revision_number").to_list()
+    return ApiResponseSchema.success(
+        data=[_revision_response(revision) for revision in revisions]
+    )
+
+
+@router.get(
+    "/revisions/{revision_id}",
+    response_model=ApiResponseSchema[BlueprintRevisionResponse],
+    summary="获取蓝图Revision详情",
+)
+async def get_blueprint_revision(revision_id: str):
+    revision = await ActionBlueprintRevisionModel.find_one(
+        {"_id": revision_id, "is_active": True}
+    )
+    if not revision:
+        return ApiResponseSchema.error(
+            code=240411,
+            message=f"蓝图Revision不存在，ID: {revision_id}",
+        )
+    return ApiResponseSchema.success(data=_revision_response(revision))
 
 
 @router.delete("/{blueprint_id}", response_model=ApiResponseSchema[None], summary="删除蓝图及历史行动")

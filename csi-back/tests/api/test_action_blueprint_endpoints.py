@@ -121,7 +121,7 @@ async def test_delete_blueprint_cascades_historical_action_data(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_update_blueprint_keeps_id_snapshots_actions_and_disables_invalid_schedules(
+async def test_update_blueprint_keeps_id_and_disables_invalid_schedules(
     monkeypatch,
 ):
     created_at = datetime(2026, 1, 1)
@@ -167,14 +167,11 @@ async def test_update_blueprint_keeps_id_snapshots_actions_and_disables_invalid_
         updated_at=None,
         save=AsyncMock(),
     )
-    action_query = Mock()
-    action_query.update = AsyncMock(return_value=SimpleNamespace(modified_count=1))
     schedule_query = Mock()
     schedule_query.to_list = AsyncMock(return_value=[schedule])
     clear_cache = AsyncMock()
 
     monkeypatch.setattr(ActionBlueprintModel, "find_one", AsyncMock(return_value=blueprint))
-    monkeypatch.setattr(ActionInstanceModel, "find", Mock(return_value=action_query))
     monkeypatch.setattr(ActionScheduleModel, "find", Mock(return_value=schedule_query))
     monkeypatch.setattr(ActionInstanceService, "_clear_cache", clear_cache)
 
@@ -205,10 +202,6 @@ async def test_update_blueprint_keeps_id_snapshots_actions_and_disables_invalid_
     assert blueprint.updated_at != old_updated_at
     blueprint.save.assert_awaited_once()
     clear_cache.assert_awaited_once_with("blueprint", "blueprint-1")
-
-    snapshot_payload = action_query.update.await_args.args[0]["$set"]["blueprint_snapshot"]
-    assert snapshot_payload["name"] == "旧蓝图"
-    assert snapshot_payload["version"] == "1.0.0"
 
     assert schedule.enabled is False
     assert schedule.next_run_at is None

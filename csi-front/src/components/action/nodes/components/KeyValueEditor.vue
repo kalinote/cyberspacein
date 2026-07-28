@@ -15,6 +15,7 @@
                         placeholder="键"
                         size="small"
                         class="kv-field-key min-w-0"
+                        :disabled="disabled"
                         @input="onPairChange"
                     />
                     <template v-if="typedValues">
@@ -22,6 +23,7 @@
                             v-model="pair.valueType"
                             size="small"
                             class="kv-field-type shrink-0"
+                            :disabled="disabled"
                             @change="onValueTypeChange(index)"
                         >
                             <el-option
@@ -41,6 +43,7 @@
                         :placeholder="valuePlaceholder(pair)"
                         size="small"
                         class="kv-field-value min-w-0"
+                        :disabled="disabled"
                         @input="onPairChange"
                     />
                     <el-button
@@ -48,6 +51,7 @@
                         size="small"
                         link
                         class="shrink-0 ml-0!"
+                        :disabled="disabled"
                         @click="removePair(index)"
                     >
                         <template #icon>
@@ -63,13 +67,14 @@
                     :placeholder="valuePlaceholder(pair)"
                     size="small"
                     class="w-full font-mono text-xs"
+                    :disabled="disabled"
                     @input="onPairChange"
                 />
                 <p v-if="pair.parseError" class="text-xs text-red-600 mt-1.5 mb-0">{{ pair.parseError }}</p>
             </div>
         </div>
 
-        <el-button type="primary" size="small" @click="addPair">
+        <el-button type="primary" size="small" :disabled="disabled" @click="addPair">
             <template #icon>
                 <Icon icon="mdi:plus" />
             </template>
@@ -95,6 +100,10 @@ const props = defineProps({
         default: () => ({}),
     },
     typedValues: {
+        type: Boolean,
+        default: false,
+    },
+    disabled: {
         type: Boolean,
         default: false,
     },

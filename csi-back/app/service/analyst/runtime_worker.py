@@ -27,6 +27,7 @@ from app.service.analyst.approval_store import AnalystApprovalStore
 from app.service.analyst.runtime_store import AnalystRuntimeStore
 from app.service.analyst.service import AnalystRunOutcome, AnalystService
 from app.service.analyst.tool_execution_store import AnalystToolExecutionStore
+from app.service.runtime_event import RuntimeDomainEventService
 
 logger = logger.bind(name=__name__)
 
@@ -297,6 +298,10 @@ class AnalystRuntimeWorker:
         if not committed:
             logger.warning("Run 终态提交被 fencing 拒绝: run_id={}", run.id)
             return
+        current.status = run_status
+        current.result = outcome.result
+        current.error_message = outcome.error_message
+        await RuntimeDomainEventService.publish_analysis_run_terminal(current)
         await AnalystToolExecutionStore.mark_unfinished_unknown(
             run.id,
             outcome.error_message or "运行已结束，但工具未提交结果",
@@ -388,6 +393,7 @@ class AnalystRuntimeWorker:
         expired = await AnalystRuntimeStore.expire_stale()
         expired.extend(await AnalystRuntimeStore.expire_unready())
         for run in expired:
+            await RuntimeDomainEventService.publish_analysis_run_terminal(run)
             await AnalystToolExecutionStore.mark_unfinished_unknown(
                 run.id,
                 run.error_message or "Worker 租约过期",

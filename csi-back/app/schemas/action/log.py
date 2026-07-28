@@ -5,7 +5,17 @@ from pydantic import BaseModel, Field, field_validator
 
 
 LogLevel = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL"]
-LogSource = Literal["sdk", "logging", "stdout", "stderr", "exception", "system"]
+LogSource = Literal[
+    "sdk",
+    "logging",
+    "stdout",
+    "stderr",
+    "exception",
+    "system",
+    "native",
+    "subflow",
+    "orchestrator",
+]
 
 
 class ComponentLogEntry(BaseModel):
@@ -42,9 +52,15 @@ class ActionNodeLogItem(ComponentLogEntry):
     ingested_at: datetime
     action_id: str
     node_instance_id: str
-    component_run_id: str
-    component_id: str
-    attempt: int
+    node_execution_id: str | None = None
+    component_run_id: str | None = None
+    component_id: str | None = None
+    attempt: int = 1
+    root_action_id: str | None = None
+    parent_action_id: str | None = None
+    driver: str | None = None
+    handler: str | None = None
+    provider_run_id: str | None = None
 
 
 class ActionNodeLogPage(BaseModel):

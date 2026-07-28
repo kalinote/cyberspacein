@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -38,6 +39,8 @@ async def lifespan(app: FastAPI):
     settings.validate_analyst_runtime()
     await init_mariadb()
     await init_mongodb()
+    from app.service.native_nodes import sync_builtin_native_nodes
+    await sync_builtin_native_nodes()
     await init_redis()
     await init_elasticsearch()
     from app.service.action_log import ActionLogService
@@ -66,11 +69,79 @@ async def lifespan(app: FastAPI):
             try:
                 await ActionInstanceService.expire_stale_actions()
                 await ActionInstanceService.expire_stale_component_runs()
+                await ActionInstanceService.reconcile_node_executions()
+                await ActionInstanceService.retry_failed_queue_cleanup()
             except Exception as exc:
                 logger.error(f"行动运行超时检查失败: {exc}")
             await asyncio.sleep(settings.ACTION_TIMEOUT_CHECK_INTERVAL_SECONDS)
 
+    async def monitor_action_runtime_events() -> None:
+        """独立消费运行时终态事件，避免被全量超时对账阻塞。"""
+        from app.service.action import ActionInstanceService
+
+        while True:
+            try:
+                await ActionInstanceService.consume_runtime_events()
+            except Exception as exc:
+                logger.error(f"行动运行事件消费失败: {exc}")
+            await asyncio.sleep(
+                min(settings.ACTION_TIMEOUT_CHECK_INTERVAL_SECONDS, 1.0)
+            )
+
+    async def monitor_reference_bridges() -> None:
+        """并发推进可恢复的 Reference 父子队列桥接。"""
+        from app.service.action import ActionInstanceService
+        from app.service.reference_bridge import ReferenceBridgeService
+
+        worker_id = f"reference-bridge:{uuid4()}"
+        tasks: set[asyncio.Task] = set()
+        try:
+            while True:
+                try:
+                    for task in tuple(tasks):
+                        if not task.done():
+                            continue
+                        tasks.remove(task)
+                        try:
+                            task.result()
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception as exc:
+                            logger.error(f"Reference桥接执行失败: {exc}")
+
+                    while len(tasks) < 16:
+                        bridge = await ReferenceBridgeService.claim(
+                            worker_id=worker_id
+                        )
+                        if bridge is None:
+                            break
+                        tasks.add(
+                            asyncio.create_task(
+                                ReferenceBridgeService.run_claimed(
+                                    bridge_id=bridge.id,
+                                    worker_id=worker_id,
+                                    lease_token=bridge.lease_token,
+                                )
+                            )
+                        )
+
+                    await ActionInstanceService.finalize_reference_actions()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.error(f"Reference桥接巡检失败: {exc}")
+                await asyncio.sleep(0.1)
+        finally:
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+
     action_timeout_task = asyncio.create_task(monitor_action_timeouts())
+    action_runtime_event_task = asyncio.create_task(
+        monitor_action_runtime_events()
+    )
+    reference_bridge_task = asyncio.create_task(monitor_reference_bridges())
 
     system_config_manager.commit_bootstrap()
     from app.service.system_config_history import SystemConfigHistoryService
@@ -80,8 +151,14 @@ async def lifespan(app: FastAPI):
     yield
 
     action_timeout_task.cancel()
+    action_runtime_event_task.cancel()
+    reference_bridge_task.cancel()
     with suppress(asyncio.CancelledError):
         await action_timeout_task
+    with suppress(asyncio.CancelledError):
+        await action_runtime_event_task
+    with suppress(asyncio.CancelledError):
+        await reference_bridge_task
 
     system_config_manager.mark_not_ready()
 

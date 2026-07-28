@@ -87,7 +87,11 @@ def graph_model2schemas(graph_model: GraphModel) -> GraphSchema:
         node_data = NodeDataSchema(
             definition_id=node_model.data.definition_id,
             version=node_model.data.version,
-            form_data=form_data
+            form_data=form_data,
+            node_definition_version=node_model.data.node_definition_version,
+            instance_config=node_model.data.instance_config,
+            interface_port_id=node_model.data.interface_port_id,
+            boundary_binding=node_model.data.boundary_binding,
         )
         
         position = PositionSchema(
@@ -109,8 +113,10 @@ def graph_model2schemas(graph_model: GraphModel) -> GraphSchema:
             id=edge_model.id,
             source=edge_model.source,
             sourceHandle=edge_model.sourceHandle,
+            source_port_id=edge_model.source_port_id or edge_model.sourceHandle,
             target=edge_model.target,
-            targetHandle=edge_model.targetHandle
+            targetHandle=edge_model.targetHandle,
+            target_port_id=edge_model.target_port_id or edge_model.targetHandle,
         )
         edges.append(edge)
     
