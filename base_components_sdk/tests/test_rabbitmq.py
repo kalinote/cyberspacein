@@ -45,6 +45,72 @@ def _connected_client() -> RabbitMQClient:
     return client
 
 
+def test_client_loads_rabbitmq_config_from_parent_dotenv(
+    monkeypatch,
+    tmp_path,
+):
+    for key in (
+        "RABBITMQ_HOST",
+        "RABBITMQ_PORT",
+        "RABBITMQ_USERNAME",
+        "RABBITMQ_PASSWORD",
+        "RABBITMQ_VHOST",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            (
+                "RABBITMQ_HOST=broker.internal",
+                "RABBITMQ_PORT=5673",
+                "RABBITMQ_USERNAME=component",
+                "RABBITMQ_PASSWORD=secret",
+                "RABBITMQ_VHOST=/components",
+            )
+        ),
+        encoding="utf-8",
+    )
+    workdir = tmp_path / "crawler"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+
+    client = RabbitMQClient()
+
+    assert client.host == "broker.internal"
+    assert client.port == 5673
+    assert client.username == "component"
+    assert client.password == "secret"
+    assert client.vhost == "/components"
+
+
+def test_client_config_priority_is_argument_then_environment_then_dotenv(
+    monkeypatch,
+    tmp_path,
+):
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            (
+                "RABBITMQ_HOST=dotenv-host",
+                "RABBITMQ_USERNAME=dotenv-user",
+                "RABBITMQ_PASSWORD=dotenv-password",
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RABBITMQ_HOST", "environment-host")
+    monkeypatch.setenv("RABBITMQ_USERNAME", "environment-user")
+    monkeypatch.setenv("RABBITMQ_PASSWORD", "environment-password")
+
+    client = RabbitMQClient(
+        host="argument-host",
+        username="argument-user",
+    )
+
+    assert client.host == "argument-host"
+    assert client.username == "argument-user"
+    assert client.password == "environment-password"
+
+
 def test_connect_enables_publisher_confirms(monkeypatch):
     channel = MagicMock()
     connection = MagicMock()

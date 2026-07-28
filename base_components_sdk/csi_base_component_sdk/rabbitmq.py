@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 import pika
+from dotenv import find_dotenv, load_dotenv
 from pika.exceptions import AMQPChannelError, AMQPConnectionError
 
 logger = logging.getLogger("CSI_SDK")
@@ -57,6 +58,10 @@ class RabbitMQClient:
         password: str = None,
         vhost: str = None,
     ):
+        dotenv_path = find_dotenv(usecwd=True)
+        if dotenv_path:
+            load_dotenv(dotenv_path, override=False)
+
         self.host = host or os.getenv("RABBITMQ_HOST", "localhost")
         self.port = port or int(os.getenv("RABBITMQ_PORT", "5672"))
         self.username = username or os.getenv("RABBITMQ_USERNAME", "guest")
