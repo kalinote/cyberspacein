@@ -144,7 +144,10 @@
                                     :active-tab="activeTab"
                                 />
                             </div>
-                            <div class="flex h-full min-h-0 flex-1 flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div
+                                class="article-content-panel flex h-full min-h-0 flex-1 flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+                                :class="{ 'article-content-panel--fullscreen': isContentFullscreen }"
+                            >
                                 <div class="mb-4 flex shrink-0 items-center justify-between">
                                     <h2 class="text-2xl font-bold text-gray-900 flex items-center">
                                         <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
@@ -172,6 +175,17 @@
                                                 <Icon icon="mdi:content-save" />
                                             </template>
                                             保存
+                                        </el-button>
+                                        <el-button
+                                            size="small"
+                                            :aria-label="isContentFullscreen ? '退出全屏' : '全屏查看'"
+                                            :aria-pressed="isContentFullscreen"
+                                            @click="isContentFullscreen = !isContentFullscreen"
+                                        >
+                                            <template #icon>
+                                                <Icon :icon="isContentFullscreen ? 'mdi:fullscreen-exit' : 'mdi:fullscreen'" />
+                                            </template>
+                                            {{ isContentFullscreen ? '退出全屏' : '全屏查看' }}
                                         </el-button>
                                     </div>
                                 </div>
@@ -588,6 +602,7 @@ const {
 } = agentStream
 
 const activeTab = ref('clean')
+const isContentFullscreen = ref(false)
 const analyzing = ref(false)
 const editableSafeRawContent = ref('')
 const rawEditorRef = ref(null)
@@ -645,6 +660,11 @@ function handlePaneResized() {
         rawEditorRef.value?.layout?.()
         safeRawEditorRef.value?.layout?.()
     })
+}
+
+/** 按 Escape 退出文章内容全屏。 */
+function handleContentFullscreenKeydown(event) {
+    if (event.key === 'Escape' && isContentFullscreen.value) isContentFullscreen.value = false
 }
 
 const {
@@ -719,6 +739,7 @@ async function loadSnapshot() {
 }
 
 const loadArticleDetail = async () => {
+    isContentFullscreen.value = false
     loading.value = true
     error.value = null
     revokeSnapshotBlob()
@@ -921,6 +942,18 @@ watch(rightPanel, async (panel) => {
     }
 })
 
+let previousBodyOverflow = ''
+
+watch(isContentFullscreen, (fullscreen) => {
+    if (fullscreen) {
+        previousBodyOverflow = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
+    } else {
+        document.body.style.overflow = previousBodyOverflow
+    }
+    handlePaneResized()
+})
+
 function openAnalysisFullscreen() {
     if (!activeSessionId.value) return
     router.push({
@@ -967,9 +1000,12 @@ onMounted(() => {
     loadAnalyzeOptions()
     setupEventListeners()
     restoreAgentSessionFromQuery()
+    window.addEventListener('keydown', handleContentFullscreenKeydown)
 })
 
 onUnmounted(() => {
+    if (isContentFullscreen.value) document.body.style.overflow = previousBodyOverflow
+    window.removeEventListener('keydown', handleContentFullscreenKeydown)
     revokeSnapshotBlob()
     cleanupEventListeners()
     disconnectSSE()
@@ -1038,6 +1074,18 @@ onUnmounted(() => {
 
 .article-tabs :deep(.el-tabs__nav-wrap::after) {
     height: 1px;
+}
+
+.article-content-panel--fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding: 1.5rem;
 }
 
 .select-text {

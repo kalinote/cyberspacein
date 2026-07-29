@@ -4,7 +4,7 @@
       <div
         v-if="visible"
         ref="toolbarRef"
-        class="marking-toolbar fixed z-50 bg-white rounded-md shadow-lg border border-gray-200 px-1.5 py-1 flex items-center gap-0.5"
+        class="marking-toolbar fixed z-[1100] bg-white rounded-md shadow-lg border border-gray-200 px-1.5 py-1 flex items-center gap-0.5"
         :style="{
           top: `${position.top}px`,
           left: `${position.left}px`,
