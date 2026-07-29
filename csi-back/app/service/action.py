@@ -53,6 +53,7 @@ from app.schemas.action.reference import (
 )
 from app.service.component import cancel_component_run
 from app.service.action_compiler import BlueprintCompiler
+from app.service.action_alert_source import publish_action_status_observation
 from app.service.blueprint_revision import BlueprintRevisionService
 from app.service.action_log import ActionLogService
 from app.service.native_nodes.registry import native_handlers
@@ -545,6 +546,11 @@ class ActionInstanceService:
             if existing:
                 return True, existing.id
             raise
+        await publish_action_status_observation(
+            action_instance,
+            ActionFlowStatusEnum.READY,
+            getattr(action_instance, "updated_at", datetime.now()),
+        )
         
         plan_node_by_id = {node.id: node for node in execution_plan.nodes}
         reference_bindings_by_source = (
@@ -687,6 +693,7 @@ class ActionInstanceService:
                         if action.implementation_period > 0
                         else None
                     ),
+                    "updated_at": now,
                 }
             }
         )
@@ -694,6 +701,13 @@ class ActionInstanceService:
             logger.info(f"行动已启动或不存在，跳过重复启动: {action_id}")
             return
         action = await ActionInstanceModel.find_one({"_id": action_id})
+        if action is None:
+            return
+        await publish_action_status_observation(
+            action,
+            ActionFlowStatusEnum.RUNNING,
+            now,
+        )
 
         ready_nodes = await ActionInstanceNodeModel.find({"action_id": action.id, "status": ActionInstanceNodeStatusEnum.READY}).to_list()
         for node in ready_nodes:
@@ -726,6 +740,11 @@ class ActionInstanceService:
         )
         if not claim or getattr(claim, "modified_count", 0) != 1:
             return False, "行动状态已变化，暂停失败"
+        await publish_action_status_observation(
+            action,
+            ActionFlowStatusEnum.PAUSED,
+            now,
+        )
 
         await ActionInstanceNodeModel.find(
             {
@@ -906,6 +925,15 @@ class ActionInstanceService:
         if (
             current_action is not None
             and current_action.status == ActionFlowStatusEnum.RUNNING
+        ):
+            await publish_action_status_observation(
+                current_action,
+                ActionFlowStatusEnum.RUNNING,
+                now,
+            )
+        if (
+            current_action is not None
+            and current_action.status == ActionFlowStatusEnum.RUNNING
             and await ActionInstanceService.check_action_finished(action_id)
         ):
             await ActionInstanceService.finish_action(action_id)
@@ -970,6 +998,11 @@ class ActionInstanceService:
         await RuntimeDomainEventService.publish_action_terminal(
             action,
             ActionFlowStatusEnum.STOPPED.value,
+        )
+        await publish_action_status_observation(
+            action,
+            ActionFlowStatusEnum.STOPPED,
+            now,
         )
 
         active_runs = await ComponentRunModel.find(
@@ -2481,6 +2514,7 @@ class ActionInstanceService:
                             if action.start_at
                             else 0
                         ),
+                        "updated_at": now,
                     }
                 }
             )
@@ -2489,6 +2523,11 @@ class ActionInstanceService:
             await RuntimeDomainEventService.publish_action_terminal(
                 action,
                 ActionFlowStatusEnum.TIMEOUT.value,
+            )
+            await publish_action_status_observation(
+                action,
+                ActionFlowStatusEnum.TIMEOUT,
+                now,
             )
 
             active_runs = await ComponentRunModel.find(
@@ -3308,6 +3347,11 @@ class ActionInstanceService:
         await RuntimeDomainEventService.publish_action_terminal(
             action,
             status.value,
+        )
+        await publish_action_status_observation(
+            action,
+            status,
+            now,
         )
         if status != ActionFlowStatusEnum.COMPLETED:
             await ActionInstanceService.cancel_reference_bridges(

@@ -1,4 +1,4 @@
-version: "2026-07-25.1"
+version: "2026-07-29.1"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -8,6 +8,25 @@ routes:
   - {method: GET, path: "/overview/summary-status", principal: user, permission: "operation:overview:dashboard:read"}
   - {method: GET, path: "/overview/crawl-status", principal: user, permission: "operation:overview:dashboard:read"}
   - {method: GET, path: "/overview/new-data-status", principal: user, permission: "operation:overview:dashboard:read"}
+
+  - {method: GET, path: "/alerts/sources", principal: user, permission: "operation:alert:source:read"}
+  - {method: GET, path: "/alerts/sources/status", principal: user, permission: "operation:alert:source:read"}
+  - {method: GET, path: "/alerts/rules", principal: user, permission: "operation:alert:rule:read"}
+  - {method: POST, path: "/alerts/rules", principal: user, permission: "operation:alert:rule:create"}
+  - {method: POST, path: "/alerts/rules/validate", principal: user, permission: "operation:alert:rule:execute"}
+  - {method: GET, path: "/alerts/rules/{rule_id}", principal: user, permission: "operation:alert:rule:read"}
+  - {method: PATCH, path: "/alerts/rules/{rule_id}", principal: user, permission: "operation:alert:rule:update"}
+  - {method: PATCH, path: "/alerts/rules/{rule_id}/enabled", principal: user, permission: "operation:alert:rule:update"}
+  - {method: DELETE, path: "/alerts/rules/{rule_id}", principal: user, permission: "operation:alert:rule:delete"}
+  - {method: POST, path: "/alerts/rules/{rule_id}/test", principal: user, permission: "operation:alert:rule:execute"}
+  - {method: GET, path: "/alerts/instances", principal: user, permission: "operation:alert:instance:read"}
+  - {method: GET, path: "/alerts/instances/{alert_id}", principal: user, permission: "operation:alert:instance:read"}
+  - {method: GET, path: "/alerts/instances/{alert_id}/events", principal: user, permission: "operation:alert:instance:read"}
+  - {method: POST, path: "/alerts/instances/{alert_id}/acknowledge", principal: user, permission: "operation:alert:instance-acknowledge:execute"}
+  - {method: POST, path: "/alerts/instances/{alert_id}/resolve", principal: user, permission: "operation:alert:instance-resolve:execute"}
+  - {method: GET, path: "/alerts/stats", principal: user, permission: "operation:alert:instance:read"}
+  - {method: GET, path: "/alerts/stream", principal: user, permission: "operation:alert:instance:read"}
+  - {method: GET, path: "/alerts/worker/status", principal: user, permission: "operation:alert:worker:read"}
   - {method: GET, path: "/article/detail/{uuid}", principal: user, permission: "operation:content:article:read"}
   - {method: GET, path: "/forum/detail/{uuid}", principal: user, permission: "operation:content:forum:read"}
   - {method: GET, path: "/forum/comments", principal: user, permission: "operation:content:forum:read"}

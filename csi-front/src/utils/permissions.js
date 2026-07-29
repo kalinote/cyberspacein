@@ -128,6 +128,22 @@ export const PERM = Object.freeze({
         delete: 'operation:action:account:delete'
       }
     },
+    alert: {
+      source: { read: 'operation:alert:source:read' },
+      rule: {
+        read: 'operation:alert:rule:read',
+        create: 'operation:alert:rule:create',
+        update: 'operation:alert:rule:update',
+        delete: 'operation:alert:rule:delete',
+        execute: 'operation:alert:rule:execute'
+      },
+      instance: {
+        read: 'operation:alert:instance:read',
+        acknowledge: 'operation:alert:instance-acknowledge:execute',
+        resolve: 'operation:alert:instance-resolve:execute'
+      },
+      worker: { read: 'operation:alert:worker:read' }
+    },
     agent: {
       agent: {
         read: 'operation:agent:agent:read',

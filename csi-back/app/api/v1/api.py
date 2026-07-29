@@ -3,6 +3,7 @@ from app.core.route_permissions import authorize_registered_route
 
 from app.api.v1.endpoints import (
     action,
+    alert,
     auth,
     agent,
     annotation,
@@ -22,6 +23,7 @@ from app.api.v1.endpoints import (
 api_router = APIRouter(dependencies=[Depends(authorize_registered_route)])
 
 api_router.include_router(action.router)
+api_router.include_router(alert.router)
 api_router.include_router(annotation.router)
 api_router.include_router(article.router)
 api_router.include_router(forum.router)

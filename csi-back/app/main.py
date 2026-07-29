@@ -39,6 +39,8 @@ async def lifespan(app: FastAPI):
     settings.validate_analyst_runtime()
     await init_mariadb()
     await init_mongodb()
+    from app.service.alert_source_bootstrap import register_builtin_alert_sources
+    register_builtin_alert_sources()
     from app.service.native_nodes import sync_builtin_native_nodes
     await sync_builtin_native_nodes()
     await init_redis()

@@ -42,6 +42,15 @@ from app.models.auth.session import LoginSessionModel
 from app.models.wiki import WikiPageModel, WikiPageRevisionModel
 from app.models.system_config import SystemConfigVersionModel
 from app.models.runtime_event import RuntimeDomainEventModel
+from app.models.alert import (
+    AlertEventModel,
+    AlertInstanceModel,
+    AlertObservationInboxModel,
+    AlertRuleEvaluationStateModel,
+    AlertRuleModel,
+    AlertSignalStateModel,
+    AlertStreamOutboxModel,
+)
 
 def get_all_models() -> List[Type[Document]]:
     """获取所有需要注册的 Beanie Document 模型"""
@@ -85,4 +94,11 @@ def get_all_models() -> List[Type[Document]]:
         WikiPageRevisionModel,
         SystemConfigVersionModel,
         RuntimeDomainEventModel,
+        AlertRuleModel,
+        AlertRuleEvaluationStateModel,
+        AlertSignalStateModel,
+        AlertInstanceModel,
+        AlertEventModel,
+        AlertObservationInboxModel,
+        AlertStreamOutboxModel,
     ]

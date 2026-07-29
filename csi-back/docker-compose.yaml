@@ -38,6 +38,24 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  csi-alert-worker:
+    build: .
+    container_name: csi-alert-worker
+    command: ["python", "-m", "app.alert_worker"]
+    env_file: .env
+    environment:
+      CSI_SYSTEM_CONFIG_FILE: /app/data/system-config.json
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.alert_worker", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   # mariadb:
   #   image: mariadb:11
   #   container_name: csi-mariadb

@@ -1,4 +1,4 @@
-version: "2026-07-25.1"
+version: "2026-07-29.1"
 
 # 新增权限维护说明：
 # 1. 页面权限使用 page:<模块>[:<页面或Tab>]:visible/access，仅控制前端展示和访问，backend_enforced 必须为 false。
@@ -192,3 +192,14 @@ permissions:
   - {code: "operation:system:config:read", name: "读取系统配置", module: "system", resource: "config", description: "读取脱敏后的系统配置，仅内置系统账号使用", tags: [read, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: true}
   - {code: "operation:system:config:update", name: "更新系统配置", module: "system", resource: "config", description: "预览、应用实时配置或保存待重启配置，仅内置系统账号使用", tags: [update, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: true}
   - {code: "operation:system:config:execute", name: "执行系统配置版本操作", module: "system", resource: "config", description: "取消待重启配置或还原历史版本，仅内置系统账号使用", tags: [execute, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: true}
+
+  - {code: "operation:alert:source:read", name: "读取告警接入源", module: "alert", resource: "source", description: "读取可配置模块、字段和接入状态", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:rule:read", name: "读取告警规则", module: "alert", resource: "rule", description: "读取告警规则和详情", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:rule:create", name: "创建告警规则", module: "alert", resource: "rule", description: "创建模块级告警规则", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:rule:update", name: "修改告警规则", module: "alert", resource: "rule", description: "修改、启用或停用告警规则", tags: [update], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:rule:delete", name: "删除告警规则", module: "alert", resource: "rule", description: "软删除告警规则并保留历史关联", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:rule:execute", name: "执行告警规则校验", module: "alert", resource: "rule", description: "校验或试运行告警规则", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:instance:read", name: "读取告警实例", module: "alert", resource: "instance", description: "读取告警、统计、永久事件和实时流", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:instance-acknowledge:execute", name: "确认告警", module: "alert", resource: "instance-acknowledge", description: "确认正在发生的告警", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:instance-resolve:execute", name: "解决告警", module: "alert", resource: "instance-resolve", description: "手动解决并说明告警处理结果", tags: [execute], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:alert:worker:read", name: "读取告警 Worker", module: "alert", resource: "worker", description: "读取告警检测 Worker 心跳和扫描状态", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
