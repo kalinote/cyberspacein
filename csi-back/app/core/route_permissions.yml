@@ -1,4 +1,4 @@
-version: "2026-07-29.1"
+version: "2026-07-30.1"
 routes:
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
@@ -124,6 +124,7 @@ routes:
   - {method: POST, path: "/action/sdk/{component_run_id}/result", principal: component, scope: "sdk:result"}
   - {method: POST, path: "/action/sdk/{component_run_id}/heartbeat", principal: component, scope: "sdk:heartbeat"}
   - {method: POST, path: "/action/sdk/{component_run_id}/log-batches", principal: component, scope: "sdk:logs"}
+  - {method: POST, path: "/action/sdk/{component_run_id}/signals", principal: component, scope: "sdk:signals"}
 
   - {method: POST, path: "/agent/agents", principal: user, permission: "operation:agent:agent:create"}
   - {method: GET, path: "/agent/agents", principal: user, permission: "operation:agent:agent:read"}

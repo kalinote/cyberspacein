@@ -1,5 +1,26 @@
-from .context import ComponentCancelled, ComponentContext, ComponentFailure, ComponentTimedOut
+from .context import (
+    ComponentCancelled,
+    ComponentContext,
+    ComponentFailure,
+    ComponentSignalReportError,
+    ComponentTimedOut,
+)
 from .rabbitmq import RabbitMQClient
+from .signals import (
+    ComponentSignalBatchReceipt,
+    ComponentSignalInput,
+    ComponentSignalResult,
+)
 
-__all__ = ["ComponentCancelled", "ComponentContext", "ComponentFailure", "ComponentTimedOut", "RabbitMQClient"]
-__version__ = "2.1.2"
+__all__ = [
+    "ComponentCancelled",
+    "ComponentContext",
+    "ComponentFailure",
+    "ComponentSignalBatchReceipt",
+    "ComponentSignalInput",
+    "ComponentSignalReportError",
+    "ComponentSignalResult",
+    "ComponentTimedOut",
+    "RabbitMQClient",
+]
+__version__ = "2.2.0"

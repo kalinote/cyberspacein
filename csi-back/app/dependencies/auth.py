@@ -62,6 +62,7 @@ class ComponentContext:
     action_id: str
     node_instance_id: str
     component_run_id: str
+    component_id: str
     scopes: frozenset[str]
     claims: dict[str, Any]
 
@@ -111,6 +112,7 @@ async def get_component_context(
         action_id=action_id,
         node_instance_id=node_instance_id,
         component_run_id=component_run_id,
+        component_id=component_run.component_id,
         scopes=frozenset(claims["scope"]),
         claims=claims,
     )

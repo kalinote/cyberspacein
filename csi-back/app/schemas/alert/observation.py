@@ -21,6 +21,7 @@ class AlertObservation(BaseModel):
     value: Any
     observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source_event_id: str | None = Field(default=None, max_length=500)
+    ordering_key: str | None = Field(default=None, max_length=500)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("observed_at")

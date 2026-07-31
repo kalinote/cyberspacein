@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.core.config import settings
+from app.core.exceptions import BadRequestException, ForbiddenException
 from app.core.security import create_component_token
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
@@ -16,9 +17,14 @@ from app.schemas.action.sdk import (
     SDKResultRequest,
 )
 from app.schemas.constants import ActionConfigIOTypeEnum, ComponentRunStatusEnum
+from app.schemas.component_signal import (
+    ComponentSignalBatchRequest,
+    ComponentSignalBatchResponse,
+)
 from app.schemas.response import ApiResponseSchema
 from app.service.action import ActionInstanceService
 from app.service.action_log import ActionLogService
+from app.service.component_signal.ingestion import ComponentSignalIngestionService
 from app.utils.dict_helper import unpack_dict
 
 
@@ -255,6 +261,41 @@ async def submit_logs(component_run_id: str, batch: ComponentLogBatchRequest):
     if component_run is None:
         return ApiResponseSchema.error(code=240417, message="组件运行实例不存在")
     result = await ActionLogService.ingest(component_run, batch)
+    return ApiResponseSchema.success(data=result)
+
+
+@router.post(
+    "/{component_run_id}/signals",
+    response_model=ApiResponseSchema[ComponentSignalBatchResponse],
+    summary="批量提交组件资源信号",
+)
+async def submit_signals(
+    component_run_id: str,
+    batch: ComponentSignalBatchRequest,
+    request: Request,
+):
+    context = request.state.component_context
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > settings.COMPONENT_SIGNAL_MAX_REQUEST_BYTES:
+                raise BadRequestException("组件信号请求大小超过限制")
+        except ValueError as exc:
+            raise BadRequestException("Content-Length 请求头格式无效") from exc
+    if (
+        len(batch.model_dump_json().encode("utf-8"))
+        > settings.COMPONENT_SIGNAL_MAX_REQUEST_BYTES
+    ):
+        raise BadRequestException("组件信号请求大小超过限制")
+    try:
+        result = await ComponentSignalIngestionService().ingest_batch(
+            context,
+            batch,
+        )
+    except PermissionError as exc:
+        raise ForbiddenException(str(exc)) from exc
+    except ValueError as exc:
+        raise BadRequestException(str(exc)) from exc
     return ApiResponseSchema.success(data=result)
 
 

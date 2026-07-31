@@ -42,6 +42,7 @@ from app.models.auth.session import LoginSessionModel
 from app.models.wiki import WikiPageModel, WikiPageRevisionModel
 from app.models.system_config import SystemConfigVersionModel
 from app.models.runtime_event import RuntimeDomainEventModel
+from app.models.component_signal import ComponentSignalSnapshotModel
 from app.models.alert import (
     AlertEventModel,
     AlertInstanceModel,
@@ -94,6 +95,7 @@ def get_all_models() -> List[Type[Document]]:
         WikiPageRevisionModel,
         SystemConfigVersionModel,
         RuntimeDomainEventModel,
+        ComponentSignalSnapshotModel,
         AlertRuleModel,
         AlertRuleEvaluationStateModel,
         AlertSignalStateModel,

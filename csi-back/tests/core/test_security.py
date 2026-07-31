@@ -80,4 +80,10 @@ def test_component_token_isolated_from_user_audience(monkeypatch: pytest.MonkeyP
     assert claims["action_id"] == "action-1"
     assert claims["node_id"] == "node-1"
     assert claims["component_run_id"] == "run-1"
-    assert set(claims["scope"]) == {"sdk:init", "sdk:result", "sdk:heartbeat", "sdk:logs"}
+    assert set(claims["scope"]) == {
+        "sdk:init",
+        "sdk:result",
+        "sdk:heartbeat",
+        "sdk:logs",
+        "sdk:signals",
+    }

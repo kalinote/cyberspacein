@@ -62,3 +62,25 @@ def test_exchange_token_records_component_attempt(monkeypatch) -> None:
         headers={"X-Component-Bootstrap": "bootstrap"},
         timeout=10,
     )
+
+
+def test_submit_signals_retries_with_same_payload(monkeypatch) -> None:
+    client = BackendClient("http://localhost:8000/api/v1", "test-run")
+    payload = {"reports": [{"report_id": "report-1"}]}
+    request = MagicMock(
+        side_effect=[
+            RuntimeError("temporary"),
+            {"results": [{"report_id": "report-1", "status": "accepted"}]},
+        ]
+    )
+    monkeypatch.setattr(client, "_request", request)
+    monkeypatch.setattr("csi_base_component_sdk.backend_client.time.sleep", lambda _: None)
+
+    try:
+        result = client.submit_signals(payload)
+    finally:
+        client.close()
+
+    assert result["results"][0]["status"] == "accepted"
+    assert request.call_count == 2
+    assert all(call.kwargs["json"] is payload for call in request.call_args_list)

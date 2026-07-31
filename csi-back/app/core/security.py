@@ -156,7 +156,13 @@ def create_component_token(
             "iss": settings.AUTH_ISSUER,
             "aud": settings.COMPONENT_AUTH_AUDIENCE,
             "purpose": "action_component",
-            "scope": ["sdk:init", "sdk:result", "sdk:heartbeat", "sdk:logs"],
+            "scope": [
+                "sdk:init",
+                "sdk:result",
+                "sdk:heartbeat",
+                "sdk:logs",
+                "sdk:signals",
+            ],
         }
     )
 

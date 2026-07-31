@@ -3,9 +3,17 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from .rabbitmq import RabbitMQClient
+
+if TYPE_CHECKING:
+    from .signals import (
+        ComponentSignalBatchReceipt,
+        ComponentSignalInput,
+        ComponentSignalReporter,
+    )
 
 
 class ComponentFailure(RuntimeError):
@@ -18,6 +26,10 @@ class ComponentCancelled(ComponentFailure):
 
 class ComponentTimedOut(ComponentFailure):
     """组件超过后端下发的运行时限。"""
+
+
+class ComponentSignalReportError(ComponentFailure):
+    """关键组件信号无法提交。"""
 
 
 class StructuredLogger:
@@ -59,6 +71,11 @@ class ComponentContext:
     _progress: float = field(default=0, repr=False)
     _progress_message: str = field(default="", repr=False)
     _rabbitmq: RabbitMQClient | None = field(default=None, repr=False)
+    _signal_reporter: ComponentSignalReporter | None = field(
+        default=None,
+        repr=False,
+    )
+    _signal_report_failure_count: int = field(default=0, repr=False)
 
     def get_config(self, key: str, default: Any = None) -> Any:
         value = self.config.get(key, default)
@@ -76,6 +93,73 @@ class ComponentContext:
             raise ComponentTimedOut("组件运行超时")
         if self._cancelled.is_set():
             raise ComponentCancelled("组件运行已被取消")
+
+    def report_signal(
+        self,
+        *,
+        report_id: str,
+        definition_key: str,
+        definition_version: int,
+        resource_id: str,
+        value: Any,
+        observed_at: datetime | None = None,
+        resource_name: str | None = None,
+        source_event_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        required: bool = False,
+    ) -> bool:
+        """上报一条通用资源信号并返回是否成功接收。"""
+        from datetime import timezone
+
+        from .signals import ComponentSignalInput
+
+        receipt = self.report_signals(
+            [
+                ComponentSignalInput(
+                    report_id=report_id,
+                    definition_key=definition_key,
+                    definition_version=definition_version,
+                    resource_id=resource_id,
+                    value=value,
+                    observed_at=observed_at
+                    if observed_at is not None
+                    else datetime.now(timezone.utc),
+                    resource_name=resource_name,
+                    source_event_id=source_event_id,
+                    metadata=metadata if metadata is not None else {},
+                )
+            ],
+            required=required,
+        )
+        return receipt.success
+
+    def report_signals(
+        self,
+        reports: list[ComponentSignalInput | dict[str, Any]],
+        *,
+        required: bool = False,
+    ) -> ComponentSignalBatchReceipt:
+        """批量上报通用资源信号。"""
+        from .signals import ComponentSignalBatchReceipt
+
+        if self._signal_reporter is None:
+            self._signal_report_failure_count += 1
+            message = "组件运行上下文未配置组件信号报告器"
+            self.logger.error(message, report_count=len(reports))
+            if required:
+                raise ComponentSignalReportError(message)
+            return ComponentSignalBatchReceipt(success=False, error=message)
+        try:
+            receipt = self._signal_reporter.report_signals(
+                reports,
+                required=required,
+            )
+        except ComponentSignalReportError:
+            self._signal_report_failure_count += 1
+            raise
+        if not receipt.success:
+            self._signal_report_failure_count += 1
+        return receipt
 
     @property
     def rabbitmq(self) -> RabbitMQClient:

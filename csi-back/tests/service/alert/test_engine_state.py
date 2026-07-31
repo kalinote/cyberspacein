@@ -204,6 +204,90 @@ async def test_condition_change_recalculates_same_resource_snapshot(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_older_observation_does_not_roll_back_rule_state(monkeypatch):
+    current_rule = rule()
+    newer_time = datetime.now(timezone.utc)
+    state = AlertRuleEvaluationStateModel.model_construct(
+        _id="state-1",
+        rule_id=current_rule.id,
+        rule_version=current_rule.version,
+        condition_fingerprint=AlertEngine.condition_fingerprint(current_rule),
+        source_key="action.instance",
+        resource_type="action_instance",
+        resource_id="action-1",
+        signal_key="execution_status",
+        incident_key="incident-1",
+        state=AlertRuleStateEnum.ACTIVE,
+        last_value="timeout",
+        last_value_type=AlertValueTypeEnum.ENUM,
+        last_observation_id="observation-new",
+        last_observed_at=newer_time,
+    )
+    monkeypatch.setattr(
+        AlertEngine,
+        "_get_or_create_rule_state",
+        AsyncMock(return_value=(state, False)),
+    )
+    save = AsyncMock()
+    monkeypatch.setattr(AlertRuleEvaluationStateModel, "save", save)
+    older = observation("observation-old", "completed")
+    older.observed_at = newer_time - timedelta(seconds=1)
+
+    _, applied = await AlertEngine._apply_rule(
+        current_rule,
+        older,
+        "incident-1",
+    )
+
+    assert applied is False
+    assert state.state == AlertRuleStateEnum.ACTIVE
+    save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_same_time_observation_uses_source_ordering_key(monkeypatch):
+    current_rule = rule()
+    observed_at = datetime.now(timezone.utc)
+    state = AlertRuleEvaluationStateModel.model_construct(
+        _id="state-1",
+        rule_id=current_rule.id,
+        rule_version=current_rule.version,
+        condition_fingerprint=AlertEngine.condition_fingerprint(current_rule),
+        source_key="action.instance",
+        resource_type="action_instance",
+        resource_id="action-1",
+        signal_key="execution_status",
+        incident_key="incident-1",
+        state=AlertRuleStateEnum.ACTIVE,
+        last_value="timeout",
+        last_value_type=AlertValueTypeEnum.ENUM,
+        last_observation_id="observation-b",
+        last_observation_ordering_key="report-b",
+        last_observed_at=observed_at,
+    )
+    monkeypatch.setattr(
+        AlertEngine,
+        "_get_or_create_rule_state",
+        AsyncMock(return_value=(state, False)),
+    )
+    save = AsyncMock()
+    monkeypatch.setattr(AlertRuleEvaluationStateModel, "save", save)
+    item = observation("observation-z", "completed")
+    item.observed_at = observed_at
+    item.ordering_key = "report-a"
+
+    _, applied = await AlertEngine._apply_rule(
+        current_rule,
+        item,
+        "incident-1",
+    )
+
+    assert applied is False
+    assert state.state == AlertRuleStateEnum.ACTIVE
+    save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_realtime_and_periodic_processing_select_expected_rules(monkeypatch):
     registry = AlertSourceRegistry()
     registry.register(ActionInstanceAlertSource())

@@ -143,6 +143,7 @@ class AlertEngine:
             last_value=observation.value,
             last_value_type=observation.value_type,
             last_observation_id=observation.observation_id,
+            last_observation_ordering_key=observation.ordering_key,
             last_source_event_id=observation.source_event_id,
             last_observed_at=observation.observed_at,
         )
@@ -160,7 +161,7 @@ class AlertEngine:
         rule: AlertRuleModel,
         observation: AlertObservation,
         incident_key: str,
-    ) -> AlertRuleEvaluationStateModel:
+    ) -> tuple[AlertRuleEvaluationStateModel, bool]:
         """根据触发、恢复和连续次数更新单条规则状态。"""
         state, created = await AlertEngine._get_or_create_rule_state(
             rule,
@@ -174,18 +175,40 @@ class AlertEngine:
             and state.rule_version == rule.version
             and state.condition_fingerprint == fingerprint
         ):
-            return state
+            return state, False
         condition_changed = (
             state.condition_fingerprint is not None
             and state.condition_fingerprint != fingerprint
         )
+        rule_changed = state.rule_version != rule.version or condition_changed
+        if not created and not rule_changed:
+            last_observed_at = (
+                state.last_observed_at.replace(tzinfo=timezone.utc)
+                if state.last_observed_at.tzinfo is None
+                else state.last_observed_at.astimezone(timezone.utc)
+            )
+            incoming_order = (
+                observation.observed_at,
+                observation.ordering_key or observation.observation_id,
+            )
+            current_order = (
+                last_observed_at,
+                state.last_observation_ordering_key
+                or state.last_observation_id,
+            )
+            if (
+                observation.source_event_id
+                and observation.source_event_id == state.last_source_event_id
+                and observation.observed_at <= last_observed_at
+            ) or incoming_order <= current_order:
+                return state, False
         if condition_changed:
             state.state = AlertRuleStateEnum.NORMAL
             state.activated_at = None
             state.recovered_at = observation.observed_at
             state.trigger_match_count = 0
             state.recovery_match_count = 0
-        if state.rule_version != rule.version or condition_changed:
+        if rule_changed:
             state.rule_version = rule.version
         state.condition_fingerprint = fingerprint
         now = utc_now()
@@ -219,11 +242,12 @@ class AlertEngine:
         state.last_value = observation.value
         state.last_value_type = observation.value_type
         state.last_observation_id = observation.observation_id
+        state.last_observation_ordering_key = observation.ordering_key
         state.last_source_event_id = observation.source_event_id
         state.last_observed_at = observation.observed_at
         state.updated_at = now
         await state.save()
-        return state
+        return state, True
 
     @staticmethod
     async def _get_or_create_signal(
@@ -323,8 +347,16 @@ class AlertEngine:
         if token is None:
             return 0
         try:
+            applied_count = 0
             for rule in rules:
-                await self._apply_rule(rule, observation, incident_key)
+                _, applied = await self._apply_rule(
+                    rule,
+                    observation,
+                    incident_key,
+                )
+                applied_count += int(applied)
+            if applied_count == 0:
+                return 0
             active_rules = await self._active_rules(incident_key)
             signal = await self._get_or_create_signal(observation, incident_key)
             now = utc_now()
@@ -339,7 +371,7 @@ class AlertEngine:
                 if signal.manual_suppressed:
                     signal.updated_at = now
                     await signal.save()
-                    return len(rules)
+                    return applied_count
                 alert = (
                     await AlertLifecycleService.get(signal.current_alert_id)
                     if signal.current_alert_id
@@ -379,6 +411,6 @@ class AlertEngine:
                     signal.armed = True
             signal.updated_at = now
             await signal.save()
-            return len(rules)
+            return applied_count
         finally:
             await self._release_lock(incident_key, token)

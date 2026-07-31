@@ -33,3 +33,16 @@ def test_matrix_never_uses_page_permission_for_backend() -> None:
     for item in ROUTE_PERMISSIONS:
         if item.permission:
             assert item.permission in BACKEND_PERMISSION_CODES
+
+
+def test_component_signal_route_requires_dedicated_component_scope() -> None:
+    rule = next(
+        item
+        for item in ROUTE_PERMISSIONS
+        if item.method == "POST"
+        and item.path == "/action/sdk/{component_run_id}/signals"
+    )
+
+    assert rule.principal == "component"
+    assert rule.scope == "sdk:signals"
+    assert rule.permission is None

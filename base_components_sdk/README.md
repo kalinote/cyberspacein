@@ -17,6 +17,22 @@ def run(ctx: ComponentContext) -> dict | None:
     return {"value": value}
 ```
 
+SDK 2.2 起可以通过同一上下文上报服务端预注册的通用资源信号：
+
+```python
+ctx.report_signal(
+    report_id="health-check:resource-1:20260730T120000Z",
+    definition_key="component.demo.health",
+    definition_version=1,
+    resource_id="resource-1",
+    resource_name="演示资源",
+    value="abnormal",
+    metadata={"message": "健康检查失败"},
+)
+```
+
+`report_id` 必须在同一次业务观测的网络重试中保持不变。默认上报失败只记录诊断且返回 `False`；确实要求信号成功落库的组件可以传入 `required=True`。本地模式只校验并记录报告，不访问告警后端。
+
 组件由以下命令运行：
 
 ```text

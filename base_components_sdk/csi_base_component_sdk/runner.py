@@ -28,15 +28,35 @@ from .context import (
     ComponentTimedOut,
     StructuredLogger,
 )
+from .signals import ComponentSignalReporter
 from .telemetry import LogTransport, OutputCapture, TransportLogHandler
 
 
 class _LocalClient:
+    is_local = True
+
+    def __init__(self) -> None:
+        self.signal_batches: list[dict[str, Any]] = []
+
     def submit_logs(self, entries: list[dict[str, Any]], dropped_count: int) -> None:
         return None
 
     def submit_result(self, payload: dict[str, Any]) -> None:
         return None
+
+    def submit_signals(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """保存本地信号批次并模拟服务端接收结果。"""
+        self.signal_batches.append(payload)
+        return {
+            "results": [
+                {
+                    "report_id": item["report_id"],
+                    "status": "accepted",
+                    "observation_id": None,
+                }
+                for item in payload["reports"]
+            ]
+        }
 
     def close(self) -> None:
         return None
@@ -117,7 +137,11 @@ def _heartbeat_loop(
             _diagnostic(f"心跳上报失败: {exc}", original_stderr_fd)
 
 
-def _local_context(path: str, logger: StructuredLogger) -> ComponentContext:
+def _local_context(
+    path: str,
+    logger: StructuredLogger,
+    signal_reporter: ComponentSignalReporter,
+) -> ComponentContext:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     meta = data.get("meta") or {}
     return ComponentContext(
@@ -130,6 +154,7 @@ def _local_context(path: str, logger: StructuredLogger) -> ComponentContext:
         inputs=data.get("inputs") or {},
         outputs=data.get("outputs") or {},
         logger=logger,
+        _signal_reporter=signal_reporter,
     )
 
 
@@ -171,6 +196,7 @@ def run_component(args: argparse.Namespace) -> int:
     root.addHandler(handler)
     root.setLevel(logging.INFO)
     structured_logger = StructuredLogger(logging.getLogger("component"))
+    signal_reporter = ComponentSignalReporter(backend, structured_logger)
 
     try:
         if remote:
@@ -184,9 +210,14 @@ def run_component(args: argparse.Namespace) -> int:
                 inputs=init_data.get("inputs") or {},
                 outputs=init_data.get("outputs") or {},
                 logger=structured_logger,
+                _signal_reporter=signal_reporter,
             )
         else:
-            context = _local_context(args.local_config, structured_logger)
+            context = _local_context(
+                args.local_config,
+                structured_logger,
+                signal_reporter,
+            )
     except Exception as exc:
         error_message = f"运行上下文无效: {exc}"
         capture.stop()
@@ -291,6 +322,11 @@ def run_component(args: argparse.Namespace) -> int:
                     f"REFERENCE 输出流 ABORT 发送失败: {exc}",
                     capture.original_stderr_fd,
                 )
+        if getattr(context, "_signal_report_failure_count", 0):
+            context.logger.warning(
+                "组件运行期间存在信号上报失败",
+                failure_count=context._signal_report_failure_count,
+            )
         context.close()
         capture.stop()
         transport.close(timeout=5)

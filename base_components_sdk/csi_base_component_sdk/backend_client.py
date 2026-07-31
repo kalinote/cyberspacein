@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from typing import Any
@@ -100,6 +101,41 @@ class BackendClient:
                 time.sleep(delay)
                 delay = min(delay * 2, 5)
         raise RuntimeError(f"组件结果提交失败: {last_error}")
+
+    def submit_signals(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """使用固定次数指数退避提交组件信号。"""
+        try:
+            attempts = max(
+                1,
+                int(os.getenv("COMPONENT_SIGNAL_HTTP_RETRY_ATTEMPTS", "5")),
+            )
+            max_delay = max(
+                0.1,
+                float(
+                    os.getenv(
+                        "COMPONENT_SIGNAL_HTTP_RETRY_MAX_SECONDS",
+                        "5",
+                    )
+                ),
+            )
+        except ValueError as exc:
+            raise RuntimeError("组件信号 SDK 重试配置无效") from exc
+        delay = min(0.5, max_delay)
+        last_error: Exception | None = None
+        for index in range(attempts):
+            try:
+                return self._request(
+                    "POST",
+                    "signals",
+                    json=payload,
+                    timeout=15,
+                )
+            except Exception as exc:
+                last_error = exc
+                if index + 1 < attempts:
+                    time.sleep(delay)
+                    delay = min(delay * 2, max_delay)
+        raise RuntimeError(f"组件信号提交失败: {last_error}")
 
     def close(self) -> None:
         self._session.close()

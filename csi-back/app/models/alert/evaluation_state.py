@@ -35,6 +35,7 @@ class AlertRuleEvaluationStateModel(Document):
     last_value: Any = None
     last_value_type: AlertValueTypeEnum
     last_observation_id: str
+    last_observation_ordering_key: str | None = None
     last_source_event_id: str | None = None
     last_observed_at: datetime
     activated_at: datetime | None = None
