@@ -20,8 +20,11 @@ from app.schemas.constants import (
     DEFAULT_COMPONENT_COMMAND_ARGS,
     ComponentRunStatusEnum,
 )
-from app.service.component import cancel_component_run, dispatch_component_run
-from app.service.component_auth import issue_component_bootstrap
+from app.service.component.auth import issue_component_bootstrap
+from app.service.component.service import (
+    cancel_component_run,
+    dispatch_component_run,
+)
 from app.utils.id_lib import generate_id
 
 

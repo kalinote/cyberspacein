@@ -20,7 +20,7 @@ import app.utils.status_codes as status_codes
 from app.models.agent.nanobot import NanobotAgentModel, NanobotWorkspaceModel
 from app.dependencies.auth import get_current_user
 from app.models.auth.user import UserModel
-from app.service.auth import has_backend_permissions
+from app.service.auth.service import has_backend_permissions
 
 logger = logger.bind(name=__name__)
 

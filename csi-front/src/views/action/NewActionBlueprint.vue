@@ -336,37 +336,14 @@ const canEncapsulate = computed(() => hasAll([
 ]))
 
 const nodeTypeConfigs = ref([])
-const handleOptionsById = ref({})
 const loadingNodeConfigs = ref(false)
 
 const fetchNodeConfigs = async () => {
     loadingNodeConfigs.value = true
     try {
-        const [response, inputOptionsResponse, outputOptionsResponse] = await Promise.all([
-            actionApi.getNodes(),
-            actionApi.getNodeHandleOptions('target'),
-            actionApi.getNodeHandleOptions('source')
-        ])
+        const response = await actionApi.getNodes()
         if (response.code === 0) {
             const nodes = response.data || []
-            const handleOptions = {
-                'blueprint.input': (inputOptionsResponse.data || []).map(option => ({
-                    label: `${option.label}（${option.handle_name}）`,
-                    value: option.id
-                })),
-                'blueprint.output': (outputOptionsResponse.data || []).map(option => ({
-                    label: `${option.label}（${option.handle_name}）`,
-                    value: option.id
-                }))
-            }
-            handleOptionsById.value = {
-                input: Object.fromEntries(
-                    (inputOptionsResponse.data || []).map(option => [option.id, option])
-                ),
-                output: Object.fromEntries(
-                    (outputOptionsResponse.data || []).map(option => [option.id, option])
-                )
-            }
             nodeTypeConfigs.value = nodes.map(node => {
                 const processedNode = { ...node }
 
@@ -380,10 +357,7 @@ const fetchNodeConfigs = async () => {
                 if (processedNode.inputs) {
                     processedNode.inputs = processedNode.inputs.map(input => ({
                         ...input,
-                        id: input.id || input.name,
-                        options: input.name === 'public_handle_config_id'
-                            ? handleOptions[processedNode.builtin_key] || []
-                            : input.options
+                        id: input.id || input.name
                     }))
                 }
                 processedNode.rendererUnsupported = (
@@ -396,12 +370,10 @@ const fetchNodeConfigs = async () => {
         } else {
             ElMessage.error(`获取节点配置失败: ${response.message}`)
             nodeTypeConfigs.value = []
-            handleOptionsById.value = {}
         }
     } catch (error) {
         ElMessage.error('获取节点配置失败')
         nodeTypeConfigs.value = []
-        handleOptionsById.value = {}
     } finally {
         loadingNodeConfigs.value = false
     }
@@ -511,14 +483,13 @@ const publicInterfaces = computed(() => {
             const config = node.data.config
             const nameInput = (config.inputs || []).find(input => input.name === 'interface_name')
             const handleInput = (config.inputs || []).find(
-                input => input.name === 'public_handle_config_id'
+                input => input.custom_props?.option_metadata
             )
-            const direction = config.builtin_key === 'blueprint.input'
-                ? 'input'
-                : 'output'
-            const selectedHandle = handleOptionsById.value[direction]?.[
-                handleInput ? node.data[handleInput.id] : ''
-            ]
+            const direction = getBoundaryDirection(node)
+            const selectedHandleId = handleInput ? node.data[handleInput.id] : ''
+            const selectedHandle = (
+                handleInput?.custom_props?.option_metadata?.[selectedHandleId]
+            )
             const exposedHandles = getBoundaryExposedHandles(
                 node,
                 graphNodes,

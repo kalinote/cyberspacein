@@ -1,3 +1,5 @@
+"""用户认证与权限服务。"""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -9,7 +11,7 @@ from app.models.auth.group import GroupModel
 from app.models.auth.permission_code import PermissionCodeModel
 from app.models.auth.user import UserModel
 from app.schemas.auth.user import UserCreateRequest
-from app.service.auth_session import (
+from app.service.auth.session import (
     clear_login_failures,
     create_user_session,
     ensure_login_allowed,

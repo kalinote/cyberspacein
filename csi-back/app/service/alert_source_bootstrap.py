@@ -1,6 +1,6 @@
-from app.service.action_alert_source import ActionInstanceAlertSource
+from app.service.action.alert_source import ActionInstanceAlertSource
 from app.service.alert.registry import alert_source_registry
-from app.service.component_signal_bootstrap import register_component_signal_sources
+from app.service.component_signal.bootstrap import register_component_signal_sources
 
 
 def register_builtin_alert_sources() -> None:

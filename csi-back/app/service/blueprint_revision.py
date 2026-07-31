@@ -27,7 +27,7 @@ from app.schemas.constants import (
     ActionNodeDefinitionOriginEnum,
     ActionNodeKindEnum,
 )
-from app.service.action_compiler import BlueprintCompiler
+from app.service.action.compiler import BlueprintCompiler
 from app.service.encapsulated_node import (
     next_encapsulated_definition_version,
     normalize_encapsulated_latest,

@@ -10,7 +10,7 @@ from app.models.action.blueprint import (
     ViewportModel,
     create_blueprint_snapshot,
 )
-from app.service import action as action_service
+from app.service.action import service as action_service
 from app.service.action import ActionInstanceService
 from app.utils.id_lib import generate_id
 

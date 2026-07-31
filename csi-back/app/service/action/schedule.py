@@ -1,3 +1,5 @@
+"""行动计划调度服务。"""
+
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -19,7 +21,7 @@ from app.schemas.constants import (
     ActionScheduleTypeEnum,
     ActionTriggerTypeEnum,
 )
-from app.service.action import ActionInstanceService
+from app.service.action.service import ActionInstanceService
 
 logger = logger.bind(name=__name__)
 

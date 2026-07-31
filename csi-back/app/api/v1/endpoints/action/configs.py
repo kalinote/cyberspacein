@@ -15,6 +15,7 @@ from app.schemas.action.configs import (
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.service.action import ActionInstanceService
+from app.service.action.node_options import collect_node_handle_options
 from app.utils.id_lib import generate_id
 from app.utils.dict_helper import pack_dict, unpack_dict
 
@@ -59,59 +60,8 @@ async def get_node_handle_options(
     direction: Literal["source", "target"],
 ):
     """按端口方向聚合有效节点使用的动态Handle配置。"""
-    nodes = await ActionNodeModel.find(
-        {
-            "is_deleted": False,
-            "enabled": True,
-            "node_kind": {"$ne": "encapsulated"},
-        }
-    ).to_list()
-    usages = {}
-    for node in nodes:
-        if node.builtin_key in {"blueprint.input", "blueprint.output"}:
-            continue
-        for handle in node.handles:
-            if handle.type != direction:
-                continue
-            config_id = handle.handle_config_id or handle.id
-            usages.setdefault(config_id, []).append(handle)
-    if not usages:
-        return ApiResponseSchema.success(data=[])
-
-    configs = await ActionNodesHandleConfigModel.find(
-        {"_id": {"$in": sorted(usages)}}
-    ).to_list()
-    results = []
-    for config in sorted(configs, key=lambda item: (item.label, item.id)):
-        handles = usages[config.id]
-        interface_types = {
-            handle.interface_type_id or config.id for handle in handles
-        }
-        if len(interface_types) != 1:
-            continue
-        compatible = {
-            *config.other_compatible_interfaces,
-            *(
-                interface_id
-                for handle in handles
-                for interface_id in handle.compatible_interface_type_ids
-            ),
-        }
-        results.append(
-            ActionHandleOptionResponse(
-                id=config.id,
-                handle_name=config.handle_name,
-                label=config.label,
-                direction=direction,
-                data_type=config.type,
-                interface_type_id=(
-                    next(iter(interface_types))
-                ),
-                compatible_interface_type_ids=sorted(compatible),
-                color=config.color,
-            )
-        )
-    return ApiResponseSchema.success(data=results)
+    options_by_direction = await collect_node_handle_options([direction])
+    return ApiResponseSchema.success(data=options_by_direction[direction])
 
 
 @router.get("/handles", response_model=PageResponseSchema[ActionNodesHandleConfigResponse], summary="获取节点配置handle列表")

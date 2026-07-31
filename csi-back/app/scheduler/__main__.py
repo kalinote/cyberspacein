@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.logging_config import setup_logging
 from app.db.mongodb import close_mongodb, init_mongodb
 from app.db.redis import close_redis, init_redis
-from app.service.action_schedule import ActionScheduleService, utc_now
+from app.service.action.schedule import ActionScheduleService, utc_now
 
 logger = logger.bind(name=__name__)
 

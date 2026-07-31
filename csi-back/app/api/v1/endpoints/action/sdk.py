@@ -23,7 +23,7 @@ from app.schemas.component_signal import (
 )
 from app.schemas.response import ApiResponseSchema
 from app.service.action import ActionInstanceService
-from app.service.action_log import ActionLogService
+from app.service.action.log import ActionLogService
 from app.service.component_signal.ingestion import ComponentSignalIngestionService
 from app.utils.dict_helper import unpack_dict
 

@@ -1,3 +1,5 @@
+"""组件信号源引导服务。"""
+
 from app.service.alert.registry import alert_source_registry
 from app.service.component_signal.definitions import register_builtin_component_signals
 from app.service.component_signal.registry import component_signal_definition_registry

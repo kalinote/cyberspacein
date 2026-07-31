@@ -1,3 +1,5 @@
+"""行动节点日志服务。"""
+
 from __future__ import annotations
 
 import base64

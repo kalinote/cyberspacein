@@ -20,7 +20,7 @@ from app.schemas.constants import (
     ActionVisibilityEnum,
 )
 from app.service.action import ActionInstanceService, node_model_to_response
-from app.service.action_log import ActionLogService
+from app.service.action.log import ActionLogService
 from app.utils.dict_helper import unpack_dict
 from app.utils.workflow import graph_model2schemas
 

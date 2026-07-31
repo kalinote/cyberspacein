@@ -7,7 +7,7 @@ from app.core.permissions import PERMISSION_REGISTRY
 from app.models.auth.group import GroupModel
 from app.models.auth.permission_code import PermissionCodeModel
 from app.models.auth.user import UserModel
-from app.service.auth import get_user_permissions
+from app.service.auth.service import get_user_permissions
 
 
 def utcnow() -> datetime:

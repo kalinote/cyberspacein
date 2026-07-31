@@ -36,9 +36,9 @@ from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.schemas.constants import ActionFlowStatusEnum
 from app.service.action import ActionInstanceService, node_model_to_response
-from app.service.action_compiler import BlueprintCompiler
-from app.service.action_schedule import validate_blueprint_params
-from app.service.auth import has_backend_permissions
+from app.service.action.compiler import BlueprintCompiler
+from app.service.action.schedule import validate_blueprint_params
+from app.service.auth.service import has_backend_permissions
 from app.service.blueprint_revision import BlueprintRevisionService
 from app.service.boundary_binding_validator import (
     BlueprintBindingValidationError,

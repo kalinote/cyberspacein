@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.exceptions import UnauthorizedException
-from app.service import auth_session
+from app.service.auth import session as auth_session
 
 
 def _session(**updates):

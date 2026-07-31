@@ -15,8 +15,12 @@ from app.schemas.action.node import (
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
-from app.service.component import get_components
+from app.service.component.service import get_components
 from app.service.action import ActionInstanceService, node_model_to_response
+from app.service.action.node_options import (
+    apply_blueprint_io_handle_options,
+    collect_node_handle_options,
+)
 from app.service.encapsulated_node import (
     EncapsulatedNodeReferencedError,
     delete_encapsulated_node_version,
@@ -106,6 +110,10 @@ async def get_actions(panel: bool = False):
         query["is_latest"] = True
     nodes = await ActionNodeModel.find(query).to_list()
     results = [await node_model_to_response(node) for node in nodes]
+    options_by_direction = await collect_node_handle_options(
+        ["source", "target"]
+    )
+    apply_blueprint_io_handle_options(results, options_by_direction)
     return ApiResponseSchema.success(data=results)
 
 

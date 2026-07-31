@@ -136,7 +136,7 @@ const bindingController = inject('boundaryBindingController', null)
 const nodeConfig = computed(() => props.data?.config || null)
 const visibleInputs = computed(() => (
     (nodeConfig.value?.inputs || []).filter(input => (
-        input.name !== 'public_handle_config_id'
+        !input.custom_props?.hide_when_boundary_bound
         || !props.data?.boundaryBinding
     ))
 ))

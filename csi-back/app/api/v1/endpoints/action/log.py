@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query
 from app.models.action.action import ActionInstanceNodeModel
 from app.schemas.action.log import ActionNodeLogPage
 from app.schemas.response import ApiResponseSchema
-from app.service.action_log import ActionLogService
+from app.service.action.log import ActionLogService
 
 
 router = APIRouter(tags=["行动节点日志"])

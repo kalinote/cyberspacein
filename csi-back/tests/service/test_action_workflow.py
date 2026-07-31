@@ -19,7 +19,7 @@ from app.schemas.action.reference import (
     ReferenceProducerKindEnum,
     ReferenceQueueBinding,
 )
-from app.service import action as action_service
+from app.service.action import service as action_service
 from app.service.action import ActionInstanceService
 from app.service.node_executors import component as component_executor
 from app.service.node_executors.component import ComponentNodeExecutor

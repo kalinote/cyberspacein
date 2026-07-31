@@ -27,7 +27,7 @@ from app.db import (
 )
 from app.utils.cos import init_cos, close_cos
 from app.utils.embedding import init_embedding_client, close_embedding_client
-from app.service.auth import ensure_default_admin
+from app.service.auth.service import ensure_default_admin
 from app.core.system_config import system_config_manager
 
 logger = logger.bind(name=__name__)
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     await sync_builtin_native_nodes()
     await init_redis()
     await init_elasticsearch()
-    from app.service.action_log import ActionLogService
+    from app.service.action.log import ActionLogService
     await ActionLogService.ensure_storage()
     await init_rabbitmq()
     await init_cos()

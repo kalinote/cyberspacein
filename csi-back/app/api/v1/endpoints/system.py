@@ -37,14 +37,14 @@ from app.schemas.auth.user import (
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
-from app.service.auth import (
+from app.service.auth.service import (
     bump_group_member_authorization_versions,
     bump_user_authorization_versions,
     change_user_credentials,
     create_user,
     validate_temporary_account,
 )
-from app.service.auth_session import (
+from app.service.auth.session import (
     as_utc,
     terminate_session_by_id,
     terminate_user_sessions,

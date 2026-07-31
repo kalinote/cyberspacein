@@ -129,10 +129,6 @@ export const actionApi = {
   getAllNodeHandles() {
     return request.get(`/action/configs/handles/all`)
   },
-  // 获取独立IO节点可选择的动态Handle配置
-  getNodeHandleOptions(direction) {
-    return request.get('/action/configs/handles/options', { direction })
-  },
   // 获取资源统计数据
   getStatistics() {
     return request.get('/action/configs/statistics')

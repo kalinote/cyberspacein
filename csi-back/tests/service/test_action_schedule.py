@@ -13,7 +13,7 @@ from app.schemas.constants import (
     ActionScheduleOverlapPolicyEnum,
     ActionScheduleTypeEnum,
 )
-from app.service.action_schedule import (
+from app.service.action.schedule import (
     ActionScheduleService,
     calculate_next_runs,
     latest_due_time,
@@ -196,7 +196,7 @@ async def test_misfire_skip_advances_without_creating_action(monkeypatch):
 
     monkeypatch.setattr(ActionScheduleModel, "find_one", staticmethod(find_schedule))
     monkeypatch.setattr(
-        "app.service.action_schedule.ActionInstanceService.init",
+        "app.service.action.schedule.ActionInstanceService.init",
         fail_init,
     )
 
@@ -259,11 +259,11 @@ async def test_fire_once_uses_latest_slot_and_passes_priority(monkeypatch):
     monkeypatch.setattr(ActionScheduleModel, "find_one", staticmethod(find_schedule))
     monkeypatch.setattr(ActionBlueprintModel, "find_one", staticmethod(find_blueprint))
     monkeypatch.setattr(
-        "app.service.action_schedule.ActionInstanceService.init",
+        "app.service.action.schedule.ActionInstanceService.init",
         init_action,
     )
     monkeypatch.setattr(
-        "app.service.action_schedule.ActionInstanceService.start",
+        "app.service.action.schedule.ActionInstanceService.start",
         start_action,
     )
 

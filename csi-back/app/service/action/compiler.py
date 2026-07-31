@@ -1,3 +1,5 @@
+"""行动蓝图编译服务。"""
+
 from __future__ import annotations
 
 from collections import defaultdict, deque

@@ -20,7 +20,7 @@ from app.schemas.alert.constants import (
 )
 from app.schemas.alert.observation import AlertObservation
 from app.service.alert.engine import AlertEngine
-from app.service.action_alert_source import ActionInstanceAlertSource
+from app.service.action.alert_source import ActionInstanceAlertSource
 from app.service.alert.registry import AlertSourceRegistry
 
 

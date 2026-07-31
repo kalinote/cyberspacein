@@ -17,8 +17,8 @@ from app.dependencies.auth import (
     get_component_context,
     get_current_auth_context,
 )
-from app.service.auth import has_backend_permissions
-from app.service.component_auth import consume_component_bootstrap
+from app.service.auth.service import has_backend_permissions
+from app.service.component.auth import consume_component_bootstrap
 from app.models.action.action import ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
 

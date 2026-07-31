@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.exceptions import UnauthorizedException
-from app.service import component_auth
+from app.service.component import auth as component_auth
 
 
 class FakeRedis:

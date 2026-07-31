@@ -24,7 +24,7 @@ from app.schemas.constants import (
     ActionNodeDefinitionOriginEnum,
     ActionNodeKindEnum,
 )
-from app.service.action_compiler import BlueprintCompiler
+from app.service.action.compiler import BlueprintCompiler
 from app.service.native_nodes.compiler_registry import (
     CompilerMutation,
     compiler_adapters,

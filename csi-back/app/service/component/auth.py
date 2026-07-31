@@ -1,3 +1,5 @@
+"""行动组件启动凭证服务。"""
+
 from __future__ import annotations
 
 import hashlib

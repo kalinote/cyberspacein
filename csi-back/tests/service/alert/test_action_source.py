@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.schemas.constants import ActionFlowStatusEnum
-from app.service.action_alert_source import (
+from app.service.action.alert_source import (
     ActionInstanceAlertSource,
     action_status_observation,
 )

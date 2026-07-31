@@ -8,7 +8,7 @@ from app.api.v1.endpoints.action import schedule as schedule_endpoint
 from app.models.action.schedule import ActionScheduleModel
 from app.schemas.action.schedule import ActionScheduleCreateRequest
 from app.schemas.constants import ActionScheduleTypeEnum
-from app.service.action_schedule import ActionScheduleService
+from app.service.action.schedule import ActionScheduleService
 
 
 @pytest.mark.asyncio

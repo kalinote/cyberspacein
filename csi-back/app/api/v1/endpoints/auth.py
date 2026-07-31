@@ -5,8 +5,8 @@ from app.dependencies.auth import get_current_auth_context
 from app.schemas.auth.auth import CurrentUserResponse, LoginRequest, LoginResponse
 from app.schemas.auth.user import UserResponse
 from app.schemas.response import ApiResponseSchema
-from app.service.auth import authenticate_user, get_user_permissions
-from app.service.auth_session import AuthContext, terminate_session
+from app.service.auth.service import authenticate_user, get_user_permissions
+from app.service.auth.session import AuthContext, terminate_session
 
 router = APIRouter(prefix="/auth", tags=["认证鉴权"])
 

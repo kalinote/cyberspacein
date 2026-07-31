@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.schemas.action.log import ComponentLogBatchRequest
-from app.service import action_log
+from app.service.action import log as action_log
 
 
 class FakeComponentRunQuery:
@@ -78,4 +78,3 @@ def test_log_cursor_round_trip_and_validation() -> None:
     assert action_log.ActionLogService._decode_cursor(cursor) == sort
     with pytest.raises(ValueError, match="cursor"):
         action_log.ActionLogService._decode_cursor("invalid")
-

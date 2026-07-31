@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.schemas.auth.user import UserCreateRequest
-from app.service.auth import (
+from app.service.auth.service import (
     authenticate_user,
     create_user,
     get_enabled_groups_by_ids,
@@ -38,7 +38,7 @@ async def test_validate_group_ids_all_found(monkeypatch: pytest.MonkeyPatch) -> 
             return [g1, g2]
 
     monkeypatch.setattr(
-        "app.service.auth.GroupModel.find",
+        "app.service.auth.service.GroupModel.find",
         lambda *a, **k: FakeQuery(),
     )
     assert await validate_group_ids(["a", "b"]) is True
@@ -52,7 +52,7 @@ async def test_validate_group_ids_missing_group(monkeypatch: pytest.MonkeyPatch)
             return [MagicMock()]
 
     monkeypatch.setattr(
-        "app.service.auth.GroupModel.find",
+        "app.service.auth.service.GroupModel.find",
         lambda *a, **k: FakeQuery(),
     )
     assert await validate_group_ids(["a", "b"]) is False
@@ -66,7 +66,7 @@ async def test_get_user_permissions_sorted_unique(monkeypatch: pytest.MonkeyPatc
     gb = MagicMock()
     gb.permissions = ["a", "c"]
     monkeypatch.setattr(
-        "app.service.auth.get_enabled_groups_by_ids",
+        "app.service.auth.service.get_enabled_groups_by_ids",
         AsyncMock(return_value=[ga, gb]),
     )
     user = MagicMock()
@@ -78,17 +78,20 @@ async def test_get_user_permissions_sorted_unique(monkeypatch: pytest.MonkeyPatc
         async def to_list(self):
             return docs
 
-    monkeypatch.setattr("app.service.auth.PermissionCodeModel.find", lambda *a, **k: FakePermissionQuery())
+    monkeypatch.setattr(
+        "app.service.auth.service.PermissionCodeModel.find",
+        lambda *a, **k: FakePermissionQuery(),
+    )
     perms = await get_user_permissions(user)
     assert perms == ["a", "b", "c"]
 
 
 @pytest.mark.asyncio
 async def test_authenticate_user_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.service.auth.ensure_login_allowed", AsyncMock())
-    monkeypatch.setattr("app.service.auth.record_login_failure", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.ensure_login_allowed", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.record_login_failure", AsyncMock())
     monkeypatch.setattr(
-        "app.service.auth.UserModel.find_one",
+        "app.service.auth.service.UserModel.find_one",
         AsyncMock(return_value=None),
     )
     assert await authenticate_user("u", "p", None) is None
@@ -99,11 +102,11 @@ async def test_authenticate_user_disabled(monkeypatch: pytest.MonkeyPatch) -> No
     u = MagicMock()
     u.enabled = False
     monkeypatch.setattr(
-        "app.service.auth.UserModel.find_one",
+        "app.service.auth.service.UserModel.find_one",
         AsyncMock(return_value=u),
     )
-    monkeypatch.setattr("app.service.auth.ensure_login_allowed", AsyncMock())
-    monkeypatch.setattr("app.service.auth.record_login_failure", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.ensure_login_allowed", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.record_login_failure", AsyncMock())
     assert await authenticate_user("u", "p", None) is None
 
 
@@ -113,11 +116,11 @@ async def test_authenticate_user_expired(monkeypatch: pytest.MonkeyPatch) -> Non
     u.enabled = True
     u.expired_at = datetime.now() - timedelta(days=1)
     monkeypatch.setattr(
-        "app.service.auth.UserModel.find_one",
+        "app.service.auth.service.UserModel.find_one",
         AsyncMock(return_value=u),
     )
-    monkeypatch.setattr("app.service.auth.ensure_login_allowed", AsyncMock())
-    monkeypatch.setattr("app.service.auth.record_login_failure", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.ensure_login_allowed", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.record_login_failure", AsyncMock())
     assert await authenticate_user("u", "p", None) is None
 
 
@@ -128,12 +131,12 @@ async def test_authenticate_user_bad_password(monkeypatch: pytest.MonkeyPatch) -
     u.expired_at = None
     u.password_hash = "hash"
     monkeypatch.setattr(
-        "app.service.auth.UserModel.find_one",
+        "app.service.auth.service.UserModel.find_one",
         AsyncMock(return_value=u),
     )
-    monkeypatch.setattr("app.service.auth.ensure_login_allowed", AsyncMock())
-    monkeypatch.setattr("app.service.auth.record_login_failure", AsyncMock())
-    monkeypatch.setattr("app.service.auth.verify_password", lambda p, h: False)
+    monkeypatch.setattr("app.service.auth.service.ensure_login_allowed", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.record_login_failure", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.verify_password", lambda p, h: False)
     assert await authenticate_user("u", "wrong", None) is None
 
 
@@ -147,16 +150,19 @@ async def test_authenticate_user_success(monkeypatch: pytest.MonkeyPatch) -> Non
     u.id = "uid-1"
     u.save = AsyncMock()
     monkeypatch.setattr(
-        "app.service.auth.UserModel.find_one",
+        "app.service.auth.service.UserModel.find_one",
         AsyncMock(return_value=u),
     )
-    monkeypatch.setattr("app.service.auth.verify_password", lambda p, h: True)
+    monkeypatch.setattr("app.service.auth.service.verify_password", lambda p, h: True)
     session = MagicMock(id="session-1")
-    monkeypatch.setattr("app.service.auth.ensure_login_allowed", AsyncMock())
-    monkeypatch.setattr("app.service.auth.clear_login_failures", AsyncMock())
-    monkeypatch.setattr("app.service.auth.create_user_session", AsyncMock(return_value=("token-xyz", session)))
+    monkeypatch.setattr("app.service.auth.service.ensure_login_allowed", AsyncMock())
+    monkeypatch.setattr("app.service.auth.service.clear_login_failures", AsyncMock())
     monkeypatch.setattr(
-        "app.service.auth.get_user_permissions",
+        "app.service.auth.service.create_user_session",
+        AsyncMock(return_value=("token-xyz", session)),
+    )
+    monkeypatch.setattr(
+        "app.service.auth.service.get_user_permissions",
         AsyncMock(return_value=["p1"]),
     )
     out = await authenticate_user("alice", "ok", "127.0.0.1")
@@ -172,7 +178,7 @@ async def test_authenticate_user_success(monkeypatch: pytest.MonkeyPatch) -> Non
 @pytest.mark.asyncio
 async def test_create_user_duplicate_username(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "app.service.auth.UserModel.find_one",
+        "app.service.auth.service.UserModel.find_one",
         AsyncMock(return_value=MagicMock()),
     )
     req = UserCreateRequest(username="dup", password="p", display_name="d")

@@ -1,3 +1,5 @@
+"""用户登录会话服务。"""
+
 from __future__ import annotations
 
 import hashlib

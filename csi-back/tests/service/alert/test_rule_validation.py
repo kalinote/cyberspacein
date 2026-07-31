@@ -13,7 +13,7 @@ from app.schemas.alert.constants import (
     AlertSeverityEnum,
 )
 from app.schemas.alert.rule import AlertRuleCreateRequest
-from app.service.action_alert_source import ActionInstanceAlertSource
+from app.service.action.alert_source import ActionInstanceAlertSource
 from app.service.alert.registry import AlertSourceRegistry
 from app.service.alert.rule_service import AlertRuleService
 

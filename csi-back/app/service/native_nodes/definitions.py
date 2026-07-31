@@ -39,7 +39,10 @@ def register_builtin_native_nodes() -> None:
             required=False,
             default="",
             options=[],
-            custom_props={"clearable": True},
+            custom_props={
+                "clearable": True,
+                "hide_when_boundary_bound": True,
+            },
         ),
         NativeInputDefinition(
             id="required",

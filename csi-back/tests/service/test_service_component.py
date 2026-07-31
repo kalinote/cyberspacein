@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.service import component as component_svc
+from app.service.component import service as component_svc
 
 
 @pytest.mark.asyncio
 async def test_get_components_success(monkeypatch: pytest.MonkeyPatch) -> None:
     # 正常返回 unwrap_response 解包后的 data 字段
     monkeypatch.setattr(
-        "app.service.component.async_get",
+        "app.service.component.service.async_get",
         AsyncMock(return_value={"data": {"list": []}}),
     )
     out = await component_svc.get_components(page=1, page_size=10)
@@ -22,7 +22,7 @@ async def test_get_components_success(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_get_components_exception_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
     # 请求异常时返回 None
     monkeypatch.setattr(
-        "app.service.component.async_get",
+        "app.service.component.service.async_get",
         AsyncMock(side_effect=RuntimeError("network")),
     )
     out = await component_svc.get_components()

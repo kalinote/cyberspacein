@@ -13,8 +13,8 @@ from app.schemas.constants import (
     ActionInstanceNodeStatusEnum,
     ComponentRunStatusEnum,
 )
-from app.service import action as action_service
-from app.service import component as component_service
+from app.service.action import service as action_service
+from app.service.component import service as component_service
 from app.service.action import ActionInstanceService
 
 

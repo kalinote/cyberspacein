@@ -11,8 +11,8 @@ from app.core.security import decode_component_token
 from app.models.action.action import ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
 from app.models.auth.user import UserModel
-from app.service.auth import has_backend_permissions
-from app.service.auth_session import AuthContext, authenticate_access_token
+from app.service.auth.service import has_backend_permissions
+from app.service.auth.session import AuthContext, authenticate_access_token
 
 
 _bearer_scheme = HTTPBearer(auto_error=False)

@@ -1,4 +1,6 @@
 
+"""行动实例编排与运行服务。"""
+
 import asyncio
 from datetime import datetime, timedelta
 import random
@@ -51,11 +53,11 @@ from app.schemas.action.reference import (
     ReferenceQueueBinding,
     ReferenceStreamDescriptor,
 )
-from app.service.component import cancel_component_run
-from app.service.action_compiler import BlueprintCompiler
-from app.service.action_alert_source import publish_action_status_observation
+from app.service.component.service import cancel_component_run
+from app.service.action.alert_source import publish_action_status_observation
+from app.service.action.compiler import BlueprintCompiler
+from app.service.action.log import ActionLogService
 from app.service.blueprint_revision import BlueprintRevisionService
-from app.service.action_log import ActionLogService
 from app.service.native_nodes.registry import native_handlers
 from app.service.native_nodes.policy_registry import execution_policies
 from app.service.node_executors.component import ComponentNodeExecutor

@@ -20,7 +20,7 @@ from app.schemas.action.accounts import (
 )
 from app.dependencies.auth import get_current_user
 from app.models.auth.user import UserModel
-from app.service.auth import has_backend_permissions
+from app.service.auth.service import has_backend_permissions
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
 from app.utils.id_lib import generate_id

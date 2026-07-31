@@ -8,6 +8,7 @@ from app.api.v1.endpoints.action import resource as resource_endpoint
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeInputModel, ActionNodeModel
 from app.schemas.action.execution import NativeNodeExtensionSpec, NodeExecutionSpec
+from app.schemas.action.configs import ActionHandleOptionResponse
 from app.schemas.action.node import ActionNode
 from app.schemas.action.node import EncapsulatedNodeReferenceResponse
 from app.schemas.constants import (
@@ -19,6 +20,7 @@ from app.schemas.constants import (
     ActionNodeTypeEnum,
 )
 from app.service.action import ActionInstanceService, node_model_to_response
+from app.service.action.node_options import apply_blueprint_io_handle_options
 from app.service.native_nodes.contracts import BackendNativeNodeDefinition
 from app.service.native_nodes.registry import BackendNativeDefinitionRegistry
 from app.service.encapsulated_node import EncapsulatedNodeReferencedError
@@ -202,6 +204,46 @@ async def test_handle_options_include_reference_configs(monkeypatch) -> None:
 
     assert response.code == 0
     assert response.data[0].data_type == ActionConfigIOTypeEnum.REFERENCE
+
+
+def test_blueprint_io_node_response_contains_dynamic_handle_options() -> None:
+    input_item = SimpleNamespace(
+        name="public_handle_config_id",
+        options=[],
+        custom_props={"clearable": True},
+    )
+    nodes = [
+        SimpleNamespace(
+            builtin_key="blueprint.input",
+            inputs=[input_item],
+        )
+    ]
+    option = ActionHandleOptionResponse(
+        id="reference-in",
+        handle_name="reference_in",
+        label="引用输入",
+        direction="target",
+        data_type=ActionConfigIOTypeEnum.REFERENCE,
+        interface_type_id="custom.reference",
+        compatible_interface_type_ids=["builtin.value"],
+        color="#7c3aed",
+    )
+
+    apply_blueprint_io_handle_options(nodes, {"target": [option]})
+
+    assert input_item.options[0].label == "引用输入（reference_in）"
+    assert input_item.options[0].value == "reference-in"
+    assert input_item.custom_props["clearable"] is True
+    assert input_item.custom_props["option_metadata"]["reference-in"] == {
+        "id": "reference-in",
+        "handle_name": "reference_in",
+        "label": "引用输入",
+        "direction": "target",
+        "data_type": "reference",
+        "interface_type_id": "custom.reference",
+        "compatible_interface_type_ids": ["builtin.value"],
+        "color": "#7c3aed",
+    }
 
 
 @pytest.mark.asyncio

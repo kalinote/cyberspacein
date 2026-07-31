@@ -29,7 +29,7 @@ from app.schemas.constants import (
     ActionNodeDefinitionOriginEnum,
     ActionNodeKindEnum,
 )
-from app.service.action_compiler import BlueprintCompiler
+from app.service.action.compiler import BlueprintCompiler
 from app.service.boundary_binding_validator import (
     BlueprintBindingValidationError,
 )

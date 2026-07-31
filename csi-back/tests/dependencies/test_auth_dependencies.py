@@ -15,7 +15,7 @@ from app.dependencies.auth import get_current_auth_context, get_current_user, re
 from app.models.auth.session import LoginSessionModel
 from app.models.auth.user import UserModel
 from app.schemas.response import ApiResponseSchema
-from app.service.auth_session import AuthContext
+from app.service.auth.session import AuthContext
 
 
 def _sample_context() -> AuthContext:

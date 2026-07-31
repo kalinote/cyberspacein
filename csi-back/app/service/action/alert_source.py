@@ -1,3 +1,5 @@
+"""行动实例告警源服务。"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
