@@ -17,6 +17,7 @@ class CompilerContext(BaseModel):
 
     graph: GraphModel
     invocation_mode: ActionInvocationModeEnum
+    debug: bool = False
     definitions: dict[str, ActionNodeModel]
 
     model_config = {"arbitrary_types_allowed": True}
@@ -83,6 +84,28 @@ class DefaultCompilerAdapter:
         definition: ActionNodeModel,
     ) -> CompilerMutation:
         return CompilerMutation()
+
+
+class DebugOnlyCompilerAdapter:
+    """仅在调试运行中保留节点。"""
+
+    def transform(
+        self,
+        context: CompilerContext,
+        node: GraphNodeModel,
+        definition: ActionNodeModel,
+    ) -> CompilerMutation:
+        """普通运行时移除调试节点及关联边。"""
+        if context.debug:
+            return CompilerMutation()
+        return CompilerMutation(
+            skip_nodes={node.id: "调试节点仅在调试运行中启用"},
+            remove_edge_ids={
+                edge.id
+                for edge in context.graph.edges
+                if edge.source == node.id or edge.target == node.id
+            },
+        )
 
 
 class BoundaryCompilerAdapter:
@@ -412,5 +435,6 @@ class BoundaryCompilerAdapter:
 
 compiler_adapters = CompilerAdapterRegistry()
 compiler_adapters.register("default", DefaultCompilerAdapter())
+compiler_adapters.register("debug.only", DebugOnlyCompilerAdapter())
 compiler_adapters.register("blueprint.input", BoundaryCompilerAdapter("input"))
 compiler_adapters.register("blueprint.output", BoundaryCompilerAdapter("output"))

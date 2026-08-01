@@ -26,6 +26,17 @@ from app.service.native_nodes.registry import BackendNativeDefinitionRegistry
 from app.service.encapsulated_node import EncapsulatedNodeReferencedError
 
 
+class _SortableQuery:
+    def __init__(self, values):
+        self.values = values
+
+    def sort(self, *_args):
+        return self
+
+    async def to_list(self):
+        return self.values
+
+
 def _native_request() -> ActionNode:
     return ActionNode(
         name="伪造原生节点",
@@ -34,7 +45,7 @@ def _native_request() -> ActionNode:
         node_kind=ActionNodeKindEnum.BACKEND_NATIVE,
         execution=NodeExecutionSpec(
             driver=ActionExecutionDriverEnum.BACKEND_NATIVE,
-            handler="analysis.invoke",
+            handler="test.native",
         ),
         extension=NativeNodeExtensionSpec(),
         definition_origin=ActionNodeDefinitionOriginEnum.BACKEND_BUILTIN,
@@ -62,18 +73,18 @@ async def test_key_value_input_can_serialize_for_native_resource(
         raising=False,
     )
     node = ActionNodeModel.model_construct(
-        id="analysis-projection",
-        name="分析节点",
-        description="分析节点",
+        id="native-projection",
+        name="原生节点",
+        description="原生节点",
         type=ActionNodeTypeEnum.PROCESSOR.value,
         node_kind=ActionNodeKindEnum.BACKEND_NATIVE,
         execution=NodeExecutionSpec(
             driver=ActionExecutionDriverEnum.BACKEND_NATIVE,
-            handler="analysis.invoke",
+            handler="test.native",
         ),
         extension=NativeNodeExtensionSpec(),
         definition_origin=ActionNodeDefinitionOriginEnum.BACKEND_BUILTIN,
-        builtin_key="analysis",
+        builtin_key="test.native",
         version="1",
         handles=[],
         inputs=[
@@ -98,6 +109,60 @@ async def test_key_value_input_can_serialize_for_native_resource(
     response = await node_model_to_response(node)
 
     assert response.inputs[0].type == ActionNodeInputTypeEnum.KEY_VALUE
+
+
+@pytest.mark.asyncio
+async def test_entity_analysis_model_options_are_built_in_real_time(
+    monkeypatch,
+) -> None:
+    model_input = SimpleNamespace(name="model_config_id", options=[])
+    node_response = SimpleNamespace(
+        builtin_key="entity.content_analysis",
+        inputs=[model_input],
+    )
+    monkeypatch.setattr(
+        ActionNodeModel,
+        "find",
+        staticmethod(lambda _query: _SortableQuery([object()])),
+    )
+    monkeypatch.setattr(
+        resource_endpoint,
+        "node_model_to_response",
+        AsyncMock(return_value=node_response),
+    )
+    monkeypatch.setattr(
+        resource_endpoint,
+        "collect_node_handle_options",
+        AsyncMock(return_value={"source": [], "target": []}),
+    )
+    monkeypatch.setattr(
+        resource_endpoint,
+        "apply_blueprint_io_handle_options",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        resource_endpoint.AgentModelConfigModel,
+        "find_all",
+        staticmethod(
+            lambda: _SortableQuery(
+                [
+                    SimpleNamespace(id="model-1", name="模型一"),
+                    SimpleNamespace(id="model-2", name="模型二"),
+                ]
+            )
+        ),
+    )
+
+    response = await resource_endpoint.get_actions(panel=True)
+
+    assert response.code == 0
+    assert [
+        option.model_dump()
+        for option in model_input.options
+    ] == [
+        {"label": "模型一", "value": "model-1"},
+        {"label": "模型二", "value": "model-2"},
+    ]
 
 
 @pytest.mark.asyncio

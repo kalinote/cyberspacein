@@ -63,6 +63,18 @@ async def lifespan(app: FastAPI):
         analyst_runtime_worker = AnalystRuntimeWorker()
         await analyst_runtime_worker.start()
 
+    from app.service.entity_content_analysis_runtime import (
+        EntityContentAnalysisRuntimeWorker,
+    )
+
+    entity_content_analysis_worker = EntityContentAnalysisRuntimeWorker()
+    await entity_content_analysis_worker.start()
+
+    from app.service.debug_output_runtime import DebugOutputRuntimeWorker
+
+    debug_output_worker = DebugOutputRuntimeWorker()
+    await debug_output_worker.start()
+
     async def monitor_action_timeouts() -> None:
         """周期收敛行动整体超时和组件运行超时。"""
         from app.service.action import ActionInstanceService
@@ -72,13 +84,14 @@ async def lifespan(app: FastAPI):
                 await ActionInstanceService.expire_stale_actions()
                 await ActionInstanceService.expire_stale_component_runs()
                 await ActionInstanceService.reconcile_node_executions()
+                await ActionInstanceService.retry_open_reference_aborts()
                 await ActionInstanceService.retry_failed_queue_cleanup()
             except Exception as exc:
                 logger.error(f"行动运行超时检查失败: {exc}")
             await asyncio.sleep(settings.ACTION_TIMEOUT_CHECK_INTERVAL_SECONDS)
 
     async def monitor_action_runtime_events() -> None:
-        """独立消费运行时终态事件，避免被全量超时对账阻塞。"""
+        """独立消费子行动终态事件，避免被全量超时对账阻塞。"""
         from app.service.action import ActionInstanceService
 
         while True:
@@ -163,6 +176,9 @@ async def lifespan(app: FastAPI):
         await reference_bridge_task
 
     system_config_manager.mark_not_ready()
+
+    await debug_output_worker.stop()
+    await entity_content_analysis_worker.stop()
 
     if analyst_runtime_worker is not None:
         await analyst_runtime_worker.stop()

@@ -24,8 +24,6 @@ class AnalysisInvocationRequest(BaseModel):
     auto_approve: bool = False
     approval_policy: Literal["manual", "auto_readonly", "auto_all"] = "manual"
     initiator_user_id: str | None = None
-    invocation_source: Literal["agent_api", "action_node"] = "agent_api"
-    source_ref: dict[str, str] = Field(default_factory=dict)
 
 
 class AnalysisInvocationRef(BaseModel):
@@ -55,7 +53,7 @@ class AnalysisInvocationOutcome(BaseModel):
 
 
 class AnalysisInvocationService:
-    """供 Agent API 和行动原生节点复用的分析应用层门面。"""
+    """供 Agent API 使用的分析应用层门面。"""
 
     @staticmethod
     async def submit(
@@ -118,13 +116,6 @@ class AnalysisInvocationService:
             ),
             "initiator_user_id": request.initiator_user_id,
         }
-        if request.invocation_source != "agent_api" or request.source_ref:
-            start_kwargs.update(
-                {
-                    "invocation_source": request.invocation_source,
-                    "source_ref": request.source_ref,
-                }
-            )
         session_id = await AnalystService.start_agent(**start_kwargs)
         try:
             session = await NanobotSessionModel.find_one({"_id": session_id})

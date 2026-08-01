@@ -14,7 +14,8 @@ _ACTION_NODE_TYPE_LABELS = {
     "logic": "基本逻辑节点",
     "simple_operation": "简单运算节点",
     "io": "IO节点",
-    "analysis": "分析引擎节点",
+    "analysis": "分析节点",
+    "debug": "调试节点",
     "subflow": "封装节点",
 }
 
@@ -29,6 +30,7 @@ class ActionNodeTypeEnum(str, Enum):
     SIMPLE_OPERATION = "simple_operation"
     IO = "io"
     ANALYSIS = "analysis"
+    DEBUG = "debug"
     SUBFLOW = "subflow"
 
     @property

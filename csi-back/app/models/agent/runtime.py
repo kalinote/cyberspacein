@@ -34,8 +34,6 @@ class NanobotRunModel(Document):
     requested_reason: str | None = None
     user_prompt: str
     context: dict[str, Any] = Field(default_factory=dict)
-    invocation_source: str = "agent_api"
-    source_ref: dict[str, str] = Field(default_factory=dict)
     auto_approve: bool = False
     initiator_user_id: str | None = None
 

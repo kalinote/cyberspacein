@@ -105,8 +105,13 @@ def _builtin(builtin_key: str) -> ActionNodeModel:
                 port_id=handle.port_id,
                 interface_type_id=handle.interface_type_id,
                 compatible_interface_type_ids=handle.other_compatible_interfaces,
+                handle_name=handle.handle_name,
+                data_type=handle.data_type,
+                accepted_data_types=handle.accepted_data_types,
                 type=handle.direction,
                 position=handle.position,
+                label=handle.label,
+                color=handle.color,
             )
             for handle in definition.handles
         ],
@@ -325,6 +330,116 @@ def test_execution_plan_v2_freezes_reference_edge_contract() -> None:
     assert plan.edges[0].reference_protocol == "eos-v1"
     assert plan.edges[0].source_handle_config_id == "source.out"
     assert plan.edges[0].target_handle_config_id == "target.in"
+
+
+def test_debug_output_definition_has_mixed_multi_input_contract() -> None:
+    definition = native_definitions.require("debug.output")
+
+    assert definition.category == "debug"
+    assert len(definition.instance_input_schema) == 1
+    usage = definition.instance_input_schema[0]
+    assert usage.type == "comment"
+    assert usage.label == "节点说明"
+    assert "仅在调试运行中启用" in usage.description
+    assert "24 KiB" in usage.description
+    assert len(definition.handles) == 1
+    handle = definition.handles[0]
+    assert handle.direction == "target"
+    assert handle.handle_name == "data_in"
+    assert handle.accepted_data_types == ["value", "reference"]
+    assert definition.extension.compiler_adapter == "debug.only"
+    assert definition.extension.execution_policy == "debug.observer"
+    assert definition.extension.config["compiler"]["allow_multiple_inputs"] is True
+
+
+def test_debug_output_is_removed_normally_and_keeps_concrete_edge_types() -> None:
+    value_source = _ordinary("value-source", inputs=())
+    reference_source = _ordinary("reference-source", inputs=())
+    reference_source.handles[0].data_type = "reference"
+    definitions = {
+        "value-source": value_source,
+        "reference-source": reference_source,
+        "debug.output": _builtin("debug.output"),
+    }
+    graph = _graph(
+        [
+            _node("value-source", "value-source"),
+            _node("reference-source", "reference-source"),
+            _node("debug", "debug.output"),
+        ],
+        [
+            _edge(
+                "value-edge",
+                "value-source",
+                "value-source.out",
+                "debug",
+                "builtin.debug.output.input",
+            ),
+            _edge(
+                "reference-edge",
+                "reference-source",
+                "reference-source.out",
+                "debug",
+                "builtin.debug.output.input",
+            ),
+        ],
+    )
+
+    normal_plan = BlueprintCompiler.compile(
+        graph,
+        definitions,
+        ActionInvocationModeEnum.STANDALONE,
+    )
+    debug_plan = BlueprintCompiler.compile(
+        graph,
+        definitions,
+        ActionInvocationModeEnum.STANDALONE,
+        debug=True,
+    )
+
+    assert normal_plan.debug is False
+    assert {node.id for node in normal_plan.nodes} == {
+        "value-source",
+        "reference-source",
+    }
+    assert normal_plan.edges == []
+    assert [item.node_id for item in normal_plan.skipped_nodes] == ["debug"]
+    assert debug_plan.debug is True
+    assert debug_plan.extension["scheduler"]["readiness"] == "edge-v1"
+    assert {edge.id: edge.data_type for edge in debug_plan.edges} == {
+        "reference-edge": "reference",
+        "value-edge": "value",
+    }
+    debug_node = next(node for node in debug_plan.nodes if node.id == "debug")
+    assert debug_node.effective_in_degree == 2
+
+
+def test_debug_output_rejects_exact_duplicate_edge() -> None:
+    definitions = {
+        "source": _ordinary("source", inputs=()),
+        "debug.output": _builtin("debug.output"),
+    }
+    graph = _graph(
+        [_node("source", "source"), _node("debug", "debug.output")],
+        [
+            _edge(
+                edge_id,
+                "source",
+                "source.out",
+                "debug",
+                "builtin.debug.output.input",
+            )
+            for edge_id in ("first", "duplicate")
+        ],
+    )
+
+    with pytest.raises(ValueError, match="完全重复"):
+        BlueprintCompiler.compile(
+            graph,
+            definitions,
+            ActionInvocationModeEnum.STANDALONE,
+            debug=True,
+        )
 
 
 def test_unbound_reference_input_inherits_adjacent_handle_contract() -> None:

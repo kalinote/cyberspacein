@@ -7,4 +7,3 @@ import {
 export { registerNativeNodeRenderer, resolveNativeNodeRenderer }
 
 registerNativeNodeRenderer('schema', 1, GenericNode)
-registerNativeNodeRenderer('analysis', 1, GenericNode)

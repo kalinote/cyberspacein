@@ -1424,7 +1424,8 @@ const NODE_TYPE_STYLES = {
   'logic': { bg: 'bg-indigo-100!', color: 'bg-indigo-500!', tag: 'bg-indigo-100! text-indigo-700!' },
   'simple_operation': { bg: 'bg-yellow-100!', color: 'bg-yellow-500!', tag: 'bg-yellow-100! text-yellow-700!' },
   'output': { bg: 'bg-teal-100!', color: 'bg-teal-500!', tag: 'bg-teal-100! text-teal-700!' },
-  'input': { bg: 'bg-pink-100!', color: 'bg-pink-500!', tag: 'bg-pink-100! text-pink-700!' }
+  'input': { bg: 'bg-pink-100!', color: 'bg-pink-500!', tag: 'bg-pink-100! text-pink-700!' },
+  'debug': { bg: 'bg-slate-100!', color: 'bg-slate-500!', tag: 'bg-slate-100! text-slate-700!' }
 }
 
 // 默认节点样式

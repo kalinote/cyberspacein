@@ -42,6 +42,7 @@ async def start_action(
         data.blueprint_id,
         data.params,
         initiator_user_id=getattr(user, "id", None),
+        debug=data.debug,
     )
     if not result:
         return ApiResponseSchema.error(code=250004, message=message)
@@ -75,6 +76,7 @@ async def get_action_instances(
             name=blueprint.name,
             description=blueprint.description,
             status=action_instance.status,
+            debug=getattr(action_instance, "debug", False),
             start_at=action_instance.start_at,
             paused_at=action_instance.paused_at,
             finished_at=action_instance.finished_at,
@@ -252,6 +254,7 @@ async def get_action_detail(action_id: str):
         name=blueprint.name,
         description=blueprint.description,
         status=action_instance.status,
+        debug=getattr(action_instance, "debug", False),
         resource=blueprint.resource,
         implementation_period=action_instance.implementation_period,
         start_at=action_instance.start_at,

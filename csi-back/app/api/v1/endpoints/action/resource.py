@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from beanie.operators import Set
 from app.models.action.node import ActionNodeModel, ActionNodeHandleModel, ActionNodeInputModel
+from app.models.agent.configs import AgentModelConfigModel
 from app.schemas.action.node import (
     ActionNode,
+    ActionNodeOption,
     ActionNodeResponse,
     BaseComponent,
     EncapsulatedNodeDeleteConflictResponse,
@@ -114,6 +116,17 @@ async def get_actions(panel: bool = False):
         ["source", "target"]
     )
     apply_blueprint_io_handle_options(results, options_by_direction)
+    model_configs = await AgentModelConfigModel.find_all().sort("+name").to_list()
+    model_options = [
+        ActionNodeOption(label=item.name, value=item.id)
+        for item in model_configs
+    ]
+    for node in results:
+        if node.builtin_key != "entity.content_analysis":
+            continue
+        for input_item in node.inputs:
+            if input_item.name == "model_config_id":
+                input_item.options = model_options
     return ApiResponseSchema.success(data=results)
 
 
@@ -149,6 +162,7 @@ async def create_node(data: ActionNode):
             relabel=handle.relabel,
             handle_name=handle.handle_name,
             data_type=handle.data_type,
+            accepted_data_types=handle.accepted_data_types,
             label=handle.label,
             color=handle.color,
             type=handle.type,
@@ -246,6 +260,7 @@ async def update_node(node_id: str, data: ActionNode):
             relabel=handle.relabel,
             handle_name=handle.handle_name,
             data_type=handle.data_type,
+            accepted_data_types=handle.accepted_data_types,
             label=handle.label,
             color=handle.color,
             type=handle.type,

@@ -331,18 +331,23 @@ def process_messages(
     elasticsearch_config = get_elasticsearch_config()
     redis_config = get_redis_config()
     
-    message_bodies = [msg_data['body'] for msg_data in messages]
-    
+    selected_messages = messages
     if storage_filter and conditions:
-        message_bodies = filter_documents(message_bodies, conditions)
+        filter_func = build_redis_filter(conditions)
+        if filter_func:
+            selected_messages = [
+                item for item in messages if filter_func(item['body'])
+            ]
+
+    message_bodies = [item['body'] for item in selected_messages]
+    message_ids = [item.get('message_id') for item in selected_messages]
     
     if not message_bodies:
         return 0, 0
     
     try:
         if target == 'rabbitmq':
-            rabbitmq.publish_messages(target_name, message_bodies)
-        
+            pass
         elif target == 'mongodb':
             storage = MongoDBStorage(**mongodb_config)
             try:
@@ -375,9 +380,15 @@ def process_messages(
             logger.warning(f"未知的目标类型: {target}")
             return 0, len(message_bodies)
         
-        if output_queues:
-            for queue_name in output_queues:
-                rabbitmq.publish_messages(queue_name, message_bodies)
+        publish_queues = list(output_queues)
+        if target == 'rabbitmq':
+            publish_queues.insert(0, target_name)
+        if publish_queues and not rabbitmq.publish_messages(
+            list(dict.fromkeys(publish_queues)),
+            message_bodies,
+            message_ids=message_ids,
+        ):
+            raise RuntimeError("RabbitMQ 批量发布未获得确认")
         
         return len(message_bodies), 0
     
@@ -391,13 +402,26 @@ def read_from_storage(
     target: str,
     target_name: str,
     conditions: Dict[str, Any] = None,
-    batch_size: int = 0
-) -> List[Dict[str, Any]]:
+    batch_size: int = 0,
+    include_message_ids: bool = False,
+    include_delivery_tags: bool = False,
+) -> (
+    List[Dict[str, Any]]
+    | tuple[List[Dict[str, Any]], List[str | None]]
+    | tuple[List[Dict[str, Any]], List[str | None], List[int]]
+):
+    """从目标存储读取数据。
+
+    RabbitMQ 来源可选择返回未确认的 delivery tag，由调用方在下游
+    fan-out 获得 Publisher Confirm 后统一 ACK；失败时则重新入队。
+    """
     mongodb_config = get_mongodb_config()
     elasticsearch_config = get_elasticsearch_config()
     redis_config = get_redis_config()
     
     documents = []
+    message_ids: List[str | None] = []
+    pending_delivery_tags: List[int] = []
     
     try:
         if target == 'rabbitmq':
@@ -407,8 +431,12 @@ def read_from_storage(
                 if not messages:
                     break
                 all_messages.extend([msg['body'] for msg in messages])
+                message_ids.extend(msg.get('message_id') for msg in messages)
                 delivery_tags = [msg['delivery_tag'] for msg in messages]
-                rabbitmq.ack_all_message(delivery_tags)
+                if include_delivery_tags:
+                    pending_delivery_tags.extend(delivery_tags)
+                else:
+                    rabbitmq.ack_all_message(delivery_tags)
             documents = all_messages
         
         elif target == 'mongodb':
@@ -445,12 +473,22 @@ def read_from_storage(
         
         else:
             logger.warning(f"未知的目标类型: {target}")
-            return []
+            if include_delivery_tags:
+                return [], [], []
+            return ([], []) if include_message_ids else []
     
     except Exception as e:
         logger.error(f"从存储读取数据失败: {e}")
         raise
     
+    if include_delivery_tags:
+        if len(message_ids) != len(documents):
+            message_ids = [None] * len(documents)
+        return documents, message_ids, pending_delivery_tags
+    if include_message_ids:
+        if len(message_ids) != len(documents):
+            message_ids = [None] * len(documents)
+        return documents, message_ids
     return documents
 
 
@@ -545,19 +583,35 @@ def run(base_component: ComponentContext) -> dict:
                     query_conditions = None
                 
                 try:
-                    documents = read_from_storage(
+                    documents, message_ids, delivery_tags = read_from_storage(
                         base_component.rabbitmq,
                         target,
                         target_name,
                         query_conditions,
-                        batch_size if batch_size > 0 else 0
+                        batch_size if batch_size > 0 else 0,
+                        include_message_ids=True,
+                        include_delivery_tags=True,
                     )
                     
                     logger.info(f"从存储读取到 {len(documents)} 条数据")
                     
                     if documents:
+                        if not base_component.rabbitmq.publish_messages(
+                            data_output_queues,
+                            documents,
+                            message_ids=message_ids,
+                        ):
+                            for tag in delivery_tags:
+                                base_component.rabbitmq.nack_message(
+                                    tag,
+                                    requeue=True,
+                                )
+                            raise ComponentFailure("数据输出未获得 RabbitMQ 确认")
+                        if delivery_tags:
+                            base_component.rabbitmq.ack_all_message(
+                                delivery_tags
+                            )
                         for queue_name in data_output_queues:
-                            base_component.rabbitmq.publish_messages(queue_name, documents)
                             logger.info(f"已将 {len(documents)} 条数据输出到队列: {queue_name}")
                     
                     total_processed += len(documents)

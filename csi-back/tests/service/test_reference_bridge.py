@@ -1,10 +1,12 @@
 """Reference 父子运行时桥接服务测试。"""
 
+import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from pamqp.commands import Basic
 
 from app.db import rabbitmq
 from app.models import get_all_models
@@ -151,10 +153,21 @@ def test_reference_control_is_identified_only_from_properties():
 
 
 @pytest.mark.asyncio
-async def test_transport_rejects_negative_publisher_confirm():
+@pytest.mark.parametrize(
+    "confirmation",
+    [
+        False,
+        None,
+        Basic.Nack(delivery_tag=1),
+        Basic.Reject(delivery_tag=1, requeue=True),
+    ],
+)
+async def test_transport_rejects_negative_publisher_confirm(confirmation):
     channel = SimpleNamespace(
         declare_queue=AsyncMock(),
-        default_exchange=SimpleNamespace(publish=AsyncMock(return_value=False)),
+        default_exchange=SimpleNamespace(
+            publish=AsyncMock(return_value=confirmation)
+        ),
     )
     delivery = rabbitmq.ReferenceMessageDelivery(
         channel=channel,
@@ -163,6 +176,83 @@ async def test_transport_rejects_negative_publisher_confirm():
 
     with pytest.raises(RuntimeError, match="发布未获确认"):
         await rabbitmq.publish_reference_delivery(delivery, ["target-q"])
+
+
+@pytest.mark.asyncio
+async def test_transformed_json_delivery_preserves_transport_metadata():
+    published_at = datetime(2026, 7, 31, 12, 30)
+    source = _message()
+    source.headers = {"trace-id": "trace-1", "source": "采集器"}
+    source.expiration = 60_000
+    source.timestamp = published_at
+    source.user_id = "worker-1"
+    publish = AsyncMock(return_value=True)
+    channel = SimpleNamespace(
+        declare_queue=AsyncMock(),
+        default_exchange=SimpleNamespace(publish=publish),
+    )
+    delivery = rabbitmq.ReferenceMessageDelivery(
+        channel=channel,
+        message=source,
+    )
+    payload = {"title": "中文标题", "nsfw": False}
+
+    await rabbitmq.publish_reference_json_delivery(
+        delivery,
+        ["target-q", "target-q"],
+        payload,
+    )
+
+    channel.declare_queue.assert_awaited_once_with(
+        "target-q",
+        durable=True,
+        exclusive=False,
+        auto_delete=False,
+    )
+    publish.assert_awaited_once()
+    published_message = publish.await_args.args[0]
+    assert json.loads(published_message.body.decode("utf-8")) == payload
+    assert "中文标题".encode("utf-8") in published_message.body
+    assert published_message.headers == source.headers
+    assert published_message.content_type == "application/json"
+    assert published_message.content_encoding == "utf-8"
+    assert published_message.delivery_mode == source.delivery_mode
+    assert published_message.priority == source.priority
+    assert published_message.correlation_id == source.correlation_id
+    assert published_message.reply_to == source.reply_to
+    assert published_message.expiration == source.expiration
+    assert published_message.message_id == source.message_id
+    assert published_message.timestamp == source.timestamp
+    assert published_message.type == source.type
+    assert published_message.user_id == source.user_id
+    assert published_message.app_id == source.app_id
+    assert publish.await_args.kwargs == {
+        "routing_key": "target-q",
+        "mandatory": True,
+    }
+    assert source.processed is False
+
+
+@pytest.mark.asyncio
+async def test_transformed_json_delivery_rejects_negative_publisher_confirm():
+    channel = SimpleNamespace(
+        declare_queue=AsyncMock(),
+        default_exchange=SimpleNamespace(publish=AsyncMock(return_value=False)),
+    )
+    source = _message()
+    delivery = rabbitmq.ReferenceMessageDelivery(
+        channel=channel,
+        message=source,
+    )
+
+    with pytest.raises(RuntimeError, match="发布未获确认"):
+        await rabbitmq.publish_reference_json_delivery(
+            delivery,
+            ["target-q"],
+            {"title": "已分析"},
+        )
+
+    assert source.processed is False
 
 
 @pytest.mark.asyncio
@@ -256,6 +346,11 @@ async def test_abort_is_persisted_before_source_ack(monkeypatch):
         "get_reference_message",
         AsyncMock(return_value=delivery),
     )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_record_control",
+        AsyncMock(return_value=(bridge, "abort")),
+    )
 
     async def _propagate(**_kwargs):
         events.append("propagated")
@@ -301,6 +396,11 @@ async def test_abort_requeues_when_terminal_state_cannot_be_persisted(monkeypatc
     )
     monkeypatch.setattr(
         ReferenceBridgeService,
+        "_record_control",
+        AsyncMock(return_value=(bridge, "abort")),
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
         "_propagate_abort",
         AsyncMock(),
     )
@@ -318,6 +418,150 @@ async def test_abort_requeues_when_terminal_state_cannot_be_persisted(monkeypatc
 
     assert result == ReferenceBridgeStepResult.LEASE_LOST
     assert events == ["nack:True", "close"]
+
+
+@pytest.mark.asyncio
+async def test_bridge_first_eos_ignores_late_abort(monkeypatch):
+    events: list[str] = []
+    delivery = _FakeDelivery(
+        _message(
+            message_type=REFERENCE_ABORT_TYPE,
+            stream_id="source-1",
+            producer_id="run-1",
+        ),
+        events,
+    )
+    bridge = _bridge(
+        sources=[
+            _stream(
+                "source-1",
+                "child-q",
+                "child-1",
+                ["run-1", "run-2"],
+            )
+        ]
+    )
+    bridge.received_eos_keys = [
+        ReferenceBridgeService._control_key("source-1", "run-1")
+    ]
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(return_value=bridge),
+    )
+    monkeypatch.setattr(
+        rabbitmq,
+        "get_reference_message",
+        AsyncMock(return_value=delivery),
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_record_control",
+        AsyncMock(return_value=(bridge, "eos")),
+    )
+    propagate = AsyncMock()
+    fail = AsyncMock()
+    monkeypatch.setattr(ReferenceBridgeService, "_propagate_abort", propagate)
+    monkeypatch.setattr(ReferenceBridgeService, "_fail", fail)
+
+    result = await ReferenceBridgeService.process_once(
+        bridge_id=bridge.id,
+        worker_id="worker-1",
+        lease_token="lease-1",
+    )
+
+    assert result == ReferenceBridgeStepResult.CONTROL
+    assert events == ["ack", "close"]
+    propagate.assert_not_awaited()
+    fail.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bridge_first_abort_cannot_be_overwritten_by_late_eos(monkeypatch):
+    events: list[str] = []
+    delivery = _FakeDelivery(
+        _message(
+            message_type=REFERENCE_EOS_TYPE,
+            stream_id="source-1",
+            producer_id="run-1",
+        ),
+        events,
+    )
+    bridge = _bridge()
+    bridge.received_abort_keys = [
+        ReferenceBridgeService._control_key("source-1", "run-1")
+    ]
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(return_value=bridge),
+    )
+    monkeypatch.setattr(
+        rabbitmq,
+        "get_reference_message",
+        AsyncMock(return_value=delivery),
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_record_control",
+        AsyncMock(return_value=(bridge, "abort")),
+    )
+    propagate = AsyncMock()
+    fail = AsyncMock(return_value=True)
+    monkeypatch.setattr(ReferenceBridgeService, "_propagate_abort", propagate)
+    monkeypatch.setattr(ReferenceBridgeService, "_fail", fail)
+
+    result = await ReferenceBridgeService.process_once(
+        bridge_id=bridge.id,
+        worker_id="worker-1",
+        lease_token="lease-1",
+    )
+
+    assert result == ReferenceBridgeStepResult.FAILED
+    assert events == ["ack", "close"]
+    propagate.assert_awaited_once()
+    fail.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", ["eos", "abort"])
+async def test_bridge_repeated_terminal_keeps_recorded_state(
+    monkeypatch,
+    terminal,
+):
+    bridge = _bridge()
+    control_key = ReferenceBridgeService._control_key("source-1", "run-1")
+    if terminal == "eos":
+        bridge.received_eos_keys = [control_key]
+    else:
+        bridge.received_abort_keys = [control_key]
+    collection = SimpleNamespace(
+        find_one_and_update=AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeModel,
+        "get_motor_collection",
+        lambda: collection,
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(return_value=bridge),
+    )
+
+    current, effective_terminal = await ReferenceBridgeService._record_control(
+        bridge_id=bridge.id,
+        worker_id="worker-1",
+        lease_token="lease-1",
+        control_key=control_key,
+        control_kind=terminal,
+    )
+
+    assert current is bridge
+    assert effective_terminal == terminal
+    query = collection.find_one_and_update.await_args.args[0]
+    assert query["received_eos_keys"] == {"$ne": control_key}
+    assert query["received_abort_keys"] == {"$ne": control_key}
 
 
 def test_eos_requires_all_declared_producers_and_sources():

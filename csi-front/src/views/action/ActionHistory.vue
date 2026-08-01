@@ -150,13 +150,23 @@
                     <h3 class="text-lg font-bold text-gray-900 mb-2 line-clamp-1">{{ action.name }}</h3>
                     <p class="text-sm text-gray-600 line-clamp-2 mb-3">{{ action.description }}</p>
                   </div>
-                  <el-tag
-                    :type="getStatusTagType(action.status)"
-                    size="small"
-                    class="shrink-0 ml-2 border-0"
-                  >
-                    {{ getStatusText(action.status) }}
-                  </el-tag>
+                  <div class="shrink-0 ml-2 flex items-center gap-1.5">
+                    <el-tag
+                      v-if="action.debug"
+                      size="small"
+                      effect="plain"
+                      class="border-slate-300! text-slate-600! bg-slate-50!"
+                    >
+                      调试
+                    </el-tag>
+                    <el-tag
+                      :type="getStatusTagType(action.status)"
+                      size="small"
+                      class="border-0"
+                    >
+                      {{ getStatusText(action.status) }}
+                    </el-tag>
+                  </div>
                 </div>
 
                 <div class="space-y-2 mb-4">
@@ -263,6 +273,14 @@
                   <div class="flex items-center gap-2">
                     <div class="w-2 h-2 rounded-full" :class="getStatusDotClass(row.status)"></div>
                     <span class="font-medium">{{ row.name }}</span>
+                    <el-tag
+                      v-if="row.debug"
+                      size="small"
+                      effect="plain"
+                      class="border-slate-300! text-slate-600! bg-slate-50!"
+                    >
+                      调试
+                    </el-tag>
                   </div>
                 </template>
               </el-table-column>

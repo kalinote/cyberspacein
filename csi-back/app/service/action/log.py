@@ -159,6 +159,9 @@ class ActionLogService:
         exception: str | None = None,
         root_action_id: str | None = None,
         parent_action_id: str | None = None,
+        logger_name: str = "action.orchestrator",
+        truncated: bool = False,
+        provider_run_id: str | None = None,
     ) -> bool:
         """幂等写入原生节点和子流程的通用编排日志。"""
         es = get_es()
@@ -182,14 +185,14 @@ class ActionLogService:
             "attempt": execution.attempt,
             "driver": execution.driver,
             "handler": execution.handler,
-            "provider_run_id": execution.provider_run_id,
+            "provider_run_id": provider_run_id or execution.provider_run_id,
             "level": level,
             "source": source,
-            "logger": "action.orchestrator",
+            "logger": logger_name,
             "message": message,
             "fields": fields or {},
             "exception": exception,
-            "truncated": False,
+            "truncated": truncated,
         }
         try:
             response = await es.create(
@@ -206,6 +209,30 @@ class ActionLogService:
             logger.warning(f"节点编排日志写入失败，事件 {event_id}: {exc}")
             return False
         return str(response.get("result", "")) in {"created", "updated"}
+
+    @staticmethod
+    async def ingest_debug_event(
+        execution: ActionNodeExecutionModel,
+        *,
+        event_key: str,
+        message: str,
+        fields: dict | None = None,
+        level: str = "DEBUG",
+        truncated: bool = False,
+        provider_run_id: str | None = None,
+    ) -> bool:
+        """幂等写入调试输出节点产生的原生日志。"""
+        return await ActionLogService.ingest_node_event(
+            execution,
+            event_key=event_key,
+            level=level,
+            source="native",
+            logger_name="debug.output",
+            message=message,
+            fields=fields,
+            truncated=truncated,
+            provider_run_id=provider_run_id,
+        )
 
     @staticmethod
     def _encode_cursor(sort: list) -> str:

@@ -6,6 +6,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
 
 import pika
 from dotenv import find_dotenv, load_dotenv
@@ -19,6 +20,7 @@ REFERENCE_CONTROL_CONTENT_TYPE = (
     "application/vnd.cyberspacein.reference-control+json"
 )
 REFERENCE_PROTOCOL = "eos-v1"
+MESSAGE_ID_MAX_BYTES = 255
 
 
 class ReferenceStreamAborted(RuntimeError):
@@ -38,6 +40,9 @@ class _ReferenceInputState:
     stream_id: str
     expected_producer_ids: set[str] = field(default_factory=set)
     completed_producer_ids: set[str] = field(default_factory=set)
+    terminal_by_producer_id: dict[str, str] = field(default_factory=dict)
+    aborted: bool = False
+    abort_error: str | None = None
     completed: bool = False
 
 
@@ -209,6 +214,29 @@ class RabbitMQClient:
             stream_id = stream_id.decode("utf-8", errors="replace")
         return str(stream_id) if stream_id else None
 
+    @staticmethod
+    def _message_id(properties: Any) -> str | None:
+        """读取业务消息的 AMQP message_id。"""
+        message_id = getattr(properties, "message_id", None)
+        if isinstance(message_id, bytes):
+            message_id = message_id.decode("utf-8", errors="replace")
+        return str(message_id) if message_id is not None else None
+
+    @staticmethod
+    def _resolve_message_id(message_id: str | None) -> str:
+        """生成或校验 AMQP message_id。"""
+        if message_id is None:
+            return uuid4().hex
+        if not isinstance(message_id, str):
+            raise TypeError("message_id 必须是字符串或 None")
+        if not message_id:
+            raise ValueError("message_id 不能为空")
+        if len(message_id.encode("utf-8")) > MESSAGE_ID_MAX_BYTES:
+            raise ValueError(
+                f"message_id 的 UTF-8 长度不能超过 {MESSAGE_ID_MAX_BYTES} 字节"
+            )
+        return message_id
+
     def _handle_control(
         self,
         queue_name: str,
@@ -225,15 +253,33 @@ class RabbitMQClient:
             raise ReferenceStreamAborted(
                 f"REFERENCE 控制帧流ID不匹配: {stream_id}"
             )
+        if producer_id is None and len(state.expected_producer_ids) == 1:
+            producer_id = next(iter(state.expected_producer_ids))
+        previous_terminal = (
+            state.terminal_by_producer_id.get(producer_id)
+            if producer_id
+            else None
+        )
+        if previous_terminal is not None:
+            if previous_terminal == REFERENCE_ABORT_TYPE:
+                raise ReferenceStreamAborted(
+                    state.abort_error
+                    or f"REFERENCE 数据流 {state.stream_id} 已中止"
+                )
+            return
+
         if control_type == REFERENCE_ABORT_TYPE:
-            raise ReferenceStreamAborted(
+            if producer_id:
+                state.terminal_by_producer_id[producer_id] = control_type
+            state.aborted = True
+            state.abort_error = (
                 f"REFERENCE 数据流 {state.stream_id} 被生产者"
                 f" {producer_id or 'unknown'} 中止"
             )
+            raise ReferenceStreamAborted(state.abort_error)
 
-        if producer_id is None and len(state.expected_producer_ids) == 1:
-            producer_id = next(iter(state.expected_producer_ids))
         if producer_id:
+            state.terminal_by_producer_id[producer_id] = str(control_type)
             state.completed_producer_ids.add(producer_id)
 
         if state.expected_producer_ids:
@@ -250,6 +296,11 @@ class RabbitMQClient:
         wait_for_data: bool,
     ) -> tuple[Any, Any, bytes] | None:
         state = self._reference_inputs.get(queue_name)
+        if state and state.aborted:
+            raise ReferenceStreamAborted(
+                state.abort_error
+                or f"REFERENCE 数据流 {state.stream_id} 已中止"
+            )
         if state and state.completed:
             return None
 
@@ -303,10 +354,11 @@ class RabbitMQClient:
             )
             if delivery is None:
                 return None
-            method_frame, _properties, body = delivery
+            method_frame, properties, body = delivery
             return {
                 "body": body.decode("utf-8"),
                 "delivery_tag": method_frame.delivery_tag,
+                "message_id": self._message_id(properties),
             }
         except _CancellationSignal as signal:
             raise signal.error
@@ -338,8 +390,14 @@ class RabbitMQClient:
             logger.error("拒绝消息失败: %s", exc)
             return False
 
-    def send_message(self, queue_name: str, message: dict) -> bool:
+    def send_message(
+        self,
+        queue_name: str,
+        message: dict,
+        message_id: str | None = None,
+    ) -> bool:
         """发送业务消息到队列。"""
+        resolved_message_id = self._resolve_message_id(message_id)
         if not self._ensure_connection():
             logger.error("无法连接到 RabbitMQ")
             return False
@@ -349,22 +407,36 @@ class RabbitMQClient:
 
         try:
             self._declare_queue(queue_name)
-            self.channel.basic_publish(
+            published = self.channel.basic_publish(
                 exchange="",
                 routing_key=queue_name,
                 body=json.dumps(message, ensure_ascii=False),
-                properties=pika.BasicProperties(delivery_mode=2),
+                properties=pika.BasicProperties(
+                    delivery_mode=2,
+                    message_id=resolved_message_id,
+                    content_type="application/json",
+                    content_encoding="utf-8",
+                ),
             )
+            if published is False:
+                logger.error("RabbitMQ 拒绝确认业务消息: %s", queue_name)
+                return False
             return True
         except Exception as exc:
             logger.error("发送消息失败: %s", exc)
             return False
 
-    def send_messages_batch(self, queue_names: List[str], message: dict) -> int:
+    def send_messages_batch(
+        self,
+        queue_names: List[str],
+        message: dict,
+        message_id: str | None = None,
+    ) -> int:
         """批量发送同一条业务消息到多个队列。"""
+        resolved_message_id = self._resolve_message_id(message_id)
         success_count = 0
         for queue_name in queue_names:
-            if self.send_message(queue_name, message):
+            if self.send_message(queue_name, message, resolved_message_id):
                 success_count += 1
         return success_count
 
@@ -482,7 +554,7 @@ class RabbitMQClient:
                             and self._reference_inputs[queue_name].completed
                         )
                         break
-                    method_frame, _properties, body = delivery
+                    method_frame, properties, body = delivery
                     try:
                         body_str = body.decode("utf-8")
                         props_dict = {
@@ -490,6 +562,7 @@ class RabbitMQClient:
                             "exchange": method_frame.exchange,
                             "routing_key": method_frame.routing_key,
                             "redelivered": method_frame.redelivered,
+                            "message_id": self._message_id(properties),
                         }
                         batch_messages.append((body_str, props_dict))
                         delivery_tags.append(method_frame.delivery_tag)
@@ -555,12 +628,13 @@ class RabbitMQClient:
                 )
                 if delivery is None:
                     break
-                method_frame, _properties, body = delivery
+                method_frame, properties, body = delivery
                 try:
                     messages.append(
                         {
                             "body": json.loads(body.decode("utf-8")),
                             "delivery_tag": method_frame.delivery_tag,
+                            "message_id": self._message_id(properties),
                         }
                     )
                 except json.JSONDecodeError as exc:
@@ -589,10 +663,24 @@ class RabbitMQClient:
 
     def publish_messages(
         self,
-        queue_name: str,
+        queue_name: str | List[str],
         messages: List[Dict[str, Any]],
+        message_ids: List[str | None] | None = None,
     ) -> bool:
-        """批量发布业务消息到同一个队列。"""
+        """逐条生成消息ID，并将一批业务消息发布到一个或多个队列。"""
+        queue_names = [queue_name] if isinstance(queue_name, str) else queue_name
+        if not queue_names or any(
+            not isinstance(item, str) or not item for item in queue_names
+        ):
+            raise ValueError("queue_name 必须包含至少一个有效队列名")
+        if message_ids is not None and len(message_ids) != len(messages):
+            raise ValueError("message_ids 数量必须与 messages 一致")
+        resolved_message_ids = [
+            self._resolve_message_id(
+                message_ids[index] if message_ids is not None else None
+            )
+            for index in range(len(messages))
+        ]
         if not self._ensure_connection():
             logger.error("无法连接到 RabbitMQ")
             return False
@@ -601,14 +689,31 @@ class RabbitMQClient:
             return False
 
         try:
-            self._declare_queue(queue_name)
-            for message in messages:
-                self.channel.basic_publish(
-                    exchange="",
-                    routing_key=queue_name,
-                    body=json.dumps(message, ensure_ascii=False),
-                    properties=pika.BasicProperties(delivery_mode=2),
-                )
+            for target_queue in dict.fromkeys(queue_names):
+                self._declare_queue(target_queue)
+            for message, resolved_message_id in zip(
+                messages,
+                resolved_message_ids,
+            ):
+                body = json.dumps(message, ensure_ascii=False)
+                for target_queue in dict.fromkeys(queue_names):
+                    published = self.channel.basic_publish(
+                        exchange="",
+                        routing_key=target_queue,
+                        body=body,
+                        properties=pika.BasicProperties(
+                            delivery_mode=2,
+                            message_id=resolved_message_id,
+                            content_type="application/json",
+                            content_encoding="utf-8",
+                        ),
+                    )
+                    if published is False:
+                        logger.error(
+                            "RabbitMQ 拒绝确认批量业务消息: %s",
+                            target_queue,
+                        )
+                        return False
             return True
         except Exception as exc:
             logger.error("批量发布消息失败: %s", exc)

@@ -53,6 +53,7 @@ export const getNodeColor = (config) => {
     const firstHandle = config.handles[0]
     return firstHandle.color || '#909399'
   }
+  if (config.type === 'debug') return '#64748b'
   return '#909399'
 }
 

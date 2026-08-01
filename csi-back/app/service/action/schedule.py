@@ -305,6 +305,7 @@ class ActionScheduleService:
             ok, action_id = await ActionInstanceService.init(
                 schedule.blueprint_id,
                 schedule.params or None,
+                debug=False,
                 trigger_type=ActionTriggerTypeEnum.SCHEDULED,
                 trigger_key=trigger_key,
                 scheduled_for=scheduled_for,

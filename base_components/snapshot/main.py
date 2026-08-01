@@ -66,10 +66,15 @@ def _publish_to_data_out(
     component: ComponentContext,
     output_queue_names: list[str],
     data: dict,
+    message_id: str | None = None,
 ) -> bool:
     if component.rabbitmq is None:
         raise ComponentFailure("RabbitMQ 未初始化")
-    success_count = component.rabbitmq.send_messages_batch(output_queue_names, data)
+    success_count = component.rabbitmq.send_messages_batch(
+        output_queue_names,
+        data,
+        message_id=message_id,
+    )
     if success_count == len(output_queue_names):
         return True
     logger.error(
@@ -114,6 +119,7 @@ def _process_queue_batch(
                     QueueMessageItem(
                         data=data,
                         delivery_tag=message["delivery_tag"],
+                        message_id=message.get("message_id"),
                     )
                 )
             except (json.JSONDecodeError, TypeError) as exc:
@@ -143,7 +149,12 @@ def _process_queue_batch(
 
         ack_tags: list[int] = []
         for item, result in zip(batch_items, enriched_list):
-            if _publish_to_data_out(component, output_queue_names, result):
+            if _publish_to_data_out(
+                component,
+                output_queue_names,
+                result,
+                item.message_id,
+            ):
                 ack_tags.append(item.delivery_tag)
                 processed_count += 1
             else:

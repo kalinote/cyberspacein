@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal, Sequence
 
 import aio_pika
-from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
+from aio_pika.abc import (
+    AbstractChannel,
+    AbstractIncomingMessage,
+    AbstractQueueIterator,
+)
 from loguru import logger
+from pamqp.commands import Basic
 from urllib.parse import quote
 
 from app.core.config import settings
@@ -23,12 +30,20 @@ logger = logger.bind(name=__name__)
 rabbitmq_connection: aio_pika.Connection = None
 
 
+def _ensure_publish_confirmed(confirmation, queue_name: str) -> None:
+    """仅接受明确的布尔成功或 AMQP Basic.Ack。"""
+    if confirmation is True or isinstance(confirmation, Basic.Ack):
+        return
+    raise RuntimeError(f"Reference消息发布未获确认: {queue_name}")
+
+
 @dataclass
 class ReferenceMessageDelivery:
     """封装一条手动确认的 Reference 消息及其所属通道。"""
 
     channel: AbstractChannel
     message: AbstractIncomingMessage
+    owns_channel: bool = True
 
     async def ack(self) -> None:
         """确认源消息。"""
@@ -40,8 +55,48 @@ class ReferenceMessageDelivery:
 
     async def close(self) -> None:
         """关闭消息所属通道。"""
-        if not self.channel.is_closed:
+        if self.owns_channel and not self.channel.is_closed:
             await self.channel.close()
+
+
+@dataclass
+class ReferenceQueueConsumer:
+    """持有一个支持手动确认和可靠关闭的 Reference 长驻消费者。"""
+
+    channel: AbstractChannel
+    iterator: AbstractQueueIterator
+    _closed: bool = False
+
+    async def receive(self) -> ReferenceMessageDelivery | None:
+        """等待下一条消息，消费者关闭后返回 None。"""
+        if self._closed:
+            return None
+        try:
+            message = await self.iterator.__anext__()
+        except StopAsyncIteration:
+            return None
+        return ReferenceMessageDelivery(
+            channel=self.channel,
+            message=message,
+            owns_channel=False,
+        )
+
+    async def close(self) -> None:
+        """关闭消费者和通道，使尚未确认的消息重新入队。"""
+        if self._closed:
+            return
+        self._closed = True
+        with suppress(Exception):
+            await self.iterator.close()
+        if not self.channel.is_closed:
+            with suppress(Exception):
+                await self.channel.close()
+
+    async def __aenter__(self) -> "ReferenceQueueConsumer":
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        await self.close()
 
 
 async def init_rabbitmq():
@@ -152,6 +207,34 @@ async def get_reference_message(queue_name: str) -> ReferenceMessageDelivery | N
         raise
 
 
+async def open_reference_consumer(
+    queue_name: str,
+    *,
+    prefetch_count: int = 1,
+) -> ReferenceQueueConsumer:
+    """打开一个阻塞等待、手动确认的 Reference 长驻消费者。"""
+    if not rabbitmq_connection:
+        raise RuntimeError("RabbitMQ连接未初始化")
+    if prefetch_count <= 0:
+        raise ValueError("Reference消费者 prefetch_count 必须大于 0")
+    channel = await rabbitmq_connection.channel()
+    try:
+        await channel.set_qos(prefetch_count=prefetch_count)
+        queue = await channel.declare_queue(
+            queue_name,
+            durable=True,
+            exclusive=False,
+            auto_delete=False,
+        )
+        iterator = queue.iterator(no_ack=False)
+        await iterator.__aenter__()
+        return ReferenceQueueConsumer(channel=channel, iterator=iterator)
+    except Exception:
+        if not channel.is_closed:
+            await channel.close()
+        raise
+
+
 def clone_reference_message(message: AbstractIncomingMessage) -> aio_pika.Message:
     """克隆 DATA 消息，完整保留可转发的 AMQP Properties。"""
     return aio_pika.Message(
@@ -189,8 +272,45 @@ async def publish_reference_delivery(
             routing_key=queue_name,
             mandatory=True,
         )
-        if confirmation is False:
-            raise RuntimeError(f"Reference消息发布未获确认: {queue_name}")
+        _ensure_publish_confirmed(confirmation, queue_name)
+
+
+async def publish_reference_json_delivery(
+    delivery: ReferenceMessageDelivery,
+    queue_names: Sequence[str],
+    payload: dict,
+) -> None:
+    """确认式发布变换后的 JSON DATA；成功返回前不得确认源消息。"""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    source = delivery.message
+    for queue_name in dict.fromkeys(queue_names):
+        await delivery.channel.declare_queue(
+            queue_name,
+            durable=True,
+            exclusive=False,
+            auto_delete=False,
+        )
+        confirmation = await delivery.channel.default_exchange.publish(
+            aio_pika.Message(
+                body=body,
+                headers=dict(source.headers or {}),
+                content_type="application/json",
+                content_encoding="utf-8",
+                delivery_mode=source.delivery_mode,
+                priority=source.priority,
+                correlation_id=source.correlation_id,
+                reply_to=source.reply_to,
+                expiration=source.expiration,
+                message_id=source.message_id,
+                timestamp=source.timestamp,
+                type=source.type,
+                user_id=source.user_id,
+                app_id=source.app_id,
+            ),
+            routing_key=queue_name,
+            mandatory=True,
+        )
+        _ensure_publish_confirmed(confirmation, queue_name)
 
 
 async def publish_reference_control(
@@ -243,8 +363,7 @@ async def publish_reference_control(
                 routing_key=queue_name,
                 mandatory=True,
             )
-            if confirmation is False:
-                raise RuntimeError(f"Reference控制消息发布未获确认: {queue_name}")
+            _ensure_publish_confirmed(confirmation, queue_name)
     finally:
         if not channel.is_closed:
             await channel.close()

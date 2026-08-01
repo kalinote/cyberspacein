@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from typing import Any
 
 from app.models.action.blueprint import GraphEdgeModel, GraphModel
 from app.models.action.configs import ActionNodesHandleConfigModel
@@ -202,6 +203,7 @@ class BlueprintCompiler:
         invocation_mode: ActionInvocationModeEnum | str,
         *,
         revision_id: str | None = None,
+        debug: bool = False,
     ) -> BlueprintExecutionPlan:
         """校验设计图并调用注册适配器生成执行计划。"""
         invocation_mode = ActionInvocationModeEnum(invocation_mode)
@@ -240,6 +242,7 @@ class BlueprintCompiler:
         context = CompilerContext(
             graph=graph.model_copy(deep=True),
             invocation_mode=invocation_mode,
+            debug=debug,
             definitions=definitions,
         )
         skipped: dict[str, str] = {}
@@ -407,6 +410,7 @@ class BlueprintCompiler:
             plan_schema_version=2,
             revision_id=revision_id,
             invocation_mode=invocation_mode,
+            debug=debug,
             nodes=plan_nodes,
             edges=plan_edges,
             skipped_nodes=[
@@ -414,6 +418,7 @@ class BlueprintCompiler:
                 for node_id, reason in sorted(skipped.items())
             ],
             public_interface_snapshot=interface.model_dump(mode="python"),
+            extension={"scheduler": {"readiness": "edge-v1"}},
         )
 
     @staticmethod
@@ -422,7 +427,7 @@ class BlueprintCompiler:
         node_by_id: dict,
         definitions: dict[str, ActionNodeModel],
         interface_by_boundary_node: dict,
-    ) -> tuple[str, dict[str, str | None], dict[str, str | None]]:
+    ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """根据执行图两端的有效Handle冻结边传输与接口契约。"""
         endpoint_contracts = []
         for node_id, port_id, direction in (
@@ -442,6 +447,7 @@ class BlueprintCompiler:
                 endpoint_contracts.append(
                     {
                         "data_type": interface_port.data_type,
+                        "accepted_data_types": [interface_port.data_type],
                         "handle_config_id": interface_port.handle_config_id,
                         "interface_type_id": interface_port.interface_type_id,
                     }
@@ -467,19 +473,29 @@ class BlueprintCompiler:
                         if hasattr(handle.data_type, "value")
                         else str(handle.data_type or "value")
                     ),
+                    "accepted_data_types": list(
+                        handle.accepted_data_types
+                        or [
+                            handle.data_type.value
+                            if hasattr(handle.data_type, "value")
+                            else str(handle.data_type or "value")
+                        ]
+                    ),
                     "handle_config_id": handle_config_id,
                     "interface_type_id": (
                         handle.interface_type_id or handle_config_id
                     ),
                 }
             )
-        endpoint_types = {
-            contract["data_type"] for contract in endpoint_contracts
+        source_type = str(endpoint_contracts[0]["data_type"])
+        target_accepted = {
+            str(item)
+            for item in endpoint_contracts[1]["accepted_data_types"]
         }
-        if len(endpoint_types) != 1:
+        if source_type not in target_accepted:
             raise ValueError(f"边 {edge.id} 的端口数据类型不一致")
         return (
-            str(endpoint_contracts[0]["data_type"]),
+            source_type,
             endpoint_contracts[0],
             endpoint_contracts[1],
         )
@@ -500,6 +516,7 @@ class BlueprintCompiler:
         definitions: dict[str, ActionNodeModel],
     ) -> None:
         target_connections: set[tuple[str, str]] = set()
+        exact_connections: set[tuple[str, str, str, str]] = set()
         for edge in graph.edges:
             if edge.source not in node_by_id or edge.target not in node_by_id:
                 raise ValueError(f"边 {edge.id} 引用了不存在的节点")
@@ -531,6 +548,15 @@ class BlueprintCompiler:
                 raise ValueError(f"边 {edge.id} 的源端口不存在或方向错误")
             if target_handle is None or target_handle.type != "target":
                 raise ValueError(f"边 {edge.id} 的目标端口不存在或方向错误")
+            exact_key = (
+                edge.source,
+                source_port,
+                edge.target,
+                target_port,
+            )
+            if exact_key in exact_connections:
+                raise ValueError(f"边 {edge.id} 与已有连接完全重复")
+            exact_connections.add(exact_key)
             source_type = source_handle.interface_type_id
             target_type = target_handle.interface_type_id
             source_config = {

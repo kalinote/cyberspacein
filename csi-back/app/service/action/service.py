@@ -44,6 +44,7 @@ from app.schemas.constants import (
 from app.schemas.action.execution import (
     NodeDefinitionContract,
     NodeExecutionContext,
+    NodeIncomingEdge,
     NodeExecutionOutcome,
     NodeExecutionSpec,
 )
@@ -97,6 +98,7 @@ async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:
             ),
             interface_type_id=handle.interface_type_id,
             compatible_interface_type_ids=handle.compatible_interface_type_ids,
+            accepted_data_types=handle.accepted_data_types,
             relabel=handle.relabel,
             type=handle.type,
             position=handle.position,
@@ -423,6 +425,7 @@ class ActionInstanceService:
             dict[str, list[ReferenceStreamDescriptor]] | None
         ) = None,
         initiator_user_id: str | None = None,
+        debug: bool = False,
         trigger_type=None,
         trigger_key: str | None = None,
         scheduled_for: datetime | None = None,
@@ -475,6 +478,7 @@ class ActionInstanceService:
                 definitions,
                 invocation_mode,
                 revision_id=blueprint_revision_id,
+                debug=debug,
             )
             await BlueprintCompiler.validate_encapsulated_dependencies(
                 definitions
@@ -519,6 +523,7 @@ class ActionInstanceService:
             blueprint_revision_id=blueprint_revision_id,
             execution_plan_snapshot=execution_plan,
             invocation_mode=invocation_mode,
+            debug=debug,
             visibility=visibility,
             root_action_id=root_action_id or action_id,
             parent_action_id=parent_action_id,
@@ -656,9 +661,26 @@ class ActionInstanceService:
             )
             await action_instance_node.insert()
         
-        start_node_ids = [
-            node.id for node in execution_plan.nodes if node.effective_in_degree == 0
-        ]
+        start_node_ids = []
+        for node in execution_plan.nodes:
+            policy_key = (
+                node.extension_spec.execution_policy
+                if node.extension_spec
+                else "default"
+            )
+            policy_version = (
+                node.extension_spec.contract_version
+                if node.extension_spec
+                else 1
+            )
+            policy = execution_policies.require(policy_key, policy_version)
+            initial_ready = getattr(policy, "initial_ready", None)
+            if (
+                initial_ready(node)
+                if callable(initial_ready)
+                else node.effective_in_degree == 0
+            ):
+                start_node_ids.append(node.id)
         if not start_node_ids:
             logger.warning(f"没有找到起始节点: {action_id}")
         
@@ -712,6 +734,15 @@ class ActionInstanceService:
         )
 
         ready_nodes = await ActionInstanceNodeModel.find({"action_id": action.id, "status": ActionInstanceNodeStatusEnum.READY}).to_list()
+        ready_nodes.sort(
+            key=lambda item: (
+                0
+                if item.extension_spec_snapshot
+                and item.extension_spec_snapshot.execution_policy
+                == "debug.observer"
+                else 1
+            )
+        )
         for node in ready_nodes:
             await ActionInstanceService.run_node(node.id, action_id)
         if not ready_nodes and await ActionInstanceService.check_action_finished(action_id):
@@ -762,6 +793,15 @@ class ActionInstanceService:
                 },
             }
         ).update({"$set": {"status": ActionInstanceNodeStatusEnum.PAUSED}})
+        if getattr(action, "debug", False):
+            try:
+                from app.service.debug_output_runtime import (
+                    DebugOutputRuntimeService,
+                )
+
+                await DebugOutputRuntimeService.pause_for_action(action_id)
+            except Exception as exc:
+                logger.error(f"暂停调试输出消费者失败，行动 {action_id}: {exc}")
         return True, "行动已暂停，引用队列将持续保留"
 
     @staticmethod
@@ -814,6 +854,15 @@ class ActionInstanceService:
                 }
             )
             return False, "行动蓝图不存在，无法恢复"
+        if getattr(action, "debug", False):
+            try:
+                from app.service.debug_output_runtime import (
+                    DebugOutputRuntimeService,
+                )
+
+                await DebugOutputRuntimeService.resume_for_action(action_id)
+            except Exception as exc:
+                logger.error(f"恢复调试输出消费者失败，行动 {action_id}: {exc}")
 
         node_instances = await ActionInstanceNodeModel.find(
             {"action_id": action_id}
@@ -845,7 +894,16 @@ class ActionInstanceService:
                 ),
                 None,
             )
-            if failed_previous is not None:
+            extension_spec = getattr(
+                node_instance,
+                "extension_spec_snapshot",
+                None,
+            )
+            is_debug_observer = bool(
+                extension_spec
+                and extension_spec.execution_policy == "debug.observer"
+            )
+            if failed_previous is not None and not is_debug_observer:
                 node_status = ActionInstanceNodeStatusEnum.CANCELLED
                 node_update = {
                     "status": node_status,
@@ -856,7 +914,8 @@ class ActionInstanceService:
             else:
                 node_status = (
                     ActionInstanceNodeStatusEnum.READY
-                    if all(
+                    if is_debug_observer
+                    or all(
                         node.status == ActionInstanceNodeStatusEnum.COMPLETED
                         for node in previous_nodes
                     )
@@ -1134,12 +1193,40 @@ class ActionInstanceService:
             "action_id": action_id,
             "node_id": {"$in": all_previous_nodes}
         }).to_list()
-        completed_dependencies = sum(
-            previous.status == ActionInstanceNodeStatusEnum.COMPLETED
-            and previous.node_id
-            in getattr(node_instance, "delivered_dependencies", [])
-            for previous in previous_node_instances
+        plan_extension = (
+            getattr(action.execution_plan_snapshot, "extension", {}) or {}
         )
+        readiness_mode = plan_extension.get("scheduler", {}).get(
+            "readiness"
+        )
+        if readiness_mode == "edge-v1":
+            incoming_edge_ids = {
+                edge.id
+                for edge in action.execution_plan_snapshot.edges
+                if edge.target == node_instance.node_id
+            }
+            completed_dependencies = len(
+                incoming_edge_ids
+                & set(
+                    getattr(
+                        node_instance,
+                        "delivered_input_edge_ids",
+                        [],
+                    )
+                    + getattr(
+                        node_instance,
+                        "aborted_input_edge_ids",
+                        [],
+                    )
+                )
+            )
+        else:
+            completed_dependencies = sum(
+                previous.status == ActionInstanceNodeStatusEnum.COMPLETED
+                and previous.node_id
+                in getattr(node_instance, "delivered_dependencies", [])
+                for previous in previous_node_instances
+            )
         plan_node = next(
             (
                 item
@@ -1164,6 +1251,51 @@ class ActionInstanceService:
             else 1
         )
         policy = execution_policies.require(policy_key, policy_version)
+        failed_previous = next(
+            (
+                previous
+                for previous in previous_node_instances
+                if previous.status
+                in {
+                    ActionInstanceNodeStatusEnum.FAILED,
+                    ActionInstanceNodeStatusEnum.CANCELLED,
+                    ActionInstanceNodeStatusEnum.TIMEOUT,
+                }
+            ),
+            None,
+        )
+        if failed_previous is not None and policy_key != "debug.observer":
+            now = datetime.now()
+            cancelled = await ActionInstanceNodeModel.find_one(
+                {
+                    "_id": node_instance.id,
+                    "status": {
+                        "$in": [
+                            ActionInstanceNodeStatusEnum.PENDING,
+                            ActionInstanceNodeStatusEnum.UNKNOWN,
+                            ActionInstanceNodeStatusEnum.READY,
+                            ActionInstanceNodeStatusEnum.UNREADY,
+                        ]
+                    },
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ActionInstanceNodeStatusEnum.CANCELLED,
+                        "error_message": "前置节点未成功完成，节点不再运行",
+                        "finished_at": now,
+                        "finalization_claimed": True,
+                    }
+                }
+            )
+            if cancelled and getattr(cancelled, "modified_count", 0) == 1:
+                node_instance.status = ActionInstanceNodeStatusEnum.CANCELLED
+                await ActionInstanceService._abort_outgoing_edges(
+                    action,
+                    node_instance,
+                    "前置节点未成功完成，当前节点无法产生输出",
+                )
+            return False
         is_ready = policy.is_ready(plan_node, completed_dependencies)
         if not is_ready:
             logger.info(
@@ -1258,6 +1390,11 @@ class ActionInstanceService:
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             await node_instance.save()
+            await ActionInstanceService._abort_outgoing_edges(
+                action,
+                node_instance,
+                node_instance.error_message,
+            )
             await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
             if await ActionInstanceService.check_action_finished(action.id):
                 await ActionInstanceService.finish_action(action.id)
@@ -1277,6 +1414,11 @@ class ActionInstanceService:
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
             await node_instance.save()
+            await ActionInstanceService._abort_outgoing_edges(
+                action,
+                node_instance,
+                node_instance.error_message,
+            )
             await ActionInstanceService.cancel_following_nodes(action.id, node_instance.node_id)
             if await ActionInstanceService.check_action_finished(action.id):
                 await ActionInstanceService.finish_action(action.id)
@@ -1310,6 +1452,138 @@ class ActionInstanceService:
             input_values[handle_id] = item.value
             input_values[item.key] = item.value
             input_groups.setdefault(item.key, []).append(item.value)
+        reference_inputs: dict[str, list[ReferenceStreamDescriptor]] = {}
+        reference_outputs: dict[str, list[ReferenceStreamDescriptor]] = {}
+        incoming_edges: list[NodeIncomingEdge] = []
+        reference_context_error: str | None = None
+        if execution_spec.driver == ActionExecutionDriverEnum.BACKEND_NATIVE:
+            handle_name_by_port_id = {
+                handle.port_id or handle.id: handle.handle_name
+                for handle in node_definition.handles
+                if handle.handle_name
+            }
+            action_nodes = await ActionInstanceNodeModel.find(
+                {"action_id": action.id}
+            ).to_list()
+            action_node_by_design_id = {
+                item.node_id: item for item in action_nodes
+            }
+            for edge in action.execution_plan_snapshot.edges:
+                if (
+                    edge.data_type != "reference"
+                    or edge.target != node_instance.node_id
+                ):
+                    continue
+                source_instance = action_node_by_design_id.get(edge.source)
+                binding = (
+                    source_instance.reference_queue_bindings.get(edge.id)
+                    if source_instance
+                    else None
+                )
+                if binding is None:
+                    reference_context_error = (
+                        f"原生节点Reference输入缺少执行边队列: {edge.id}"
+                    )
+                    break
+                descriptor = ReferenceStreamDescriptor(
+                    stream_id=binding.stream_id,
+                    queue_name=binding.queue_name,
+                    owner_action_id=binding.owner_action_id,
+                    protocol_version=binding.protocol_version,
+                    expected_producer_ids=binding.expected_producer_ids,
+                    termination="eos",
+                )
+                input_keys = {
+                    edge.target_port_id,
+                    handle_name_by_port_id.get(edge.target_port_id),
+                }
+                for input_key in filter(None, input_keys):
+                    reference_inputs.setdefault(input_key, []).append(
+                        descriptor
+                    )
+                incoming_edges.append(
+                    NodeIncomingEdge(
+                        edge_id=edge.id,
+                        source_node_id=edge.source,
+                        source_port_id=edge.source_port_id,
+                        target_port_id=edge.target_port_id,
+                        data_type="reference",
+                        aborted=(
+                            edge.id
+                            in getattr(
+                                node_instance,
+                                "aborted_input_edge_ids",
+                                [],
+                            )
+                        ),
+                        reference_stream=descriptor,
+                    )
+                )
+
+            allow_multiple_inputs = bool(
+                (
+                    node_definition.extension.config.get("compiler", {})
+                    if getattr(node_definition, "extension", None)
+                    else {}
+                ).get("allow_multiple_inputs", False)
+            )
+            for edge in action.execution_plan_snapshot.edges:
+                if edge.data_type != "value" or edge.target != node_instance.node_id:
+                    continue
+                value_slot = (
+                    generate_id(f"multi-input:{node_instance.id}:{edge.id}")
+                    if allow_multiple_inputs
+                    else edge.target_port_id
+                )
+                value_item = node_instance.inputs.get(value_slot)
+                incoming_edges.append(
+                    NodeIncomingEdge(
+                        edge_id=edge.id,
+                        source_node_id=edge.source,
+                        source_port_id=edge.source_port_id,
+                        target_port_id=edge.target_port_id,
+                        data_type="value",
+                        value_slot=value_slot,
+                        aborted=(
+                            edge.id
+                            in getattr(
+                                node_instance,
+                                "aborted_input_edge_ids",
+                                [],
+                            )
+                        ),
+                        value_available=(
+                            edge.id
+                            in getattr(
+                                node_instance,
+                                "delivered_input_edge_ids",
+                                [],
+                            )
+                            or value_item is not None
+                        ),
+                        value=value_item.value if value_item is not None else None,
+                    )
+                )
+
+            for binding in node_instance.reference_queue_bindings.values():
+                if binding.producer_kind != ReferenceProducerKindEnum.NATIVE:
+                    continue
+                descriptor = ReferenceStreamDescriptor(
+                    stream_id=binding.stream_id,
+                    queue_name=binding.queue_name,
+                    owner_action_id=binding.owner_action_id,
+                    protocol_version=binding.protocol_version,
+                    expected_producer_ids=binding.expected_producer_ids,
+                    termination="eos",
+                )
+                output_keys = {
+                    binding.source_port_id,
+                    handle_name_by_port_id.get(binding.source_port_id),
+                }
+                for output_key in filter(None, output_keys):
+                    reference_outputs.setdefault(output_key, []).append(
+                        descriptor
+                    )
         executor = node_executors.require(execution_spec.driver.value)
         for execution_key in execution_keys:
             execution = await ActionInstanceService._ensure_node_execution(
@@ -1329,15 +1603,22 @@ class ActionInstanceService:
                 action_id=action.id,
                 node_instance_id=node_instance.id,
                 node_id=node_instance.node_id,
+                execution_id=getattr(execution, "id", None),
                 execution_key=execution_key,
                 invocation_mode=action.invocation_mode,
+                debug=getattr(action, "debug", False),
                 inputs=input_values,
                 input_groups=input_groups,
+                reference_inputs=reference_inputs,
+                reference_outputs=reference_outputs,
+                incoming_edges=incoming_edges,
                 invocation_inputs=action.invocation_inputs,
                 instance_config=node_instance.instance_config,
                 initiator_user_id=action.initiator_user_id,
             )
             try:
+                if reference_context_error:
+                    raise ValueError(reference_context_error)
                 result = await executor.start(context, execution_spec)
             except Exception as exc:
                 if execution_spec.driver == ActionExecutionDriverEnum.SUBFLOW:
@@ -1409,6 +1690,10 @@ class ActionInstanceService:
                 update_fields["child_action_id"] = result.provider_run_id
             await execution.update({"$set": update_fields})
             execution.provider_run_id = result.provider_run_id
+            await ActionInstanceService._mark_reference_outputs_activated(
+                action,
+                node_instance,
+            )
             await ActionLogService.ingest_node_event(
                 execution,
                 event_key="started",
@@ -1625,6 +1910,7 @@ class ActionInstanceService:
             invocation_inputs=invocation_inputs,
             invocation_reference_inputs=invocation_reference_inputs,
             initiator_user_id=action.initiator_user_id,
+            debug=getattr(action, "debug", False),
             trigger_key=f"subflow:{execution.id}",
             trigger_type="api",
         )
@@ -1912,6 +2198,179 @@ class ActionInstanceService:
         return True
 
     @staticmethod
+    async def _mark_reference_outputs_activated(
+        action: ActionInstanceModel,
+        node_instance: ActionInstanceNodeModel,
+    ) -> None:
+        """按执行边标记 Reference 生产者已成功启动。"""
+        edges_by_target: dict[str, list[str]] = {}
+        for edge in action.execution_plan_snapshot.edges:
+            if edge.source != node_instance.node_id or edge.data_type != "reference":
+                continue
+            edges_by_target.setdefault(edge.target, []).append(edge.id)
+        for target_node_id, edge_ids in edges_by_target.items():
+            await ActionInstanceNodeModel.find_one(
+                {"action_id": action.id, "node_id": target_node_id}
+            ).update(
+                {
+                    "$addToSet": {
+                        "activated_input_edge_ids": {"$each": edge_ids},
+                    }
+                }
+            )
+
+    @staticmethod
+    async def _abort_outgoing_edges(
+        action: ActionInstanceModel,
+        node_instance: ActionInstanceNodeModel,
+        reason: str,
+    ) -> None:
+        """终止失败生产者的所有输出边并通知观察者。"""
+        outgoing_edges = [
+            edge
+            for edge in action.execution_plan_snapshot.edges
+            if edge.source == node_instance.node_id
+        ]
+        for edge in outgoing_edges:
+            target = await ActionInstanceNodeModel.find_one(
+                {"action_id": action.id, "node_id": edge.target}
+            )
+            if target is None:
+                continue
+            await ActionInstanceNodeModel.find_one({"_id": target.id}).update(
+                {"$addToSet": {"aborted_input_edge_ids": edge.id}}
+            )
+            if edge.data_type == "value":
+                try:
+                    from app.service.debug_output_runtime import (
+                        DebugOutputRuntimeService,
+                    )
+
+                    await DebugOutputRuntimeService.abort_input_for_node(
+                        action.id,
+                        target.id,
+                        edge.id,
+                        reason,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        f"通知调试观察节点输入边中止失败，"
+                        f"边 {edge.id}: {exc}"
+                    )
+
+        changed = False
+        for binding in node_instance.reference_queue_bindings.values():
+            if binding.control_status != "open":
+                continue
+            producer_ids = binding.expected_producer_ids or [node_instance.id]
+            all_published = True
+            for producer_id in producer_ids:
+                published = False
+                for attempt in range(1, 4):
+                    try:
+                        await publish_reference_control(
+                            queue_names=[binding.queue_name],
+                            stream_id=binding.stream_id,
+                            producer_id=producer_id,
+                            action_id=binding.owner_action_id,
+                            status="abort",
+                            reason=reason,
+                        )
+                        published = True
+                        break
+                    except Exception as exc:
+                        logger.error(
+                            f"Reference ABORT发布失败，节点 "
+                            f"{node_instance.id}，第 {attempt} 次尝试: {exc}"
+                        )
+                        if attempt < 3:
+                            await asyncio.sleep(0.1 * attempt)
+                all_published = all_published and published
+            if not all_published:
+                continue
+            binding.control_status = "abort"
+            changed = True
+        if changed:
+            await node_instance.save()
+
+    @staticmethod
+    async def retry_open_reference_aborts(limit: int = 100) -> int:
+        """为已终止生产者持久重试尚未确认的 Reference ABORT。"""
+        try:
+            nodes = await ActionInstanceNodeModel.find(
+                {
+                    "status": {
+                        "$in": [
+                            ActionInstanceNodeStatusEnum.FAILED,
+                            ActionInstanceNodeStatusEnum.CANCELLED,
+                            ActionInstanceNodeStatusEnum.TIMEOUT,
+                        ]
+                    },
+                    "$expr": {
+                        "$anyElementTrue": {
+                            "$map": {
+                                "input": {
+                                    "$objectToArray": {
+                                        "$ifNull": [
+                                            "$reference_queue_bindings",
+                                            {},
+                                        ]
+                                    }
+                                },
+                                "as": "binding",
+                                "in": {
+                                    "$eq": [
+                                        "$$binding.v.control_status",
+                                        "open",
+                                    ]
+                                },
+                            }
+                        }
+                    },
+                }
+            ).limit(limit).to_list()
+        except CollectionWasNotInitialized:
+            return 0
+
+        closed = 0
+        for node_instance in nodes:
+            changed = False
+            for binding in node_instance.reference_queue_bindings.values():
+                if binding.control_status != "open":
+                    continue
+                producer_ids = (
+                    binding.expected_producer_ids or [node_instance.id]
+                )
+                all_published = True
+                for producer_id in producer_ids:
+                    try:
+                        await publish_reference_control(
+                            queue_names=[binding.queue_name],
+                            stream_id=binding.stream_id,
+                            producer_id=producer_id,
+                            action_id=binding.owner_action_id,
+                            status="abort",
+                            reason=(
+                                node_instance.error_message
+                                or "上游节点未能产生输入"
+                            ),
+                        )
+                    except Exception as exc:
+                        all_published = False
+                        logger.error(
+                            f"Reference ABORT后台补发失败，节点 "
+                            f"{node_instance.id}: {exc}"
+                        )
+                if not all_published:
+                    continue
+                binding.control_status = "abort"
+                changed = True
+                closed += 1
+            if changed:
+                await node_instance.save()
+        return closed
+
+    @staticmethod
     async def _finalize_execution_group(node_instance_id: str) -> bool:
         """按 execution_key 聚合通用执行记录并幂等收敛节点终态。"""
         executions = await ActionNodeExecutionModel.find(
@@ -1943,6 +2402,11 @@ class ActionInstanceService:
                             else ActionInstanceNodeStatusEnum.WAITING
                             if any(
                                 item.status == ActionInstanceNodeStatusEnum.WAITING
+                                for item in active
+                            )
+                            else ActionInstanceNodeStatusEnum.PAUSED
+                            if any(
+                                item.status == ActionInstanceNodeStatusEnum.PAUSED
                                 for item in active
                             )
                             else ActionInstanceNodeStatusEnum.RUNNING
@@ -2144,16 +2608,11 @@ class ActionInstanceService:
 
     @staticmethod
     async def consume_runtime_events(limit: int = 100) -> int:
-        """消费分析与子行动终态事件，加速父节点状态收敛。"""
+        """消费子行动终态事件，加速父节点状态收敛。"""
         consumer = "action-node-executor"
         events = await RuntimeDomainEventModel.find(
             {
-                "topic": {
-                    "$in": [
-                        RuntimeDomainEventService.ANALYSIS_RUN_TERMINAL,
-                        RuntimeDomainEventService.ACTION_TERMINAL,
-                    ]
-                },
+                "topic": RuntimeDomainEventService.ACTION_TERMINAL,
                 "processed_by": {"$ne": consumer},
             }
         ).sort("+occurred_at").limit(limit).to_list()
@@ -2166,38 +2625,20 @@ class ActionInstanceService:
             ActionInstanceNodeStatusEnum.PAUSED,
         }
         for event in events:
-            if event.topic == RuntimeDomainEventService.ACTION_TERMINAL:
-                parent_execution_id = str(
-                    event.payload.get("parent_node_execution_id") or ""
-                )
-                execution = (
-                    await ActionNodeExecutionModel.find_one(
-                        {
-                            "_id": parent_execution_id,
-                            "driver": ActionExecutionDriverEnum.SUBFLOW.value,
-                        }
-                    )
-                    if parent_execution_id
-                    else None
-                )
-                executions = [execution] if execution else []
-            else:
-                source_ref = event.payload.get("source_ref") or {}
-                node_instance_id = str(
-                    source_ref.get("node_instance_id") or ""
-                )
-                if not node_instance_id:
-                    await event.update(
-                        {"$addToSet": {"processed_by": consumer}}
-                    )
-                    consumed += 1
-                    continue
-                executions = await ActionNodeExecutionModel.find(
+            parent_execution_id = str(
+                event.payload.get("parent_node_execution_id") or ""
+            )
+            execution = (
+                await ActionNodeExecutionModel.find_one(
                     {
-                        "node_instance_id": node_instance_id,
-                        "provider_run_id": event.aggregate_id,
+                        "_id": parent_execution_id,
+                        "driver": ActionExecutionDriverEnum.SUBFLOW.value,
                     }
-                ).to_list()
+                )
+                if parent_execution_id
+                else None
+            )
+            executions = [execution] if execution else []
             if not executions:
                 continue
             settled = True
@@ -2310,7 +2751,12 @@ class ActionInstanceService:
         return cancelled
 
     @staticmethod
-    async def cancel_following_nodes(action_id: str, node_id: str):
+    async def cancel_following_nodes(
+        action_id: str,
+        node_id: str,
+        *,
+        _action: ActionInstanceModel | None = None,
+    ):
         """
         递归取消后续节点
         """
@@ -2321,6 +2767,16 @@ class ActionInstanceService:
         for target_node_instance_id in next_nodes.keys():
             node_instance = await ActionInstanceNodeModel.find_one({"_id": target_node_instance_id})
             if not node_instance:
+                continue
+            extension_spec = getattr(
+                node_instance,
+                "extension_spec_snapshot",
+                None,
+            )
+            if (
+                extension_spec
+                and extension_spec.execution_policy == "debug.observer"
+            ):
                 continue
 
             if node_instance.status in [
@@ -2335,7 +2791,26 @@ class ActionInstanceService:
                 node_instance.finished_at = datetime.now()
                 await node_instance.save()
 
-                await ActionInstanceService.cancel_following_nodes(action_id, node_instance.node_id)
+                action = _action
+                if action is None:
+                    try:
+                        action = await ActionInstanceModel.find_one(
+                            {"_id": action_id}
+                        )
+                    except CollectionWasNotInitialized:
+                        action = None
+                if action is not None:
+                    await ActionInstanceService._abort_outgoing_edges(
+                        action,
+                        node_instance,
+                        "前置节点未成功完成，当前节点无法产生输出",
+                    )
+
+                await ActionInstanceService.cancel_following_nodes(
+                    action_id,
+                    node_instance.node_id,
+                    _action=action,
+                )
 
     @staticmethod
     async def finish_component_run(
@@ -2740,14 +3215,19 @@ class ActionInstanceService:
             )
             for handle_name, value in result.outputs.items():
                 output_handle = None
-                handle_definition = await ActionInstanceService.get_handle_definition_by_name(handle_name)
-                if not handle_definition and node_definition:
+                handle_definition = None
+                if node_definition:
                     output_handle = next(
                         (
                             handle
                             for handle in node_definition.handles
                             if handle.type == "source"
-                            and handle_name in {handle.id, handle.port_id}
+                            and handle_name
+                            in {
+                                handle.id,
+                                handle.port_id,
+                                handle.handle_name,
+                            }
                         ),
                         None,
                     )
@@ -2758,7 +3238,17 @@ class ActionInstanceService:
                                 output_handle.id,
                             )
                         )
-                elif handle_definition and node_definition:
+                if not handle_definition:
+                    handle_definition = await (
+                        ActionInstanceService.get_handle_definition_by_name(
+                            handle_name
+                        )
+                    )
+                if (
+                    output_handle is None
+                    and handle_definition
+                    and node_definition
+                ):
                     output_handle = next(
                         (
                             handle
@@ -2867,6 +3357,11 @@ class ActionInstanceService:
             # 更新行动进度
             action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
             if action:
+                await ActionInstanceService._abort_outgoing_edges(
+                    action,
+                    node_instance,
+                    result.error or "上游节点未能产生输入",
+                )
                 if node_instance.id not in action.finished_nodes_instance:
                     action.finished_nodes_instance.append(node_instance.id)
                 executable_node_count = len(action.execution_plan_snapshot.nodes)
@@ -2954,8 +3449,29 @@ class ActionInstanceService:
                 ).get("allow_multiple_inputs", False)
             )
             multi_input_updates = {}
+            delivered_edge_ids: list[str] = []
+            aborted_edge_ids: list[str] = []
+            delivered_values: list[tuple[str, Any, dict[str, str]]] = []
             
             for source_handle_id, target_handle_id in edge_mappings:
+                plan_edge = next(
+                    (
+                        edge
+                        for edge in action.execution_plan_snapshot.edges
+                        if edge.source == node_instance.node_id
+                        and edge.source_port_id == source_handle_id
+                        and edge.target == next_node_instance.node_id
+                        and edge.target_port_id == target_handle_id
+                    ),
+                    None,
+                )
+                if plan_edge is None:
+                    logger.error(
+                        f"执行计划缺少输入边: "
+                        f"{node_instance.node_id}:{source_handle_id} -> "
+                        f"{next_node_instance.node_id}:{target_handle_id}"
+                    )
+                    continue
                 reference_binding = next(
                     (
                         binding
@@ -2979,11 +3495,7 @@ class ActionInstanceService:
                 if reference_binding is not None:
                     queue_name = reference_binding.queue_name
                     input_slot = (
-                        generate_id(
-                            f"multi-input:{next_node_instance.id}:"
-                            f"{target_handle_id}:{node_instance.node_id}:"
-                            f"{source_handle_id}"
-                        )
+                        generate_id(f"multi-input:{next_node_instance.id}:{plan_edge.id}")
                         if allow_multiple_inputs
                         else target_handle_id
                     )
@@ -3002,6 +3514,7 @@ class ActionInstanceService:
                         f"按执行边 {reference_binding.edge_id} 传递队列 "
                         f"{queue_name} 给节点 {next_node_instance.node_id}"
                     )
+                    delivered_edge_ids.append(plan_edge.id)
                     continue
 
                 _, source_handle_definition = await (
@@ -3026,11 +3539,7 @@ class ActionInstanceService:
                     if source_handle_id in node_instance.outputs:
                         source_output = node_instance.outputs[source_handle_id]
                         input_slot = (
-                            generate_id(
-                                f"multi-input:{next_node_instance.id}:"
-                                f"{target_handle_id}:{node_instance.node_id}:"
-                                f"{source_handle_id}"
-                            )
+                            generate_id(f"multi-input:{next_node_instance.id}:{plan_edge.id}")
                             if allow_multiple_inputs
                             else target_handle_id
                         )
@@ -3045,14 +3554,38 @@ class ActionInstanceService:
                                     mode="python"
                                 )
                             )
+                        delivered_edge_ids.append(plan_edge.id)
+                        delivered_values.append(
+                            (
+                                plan_edge.id,
+                                source_output.value,
+                                {
+                                    "source_node_id": plan_edge.source,
+                                    "source_port_id": plan_edge.source_port_id,
+                                    "target_port_id": plan_edge.target_port_id,
+                                },
+                            )
+                        )
                     else:
-                        logger.error(f"未找到源连接点的输出数据，Source Handle ID: {source_handle_id}")
+                        logger.error(
+                            f"未找到源连接点的输出数据，"
+                            f"Source Handle ID: {source_handle_id}"
+                        )
+                        aborted_edge_ids.append(plan_edge.id)
 
             delivery_update = {
                 "$addToSet": {
                     "delivered_dependencies": node_instance.node_id,
                 }
             }
+            if delivered_edge_ids:
+                delivery_update["$addToSet"]["delivered_input_edge_ids"] = {
+                    "$each": delivered_edge_ids,
+                }
+            if aborted_edge_ids:
+                delivery_update["$addToSet"]["aborted_input_edge_ids"] = {
+                    "$each": aborted_edge_ids,
+                }
             if multi_input_updates or not allow_multiple_inputs:
                 delivery_update["$set"] = (
                     multi_input_updates
@@ -3062,6 +3595,45 @@ class ActionInstanceService:
             await ActionInstanceNodeModel.find_one(
                 {"_id": next_node_instance.id}
             ).update(delivery_update)
+
+            if (
+                target_node_definition
+                and getattr(
+                    target_node_definition,
+                    "builtin_key",
+                    None,
+                ) == "debug.output"
+            ):
+                from app.service.debug_output_runtime import (
+                    DebugOutputRuntimeService,
+                )
+
+                for edge_id, value, edge_metadata in delivered_values:
+                    try:
+                        await DebugOutputRuntimeService.observe_value_for_node(
+                            action.id,
+                            next_node_instance.id,
+                            edge_id,
+                            value,
+                            edge_metadata,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            f"调试输出记录 Value 失败，边 {edge_id}: {exc}"
+                        )
+                for edge_id in aborted_edge_ids:
+                    try:
+                        await DebugOutputRuntimeService.abort_input_for_node(
+                            action.id,
+                            next_node_instance.id,
+                            edge_id,
+                            "上游节点已完成，但没有产生该 Value 输出",
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            f"调试输出终止缺失 Value 边失败，"
+                            f"边 {edge_id}: {exc}"
+                        )
 
             # 运行下一个节点
             if action.status == ActionFlowStatusEnum.RUNNING:

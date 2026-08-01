@@ -930,8 +930,6 @@ class AnalystService:
         agent_id: str,
         user_prompt: str,
         context: dict[str, Any] | None = None,
-        invocation_source: str = "agent_api",
-        source_ref: dict[str, str] | None = None,
         auto_approve: bool = False,
         initiator_user_id: str | None = None,
     ) -> str:
@@ -983,8 +981,6 @@ class AnalystService:
                 generation=1,
                 user_prompt=user_prompt,
                 context=context,
-                invocation_source=invocation_source,
-                source_ref=source_ref,
                 auto_approve=auto_approve,
                 initiator_user_id=initiator_user_id,
             )

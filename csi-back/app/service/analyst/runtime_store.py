@@ -34,8 +34,6 @@ class AnalystRuntimeStore:
         generation: int,
         user_prompt: str,
         context: dict[str, Any] | None = None,
-        invocation_source: str = "agent_api",
-        source_ref: dict[str, str] | None = None,
         auto_approve: bool = False,
         initiator_user_id: str | None = None,
     ) -> NanobotRunModel:
@@ -55,8 +53,6 @@ class AnalystRuntimeStore:
                 parallel_slot=parallel_slot,
                 user_prompt=user_prompt,
                 context=dict(context or {}),
-                invocation_source=invocation_source,
-                source_ref=dict(source_ref or {}),
                 auto_approve=auto_approve,
                 initiator_user_id=initiator_user_id,
                 max_attempts=max(1, settings.NANOBOT_RUNTIME_MAX_ATTEMPTS),

@@ -108,6 +108,32 @@ class BackendNativeDefinitionRegistry:
             raise ValueError(f"后端原生节点定义未注册: {builtin_key}{suffix}")
         return definition
 
+    async def remove_projection(
+        self,
+        *,
+        builtin_key: str,
+        definition_version: int,
+        handle_ids: list[str],
+    ) -> None:
+        """幂等删除已经退役的内置节点及其专属 Handle 投影。"""
+        node_id = generate_id(
+            f"backend_builtin:{builtin_key}:{definition_version}"
+        )
+        await ActionNodeModel.get_motor_collection().delete_one(
+            {
+                "_id": node_id,
+                "definition_origin": (
+                    ActionNodeDefinitionOriginEnum.BACKEND_BUILTIN.value
+                ),
+                "builtin_key": builtin_key,
+                "definition_version": definition_version,
+            }
+        )
+        if handle_ids:
+            await ActionNodesHandleConfigModel.get_motor_collection().delete_many(
+                {"_id": {"$in": handle_ids}}
+            )
+
     async def sync_projections(self) -> list[ActionNodeModel]:
         """幂等同步数据库投影，并保留管理员启用状态。"""
         projections = []
@@ -157,6 +183,7 @@ class BackendNativeDefinitionRegistry:
                     relabel=handle.label,
                     handle_name=handle.handle_name,
                     data_type=handle.data_type,
+                    accepted_data_types=handle.accepted_data_types,
                     label=handle.label,
                     color=handle.color,
                     type=handle.direction,

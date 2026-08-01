@@ -158,7 +158,11 @@ def run(component: ComponentContext) -> dict:
                                 component.rabbitmq.ack_message(message['delivery_tag'])
                                 continue
                             
-                            success_count = component.rabbitmq.send_messages_batch(output_queue_names, data)
+                            success_count = component.rabbitmq.send_messages_batch(
+                                output_queue_names,
+                                data,
+                                message_id=message.get("message_id"),
+                            )
                             
                             if success_count == len(output_queue_names):
                                 component.rabbitmq.ack_message(message['delivery_tag'])

@@ -22,6 +22,10 @@ class NativeHandleDefinition(BaseModel):
     direction: Literal["source", "target"]
     position: Literal["left", "right", "top", "bottom"]
     data_type: Literal["value", "reference"] = "value"
+    accepted_data_types: list[Literal["value", "reference"]] = Field(
+        default_factory=list,
+        description="目标端口额外允许的数据传输类型",
+    )
     label: str
     color: str = "#6366f1"
     other_compatible_interfaces: list[str] = Field(

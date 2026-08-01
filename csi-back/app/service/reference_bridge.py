@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Sequence
+from typing import Literal, Sequence
 
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -300,14 +300,27 @@ class ReferenceBridgeService:
                     stream_id,
                     producer_id,
                 )
-                if control_kind == "abort":
+                updated, effective_terminal = (
+                    await ReferenceBridgeService._record_control(
+                        bridge_id=bridge.id,
+                        worker_id=worker_id,
+                        lease_token=lease_token,
+                        control_key=control_key,
+                        control_kind=control_kind,
+                    )
+                )
+                if updated is None or effective_terminal is None:
+                    await delivery.nack(requeue=True)
+                    return ReferenceBridgeStepResult.LEASE_LOST
+
+                if effective_terminal == "abort":
                     await ReferenceBridgeService._propagate_abort(
-                        bridge=bridge,
+                        bridge=updated,
                         producer_id=f"bridge:{bridge.id}",
                         reason="上游Reference流已中止",
                     )
                     failed = await ReferenceBridgeService._fail(
-                        bridge=bridge,
+                        bridge=updated,
                         worker_id=worker_id,
                         lease_token=lease_token,
                         error_message=f"源流 {stream_id} 被生产者 {producer_id} 中止",
@@ -319,15 +332,6 @@ class ReferenceBridgeService:
                     await delivery.ack()
                     return ReferenceBridgeStepResult.FAILED
 
-                updated = await ReferenceBridgeService._record_eos(
-                    bridge_id=bridge.id,
-                    worker_id=worker_id,
-                    lease_token=lease_token,
-                    control_key=control_key,
-                )
-                if updated is None:
-                    await delivery.nack(requeue=True)
-                    return ReferenceBridgeStepResult.LEASE_LOST
                 await delivery.ack()
                 if ReferenceBridgeService._all_sources_ended(updated):
                     return await ReferenceBridgeService._complete(
@@ -480,14 +484,20 @@ class ReferenceBridgeService:
             raise ReferenceBridgeLeaseLostError("转存完成后桥接租约已失效")
 
     @staticmethod
-    async def _record_eos(
+    async def _record_control(
         *,
         bridge_id: str,
         worker_id: str,
         lease_token: str,
         control_key: str,
-    ) -> ReferenceBridgeModel | None:
-        """幂等记录源生产者 EOS。"""
+        control_kind: Literal["eos", "abort"],
+    ) -> tuple[ReferenceBridgeModel | None, Literal["eos", "abort"] | None]:
+        """原子声明生产者首个终态，并返回实际生效的终态。"""
+        field = (
+            "received_eos_keys"
+            if control_kind == "eos"
+            else "received_abort_keys"
+        )
         raw = (
             await ReferenceBridgeModel.get_motor_collection().find_one_and_update(
                 {
@@ -496,9 +506,11 @@ class ReferenceBridgeService:
                     "worker_id": worker_id,
                     "lease_token": lease_token,
                     "lease_expires_at": {"$gt": datetime.now()},
+                    "received_eos_keys": {"$ne": control_key},
+                    "received_abort_keys": {"$ne": control_key},
                 },
                 {
-                    "$addToSet": {"received_eos_keys": control_key},
+                    "$addToSet": {field: control_key},
                     "$set": {
                         "updated_at": datetime.now(),
                         "last_error": None,
@@ -507,7 +519,21 @@ class ReferenceBridgeService:
                 return_document=ReturnDocument.AFTER,
             )
         )
-        return ReferenceBridgeModel.model_validate(raw) if raw else None
+        if raw:
+            return ReferenceBridgeModel.model_validate(raw), control_kind
+
+        current = await ReferenceBridgeService._get_owned_bridge(
+            bridge_id=bridge_id,
+            worker_id=worker_id,
+            lease_token=lease_token,
+        )
+        if current is None:
+            return None, None
+        if control_key in current.received_eos_keys:
+            return current, "eos"
+        if control_key in current.received_abort_keys:
+            return current, "abort"
+        return None, None
 
     @staticmethod
     async def _complete(

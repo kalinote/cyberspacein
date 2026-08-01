@@ -275,6 +275,7 @@ async def test_fire_once_uses_latest_slot_and_passes_priority(monkeypatch):
     assert result == "action-1"
     assert captured["scheduled_for"] == datetime(2026, 7, 20, 3, tzinfo=timezone.utc)
     assert captured["schedule_priority"] == 8
+    assert captured["debug"] is False
     assert captured["trigger_key"] == "schedule:schedule-1:2026-07-20T03:00:00+00:00"
     assert schedule.next_run_at == datetime(2026, 7, 20, 4, tzinfo=timezone.utc)
     assert schedule.last_trigger_status == "created"

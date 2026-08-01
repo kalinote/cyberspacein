@@ -62,6 +62,18 @@ class BlueprintRevisionService:
             definitions,
             ActionInvocationModeEnum.SUBFLOW,
         )
+        BlueprintCompiler.compile(
+            blueprint.graph,
+            definitions,
+            ActionInvocationModeEnum.STANDALONE,
+            debug=True,
+        )
+        BlueprintCompiler.compile(
+            blueprint.graph,
+            definitions,
+            ActionInvocationModeEnum.SUBFLOW,
+            debug=True,
+        )
         await BlueprintCompiler.validate_encapsulated_dependencies(definitions)
         return standalone, subflow, definitions
 

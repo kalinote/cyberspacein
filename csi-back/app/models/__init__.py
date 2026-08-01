@@ -8,6 +8,10 @@ from app.models.action.blueprint import ActionBlueprintModel
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
 from app.models.action.node_execution import ActionNodeExecutionModel
+from app.models.action.entity_content_analysis_run import (
+    EntityContentAnalysisRunModel,
+)
+from app.models.action.debug_output_run import DebugOutputRunModel
 from app.models.action.blueprint_revision import ActionBlueprintRevisionModel
 from app.models.action.reference_bridge import ReferenceBridgeModel
 from app.models.action.accounts import AccountModel
@@ -63,6 +67,8 @@ def get_all_models() -> List[Type[Document]]:
         ActionScheduleModel,
         ComponentRunModel,
         ActionNodeExecutionModel,
+        EntityContentAnalysisRunModel,
+        DebugOutputRunModel,
         ActionBlueprintRevisionModel,
         ReferenceBridgeModel,
         AccountModel,

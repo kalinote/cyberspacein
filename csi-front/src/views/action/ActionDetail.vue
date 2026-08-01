@@ -64,7 +64,17 @@
                 <div v-show="!collapsedState.actionInfo" class="p-4 flex flex-col gap-4 flex-1 overflow-y-auto min-h-0">
                     <!-- 基本信息卡片 -->
                     <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                        <h4 class="text-sm font-semibold text-gray-800 mb-3">基本信息</h4>
+                        <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between">
+                            <span>基本信息</span>
+                            <el-tag
+                                v-if="actionData.debug"
+                                size="small"
+                                effect="plain"
+                                class="border-slate-300! text-slate-600! bg-slate-50!"
+                            >
+                                调试
+                            </el-tag>
+                        </h4>
                         <div class="space-y-3">
                             <div>
                                 <label class="text-xs text-gray-500">标题</label>
@@ -357,7 +367,7 @@
                                     <el-option v-for="level in ['TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'FATAL']" :key="level" :label="level" :value="level" />
                                 </el-select>
                                 <el-select v-model="logFilters.source" clearable placeholder="全部来源" size="small">
-                                    <el-option v-for="source in ['sdk', 'logging', 'stdout', 'stderr', 'exception', 'system']" :key="source" :label="source" :value="source" />
+                                    <el-option v-for="source in ['sdk', 'logging', 'stdout', 'stderr', 'exception', 'system', 'native', 'subflow', 'orchestrator']" :key="source" :label="source" :value="source" />
                                 </el-select>
                                 <el-select v-model="logFilters.componentRunId" clearable placeholder="全部组件" size="small">
                                     <el-option
@@ -401,9 +411,39 @@
                                             <span class="text-xs font-medium shrink-0" :class="getLogLevelTextClass(log.level)">
                                                 [{{ log.level.toUpperCase() }}]
                                             </span>
-                                            <span class="text-xs text-gray-500 shrink-0">[{{ getComponentName(log.component_id) }}]</span>
+                                            <span class="text-xs text-gray-500 shrink-0">
+                                                [{{ log.component_id ? getComponentName(log.component_id) : (log.logger || log.source) }}]
+                                            </span>
                                             <span class="text-xs text-gray-700 flex-1 whitespace-pre-wrap break-all">{{ log.message }}<template v-if="log.exception">\n{{ log.exception }}</template></span>
+                                            <el-tag
+                                                v-if="log.truncated || log.fields?.truncated"
+                                                size="small"
+                                                type="warning"
+                                                effect="plain"
+                                                class="shrink-0"
+                                            >
+                                                已截断
+                                            </el-tag>
+                                            <el-tooltip content="复制日志内容" placement="top">
+                                                <el-button
+                                                    link
+                                                    circle
+                                                    size="small"
+                                                    class="shrink-0"
+                                                    aria-label="复制日志内容"
+                                                    @click="copyLogContent(log)"
+                                                >
+                                                    <Icon icon="mdi:content-copy" />
+                                                </el-button>
+                                            </el-tooltip>
                                         </div>
+                                        <details
+                                            v-if="hasLogMetadata(log)"
+                                            class="mt-1 ml-28 text-xs text-gray-600"
+                                        >
+                                            <summary class="cursor-pointer select-none text-slate-500 hover:text-slate-700">查看元数据</summary>
+                                            <pre class="mt-1 max-h-36 overflow-auto rounded bg-slate-100 p-2 whitespace-pre-wrap break-all">{{ formatLogMetadata(log) }}</pre>
+                                        </details>
                                     </div>
                                     <div v-if="!selectedNodeLogs || selectedNodeLogs.length === 0" class="px-4 py-8 text-center text-sm text-gray-400">
                                         暂无日志
@@ -599,6 +639,7 @@ const actionData = ref({
     startTime: null,
     endTime: null,
     implementationPeriod: 0,
+    debug: false,
     resource: {},
     graph: {
         nodes: [],
@@ -658,6 +699,29 @@ const selectedNodeLogs = computed(() => {
     if (!selectedNodeId.value) return []
     return nodeLogs.value[selectedNodeId.value] || []
 })
+
+const hasLogMetadata = log => (
+    Boolean(log?.truncated)
+    || Object.keys(log?.fields || {}).length > 0
+)
+
+const formatLogMetadata = log => JSON.stringify({
+    ...(log?.fields || {}),
+    ...(log?.truncated ? { truncated: true } : {})
+}, null, 2)
+
+const copyLogContent = async log => {
+    const content = [log?.message, log?.exception].filter(Boolean).join('\n')
+    try {
+        if (!globalThis.navigator?.clipboard?.writeText) {
+            throw new Error('当前环境不支持剪贴板 API')
+        }
+        await globalThis.navigator.clipboard.writeText(content)
+        ElMessage.success('日志内容已复制')
+    } catch {
+        ElMessage.error('复制失败，请手动选择日志内容')
+    }
+}
 
 const isLoadingNodeLogs = computed(() => {
     if (!selectedNodeId.value) return false
@@ -825,6 +889,7 @@ const loadActionData = async () => {
             startTime: apiData.start_at || null,
             endTime: apiData.finished_at || null,
             implementationPeriod: apiData.implementation_period ?? 0,
+            debug: Boolean(apiData.debug),
             resource: apiData.resource || {},
             graph: apiData.graph || {
                 nodes: [],
@@ -1112,6 +1177,7 @@ const updateActionData = async () => {
         actionData.value.duration = apiData.duration || 0
         actionData.value.startTime = apiData.start_at || null
         actionData.value.endTime = apiData.finished_at || null
+        actionData.value.debug = Boolean(apiData.debug)
         actionData.value.node_details = transformedNodeDetails
         
         elements.value.forEach(el => {

@@ -13,6 +13,7 @@ from app.schemas.constants import (
 class StartActionRequest(BaseModel):
     blueprint_id: str = Field(description="蓝图ID")
     params: dict[str, Any] | None = Field(default=None, description="行动参数")
+    debug: bool = Field(default=False, description="是否以调试模式运行")
     
 class StartActionResponse(BaseModel):
     action_id: str = Field(description="行动ID")
@@ -27,6 +28,7 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     name: str = Field(description="行动名称")
     description: str = Field(description="行动描述")
     status: ActionFlowStatusEnum = Field(description="行动实例化流程状态")
+    debug: bool = Field(default=False, description="是否为调试运行")
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
     paused_at: datetime | None = Field(default=None, description="行动最近一次暂停时间")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")

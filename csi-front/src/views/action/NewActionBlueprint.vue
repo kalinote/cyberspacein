@@ -316,6 +316,12 @@ import {
     validateBindingCandidate,
     validateBoundaryBindings
 } from '@/utils/action/boundaryBinding'
+import {
+    acceptsHandleDataType,
+    allowsMultipleHandleInputs,
+    areHandleInterfacesCompatible,
+    isDuplicateHandleConnection
+} from '@/utils/action/handleConnection'
 import { useSidebarResize } from '@/utils/action/useSidebarResize'
 
 import '@vue-flow/core/dist/style.css'
@@ -715,9 +721,9 @@ const encapsulating = ref(false)
  * 验证节点连接是否有效
  * 规则：
  * 1. source handle 只能连接 target handle
- * 2. 每个 target handle 只能接受一个上游连接
+ * 2. target handle 默认只能接受一个上游连接，可由节点契约声明允许多连接
  * 3. 每个 source handle 可以连接多个下游 target handle
- * 4. handle 必须兼容（ID相同或在兼容列表中）
+ * 4. handle 的传输类型和业务接口必须同时兼容
  */
 isValidConnection.value = (connection) => {
     // 1. 基础验证：节点是否存在
@@ -779,41 +785,25 @@ isValidConnection.value = (connection) => {
         return false
     }
 
-    // 5. 检查 target handle 是否已被连接（每个输入只能有一个连接）
-    const existingConnection = getDataEdges().find(el =>
+    // 5. 完全相同的端口连接始终拒绝，多输入能力由节点契约声明
+    const dataEdges = getDataEdges()
+    if (isDuplicateHandleConnection(dataEdges, connection)) {
+        return false
+    }
+    const existingConnection = dataEdges.find(el =>
         el.id !== connection.id &&
         el.target === connection.target && 
         el.targetHandle === connection.targetHandle
     )
-    
-    const allowsMultipleInputs = targetConfig.builtin_key === 'blueprint.output'
+
+    const allowsMultipleInputs = allowsMultipleHandleInputs(targetConfig, targetHandle)
     if (existingConnection && !allowsMultipleInputs) {
         return false // target handle 已有连接，不允许重复连接
     }
 
-    // 6. Handle 兼容性检查
-    const sourceHandleId = sourceHandle.interface_type_id || sourceHandle.id
-    const targetHandleId = targetHandle.interface_type_id || targetHandle.id
-
-    // 如果两者id相同，允许连接
-    if (sourceHandleId === targetHandleId) {
-        return true
-    }
-
-    const sourceCompatibleInterfaces = [
-        ...(sourceHandle.compatible_interface_type_ids || []),
-        ...(sourceHandle.other_compatible_interfaces || [])
-    ]
-    const targetCompatibleInterfaces = [
-        ...(targetHandle.compatible_interface_type_ids || []),
-        ...(targetHandle.other_compatible_interfaces || [])
-    ]
-    return sourceCompatibleInterfaces.includes('*')
-        || targetCompatibleInterfaces.includes('*')
-        || sourceCompatibleInterfaces.includes(targetHandleId)
-        || sourceCompatibleInterfaces.includes(targetHandle.id)
-        || targetCompatibleInterfaces.includes(sourceHandleId)
-        || targetCompatibleInterfaces.includes(sourceHandle.id)
+    // 6. 通配业务接口不能绕过 Value/Reference 传输类型校验
+    return acceptsHandleDataType(sourceHandle, targetHandle)
+        && areHandleInterfacesCompatible(sourceHandle, targetHandle)
 }
 
 const createNodeFromConfig = (configId, position) => {

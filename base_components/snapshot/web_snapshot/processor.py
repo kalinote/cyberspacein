@@ -17,6 +17,7 @@ logger = logging.getLogger("snapshot.processor")
 class QueueMessageItem:
     data: dict
     delivery_tag: int
+    message_id: str | None = None
 
 
 def _extract_url(data: dict, url_field: str) -> str | None:

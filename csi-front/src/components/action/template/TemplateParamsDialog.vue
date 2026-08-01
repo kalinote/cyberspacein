@@ -1,11 +1,19 @@
 <template>
     <el-dialog
         v-model="dialogVisible"
-        title="填写模板参数"
+        :title="debug ? '填写模板参数 · 调试运行' : '填写模板参数'"
         width="600px"
         :close-on-click-modal="false"
         @close="handleClose"
     >
+        <el-alert
+            v-if="debug"
+            title="本次将以调试模式运行，并启用蓝图中的调试输出节点。"
+            type="info"
+            :closable="false"
+            show-icon
+            class="mb-4"
+        />
         <div v-loading="loading" :element-loading-text="'加载参数中...'" class="min-h-[200px]">
             <div v-if="!loading && inputConfigs.length === 0" class="text-center py-8 text-gray-400">
                 <Icon icon="mdi:package-variant" class="text-4xl mb-2 block mx-auto" />
@@ -49,7 +57,7 @@
         </div>
 
         <template #footer>
-            <el-button @click="handleClose">取消</el-button>
+            <el-button :disabled="submitting" @click="handleClose">取消</el-button>
             <el-button type="primary" @click="handleSubmit" :loading="submitting">
                 确定运行
             </el-button>
@@ -73,6 +81,14 @@ const props = defineProps({
     blueprintId: {
         type: String,
         default: null
+    },
+    debug: {
+        type: Boolean,
+        default: false
+    },
+    submitting: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -84,7 +100,6 @@ const dialogVisible = computed({
 })
 
 const loading = ref(false)
-const submitting = ref(false)
 const blueprintData = ref(null)
 const paramValues = ref({})
 const formRef = ref(null)

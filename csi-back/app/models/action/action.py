@@ -41,6 +41,7 @@ class ActionInstanceModel(Document):
         default=ActionInvocationModeEnum.STANDALONE,
         description="蓝图调用模式",
     )
+    debug: bool = Field(default=False, description="是否以调试模式运行")
     visibility: ActionVisibilityEnum = Field(
         default=ActionVisibilityEnum.NORMAL,
         description="行动历史可见性",
@@ -170,6 +171,18 @@ class ActionInstanceNodeModel(Document):
     delivered_dependencies: list[str] = Field(
         default_factory=list,
         description="已完成数据传递的直接前置设计节点ID",
+    )
+    activated_input_edge_ids: list[str] = Field(
+        default_factory=list,
+        description="Reference生产者已启动的输入边ID",
+    )
+    delivered_input_edge_ids: list[str] = Field(
+        default_factory=list,
+        description="已物化或完成传递的输入边ID",
+    )
+    aborted_input_edge_ids: list[str] = Field(
+        default_factory=list,
+        description="已确认无法产生数据的输入边ID",
     )
     
     class Settings:

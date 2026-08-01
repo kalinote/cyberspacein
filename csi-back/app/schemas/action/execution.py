@@ -13,6 +13,7 @@ from app.schemas.constants import (
     DEFAULT_COMPONENT_COMMAND,
     DEFAULT_COMPONENT_COMMAND_ARGS,
 )
+from app.schemas.action.reference import ReferenceStreamDescriptor
 
 
 _DRIVER_BY_NODE_KIND = {
@@ -130,16 +131,40 @@ class NodeDefinitionContract(BaseModel):
         return self
 
 
+class NodeIncomingEdge(BaseModel):
+    """描述节点的一条结构化输入边。"""
+
+    edge_id: str
+    source_node_id: str
+    source_port_id: str
+    target_port_id: str
+    data_type: Literal["value", "reference"]
+    value_slot: str | None = None
+    value_available: bool = False
+    aborted: bool = False
+    value: Any = None
+    reference_stream: ReferenceStreamDescriptor | None = None
+
+
 class NodeExecutionContext(BaseModel):
     """节点执行器接收的稳定上下文。"""
 
     action_id: str
     node_instance_id: str
     node_id: str
+    execution_id: str | None = None
     execution_key: str = "default"
     invocation_mode: ActionInvocationModeEnum = ActionInvocationModeEnum.STANDALONE
+    debug: bool = False
     inputs: dict[str, Any] = Field(default_factory=dict)
     input_groups: dict[str, list[Any]] = Field(default_factory=dict)
+    reference_inputs: dict[str, list[ReferenceStreamDescriptor]] = Field(
+        default_factory=dict,
+    )
+    reference_outputs: dict[str, list[ReferenceStreamDescriptor]] = Field(
+        default_factory=dict,
+    )
+    incoming_edges: list[NodeIncomingEdge] = Field(default_factory=list)
     invocation_inputs: dict[str, Any] = Field(default_factory=dict)
     instance_config: dict[str, Any] = Field(default_factory=dict)
     initiator_user_id: str | None = None
@@ -242,6 +267,7 @@ class BlueprintExecutionPlan(BaseModel):
     plan_schema_version: Literal[2]
     revision_id: str | None = None
     invocation_mode: ActionInvocationModeEnum
+    debug: bool = False
     nodes: list[ExecutionPlanNode]
     edges: list[ExecutionPlanEdge]
     skipped_nodes: list[SkippedNode] = Field(default_factory=list)

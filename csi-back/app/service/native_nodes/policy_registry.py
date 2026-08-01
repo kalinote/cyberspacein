@@ -15,6 +15,9 @@ class ExecutionPolicy(Protocol):
     def execution_keys(self, node: ExecutionPlanNode) -> list[str]:
         ...
 
+    def initial_ready(self, node: ExecutionPlanNode) -> bool:
+        ...
+
 
 class DefaultExecutionPolicy:
     """依赖全部完成后执行一次。"""
@@ -24,6 +27,23 @@ class DefaultExecutionPolicy:
 
     def execution_keys(self, node: ExecutionPlanNode) -> list[str]:
         return ["default"]
+
+    def initial_ready(self, node: ExecutionPlanNode) -> bool:
+        """仅有无前置边的默认节点在初始时就绪。"""
+        return node.effective_in_degree == 0
+
+
+class DebugObserverExecutionPolicy:
+    """调试观察者在行动启动时立即运行。"""
+
+    def is_ready(self, node: ExecutionPlanNode, completed_dependencies: int) -> bool:
+        return True
+
+    def execution_keys(self, node: ExecutionPlanNode) -> list[str]:
+        return ["default"]
+
+    def initial_ready(self, node: ExecutionPlanNode) -> bool:
+        return True
 
 
 class ExecutionPolicyRegistry:
@@ -57,3 +77,4 @@ class ExecutionPolicyRegistry:
 
 execution_policies = ExecutionPolicyRegistry()
 execution_policies.register("default", DefaultExecutionPolicy())
+execution_policies.register("debug.observer", DebugObserverExecutionPolicy())

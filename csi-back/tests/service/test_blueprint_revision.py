@@ -66,14 +66,14 @@ def _snapshot(
         execution=(
             NodeExecutionSpec(
                 driver=ActionExecutionDriverEnum.BACKEND_NATIVE,
-                handler="analysis.invoke",
+                handler="test.native",
             )
             if is_builtin
             else default_component_execution()
         ),
         extension=NativeNodeExtensionSpec() if is_builtin else None,
         definition_origin=origin,
-        builtin_key="analysis" if is_builtin else None,
+        builtin_key="test.native" if is_builtin else None,
         version="1",
         handles=[],
         inputs=[],

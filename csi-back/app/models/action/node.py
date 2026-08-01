@@ -39,6 +39,10 @@ class ActionNodeHandleModel(BaseModel):
         default=None,
         description="内联数据传输类型",
     )
+    accepted_data_types: list[Literal["value", "reference"]] = Field(
+        default_factory=list,
+        description="目标端口额外允许的数据传输类型",
+    )
     label: str | None = Field(default=None, description="内联默认标签")
     color: str | None = Field(default=None, description="内联颜色")
     type: Literal["source", "target"] = Field(description="连接点类型")

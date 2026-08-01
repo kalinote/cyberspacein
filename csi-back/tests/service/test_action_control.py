@@ -16,6 +16,7 @@ from app.schemas.constants import (
 from app.service.action import service as action_service
 from app.service.component import service as component_service
 from app.service.action import ActionInstanceService
+from app.service.debug_output_runtime import DebugOutputRuntimeService
 
 
 class _FindOne:
@@ -56,7 +57,10 @@ class _FindMany:
 
 @pytest.mark.asyncio
 async def test_pause_keeps_queues_and_pauses_only_idle_nodes(monkeypatch):
-    action = SimpleNamespace(status=ActionFlowStatusEnum.RUNNING)
+    action = SimpleNamespace(
+        status=ActionFlowStatusEnum.RUNNING,
+        debug=True,
+    )
     action_updates = []
     node_updates = []
     find_action_calls = 0
@@ -75,13 +79,20 @@ async def test_pause_keeps_queues_and_pauses_only_idle_nodes(monkeypatch):
         staticmethod(lambda _query: _FindMany(updates=node_updates)),
     )
     cleanup = AsyncMock()
+    pause_debug = AsyncMock(return_value=1)
     monkeypatch.setattr(ActionInstanceService, "cleanup_action_queues", cleanup)
+    monkeypatch.setattr(
+        DebugOutputRuntimeService,
+        "pause_for_action",
+        pause_debug,
+    )
 
     success, _ = await ActionInstanceService.pause("action-1")
 
     assert success is True
     assert action_updates[0]["$set"]["status"] == ActionFlowStatusEnum.PAUSED
     assert node_updates[0]["$set"]["status"] == ActionInstanceNodeStatusEnum.PAUSED
+    pause_debug.assert_awaited_once_with("action-1")
     cleanup.assert_not_awaited()
 
 
@@ -96,6 +107,7 @@ async def test_resume_extends_deadline_and_restores_ready_node(monkeypatch):
         paused_at=paused_at,
         paused_duration=3,
         deadline_at=deadline_at,
+        debug=True,
         execution_plan_snapshot=SimpleNamespace(
             edges=[],
             nodes=[SimpleNamespace(id="node-1")],
@@ -151,6 +163,12 @@ async def test_resume_extends_deadline_and_restores_ready_node(monkeypatch):
         "check_action_finished",
         AsyncMock(return_value=False),
     )
+    resume_debug = AsyncMock(return_value=1)
+    monkeypatch.setattr(
+        DebugOutputRuntimeService,
+        "resume_for_action",
+        resume_debug,
+    )
 
     success, _ = await ActionInstanceService.resume("action-1")
 
@@ -160,6 +178,7 @@ async def test_resume_extends_deadline_and_restores_ready_node(monkeypatch):
     assert resume_fields["paused_at"] is None
     assert resume_fields["deadline_at"] > deadline_at
     assert node_updates[0]["$set"]["status"] == ActionInstanceNodeStatusEnum.READY
+    resume_debug.assert_awaited_once_with("action-1")
 
 
 @pytest.mark.asyncio

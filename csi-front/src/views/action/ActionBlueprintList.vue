@@ -214,14 +214,11 @@
                       </el-button>
                     </el-tooltip>
                   </div>
-                  <el-button 
-                    type="primary" 
-                    class="w-full ml-0!" 
-                    @click="createActionFromBlueprint(blueprint)"
-                  >
-                    <template #icon><Icon icon="mdi:rocket-launch" /></template>
-                    立即执行行动
-                  </el-button>
+                  <BlueprintRunControl
+                    :disabled="actionStarting"
+                    @run="createActionFromBlueprint(blueprint)"
+                    @debug="createActionFromBlueprint(blueprint, true)"
+                  />
                   <el-button 
                     v-if="hasPerm(PERM.operations.action.blueprint.delete)"
                     plain 
@@ -281,10 +278,12 @@
                       <template #icon><Icon icon="mdi:eye" /></template>
                       查看
                     </el-button>
-                    <el-button type="primary" link size="small" @click="createActionFromBlueprint(row)">
-                      <template #icon><Icon icon="mdi:rocket-launch" /></template>
-                      执行
-                    </el-button>
+                    <BlueprintRunControl
+                      compact
+                      :disabled="actionStarting"
+                      @run="createActionFromBlueprint(row)"
+                      @debug="createActionFromBlueprint(row, true)"
+                    />
                     <el-button v-if="hasPerm(PERM.operations.action.blueprint.update)" type="primary" link size="small" @click="editBlueprint(row)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
                       编辑
@@ -338,6 +337,8 @@
     <TemplateParamsDialog
       v-model="templateParamsDialogVisible"
       :blueprint-id="selectedBlueprintForRun?.id"
+      :debug="selectedRunDebug"
+      :submitting="actionStarting"
       @submit="handleParamsSubmit"
     />
     <BlueprintPublishDialog
@@ -385,9 +386,11 @@ import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import TemplateParamsDialog from '@/components/action/template/TemplateParamsDialog.vue'
 import BlueprintPublishDialog from '@/components/action/BlueprintPublishDialog.vue'
 import BlueprintEncapsulateDialog from '@/components/action/BlueprintEncapsulateDialog.vue'
+import BlueprintRunControl from '@/components/action/BlueprintRunControl.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
+import { buildActionRunRequest } from '@/utils/action/run'
 import { PERM } from '@/utils/permissions'
 import { hasAll, hasPerm } from '@/utils/permissionKit'
 
@@ -408,6 +411,8 @@ const blueprintDialogVisible = ref(false)
 const selectedBlueprintId = ref(null)
 const templateParamsDialogVisible = ref(false)
 const selectedBlueprintForRun = ref(null)
+const selectedRunDebug = ref(false)
+const actionStarting = ref(false)
 const selectedBlueprintForRelease = ref(null)
 const publishDialogVisible = ref(false)
 const encapsulateDialogVisible = ref(false)
@@ -519,44 +524,69 @@ const viewBlueprint = (blueprint) => {
   blueprintDialogVisible.value = true
 }
 
-const createActionFromBlueprint = async (blueprint) => {
+const createActionFromBlueprint = async (blueprint, debug = false) => {
   if (!blueprint || !blueprint.id) {
     ElMessage.error('蓝图ID不存在')
     return
   }
 
+  if (debug && !blueprint.isTemplate) {
+    try {
+      await ElMessageBox.confirm(
+        '调试运行会启用蓝图中的调试输出节点，并将接收到的数据写入行动日志。',
+        '调试运行',
+        {
+          confirmButtonText: '开始调试',
+          cancelButtonText: '取消',
+          type: 'info'
+        }
+      )
+    } catch {
+      return
+    }
+  }
+
+  selectedRunDebug.value = debug
   if (blueprint.isTemplate) {
     templateParamsDialogVisible.value = true
     selectedBlueprintForRun.value = blueprint
   } else {
-    await runBlueprint(blueprint.id, null)
+    await runBlueprint(blueprint.id, null, debug)
   }
 }
 
-const runBlueprint = async (blueprintId, params) => {
+const runBlueprint = async (blueprintId, params, debug = false) => {
+  if (actionStarting.value) return false
+  actionStarting.value = true
   try {
-    const data = { blueprint_id: blueprintId }
-    if (params) {
-      data.params = params
-    }
+    const data = buildActionRunRequest(blueprintId, params, debug)
 
     const response = await actionApi.runAction(data)
 
     if (response.code === 0 && response.data && response.data.action_id) {
       ElMessage.success('行动已创建并开始执行')
       router.push(`/action/${response.data.action_id}`)
+      return true
     } else {
       ElMessage.error(response.message || '创建行动失败')
+      return false
     }
   } catch (error) {
     console.error('创建行动失败:', error)
     ElMessage.error(error.message || '创建行动失败，请稍后重试')
+    return false
+  } finally {
+    actionStarting.value = false
   }
 }
 
 const handleParamsSubmit = async (params) => {
-  await runBlueprint(selectedBlueprintForRun.value.id, params)
-  templateParamsDialogVisible.value = false
+  const started = await runBlueprint(
+    selectedBlueprintForRun.value.id,
+    params,
+    selectedRunDebug.value
+  )
+  if (started) templateParamsDialogVisible.value = false
 }
 
 const createBranchVersion = (blueprint) => {
