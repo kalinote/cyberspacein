@@ -203,12 +203,7 @@ async def test_transformed_json_delivery_preserves_transport_metadata():
         payload,
     )
 
-    channel.declare_queue.assert_awaited_once_with(
-        "target-q",
-        durable=True,
-        exclusive=False,
-        auto_delete=False,
-    )
+    channel.declare_queue.assert_not_awaited()
     publish.assert_awaited_once()
     published_message = publish.await_args.args[0]
     assert json.loads(published_message.body.decode("utf-8")) == payload
@@ -289,7 +284,134 @@ async def test_data_is_published_before_source_ack(monkeypatch):
     )
 
     assert result == ReferenceBridgeStepResult.FORWARDED
-    assert events == ["confirmed", "ack", "recorded", "close"]
+    assert events == ["confirmed", "recorded", "ack", "close"]
+
+
+@pytest.mark.asyncio
+async def test_bridge_uses_passive_read_and_publish_contract(monkeypatch):
+    events: list[str] = []
+    delivery = _FakeDelivery(_message(), events)
+    bridge = _bridge(
+        sources=[_stream("source-1", "child-q", "child-1", ["run-1"])],
+        destinations=[
+            _stream(
+                "target-1",
+                "parent-q",
+                "parent-1",
+                ["bridge:bridge-1"],
+            )
+        ],
+    )
+    get_message = AsyncMock(return_value=delivery)
+    publish = AsyncMock()
+
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(return_value=bridge),
+    )
+    monkeypatch.setattr(rabbitmq, "get_reference_message", get_message)
+    monkeypatch.setattr(rabbitmq, "publish_reference_delivery", publish)
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_record_forwarded",
+        AsyncMock(),
+    )
+
+    result = await ReferenceBridgeService.process_once(
+        bridge_id=bridge.id,
+        worker_id="worker-1",
+        lease_token="lease-1",
+    )
+
+    assert result == ReferenceBridgeStepResult.FORWARDED
+    get_message.assert_awaited_once_with("child-q")
+    publish.assert_awaited_once_with(delivery, ["parent-q"])
+    assert events == ["ack", "close"]
+
+
+@pytest.mark.asyncio
+async def test_cancel_before_destination_publish_requeues_without_forwarding(
+    monkeypatch,
+):
+    events: list[str] = []
+    delivery = _FakeDelivery(_message(), events)
+    bridge = _bridge()
+    cancelled = ReferenceBridgeModel.model_construct(
+        id=bridge.id,
+        status=ReferenceBridgeStatusEnum.CANCELLED,
+    )
+    publish = AsyncMock()
+
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(side_effect=[bridge, None]),
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeModel,
+        "find_one",
+        AsyncMock(return_value=cancelled),
+    )
+    monkeypatch.setattr(
+        rabbitmq,
+        "get_reference_message",
+        AsyncMock(return_value=delivery),
+    )
+    monkeypatch.setattr(rabbitmq, "publish_reference_delivery", publish)
+
+    result = await ReferenceBridgeService.process_once(
+        bridge_id=bridge.id,
+        worker_id="worker-1",
+        lease_token="lease-1",
+    )
+
+    assert result == ReferenceBridgeStepResult.CANCELLED
+    publish.assert_not_awaited()
+    assert events == ["nack:True", "close"]
+
+
+@pytest.mark.asyncio
+async def test_lease_is_rechecked_before_each_destination_publish(monkeypatch):
+    events: list[str] = []
+    delivery = _FakeDelivery(_message(), events)
+    bridge = _bridge(
+        destinations=[
+            _stream("target-1", "parent-qa", "parent-1"),
+            _stream("target-2", "parent-qb", "parent-1"),
+        ]
+    )
+    publish = AsyncMock()
+
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(side_effect=[bridge, bridge, None]),
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeModel,
+        "find_one",
+        AsyncMock(return_value=bridge),
+    )
+    monkeypatch.setattr(
+        rabbitmq,
+        "get_reference_message",
+        AsyncMock(return_value=delivery),
+    )
+    monkeypatch.setattr(rabbitmq, "publish_reference_delivery", publish)
+
+    result = await ReferenceBridgeService.process_once(
+        bridge_id=bridge.id,
+        worker_id="worker-1",
+        lease_token="lease-1",
+    )
+
+    assert result == ReferenceBridgeStepResult.LEASE_LOST
+    publish.assert_awaited_once_with(
+        delivery,
+        ["parent-qa"],
+    )
+    assert events == ["nack:True", "close"]
 
 
 @pytest.mark.asyncio
@@ -408,6 +530,11 @@ async def test_abort_requeues_when_terminal_state_cannot_be_persisted(monkeypatc
         ReferenceBridgeService,
         "_fail",
         AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_resolve_inactive_result",
+        AsyncMock(return_value=ReferenceBridgeStepResult.LEASE_LOST),
     )
 
     result = await ReferenceBridgeService.process_once(
@@ -606,6 +733,11 @@ async def test_complete_publishes_one_aggregate_eos_per_destination(monkeypatch)
         "get_motor_collection",
         classmethod(lambda cls: collection),
     )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(return_value=bridge),
+    )
 
     result = await ReferenceBridgeService._complete(
         bridge=bridge,
@@ -622,8 +754,6 @@ async def test_complete_publishes_one_aggregate_eos_per_destination(monkeypatch)
         call.kwargs["producer_id"] == "bridge:bridge-1"
         for call in publish.await_args_list
     )
-
-
 @pytest.mark.asyncio
 async def test_complete_uses_destination_expected_producer_identity(monkeypatch):
     bridge = _bridge(
@@ -649,6 +779,11 @@ async def test_complete_uses_destination_expected_producer_identity(monkeypatch)
         "get_motor_collection",
         classmethod(lambda cls: collection),
     )
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(return_value=bridge),
+    )
 
     await ReferenceBridgeService._complete(
         bridge=bridge,
@@ -657,6 +792,44 @@ async def test_complete_uses_destination_expected_producer_identity(monkeypatch)
     )
 
     assert publish.await_args.kwargs["producer_id"] == "encapsulated-node-run"
+
+
+@pytest.mark.asyncio
+async def test_propagate_abort_uses_backend_owned_destination(monkeypatch):
+    bridge = _bridge(
+        destinations=[
+            _stream(
+                "parent-a",
+                "parent-qa",
+                "parent-1",
+                ["encapsulated-node-run"],
+            )
+        ]
+    )
+    publish = AsyncMock()
+    monkeypatch.setattr(
+        ReferenceBridgeService,
+        "_get_owned_bridge",
+        AsyncMock(return_value=bridge),
+    )
+    monkeypatch.setattr(rabbitmq, "publish_reference_control", publish)
+
+    await ReferenceBridgeService._propagate_abort(
+        bridge=bridge,
+        worker_id="worker-1",
+        lease_token="lease-1",
+        producer_id="bridge:bridge-1",
+        reason="上游失败",
+    )
+
+    publish.assert_awaited_once_with(
+        queue_names=["parent-qa"],
+        stream_id="parent-a",
+        producer_id="encapsulated-node-run",
+        action_id="parent-1",
+        status="abort",
+        reason="上游失败",
+    )
 
 
 @pytest.mark.asyncio

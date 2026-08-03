@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.component_run import ComponentRunModel
 from app.schemas.action.blueprint import ActionBlueprintSchema
+from app.schemas.action.reference import ReferenceQueueBinding
 from app.schemas.action.sdk import SDKResultRequest
 from app.schemas.constants import (
     ActionFlowStatusEnum,
@@ -22,10 +23,18 @@ from app.service.action import ActionInstanceService
 
 
 class _FindOne:
-    def __init__(self, value=None, *, modified_count=0, updates=None):
+    def __init__(
+        self,
+        value=None,
+        *,
+        modified_count=0,
+        updates=None,
+        on_update=None,
+    ):
         self.value = value
         self.modified_count = modified_count
         self.updates = updates
+        self.on_update = on_update
 
     def __await__(self):
         async def resolve():
@@ -36,14 +45,27 @@ class _FindOne:
     async def update(self, payload):
         if self.updates is not None:
             self.updates.append(payload)
+        if self.on_update is not None:
+            self.on_update(payload)
         return SimpleNamespace(modified_count=self.modified_count)
 
 
 class _FindMany:
-    def __init__(self, values=None, *, updates=None, count=0):
+    def __init__(
+        self,
+        values=None,
+        *,
+        updates=None,
+        count=0,
+        on_update=None,
+    ):
         self.values = values or []
         self.updates = updates
         self.count_value = count
+        self.on_update = on_update
+
+    def limit(self, _limit):
+        return self
 
     async def to_list(self):
         return self.values
@@ -51,6 +73,8 @@ class _FindMany:
     async def update(self, payload):
         if self.updates is not None:
             self.updates.append(payload)
+        if self.on_update is not None:
+            self.on_update(payload)
         return SimpleNamespace(modified_count=len(self.values))
 
     async def count(self):
@@ -347,6 +371,164 @@ async def test_overall_timeout_stops_active_runs_and_cancels_future_nodes(monkey
         ActionInstanceNodeStatusEnum.CANCELLED,
     ]
     stop_run.assert_awaited_once_with(active_run)
+
+
+@pytest.mark.asyncio
+async def test_managed_timeout_cleanup_is_not_reversed_by_abort_retry(
+    monkeypatch,
+):
+    now = datetime.now()
+    action = SimpleNamespace(
+        id="action-managed-timeout",
+        status=ActionFlowStatusEnum.RUNNING,
+        implementation_period=5,
+        deadline_at=now - timedelta(seconds=1),
+        start_at=now - timedelta(seconds=6),
+        paused_duration=0,
+        reference_queue_lifecycle="active",
+        queue_cleanup_state="pending",
+    )
+    binding = ReferenceQueueBinding(
+        edge_id="edge-1",
+        stream_id="stream-1",
+        queue_name="managed-queue",
+        owner_action_id=action.id,
+        source_node_id="source",
+        source_port_id="out",
+        target_node_id="target",
+        target_port_id="in",
+    )
+    node = SimpleNamespace(
+        id="source-instance",
+        error_message="行动整体执行超时，节点未再运行",
+        reference_queue_bindings={"edge-1": binding},
+        save=AsyncMock(),
+    )
+    queues = {binding.queue_name}
+    events = []
+
+    def matches(document, query):
+        for field, expected in query.items():
+            if field == "$or":
+                if not any(matches(document, branch) for branch in expected):
+                    return False
+                continue
+            actual = (
+                document.id if field == "_id" else getattr(document, field)
+            )
+            if isinstance(expected, dict):
+                if "$in" in expected and actual not in expected["$in"]:
+                    return False
+                if "$gt" in expected and actual <= expected["$gt"]:
+                    return False
+                continue
+            if actual != expected:
+                return False
+        return True
+
+    def update_action(payload):
+        for field, value in payload.get("$set", {}).items():
+            setattr(action, field, value)
+
+    def find_actions(query):
+        return _FindMany([action] if matches(action, query) else [])
+
+    def find_action(query):
+        matched = matches(action, query)
+        return _FindOne(
+            action if matched else None,
+            modified_count=1 if matched else 0,
+            on_update=update_action if matched else None,
+        )
+
+    def find_nodes(query):
+        if query == {"action_id": action.id}:
+            return _FindMany([node])
+        return _FindMany()
+
+    async def delete_queue(queue_name):
+        events.append(("delete", queue_name))
+        queues.discard(queue_name)
+        return True
+
+    async def publish_control(**kwargs):
+        events.append(("publish", kwargs["queue_names"][0]))
+
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(find_actions),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        staticmethod(find_action),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(find_nodes),
+    )
+    monkeypatch.setattr(
+        ComponentRunModel,
+        "find",
+        staticmethod(lambda _query: _FindMany()),
+    )
+    monkeypatch.setattr(action_service, "delete_queue", delete_queue)
+    monkeypatch.setattr(
+        action_service,
+        "publish_reference_control",
+        publish_control,
+    )
+    monkeypatch.setattr(
+        action_service.RuntimeDomainEventService,
+        "publish_action_terminal",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        action_service,
+        "publish_action_status_observation",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "cancel_node_executions",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "cancel_reference_bridges",
+        AsyncMock(return_value=0),
+    )
+    reference_state_collection = SimpleNamespace(
+        find_one=AsyncMock(return_value={}),
+        update_one=AsyncMock(
+            return_value=SimpleNamespace(modified_count=1)
+        ),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: reference_state_collection),
+    )
+
+    round_results = []
+    for _ in range(2):
+        round_results.append(
+            (
+                await ActionInstanceService.expire_stale_actions(),
+                await ActionInstanceService.retry_open_reference_aborts(),
+                await ActionInstanceService.retry_failed_queue_cleanup(),
+            )
+        )
+
+    assert round_results == [(1, 0, 0), (0, 0, 0)]
+    assert action.status == ActionFlowStatusEnum.TIMEOUT
+    assert action.reference_queue_lifecycle == "cleaned"
+    assert action.queue_cleanup_state == "completed"
+    assert queues == set()
+    delete_index = events.index(("delete", binding.queue_name))
+    assert not any(event[0] == "publish" for event in events[delete_index + 1 :])
 
 
 @pytest.mark.asyncio

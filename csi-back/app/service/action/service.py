@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import random
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 from beanie.operators import In
 from beanie.exceptions import CollectionWasNotInitialized
 from pymongo.errors import DuplicateKeyError
@@ -74,10 +75,26 @@ from app.models.action.blueprint import (
     ActionBlueprintSnapshotModel,
     create_blueprint_snapshot,
 )
-from app.db.rabbitmq import delete_queue, publish_reference_control
+from app.db.rabbitmq import (
+    delete_queue,
+    provision_reference_queues,
+    publish_reference_control,
+)
 from app.db.redis import get_redis
 
 logger = logger.bind(name=__name__)
+
+REFERENCE_ABORT_PUBLISH_LEASE_SECONDS = 30
+REFERENCE_ABORT_PUBLISH_TIMEOUT_SECONDS = 10
+REFERENCE_QUEUE_PROVISION_LEASE_SECONDS = 30
+REFERENCE_QUEUE_PROVISION_DECLARE_TIMEOUT_SECONDS = 10
+REFERENCE_LEASE_OPERATION_MARGIN_SECONDS = 1
+REFERENCE_PROVISIONING_RECOVERY_SECONDS = 60
+REFERENCE_ABORT_PUBLISH_TOKEN_FIELD = "_reference_abort_publish_token"
+REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD = "_reference_abort_publish_expires_at"
+REFERENCE_ABORT_PUBLISH_CLOSED_FIELD = "_reference_abort_publish_closed"
+REFERENCE_QUEUE_PROVISION_TOKEN_FIELD = "_reference_queue_provision_token"
+REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD = "_reference_queue_provision_expires_at"
 
 
 async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:
@@ -443,7 +460,7 @@ class ActionInstanceService:
             if existing:
                 return True, existing.id
         action_id = generate_id(blueprint_id + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
-        
+
         blueprint = await ActionInstanceService.get_blueprint(blueprint_id)
         if not blueprint:
             logger.error(f"行动实例初始化失败，蓝图不存在: {blueprint_id}")
@@ -533,6 +550,7 @@ class ActionInstanceService:
             invocation_inputs=invocation_inputs or {},
             invocation_reference_inputs=invocation_reference_inputs or {},
             invocation_reference_outputs=invocation_reference_outputs or {},
+            reference_queue_lifecycle="provisioning",
             initiator_user_id=initiator_user_id,
             status=ActionFlowStatusEnum.READY,
             implementation_period=blueprint_snapshot.implementation_period,
@@ -690,6 +708,82 @@ class ActionInstanceService:
                 action_id,
                 ActionInstanceNodeStatusEnum.READY,
             )
+
+        queue_names = [
+            binding.queue_name
+            for bindings in reference_bindings_by_source.values()
+            for binding in bindings.values()
+        ]
+        provision_error: Exception | None = None
+        provision_token = (
+            await ActionInstanceService._claim_reference_queue_provision(action_id)
+        )
+        if provision_token is None:
+            provision_error = RuntimeError("Reference 队列预声明租约领取失败")
+        else:
+            try:
+                try:
+                    await provision_reference_queues(
+                        queue_names,
+                        before_declare=lambda: (
+                            ActionInstanceService._renew_reference_queue_provision(
+                                action_id,
+                                provision_token,
+                            )
+                        ),
+                        declare_timeout_seconds=(
+                            REFERENCE_QUEUE_PROVISION_DECLARE_TIMEOUT_SECONDS
+                        ),
+                    )
+                finally:
+                    await ActionInstanceService._release_reference_queue_provision(
+                        action_id,
+                        provision_token,
+                    )
+            except Exception as exc:
+                provision_error = exc
+        if provision_error is not None:
+            now = datetime.now()
+            await ActionInstanceModel.find_one(
+                {
+                    "_id": action_id,
+                    "status": ActionFlowStatusEnum.READY,
+                    "reference_queue_lifecycle": "provisioning",
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ActionFlowStatusEnum.UNREADY,
+                        "reference_queue_lifecycle": "closing",
+                        "updated_at": now,
+                    }
+                }
+            )
+            await ActionInstanceService.cleanup_action_queues(action_id)
+            logger.error(
+                f"行动 Reference 队列预声明失败: {action_id}: {provision_error}"
+            )
+            return False, f"行动 Reference 队列预声明失败: {action_id}"
+        activation = await ActionInstanceModel.find_one(
+            {
+                "_id": action_id,
+                "status": ActionFlowStatusEnum.READY,
+                "reference_queue_lifecycle": "provisioning",
+            }
+        ).update(
+            {
+                "$set": {
+                    "reference_queue_lifecycle": "active",
+                    "updated_at": datetime.now(),
+                }
+            }
+        )
+        if not activation or getattr(activation, "modified_count", 0) != 1:
+            await ActionInstanceService.cleanup_action_queues(action_id)
+            logger.warning(
+                f"行动状态在 Reference 队列预声明期间发生变化: {action_id}"
+            )
+            return False, f"行动状态在 Reference 队列预声明期间发生变化: {action_id}"
         
         return True, action_id
 
@@ -703,6 +797,12 @@ class ActionInstanceService:
         )
         if action is None:
             logger.info(f"行动已启动或不存在，跳过重复启动: {action_id}")
+            return
+        if action.reference_queue_lifecycle != "active":
+            logger.error(
+                f"行动 Reference 队列尚未就绪，拒绝启动: {action_id}, "
+                f"状态: {action.reference_queue_lifecycle}"
+            )
             return
         now = datetime.now()
         claim = await ActionInstanceModel.find_one(
@@ -1051,6 +1151,7 @@ class ActionInstanceService:
                     "finished_at": now,
                     "duration": duration,
                     "updated_at": now,
+                    "reference_queue_lifecycle": "closing",
                 }
             }
         )
@@ -2258,47 +2359,282 @@ class ActionInstanceService:
                         f"边 {edge.id}: {exc}"
                     )
 
-        changed = False
-        for binding in node_instance.reference_queue_bindings.values():
-            if binding.control_status != "open":
-                continue
-            producer_ids = binding.expected_producer_ids or [node_instance.id]
-            all_published = True
-            for producer_id in producer_ids:
-                published = False
-                for attempt in range(1, 4):
-                    try:
-                        await publish_reference_control(
-                            queue_names=[binding.queue_name],
-                            stream_id=binding.stream_id,
-                            producer_id=producer_id,
-                            action_id=binding.owner_action_id,
-                            status="abort",
-                            reason=reason,
+        open_bindings = [
+            binding
+            for binding in node_instance.reference_queue_bindings.values()
+            if binding.control_status == "open"
+        ]
+        if not open_bindings:
+            return
+        token = await ActionInstanceService._claim_reference_abort_publish(
+            action.id
+        )
+        if token is None:
+            return
+        try:
+            changed = False
+            for binding in open_bindings:
+                producer_ids = binding.expected_producer_ids or [node_instance.id]
+                all_published = True
+                for producer_id in producer_ids:
+                    published = False
+                    for attempt in range(1, 4):
+                        renewed = await ActionInstanceService._renew_reference_abort_publish(
+                            action.id,
+                            token,
                         )
-                        published = True
-                        break
-                    except Exception as exc:
-                        logger.error(
-                            f"Reference ABORT发布失败，节点 "
-                            f"{node_instance.id}，第 {attempt} 次尝试: {exc}"
-                        )
-                        if attempt < 3:
-                            await asyncio.sleep(0.1 * attempt)
-                all_published = all_published and published
-            if not all_published:
-                continue
-            binding.control_status = "abort"
-            changed = True
-        if changed:
-            await node_instance.save()
+                        if not renewed:
+                            break
+                        try:
+                            await asyncio.wait_for(
+                                publish_reference_control(
+                                    queue_names=[binding.queue_name],
+                                    stream_id=binding.stream_id,
+                                    producer_id=producer_id,
+                                    action_id=binding.owner_action_id,
+                                    status="abort",
+                                    reason=reason,
+                                ),
+                                timeout=REFERENCE_ABORT_PUBLISH_TIMEOUT_SECONDS,
+                            )
+                            published = True
+                            break
+                        except Exception as exc:
+                            logger.error(
+                                f"Reference ABORT发布失败，节点 "
+                                f"{node_instance.id}，第 {attempt} 次尝试: {exc}"
+                            )
+                            if attempt < 3:
+                                await asyncio.sleep(0.1 * attempt)
+                    all_published = all_published and published
+                if not all_published:
+                    continue
+                binding.control_status = "abort"
+                changed = True
+            if changed:
+                await node_instance.save()
+        finally:
+            await ActionInstanceService._release_reference_abort_publish(
+                action.id,
+                token,
+            )
+
+    @staticmethod
+    async def _claim_reference_queue_provision(action_id: str) -> str | None:
+        """在待启动 Action 上领取一个有期限的队列预声明栅栏。"""
+        now = datetime.now()
+        token = str(uuid4())
+        result = await ActionInstanceModel.get_motor_collection().update_one(
+            {
+                "_id": action_id,
+                "status": ActionFlowStatusEnum.READY.value,
+                "reference_queue_lifecycle": "provisioning",
+                REFERENCE_ABORT_PUBLISH_CLOSED_FIELD: {"$ne": True},
+                "$or": [
+                    {REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: None},
+                    {
+                        REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: {
+                            "$exists": False
+                        }
+                    },
+                    {REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: None},
+                    {
+                        REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                            "$exists": False
+                        }
+                    },
+                    {
+                        REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                            "$lte": now
+                        }
+                    },
+                ],
+            },
+            {
+                "$set": {
+                    REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: token,
+                    REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: now
+                    + timedelta(seconds=REFERENCE_QUEUE_PROVISION_LEASE_SECONDS),
+                }
+            },
+        )
+        if result.modified_count != 1:
+            return None
+        return token
+
+    @staticmethod
+    async def _renew_reference_queue_provision(
+        action_id: str,
+        token: str,
+    ) -> bool:
+        """在每条队列声明前续期仍由当前任务持有的预声明栅栏。"""
+        now = datetime.now()
+        expires_at = now + timedelta(
+            seconds=REFERENCE_QUEUE_PROVISION_LEASE_SECONDS
+        )
+        result = await ActionInstanceModel.get_motor_collection().update_one(
+            {
+                "_id": action_id,
+                "status": ActionFlowStatusEnum.READY.value,
+                "reference_queue_lifecycle": "provisioning",
+                REFERENCE_ABORT_PUBLISH_CLOSED_FIELD: {"$ne": True},
+                REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: token,
+                REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {"$gt": now},
+            },
+            {
+                "$set": {
+                    REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: expires_at,
+                }
+            },
+        )
+        return result.modified_count == 1 and expires_at > datetime.now() + timedelta(
+            seconds=(
+                REFERENCE_QUEUE_PROVISION_DECLARE_TIMEOUT_SECONDS
+                + REFERENCE_LEASE_OPERATION_MARGIN_SECONDS
+            )
+        )
+
+    @staticmethod
+    async def _release_reference_queue_provision(
+        action_id: str,
+        token: str,
+    ) -> None:
+        """仅由持有者释放队列预声明栅栏。"""
+        await ActionInstanceModel.get_motor_collection().update_one(
+            {
+                "_id": action_id,
+                REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: token,
+            },
+            {
+                "$unset": {
+                    REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: "",
+                    REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: "",
+                }
+            },
+        )
+
+    @staticmethod
+    async def _claim_reference_abort_publish(action_id: str) -> str | None:
+        """在活动 Action 上领取一个有期限的后台 ABORT 发布栅栏。"""
+        now = datetime.now()
+        token = str(uuid4())
+        result = await ActionInstanceModel.get_motor_collection().update_one(
+            {
+                "_id": action_id,
+                "status": {
+                    "$in": [
+                        ActionFlowStatusEnum.RUNNING.value,
+                        ActionFlowStatusEnum.PAUSED.value,
+                    ]
+                },
+                REFERENCE_ABORT_PUBLISH_CLOSED_FIELD: {"$ne": True},
+                "$or": [
+                    {REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: None},
+                    {
+                        REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: {
+                            "$exists": False
+                        }
+                    },
+                    {REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: None},
+                    {
+                        REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: {
+                            "$exists": False
+                        }
+                    },
+                    {
+                        REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: {
+                            "$lte": now
+                        }
+                    },
+                ],
+            },
+            {
+                "$set": {
+                    REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: token,
+                    REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: now
+                    + timedelta(seconds=REFERENCE_ABORT_PUBLISH_LEASE_SECONDS),
+                }
+            },
+        )
+        if result.modified_count != 1:
+            return None
+        return token
+
+    @staticmethod
+    async def _release_reference_abort_publish(
+        action_id: str,
+        token: str,
+    ) -> None:
+        """仅由持有者释放后台 ABORT 发布栅栏。"""
+        await ActionInstanceModel.get_motor_collection().update_one(
+            {
+                "_id": action_id,
+                REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: token,
+            },
+            {
+                "$unset": {
+                    REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: "",
+                    REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: "",
+                }
+            },
+        )
+
+    @staticmethod
+    async def _renew_reference_abort_publish(
+        action_id: str,
+        token: str,
+    ) -> bool:
+        """在每次发布前续期仍由当前任务持有的 ABORT 栅栏。"""
+        now = datetime.now()
+        expires_at = now + timedelta(
+            seconds=REFERENCE_ABORT_PUBLISH_LEASE_SECONDS
+        )
+        result = await ActionInstanceModel.get_motor_collection().update_one(
+            {
+                "_id": action_id,
+                "status": {
+                    "$in": [
+                        ActionFlowStatusEnum.RUNNING.value,
+                        ActionFlowStatusEnum.PAUSED.value,
+                    ]
+                },
+                REFERENCE_ABORT_PUBLISH_CLOSED_FIELD: {"$ne": True},
+                REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: token,
+                REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: {"$gt": now},
+            },
+            {
+                "$set": {
+                    REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: expires_at,
+                }
+            },
+        )
+        return result.modified_count == 1 and expires_at > datetime.now() + timedelta(
+            seconds=(
+                REFERENCE_ABORT_PUBLISH_TIMEOUT_SECONDS
+                + REFERENCE_LEASE_OPERATION_MARGIN_SECONDS
+            )
+        )
 
     @staticmethod
     async def retry_open_reference_aborts(limit: int = 100) -> int:
         """为已终止生产者持久重试尚未确认的 Reference ABORT。"""
         try:
+            active_actions = await ActionInstanceModel.find(
+                {
+                    "status": {
+                        "$in": [
+                            ActionFlowStatusEnum.RUNNING,
+                            ActionFlowStatusEnum.PAUSED,
+                        ]
+                    }
+                }
+            ).to_list()
+            active_action_ids = [action.id for action in active_actions]
+            if not active_action_ids:
+                return 0
             nodes = await ActionInstanceNodeModel.find(
                 {
+                    "action_id": {"$in": active_action_ids},
                     "status": {
                         "$in": [
                             ActionInstanceNodeStatusEnum.FAILED,
@@ -2334,40 +2670,72 @@ class ActionInstanceService:
 
         closed = 0
         for node_instance in nodes:
-            changed = False
-            for binding in node_instance.reference_queue_bindings.values():
-                if binding.control_status != "open":
-                    continue
-                producer_ids = (
-                    binding.expected_producer_ids or [node_instance.id]
+            bindings = list(node_instance.reference_queue_bindings.values())
+            action_id = getattr(node_instance, "action_id", None) or next(
+                (
+                    binding.owner_action_id
+                    for binding in bindings
+                    if binding.owner_action_id
+                ),
+                None,
+            )
+            if action_id is None:
+                continue
+            token = await ActionInstanceService._claim_reference_abort_publish(
+                action_id
+            )
+            if token is None:
+                continue
+            try:
+                changed = False
+                for binding in bindings:
+                    if binding.control_status != "open":
+                        continue
+                    producer_ids = (
+                        binding.expected_producer_ids or [node_instance.id]
+                    )
+                    all_published = True
+                    for producer_id in producer_ids:
+                        renewed = await ActionInstanceService._renew_reference_abort_publish(
+                            action_id,
+                            token,
+                        )
+                        if not renewed:
+                            all_published = False
+                            break
+                        try:
+                            await asyncio.wait_for(
+                                publish_reference_control(
+                                    queue_names=[binding.queue_name],
+                                    stream_id=binding.stream_id,
+                                    producer_id=producer_id,
+                                    action_id=binding.owner_action_id,
+                                    status="abort",
+                                    reason=(
+                                        node_instance.error_message
+                                        or "上游节点未能产生输入"
+                                    ),
+                                ),
+                                timeout=REFERENCE_ABORT_PUBLISH_TIMEOUT_SECONDS,
+                            )
+                        except Exception as exc:
+                            all_published = False
+                            logger.error(
+                                f"Reference ABORT后台补发失败，节点 "
+                                f"{node_instance.id}: {exc}"
+                            )
+                    if not all_published:
+                        continue
+                    binding.control_status = "abort"
+                    changed = True
+                    closed += 1
+                if changed:
+                    await node_instance.save()
+            finally:
+                await ActionInstanceService._release_reference_abort_publish(
+                    action_id,
+                    token,
                 )
-                all_published = True
-                for producer_id in producer_ids:
-                    try:
-                        await publish_reference_control(
-                            queue_names=[binding.queue_name],
-                            stream_id=binding.stream_id,
-                            producer_id=producer_id,
-                            action_id=binding.owner_action_id,
-                            status="abort",
-                            reason=(
-                                node_instance.error_message
-                                or "上游节点未能产生输入"
-                            ),
-                        )
-                    except Exception as exc:
-                        all_published = False
-                        logger.error(
-                            f"Reference ABORT后台补发失败，节点 "
-                            f"{node_instance.id}: {exc}"
-                        )
-                if not all_published:
-                    continue
-                binding.control_status = "abort"
-                changed = True
-                closed += 1
-            if changed:
-                await node_instance.save()
         return closed
 
     @staticmethod
@@ -2992,6 +3360,7 @@ class ActionInstanceService:
                             else 0
                         ),
                         "updated_at": now,
+                        "reference_queue_lifecycle": "closing",
                     }
                 }
             )
@@ -3708,10 +4077,102 @@ class ActionInstanceService:
         return True
 
     @staticmethod
+    async def _wait_for_reference_queue_provision(action) -> None:
+        """等待终态 Action 上的队列预声明栅栏释放或过期。"""
+        collection = ActionInstanceModel.get_motor_collection()
+        while True:
+            current = await collection.find_one(
+                {"_id": action.id},
+                {
+                    REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: 1,
+                    REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: 1,
+                },
+            )
+            if current is None:
+                return
+            token = current.get(REFERENCE_QUEUE_PROVISION_TOKEN_FIELD)
+            expires_at = current.get(REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD)
+            now = datetime.now()
+            if not token or expires_at is None:
+                return
+            if expires_at <= now:
+                await collection.update_one(
+                    {
+                        "_id": action.id,
+                        REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: token,
+                    },
+                    {
+                        "$unset": {
+                            REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: "",
+                            REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: "",
+                        }
+                    },
+                )
+                return
+            await asyncio.sleep(
+                min(max((expires_at - now).total_seconds(), 0), 0.1)
+            )
+
+    @staticmethod
+    async def _wait_for_reference_abort_publish(action) -> None:
+        """等待终态 Action 上已经领取的后台 ABORT 发布栅栏释放或过期。"""
+        collection = ActionInstanceModel.get_motor_collection()
+        while True:
+            current = await collection.find_one(
+                {"_id": action.id},
+                {
+                    REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: 1,
+                    REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: 1,
+                },
+            )
+            if current is None:
+                return
+            token = current.get(REFERENCE_ABORT_PUBLISH_TOKEN_FIELD)
+            expires_at = current.get(REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD)
+            now = datetime.now()
+            if not token or expires_at is None:
+                return
+            if expires_at <= now:
+                await collection.update_one(
+                    {
+                        "_id": action.id,
+                        REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: token,
+                    },
+                    {
+                        "$unset": {
+                            REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: "",
+                            REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: "",
+                        }
+                    },
+                )
+                return
+            await asyncio.sleep(
+                min(max((expires_at - now).total_seconds(), 0), 0.1)
+            )
+
+    @staticmethod
     async def cleanup_action_queues(action_id: str) -> bool:
         """
         清理行动相关的所有临时队列
         """
+        action = await ActionInstanceModel.find_one({"_id": action_id})
+        if action is None:
+            logger.error(f"清理队列失败，未找到行动: {action_id}")
+            return False
+        await ActionInstanceModel.find_one({"_id": action_id}).update(
+            {
+                "$set": {
+                    "reference_queue_lifecycle": "closing",
+                    "updated_at": datetime.now(),
+                }
+            }
+        )
+        await ActionInstanceModel.get_motor_collection().update_one(
+            {"_id": action_id},
+            {"$set": {REFERENCE_ABORT_PUBLISH_CLOSED_FIELD: True}},
+        )
+        await ActionInstanceService._wait_for_reference_queue_provision(action)
+        await ActionInstanceService._wait_for_reference_abort_publish(action)
         queue_names = set()
         node_instances = await ActionInstanceNodeModel.find({"action_id": action_id}).to_list()
         for node_instance in node_instances:
@@ -3730,21 +4191,22 @@ class ActionInstanceService:
                 cleanup_results.append(False)
                 logger.error(f"清理队列失败，队列名: {queue_name}, 错误: {str(e)}")
         cleaned = all(cleanup_results)
+        cleanup_update = {
+            "queue_cleanup_state": "completed" if cleaned else "failed",
+            "updated_at": datetime.now(),
+            "reference_queue_lifecycle": (
+                "cleaned" if cleaned else "cleanup_failed"
+            ),
+        }
         await ActionInstanceModel.find_one({"_id": action_id}).update(
-            {
-                "$set": {
-                    "queue_cleanup_state": (
-                        "completed" if cleaned else "failed"
-                    ),
-                    "updated_at": datetime.now(),
-                }
-            }
+            {"$set": cleanup_update}
         )
         return cleaned
 
     @staticmethod
     async def retry_failed_queue_cleanup(limit: int = 100) -> int:
-        """重试终态 Action 上次失败的自有 Reference 队列清理。"""
+        """恢复终态 Action 及托管预声明失败 Action 的队列清理。"""
+        now = datetime.now()
         terminal_statuses = [
             ActionFlowStatusEnum.COMPLETED,
             ActionFlowStatusEnum.FAILED,
@@ -3754,12 +4216,105 @@ class ActionInstanceService:
         ]
         actions = await ActionInstanceModel.find(
             {
-                "status": {"$in": terminal_statuses},
-                "queue_cleanup_state": "failed",
+                "$or": [
+                    {
+                        "status": {"$in": terminal_statuses},
+                        "queue_cleanup_state": "failed",
+                    },
+                    {
+                        "status": {"$in": terminal_statuses},
+                        "queue_cleanup_state": "pending",
+                    },
+                    {
+                        "status": ActionFlowStatusEnum.UNREADY,
+                        "reference_queue_lifecycle": {
+                            "$in": ["closing", "cleanup_failed"]
+                        },
+                        "queue_cleanup_state": {
+                            "$in": ["pending", "failed"]
+                        },
+                    },
+                    {
+                        "status": ActionFlowStatusEnum.READY,
+                        "reference_queue_lifecycle": "provisioning",
+                        "queue_cleanup_state": "pending",
+                        "updated_at": {
+                            "$lte": now
+                            - timedelta(
+                                seconds=REFERENCE_PROVISIONING_RECOVERY_SECONDS
+                            )
+                        },
+                        "$or": [
+                            {REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: None},
+                            {
+                                REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: {
+                                    "$exists": False
+                                }
+                            },
+                            {REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: None},
+                            {
+                                REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                                    "$exists": False
+                                }
+                            },
+                            {
+                                REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                                    "$lte": now
+                                }
+                            },
+                        ],
+                    },
+                ],
             }
         ).limit(limit).to_list()
         cleaned = 0
         for action in actions:
+            if (
+                action.status == ActionFlowStatusEnum.READY
+                and action.reference_queue_lifecycle == "provisioning"
+            ):
+                claim = await ActionInstanceModel.get_motor_collection().update_one(
+                    {
+                        "_id": action.id,
+                        "status": ActionFlowStatusEnum.READY.value,
+                        "reference_queue_lifecycle": "provisioning",
+                        "queue_cleanup_state": "pending",
+                        "updated_at": {
+                            "$lte": now
+                            - timedelta(
+                                seconds=REFERENCE_PROVISIONING_RECOVERY_SECONDS
+                            )
+                        },
+                        "$or": [
+                            {REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: None},
+                            {
+                                REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: {
+                                    "$exists": False
+                                }
+                            },
+                            {REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: None},
+                            {
+                                REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                                    "$exists": False
+                                }
+                            },
+                            {
+                                REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                                    "$lte": now
+                                }
+                            },
+                        ],
+                    },
+                    {
+                        "$set": {
+                            "status": ActionFlowStatusEnum.UNREADY.value,
+                            "reference_queue_lifecycle": "closing",
+                            "updated_at": datetime.now(),
+                        }
+                    },
+                )
+                if claim.modified_count != 1:
+                    continue
             cleaned += int(
                 await ActionInstanceService.cleanup_action_queues(action.id)
             )
@@ -3913,6 +4468,7 @@ class ActionInstanceService:
                     ),
                     "updated_at": now,
                     "reference_finalization_state": reference_finalization_state,
+                    "reference_queue_lifecycle": "closing",
                 }
             }
         )

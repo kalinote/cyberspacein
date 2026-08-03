@@ -236,14 +236,7 @@ class ReferenceBridgeService:
             lease_token=lease_token,
         )
         if bridge is None:
-            current = await ReferenceBridgeModel.find_one({"_id": bridge_id})
-            if current and current.status == ReferenceBridgeStatusEnum.COMPLETED:
-                return ReferenceBridgeStepResult.COMPLETED
-            if current and current.status == ReferenceBridgeStatusEnum.CANCELLED:
-                return ReferenceBridgeStepResult.CANCELLED
-            if current and current.status == ReferenceBridgeStatusEnum.FAILED:
-                return ReferenceBridgeStepResult.FAILED
-            return ReferenceBridgeStepResult.LEASE_LOST
+            return await ReferenceBridgeService._resolve_inactive_result(bridge_id)
 
         if ReferenceBridgeService._all_sources_ended(bridge):
             return await ReferenceBridgeService._complete(
@@ -256,23 +249,31 @@ class ReferenceBridgeService:
         for source in bridge.sources:
             if source.stream_id in ended_stream_ids:
                 continue
-            delivery = await rabbitmq.get_reference_message(source.queue_name)
+            delivery = await rabbitmq.get_reference_message(
+                source.queue_name,
+            )
             if delivery is None:
                 continue
             try:
                 control_kind = rabbitmq.get_reference_control_kind(delivery.message)
                 if control_kind is None:
-                    await rabbitmq.publish_reference_delivery(
-                        delivery,
-                        [destination.queue_name for destination in bridge.destinations],
-                    )
-                    await delivery.ack()
+                    for destination in bridge.destinations:
+                        await ReferenceBridgeService._require_owned_bridge(
+                            bridge_id=bridge.id,
+                            worker_id=worker_id,
+                            lease_token=lease_token,
+                        )
+                        await rabbitmq.publish_reference_delivery(
+                            delivery,
+                            [destination.queue_name],
+                        )
                     await ReferenceBridgeService._record_forwarded(
                         bridge_id=bridge.id,
                         worker_id=worker_id,
                         lease_token=lease_token,
                         byte_count=len(delivery.message.body),
                     )
+                    await delivery.ack()
                     return ReferenceBridgeStepResult.FORWARDED
 
                 stream_id, producer_id = rabbitmq.get_reference_control_identity(
@@ -281,6 +282,8 @@ class ReferenceBridgeService:
                 if stream_id != source.stream_id or not producer_id:
                     await ReferenceBridgeService._propagate_abort(
                         bridge=bridge,
+                        worker_id=worker_id,
+                        lease_token=lease_token,
                         producer_id=f"bridge:{bridge.id}",
                         reason="Reference控制消息缺少有效流或生产者身份",
                     )
@@ -292,7 +295,9 @@ class ReferenceBridgeService:
                     )
                     if not failed:
                         await delivery.nack(requeue=True)
-                        return ReferenceBridgeStepResult.LEASE_LOST
+                        return await ReferenceBridgeService._resolve_inactive_result(
+                            bridge.id
+                        )
                     await delivery.nack(requeue=False)
                     return ReferenceBridgeStepResult.FAILED
 
@@ -300,22 +305,27 @@ class ReferenceBridgeService:
                     stream_id,
                     producer_id,
                 )
-                updated, effective_terminal = (
-                    await ReferenceBridgeService._record_control(
-                        bridge_id=bridge.id,
-                        worker_id=worker_id,
-                        lease_token=lease_token,
-                        control_key=control_key,
-                        control_kind=control_kind,
-                    )
+                (
+                    updated,
+                    effective_terminal,
+                ) = await ReferenceBridgeService._record_control(
+                    bridge_id=bridge.id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                    control_key=control_key,
+                    control_kind=control_kind,
                 )
                 if updated is None or effective_terminal is None:
                     await delivery.nack(requeue=True)
-                    return ReferenceBridgeStepResult.LEASE_LOST
+                    return await ReferenceBridgeService._resolve_inactive_result(
+                        bridge.id
+                    )
 
                 if effective_terminal == "abort":
                     await ReferenceBridgeService._propagate_abort(
                         bridge=updated,
+                        worker_id=worker_id,
+                        lease_token=lease_token,
                         producer_id=f"bridge:{bridge.id}",
                         reason="上游Reference流已中止",
                     )
@@ -328,18 +338,34 @@ class ReferenceBridgeService:
                     )
                     if not failed:
                         await delivery.nack(requeue=True)
-                        return ReferenceBridgeStepResult.LEASE_LOST
+                        return await ReferenceBridgeService._resolve_inactive_result(
+                            bridge.id
+                        )
                     await delivery.ack()
                     return ReferenceBridgeStepResult.FAILED
 
-                await delivery.ack()
                 if ReferenceBridgeService._all_sources_ended(updated):
-                    return await ReferenceBridgeService._complete(
+                    result = await ReferenceBridgeService._complete(
                         bridge=updated,
                         worker_id=worker_id,
                         lease_token=lease_token,
                     )
+                    if result == ReferenceBridgeStepResult.COMPLETED:
+                        await delivery.ack()
+                    else:
+                        await delivery.nack(requeue=True)
+                    return result
+                await ReferenceBridgeService._require_owned_bridge(
+                    bridge_id=bridge.id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                )
+                await delivery.ack()
                 return ReferenceBridgeStepResult.CONTROL
+            except ReferenceBridgeLeaseLostError:
+                if not delivery.message.processed:
+                    await delivery.nack(requeue=True)
+                return await ReferenceBridgeService._resolve_inactive_result(bridge.id)
             except Exception:
                 if not delivery.message.processed:
                     await delivery.nack(requeue=True)
@@ -457,6 +483,37 @@ class ReferenceBridgeService:
         )
 
     @staticmethod
+    async def _require_owned_bridge(
+        *,
+        bridge_id: str,
+        worker_id: str,
+        lease_token: str,
+    ) -> ReferenceBridgeModel:
+        """返回仍由当前 Worker 持有的桥接，否则触发 fencing。"""
+        bridge = await ReferenceBridgeService._get_owned_bridge(
+            bridge_id=bridge_id,
+            worker_id=worker_id,
+            lease_token=lease_token,
+        )
+        if bridge is None:
+            raise ReferenceBridgeLeaseLostError("目标发布前桥接租约已失效")
+        return bridge
+
+    @staticmethod
+    async def _resolve_inactive_result(
+        bridge_id: str,
+    ) -> ReferenceBridgeStepResult:
+        """将失效租约解析为当前可观测的桥接终态。"""
+        current = await ReferenceBridgeModel.find_one({"_id": bridge_id})
+        if current and current.status == ReferenceBridgeStatusEnum.COMPLETED:
+            return ReferenceBridgeStepResult.COMPLETED
+        if current and current.status == ReferenceBridgeStatusEnum.CANCELLED:
+            return ReferenceBridgeStepResult.CANCELLED
+        if current and current.status == ReferenceBridgeStatusEnum.FAILED:
+            return ReferenceBridgeStepResult.FAILED
+        return ReferenceBridgeStepResult.LEASE_LOST
+
+    @staticmethod
     async def _record_forwarded(
         *,
         bridge_id: str,
@@ -471,6 +528,7 @@ class ReferenceBridgeService:
                 "status": ReferenceBridgeStatusEnum.RUNNING.value,
                 "worker_id": worker_id,
                 "lease_token": lease_token,
+                "lease_expires_at": {"$gt": datetime.now()},
             },
             {
                 "$inc": {
@@ -548,6 +606,16 @@ class ReferenceBridgeService:
                 bridge,
                 destination,
             ):
+                try:
+                    await ReferenceBridgeService._require_owned_bridge(
+                        bridge_id=bridge.id,
+                        worker_id=worker_id,
+                        lease_token=lease_token,
+                    )
+                except ReferenceBridgeLeaseLostError:
+                    return await ReferenceBridgeService._resolve_inactive_result(
+                        bridge.id
+                    )
                 await rabbitmq.publish_reference_control(
                     queue_names=[destination.queue_name],
                     stream_id=destination.stream_id,
@@ -575,13 +643,15 @@ class ReferenceBridgeService:
             },
         )
         if result.modified_count != 1:
-            return ReferenceBridgeStepResult.LEASE_LOST
+            return await ReferenceBridgeService._resolve_inactive_result(bridge.id)
         return ReferenceBridgeStepResult.COMPLETED
 
     @staticmethod
     async def _propagate_abort(
         *,
         bridge: ReferenceBridgeModel,
+        worker_id: str,
+        lease_token: str,
         producer_id: str,
         reason: str,
     ) -> None:
@@ -593,6 +663,11 @@ class ReferenceBridgeService:
                 else [producer_id]
             )
             for destination_producer_id in producer_ids:
+                await ReferenceBridgeService._require_owned_bridge(
+                    bridge_id=bridge.id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                )
                 await rabbitmq.publish_reference_control(
                     queue_names=[destination.queue_name],
                     stream_id=destination.stream_id,
@@ -630,6 +705,7 @@ class ReferenceBridgeService:
                 "status": ReferenceBridgeStatusEnum.RUNNING.value,
                 "worker_id": worker_id,
                 "lease_token": lease_token,
+                "lease_expires_at": {"$gt": now},
             },
             update,
         )

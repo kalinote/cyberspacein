@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal, Sequence
@@ -28,6 +30,13 @@ from app.schemas.action.reference import (
 logger = logger.bind(name=__name__)
 
 rabbitmq_connection: aio_pika.Connection = None
+
+async def _get_reference_queue(
+    channel: AbstractChannel,
+    queue_name: str,
+):
+    """被动获取由后端预先创建的 Reference 队列。"""
+    return await channel.declare_queue(queue_name, passive=True)
 
 
 def _ensure_publish_confirmed(confirmation, queue_name: str) -> None:
@@ -153,6 +162,42 @@ async def delete_queue(queue_name: str) -> bool:
                 logger.warning(f"关闭RabbitMQ队列清理通道失败: {str(e)}")
 
 
+async def provision_reference_queues(
+    queue_names: Sequence[str],
+    *,
+    before_declare: Callable[[], Awaitable[bool]] | None = None,
+    declare_timeout_seconds: float | None = None,
+) -> list[str]:
+    """一次性声明后端拥有的持久 Reference 队列。"""
+    if not rabbitmq_connection:
+        raise RuntimeError("RabbitMQ连接未初始化")
+    channel = await rabbitmq_connection.channel()
+    provisioned: list[str] = []
+    try:
+        for queue_name in dict.fromkeys(queue_names):
+            if before_declare is not None and not await before_declare():
+                raise RuntimeError("Reference 队列预声明租约已失效")
+            declaration = channel.declare_queue(
+                queue_name,
+                durable=True,
+                exclusive=False,
+                auto_delete=False,
+                arguments={},
+            )
+            if declare_timeout_seconds is None:
+                await declaration
+            else:
+                await asyncio.wait_for(
+                    declaration,
+                    timeout=declare_timeout_seconds,
+                )
+            provisioned.append(queue_name)
+        return provisioned
+    finally:
+        if not channel.is_closed:
+            await channel.close()
+
+
 def get_reference_control_kind(
     message: AbstractIncomingMessage,
 ) -> Literal["eos", "abort"] | None:
@@ -181,7 +226,9 @@ def get_reference_control_identity(
     )
 
 
-async def get_reference_message(queue_name: str) -> ReferenceMessageDelivery | None:
+async def get_reference_message(
+    queue_name: str,
+) -> ReferenceMessageDelivery | None:
     """从持久队列获取一条需手动确认的 Reference 消息。"""
     if not rabbitmq_connection:
         raise RuntimeError("RabbitMQ连接未初始化")
@@ -190,11 +237,9 @@ async def get_reference_message(queue_name: str) -> ReferenceMessageDelivery | N
         on_return_raises=True,
     )
     try:
-        queue = await channel.declare_queue(
+        queue = await _get_reference_queue(
+            channel,
             queue_name,
-            durable=True,
-            exclusive=False,
-            auto_delete=False,
         )
         message = await queue.get(fail=False, no_ack=False)
         if message is None:
@@ -220,11 +265,9 @@ async def open_reference_consumer(
     channel = await rabbitmq_connection.channel()
     try:
         await channel.set_qos(prefetch_count=prefetch_count)
-        queue = await channel.declare_queue(
+        queue = await _get_reference_queue(
+            channel,
             queue_name,
-            durable=True,
-            exclusive=False,
-            auto_delete=False,
         )
         iterator = queue.iterator(no_ack=False)
         await iterator.__aenter__()
@@ -261,12 +304,6 @@ async def publish_reference_delivery(
 ) -> None:
     """确认式发布 DATA；调用方只能在本函数成功后确认源消息。"""
     for queue_name in dict.fromkeys(queue_names):
-        await delivery.channel.declare_queue(
-            queue_name,
-            durable=True,
-            exclusive=False,
-            auto_delete=False,
-        )
         confirmation = await delivery.channel.default_exchange.publish(
             clone_reference_message(delivery.message),
             routing_key=queue_name,
@@ -284,12 +321,6 @@ async def publish_reference_json_delivery(
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     source = delivery.message
     for queue_name in dict.fromkeys(queue_names):
-        await delivery.channel.declare_queue(
-            queue_name,
-            durable=True,
-            exclusive=False,
-            auto_delete=False,
-        )
         confirmation = await delivery.channel.default_exchange.publish(
             aio_pika.Message(
                 body=body,
@@ -341,12 +372,6 @@ async def publish_reference_control(
             reason=reason,
         ).model_dump_json().encode("utf-8")
         for queue_name in dict.fromkeys(queue_names):
-            await channel.declare_queue(
-                queue_name,
-                durable=True,
-                exclusive=False,
-                auto_delete=False,
-            )
             confirmation = await channel.default_exchange.publish(
                 aio_pika.Message(
                     body=body,

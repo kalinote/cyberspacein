@@ -5,7 +5,11 @@ from .context import (
     ComponentSignalReportError,
     ComponentTimedOut,
 )
-from .rabbitmq import RabbitMQClient
+from .rabbitmq import (
+    RabbitMQClient,
+    ReferenceStreamAborted,
+    ReferenceStreamTransportError,
+)
 from .signals import (
     ComponentSignalBatchReceipt,
     ComponentSignalInput,
@@ -22,5 +26,7 @@ __all__ = [
     "ComponentSignalResult",
     "ComponentTimedOut",
     "RabbitMQClient",
+    "ReferenceStreamAborted",
+    "ReferenceStreamTransportError",
 ]
-__version__ = "2.3.0"
+__version__ = "2.4.0"

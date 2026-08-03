@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pika
 import pytest
+from pika.exceptions import ChannelClosedByBroker, UnroutableError
 
 from csi_base_component_sdk.rabbitmq import (
     REFERENCE_ABORT_TYPE,
@@ -12,6 +13,7 @@ from csi_base_component_sdk.rabbitmq import (
     REFERENCE_EOS_TYPE,
     RabbitMQClient,
     ReferenceStreamAborted,
+    ReferenceStreamTransportError,
 )
 
 
@@ -44,6 +46,57 @@ def _connected_client() -> RabbitMQClient:
     )
     client.channel = MagicMock(is_closed=False)
     return client
+
+
+def _configure_managed_output(
+    client: RabbitMQClient,
+    queue_name: str = "queue-1",
+) -> None:
+    """为测试注册一个后端托管输出流。"""
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "streams": [
+                    {
+                        "queue_name": queue_name,
+                        "stream_id": "stream-1",
+                        "protocol": "eos-v1",
+                    }
+                ],
+            }
+        },
+    )
+
+
+def _configure_managed_input(client: RabbitMQClient) -> None:
+    """为测试注册一个后端托管输入流。"""
+    client.configure_reference_streams(
+        {
+            "data_in": {
+                "type": "reference",
+                "streams": [
+                    {
+                        "queue_name": "queue-1",
+                        "stream_id": "stream-1",
+                        "protocol": "eos-v1",
+                    }
+                ],
+            }
+        },
+        {},
+    )
+
+
+def _receive_message(client: RabbitMQClient, tag: int = 1) -> dict:
+    """让测试客户端收到一条等待确认的消息。"""
+    client.channel.basic_get.return_value = (
+        _delivery(tag),
+        _properties(message_id=f"data-{tag}"),
+        b'{"value": 1}',
+    )
+    return client.get_message("queue-1")
 
 
 def test_client_loads_rabbitmq_config_from_parent_dotenv(
@@ -127,6 +180,91 @@ def test_connect_enables_publisher_confirms(monkeypatch):
     channel.confirm_delivery.assert_called_once_with()
 
 
+def test_ensure_connection_rebuilds_closed_channel_with_confirms():
+    client = RabbitMQClient()
+    replacement_channel = MagicMock(is_closed=False)
+    connection = MagicMock(is_closed=False)
+    connection.channel.return_value = replacement_channel
+    client.connection = connection
+    client.channel = MagicMock(is_closed=True)
+    client._pending_deliveries[1] = SimpleNamespace(
+        queue_name="queue-1",
+        is_backend_owned=False,
+    )
+
+    assert client._ensure_connection() is True
+    assert client.channel is replacement_channel
+    assert client._pending_deliveries == {}
+    replacement_channel.confirm_delivery.assert_called_once_with()
+
+
+@pytest.mark.parametrize("closed_part", ["connection", "channel"])
+def test_managed_pending_delivery_blocks_reconnect_before_send(
+    monkeypatch,
+    closed_part,
+):
+    client = _connected_client()
+    _configure_managed_input(client)
+    _receive_message(client)
+    reconnect = MagicMock()
+
+    if closed_part == "connection":
+        client.connection.is_closed = True
+        monkeypatch.setattr(
+            "csi_base_component_sdk.rabbitmq.pika.BlockingConnection",
+            reconnect,
+        )
+    else:
+        client.channel.is_closed = True
+        connection = MagicMock(is_closed=False)
+        client.connection = connection
+        reconnect = connection.channel
+
+    with pytest.raises(ReferenceStreamTransportError, match="拒绝重建"):
+        client.send_message("queue-1", {"value": 2})
+
+    reconnect.assert_not_called()
+    assert 1 in client._pending_deliveries
+    with pytest.raises(ReferenceStreamTransportError, match="ACK 失败"):
+        client.ack_message(1)
+    with pytest.raises(ReferenceStreamTransportError, match="NACK 失败"):
+        client.nack_message(1)
+    assert 1 in client._pending_deliveries
+
+
+@pytest.mark.parametrize("closed_part", ["connection", "channel"])
+def test_external_pending_delivery_allows_reconnect_before_send(
+    monkeypatch,
+    closed_part,
+):
+    client = _connected_client()
+    _receive_message(client)
+    replacement_channel = MagicMock(is_closed=False)
+
+    if closed_part == "connection":
+        client.connection.is_closed = True
+        replacement_connection = MagicMock(is_closed=False)
+        replacement_connection.channel.return_value = replacement_channel
+        reconnect = MagicMock(return_value=replacement_connection)
+        monkeypatch.setattr(
+            "csi_base_component_sdk.rabbitmq.pika.BlockingConnection",
+            reconnect,
+        )
+    else:
+        client.channel.is_closed = True
+        replacement_connection = MagicMock(is_closed=False)
+        replacement_connection.channel.return_value = replacement_channel
+        client.connection = replacement_connection
+        reconnect = replacement_connection.channel
+
+    assert client.send_message("queue-2", {"value": 2}) is True
+
+    reconnect.assert_called_once()
+    assert client._pending_deliveries == {}
+    assert client.ack_message(1) is False
+    replacement_channel.basic_ack.assert_not_called()
+
+
 def test_reference_queue_has_no_auto_delete_or_expiration():
     client = _connected_client()
 
@@ -146,6 +284,46 @@ def test_reference_queue_has_no_auto_delete_or_expiration():
     int(properties.message_id, 16)
     assert properties.content_type == "application/json"
     assert properties.content_encoding == "utf-8"
+
+
+def test_managed_reference_publish_never_declares_and_is_mandatory():
+    client = _connected_client()
+    _configure_managed_output(client)
+
+    assert client.send_message("queue-1", {"value": 1}) is True
+
+    client.channel.queue_declare.assert_not_called()
+    assert client.channel.basic_publish.call_args.kwargs["mandatory"] is True
+
+
+def test_managed_reference_negative_confirm_raises_transport_error():
+    client = _connected_client()
+    _configure_managed_output(client)
+    client.channel.basic_publish.return_value = False
+
+    with pytest.raises(ReferenceStreamTransportError, match="未获确认"):
+        client.send_message("queue-1", {"value": 1})
+
+
+def test_managed_reference_unroutable_publish_raises_transport_error():
+    client = _connected_client()
+    _configure_managed_output(client)
+    client.channel.basic_publish.side_effect = UnroutableError([])
+
+    with pytest.raises(ReferenceStreamTransportError, match="发布失败"):
+        client.send_message("queue-1", {"value": 1})
+
+
+def test_managed_reference_channel_rebuild_failure_raises_transport_error():
+    client = RabbitMQClient()
+    connection = MagicMock(is_closed=False)
+    connection.channel.side_effect = RuntimeError("channel unavailable")
+    client.connection = connection
+    client.channel = MagicMock(is_closed=True)
+    _configure_managed_output(client)
+
+    with pytest.raises(ReferenceStreamTransportError, match="连接不可用"):
+        client.send_message("queue-1", {"value": 1})
 
 
 def test_send_message_rejects_invalid_explicit_message_id():
@@ -229,12 +407,155 @@ def test_publish_messages_validates_id_count_before_publishing():
     client.channel.basic_publish.assert_not_called()
 
 
+def test_publish_messages_uses_managed_topology_for_every_record():
+    client = _connected_client()
+    _configure_managed_output(client)
+
+    assert client.publish_messages(
+        "queue-1",
+        [{"value": 1}, {"value": 2}],
+    ) is True
+
+    client.channel.queue_declare.assert_not_called()
+    assert all(
+        call.kwargs["mandatory"] is True
+        for call in client.channel.basic_publish.call_args_list
+    )
+
+
+def test_mixed_batch_keeps_external_queue_failure_behavior():
+    client = _connected_client()
+    _configure_managed_output(client, "queue-2")
+    client.channel.basic_publish.side_effect = RuntimeError("external failure")
+
+    assert client.publish_messages(
+        ["queue-1", "queue-2"],
+        [{"value": 1}],
+    ) is False
+
+
 def test_unregistered_queue_returns_immediately_when_empty():
     client = _connected_client()
     client.channel.basic_get.return_value = (None, None, None)
 
     assert client.get_message("queue-1") is None
     assert client.channel.basic_get.call_count == 1
+
+
+@pytest.mark.parametrize("operation", ["ack_message", "nack_message"])
+def test_managed_delivery_confirmation_removes_tracking(operation):
+    client = _connected_client()
+    _configure_managed_input(client)
+    _receive_message(client)
+
+    assert getattr(client, operation)(1) is True
+
+    assert client._pending_deliveries == {}
+
+
+def test_managed_ack_raises_when_channel_is_closed():
+    client = _connected_client()
+    _configure_managed_input(client)
+    _receive_message(client)
+    client.channel.is_closed = True
+
+    with pytest.raises(ReferenceStreamTransportError, match="ACK 失败"):
+        client.ack_message(1)
+
+    with pytest.raises(ReferenceStreamTransportError, match="NACK 失败"):
+        client.nack_message(1)
+
+    assert 1 in client._pending_deliveries
+
+
+def test_external_queue_ack_returns_false_when_channel_is_closed():
+    client = _connected_client()
+    _receive_message(client)
+    client.channel.is_closed = True
+
+    assert client.ack_message(1) is False
+    assert client._pending_deliveries == {}
+
+
+def test_managed_nack_raises_for_amqp_failure():
+    client = _connected_client()
+    _configure_managed_input(client)
+    _receive_message(client)
+    client.channel.basic_nack.side_effect = RuntimeError("nack failed")
+
+    with pytest.raises(ReferenceStreamTransportError, match="NACK 失败"):
+        client.nack_message(1)
+
+
+def test_external_queue_nack_returns_false_for_amqp_failure():
+    client = _connected_client()
+    _receive_message(client)
+    client.channel.basic_nack.side_effect = RuntimeError("nack failed")
+
+    assert client.nack_message(1) is False
+
+
+def test_managed_ack_all_raises_for_amqp_failure():
+    client = _connected_client()
+    _configure_managed_input(client)
+    client.channel.basic_get.side_effect = [
+        (_delivery(1), _properties(message_id="data-1"), b'{"value": 1}'),
+        (_delivery(2), _properties(message_id="data-2"), b'{"value": 2}'),
+    ]
+    assert len(client.read_messages("queue-1", batch_size=2)) == 2
+    client.channel.basic_ack.side_effect = [None, RuntimeError("ack failed")]
+
+    with pytest.raises(ReferenceStreamTransportError, match="批量 ACK 失败"):
+        client.ack_all_message([1, 2])
+
+    assert 1 not in client._pending_deliveries
+    assert 2 in client._pending_deliveries
+
+
+def test_external_queue_ack_all_returns_false_for_amqp_failure():
+    client = _connected_client()
+    _receive_message(client)
+    client.channel.basic_ack.side_effect = RuntimeError("ack failed")
+
+    assert client.ack_all_message([1]) is False
+
+
+def test_close_clears_pending_delivery_tracking():
+    client = _connected_client()
+    _configure_managed_input(client)
+    _receive_message(client)
+
+    client.close()
+
+    assert client._pending_deliveries == {}
+
+
+def test_managed_reference_read_never_declares_missing_queue():
+    client = _connected_client()
+    _configure_managed_input(client)
+    client.channel.basic_get.side_effect = ChannelClosedByBroker(
+        404,
+        "NOT_FOUND",
+    )
+
+    with pytest.raises(ReferenceStreamTransportError, match="读取失败"):
+        client.get_message("queue-1")
+
+    client.channel.queue_declare.assert_not_called()
+
+
+def test_managed_reference_batch_read_raises_for_missing_queue():
+    client = _connected_client()
+    _configure_managed_input(client)
+    client.channel.basic_get.side_effect = ChannelClosedByBroker(
+        404,
+        "NOT_FOUND",
+    )
+
+    with pytest.raises(ReferenceStreamTransportError, match="读取失败"):
+        client.read_messages("queue-1")
+
+    client.channel.queue_declare.assert_not_called()
 
 
 def test_read_messages_filters_and_acks_eos_without_changing_data_shape():
@@ -376,6 +697,7 @@ def test_abort_is_acked_and_hidden_from_component():
     with pytest.raises(ReferenceStreamAborted):
         client.get_message("queue-1")
     client.channel.basic_ack.assert_called_once_with(delivery_tag=1)
+    assert client._pending_deliveries == {}
 
 
 def test_first_eos_ignores_late_abort_for_same_producer(monkeypatch):
@@ -542,6 +864,20 @@ def test_close_reference_outputs_publishes_amqp_eos_properties():
     }
 
 
+def test_managed_reference_control_is_mandatory_without_declaration():
+    client = _connected_client()
+    _configure_managed_output(client)
+
+    assert client.close_reference_outputs(
+        action_id="action-1",
+        producer_id="run-1",
+        status="success",
+    )
+
+    client.channel.queue_declare.assert_not_called()
+    assert client.channel.basic_publish.call_args.kwargs["mandatory"] is True
+
+
 def test_control_frame_detection_uses_properties_not_business_json():
     client = _connected_client()
     client.configure_reference_streams(
@@ -616,6 +952,7 @@ def test_consume_all_filters_eos_and_preserves_callback_shape():
         ]
     )
     assert client.channel.basic_ack.call_count == 2
+    assert client._pending_deliveries == {}
 
 
 def test_failed_output_closure_uses_abort_control_type():

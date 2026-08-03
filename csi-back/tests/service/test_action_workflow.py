@@ -1,9 +1,11 @@
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.db import rabbitmq as rabbit_mod
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.schemas.action.execution import (
     NativeNodeExtensionSpec,
@@ -34,10 +36,18 @@ from app.service.node_executors.component import ComponentNodeExecutor
 
 
 class _FindOne:
-    def __init__(self, value=None, *, modified_count=0, updates=None):
+    def __init__(
+        self,
+        value=None,
+        *,
+        modified_count=0,
+        updates=None,
+        on_update=None,
+    ):
         self.value = value
         self.modified_count = modified_count
         self.updates = updates
+        self.on_update = on_update
 
     def __await__(self):
         async def resolve():
@@ -48,6 +58,8 @@ class _FindOne:
     async def update(self, payload):
         if self.updates is not None:
             self.updates.append(payload)
+        if self.on_update is not None:
+            self.on_update(payload)
         return SimpleNamespace(modified_count=self.modified_count)
 
 
@@ -64,6 +76,45 @@ class _FindMany:
 
 async def _node_definition(_definition_id):
     return SimpleNamespace(id="definition-1")
+
+
+def _allow_reference_abort_publish(monkeypatch):
+    """为 Reference ABORT 测试提供成功的发布租约。"""
+    claim = AsyncMock(return_value="publish-token")
+    renew = AsyncMock(return_value=True)
+    release = AsyncMock()
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_claim_reference_abort_publish",
+        claim,
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_renew_reference_abort_publish",
+        renew,
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_release_reference_abort_publish",
+        release,
+    )
+    return claim, renew, release
+
+
+def _mock_empty_reference_abort_publish_state(monkeypatch):
+    """模拟 Action 文档中不存在内部 ABORT 发布栅栏。"""
+    collection = SimpleNamespace(
+        find_one=AsyncMock(return_value={}),
+        update_one=AsyncMock(
+            return_value=SimpleNamespace(modified_count=0)
+        ),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+    return collection
 
 
 def test_action_node_uses_default_component_command():
@@ -618,12 +669,20 @@ async def test_retry_open_reference_abort_only_closes_after_all_confirms(
         save=AsyncMock(),
     )
     monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(
+            lambda _query: _FindMany([SimpleNamespace(id="action-1")])
+        ),
+    )
+    monkeypatch.setattr(
         ActionInstanceNodeModel,
         "find",
         staticmethod(lambda _query: _FindMany([node_instance])),
     )
     publish = AsyncMock(side_effect=[None, RuntimeError("confirm failed")])
     monkeypatch.setattr(action_service, "publish_reference_control", publish)
+    _, renew, release = _allow_reference_abort_publish(monkeypatch)
 
     assert await ActionInstanceService.retry_open_reference_aborts() == 0
     assert binding.control_status == "open"
@@ -634,10 +693,317 @@ async def test_retry_open_reference_abort_only_closes_after_all_confirms(
     assert await ActionInstanceService.retry_open_reference_aborts() == 1
     assert binding.control_status == "abort"
     node_instance.save.assert_awaited_once()
+    assert renew.await_count == 4
+    assert release.await_count == 2
     assert [call.kwargs["producer_id"] for call in publish.await_args_list] == [
         "producer-a",
         "producer-b",
     ]
+
+
+@pytest.mark.asyncio
+async def test_retry_abort_stops_remaining_producers_after_action_closes(
+    monkeypatch,
+) -> None:
+    binding = ReferenceQueueBinding(
+        edge_id="edge-a",
+        stream_id="stream-a",
+        queue_name="queue-a",
+        owner_action_id="action-1",
+        source_node_id="source",
+        source_port_id="out",
+        target_node_id="target",
+        target_port_id="in",
+        expected_producer_ids=["producer-a", "producer-b"],
+    )
+    node = SimpleNamespace(
+        id="source-instance",
+        action_id="action-1",
+        error_message="生产者失败",
+        reference_queue_bindings={binding.edge_id: binding},
+        save=AsyncMock(),
+    )
+    token = "publish-token"
+    raw_action = {
+        "_id": "action-1",
+        "status": ActionFlowStatusEnum.RUNNING.value,
+        action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD: False,
+        action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: token,
+        action_service.REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: (
+            datetime.now() + timedelta(seconds=30)
+        ),
+    }
+
+    def matches(query):
+        for field, expected in query.items():
+            actual = raw_action.get(field)
+            if not isinstance(expected, dict):
+                if actual != expected:
+                    return False
+                continue
+            if "$in" in expected and actual not in expected["$in"]:
+                return False
+            if "$ne" in expected and actual == expected["$ne"]:
+                return False
+            if "$gt" in expected and (
+                actual is None or actual <= expected["$gt"]
+            ):
+                return False
+        return True
+
+    async def update_one(query, update):
+        if not matches(query):
+            return SimpleNamespace(modified_count=0)
+        raw_action.update(update.get("$set", {}))
+        return SimpleNamespace(modified_count=1)
+
+    collection = SimpleNamespace(update_one=update_one)
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(
+            lambda _query: _FindMany([SimpleNamespace(id="action-1")])
+        ),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([node])),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_claim_reference_abort_publish",
+        AsyncMock(return_value=token),
+    )
+    release = AsyncMock()
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_release_reference_abort_publish",
+        release,
+    )
+    published_producers = []
+
+    async def publish_control(**kwargs):
+        published_producers.append(kwargs["producer_id"])
+        raw_action["status"] = ActionFlowStatusEnum.TIMEOUT.value
+        raw_action[action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD] = True
+
+    monkeypatch.setattr(
+        action_service,
+        "publish_reference_control",
+        publish_control,
+    )
+
+    assert await ActionInstanceService.retry_open_reference_aborts() == 0
+
+    assert published_producers == ["producer-a"]
+    assert binding.control_status == "open"
+    node.save.assert_not_awaited()
+    release.assert_awaited_once_with("action-1", token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    [ActionFlowStatusEnum.RUNNING, ActionFlowStatusEnum.PAUSED],
+)
+async def test_retry_open_reference_abort_scans_active_actions(
+    monkeypatch,
+    status,
+) -> None:
+    binding = ReferenceQueueBinding(
+        edge_id="edge-a",
+        stream_id="stream-a",
+        queue_name="queue-a",
+        owner_action_id="action-1",
+        source_node_id="source",
+        source_port_id="out",
+        target_node_id="target",
+        target_port_id="in",
+    )
+    node_instance = SimpleNamespace(
+        id="source-instance",
+        error_message="生产者失败",
+        reference_queue_bindings={"edge-a": binding},
+        save=AsyncMock(),
+    )
+    action_queries = []
+    node_queries = []
+
+    def find_actions(query):
+        action_queries.append(query)
+        statuses = query["status"]["$in"]
+        return _FindMany(
+            [SimpleNamespace(id="action-1")] if status in statuses else []
+        )
+
+    def find_nodes(query):
+        node_queries.append(query)
+        return _FindMany([node_instance])
+
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(find_actions),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(find_nodes),
+    )
+    publish = AsyncMock()
+    monkeypatch.setattr(action_service, "publish_reference_control", publish)
+    claim, renew, release = _allow_reference_abort_publish(monkeypatch)
+
+    assert await ActionInstanceService.retry_open_reference_aborts() == 1
+
+    assert action_queries == [
+        {
+            "status": {
+                "$in": [
+                    ActionFlowStatusEnum.RUNNING,
+                    ActionFlowStatusEnum.PAUSED,
+                ]
+            }
+        }
+    ]
+    assert node_queries[0]["action_id"] == {"$in": ["action-1"]}
+    publish.assert_awaited_once()
+    claim.assert_awaited_once_with("action-1")
+    renew.assert_awaited_once_with("action-1", "publish-token")
+    release.assert_awaited_once_with("action-1", "publish-token")
+    assert binding.control_status == "abort"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    [
+        ActionFlowStatusEnum.COMPLETED,
+        ActionFlowStatusEnum.FAILED,
+        ActionFlowStatusEnum.CANCELLED,
+        ActionFlowStatusEnum.TIMEOUT,
+        ActionFlowStatusEnum.STOPPED,
+    ],
+)
+async def test_retry_open_reference_abort_skips_terminal_actions(
+    monkeypatch,
+    status,
+) -> None:
+    node_find = MagicMock(return_value=_FindMany([]))
+
+    def find_actions(query):
+        statuses = query["status"]["$in"]
+        return _FindMany(
+            [SimpleNamespace(id="action-1")] if status in statuses else []
+        )
+
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(find_actions),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(node_find),
+    )
+    publish = AsyncMock()
+    monkeypatch.setattr(action_service, "publish_reference_control", publish)
+    claim, _, release = _allow_reference_abort_publish(monkeypatch)
+
+    assert await ActionInstanceService.retry_open_reference_aborts() == 0
+    node_find.assert_not_called()
+    publish.assert_not_awaited()
+    claim.assert_not_awaited()
+    release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_retry_reference_abort_does_not_publish_when_claim_is_lost(
+    monkeypatch,
+) -> None:
+    binding = ReferenceQueueBinding(
+        edge_id="edge-a",
+        stream_id="stream-a",
+        queue_name="queue-a",
+        owner_action_id="action-1",
+        source_node_id="source",
+        source_port_id="out",
+        target_node_id="target",
+        target_port_id="in",
+    )
+    node = SimpleNamespace(
+        id="source-instance",
+        action_id="action-1",
+        error_message="生产者失败",
+        reference_queue_bindings={"edge-a": binding},
+        save=AsyncMock(),
+    )
+    terminal_action = SimpleNamespace(
+        id="action-1",
+        status=ActionFlowStatusEnum.TIMEOUT,
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(
+            lambda _query: _FindMany([terminal_action])
+        ),
+    )
+    collection = SimpleNamespace(
+        update_one=AsyncMock(
+            return_value=SimpleNamespace(modified_count=0)
+        )
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([node])),
+    )
+    renew = AsyncMock(return_value=True)
+    release = AsyncMock()
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_renew_reference_abort_publish",
+        renew,
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_release_reference_abort_publish",
+        release,
+    )
+    publish = AsyncMock()
+    monkeypatch.setattr(action_service, "publish_reference_control", publish)
+
+    assert await ActionInstanceService.retry_open_reference_aborts() == 0
+
+    claim_query = collection.update_one.await_args.args[0]
+    assert claim_query["_id"] == terminal_action.id
+    assert claim_query["status"] == {
+        "$in": [
+            ActionFlowStatusEnum.RUNNING.value,
+            ActionFlowStatusEnum.PAUSED.value,
+        ]
+    }
+    assert claim_query[action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD] == {
+        "$ne": True
+    }
+    renew.assert_not_awaited()
+    publish.assert_not_awaited()
+    release.assert_not_awaited()
+    assert binding.control_status == "open"
+    node.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -831,6 +1197,7 @@ async def test_cascade_cancel_aborts_intermediate_reference_producer(
     )
     publish = AsyncMock()
     monkeypatch.setattr(action_service, "publish_reference_control", publish)
+    claim, renew, release = _allow_reference_abort_publish(monkeypatch)
 
     await ActionInstanceService.cancel_following_nodes(
         action.id,
@@ -853,20 +1220,329 @@ async def test_cascade_cancel_aborts_intermediate_reference_producer(
         reason="前置节点未成功完成，当前节点无法产生输出",
     )
     assert binding.control_status == "abort"
+    claim.assert_awaited_once_with(action.id)
+    renew.assert_awaited_once_with(action.id, "publish-token")
+    release.assert_awaited_once_with(action.id, "publish-token")
 
 
 @pytest.mark.asyncio
-async def test_failed_queue_cleanup_is_retried(monkeypatch):
+async def test_realtime_abort_updates_edge_but_does_not_publish_without_claim(
+    monkeypatch,
+) -> None:
+    binding = ReferenceQueueBinding(
+        edge_id="edge-reference",
+        stream_id="stream-reference",
+        queue_name="queue-reference",
+        owner_action_id="action-terminal",
+        source_node_id="source",
+        source_port_id="out",
+        target_node_id="target",
+        target_port_id="in",
+    )
+    source = SimpleNamespace(
+        id="source-instance",
+        node_id="source",
+        reference_queue_bindings={binding.edge_id: binding},
+        save=AsyncMock(),
+    )
+    target = SimpleNamespace(id="target-instance")
+    edge = SimpleNamespace(
+        id=binding.edge_id,
+        source="source",
+        target="target",
+        data_type="reference",
+    )
+    action = SimpleNamespace(
+        id="action-terminal",
+        status=ActionFlowStatusEnum.TIMEOUT,
+        execution_plan_snapshot=SimpleNamespace(edges=[edge]),
+    )
+    target_updates = []
+
+    def find_node(query):
+        if query.get("node_id") == "target":
+            return _FindOne(target)
+        return _FindOne(updates=target_updates)
+
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find_one",
+        staticmethod(find_node),
+    )
+    collection = SimpleNamespace(
+        update_one=AsyncMock(
+            return_value=SimpleNamespace(modified_count=0)
+        )
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+    renew = AsyncMock(return_value=True)
+    release = AsyncMock()
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_renew_reference_abort_publish",
+        renew,
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_release_reference_abort_publish",
+        release,
+    )
+    publish = AsyncMock()
+    monkeypatch.setattr(action_service, "publish_reference_control", publish)
+
+    await ActionInstanceService._abort_outgoing_edges(
+        action,
+        source,
+        "行动已进入终态",
+    )
+
+    assert target_updates == [
+        {"$addToSet": {"aborted_input_edge_ids": binding.edge_id}}
+    ]
+    claim_query = collection.update_one.await_args.args[0]
+    assert claim_query["_id"] == action.id
+    assert claim_query["status"] == {
+        "$in": [
+            ActionFlowStatusEnum.RUNNING.value,
+            ActionFlowStatusEnum.PAUSED.value,
+        ]
+    }
+    assert claim_query[action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD] == {
+        "$ne": True
+    }
+    renew.assert_not_awaited()
+    publish.assert_not_awaited()
+    release.assert_not_awaited()
+    assert binding.control_status == "open"
+    source.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_queue_cleanup_retry_includes_all_recoverable_actions(monkeypatch):
+    queries = []
+
+    def find_actions(query):
+        queries.append(query)
+        return _FindMany(
+            [
+                SimpleNamespace(
+                    id="terminal-pending",
+                    status=ActionFlowStatusEnum.TIMEOUT,
+                    reference_queue_lifecycle="closing",
+                ),
+                SimpleNamespace(
+                    id="terminal-failed",
+                    status=ActionFlowStatusEnum.FAILED,
+                    reference_queue_lifecycle="cleanup_failed",
+                ),
+                SimpleNamespace(
+                    id="second-terminal-failed",
+                    status=ActionFlowStatusEnum.FAILED,
+                    reference_queue_lifecycle="cleanup_failed",
+                ),
+                SimpleNamespace(
+                    id="unready-pending",
+                    status=ActionFlowStatusEnum.UNREADY,
+                    reference_queue_lifecycle="closing",
+                ),
+                SimpleNamespace(
+                    id="unready-failed",
+                    status=ActionFlowStatusEnum.UNREADY,
+                    reference_queue_lifecycle="cleanup_failed",
+                ),
+            ]
+        )
+
     monkeypatch.setattr(
         ActionInstanceModel,
         "find",
-        staticmethod(
-            lambda _query: _FindMany(
-                [SimpleNamespace(id="action-a"), SimpleNamespace(id="action-b")]
-            )
-        ),
+        staticmethod(find_actions),
     )
-    cleanup = AsyncMock(side_effect=[True, False])
+    cleanup = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "cleanup_action_queues",
+        cleanup,
+    )
+
+    threshold_before = datetime.now() - timedelta(seconds=60)
+    assert await ActionInstanceService.retry_failed_queue_cleanup() == 5
+    threshold_after = datetime.now() - timedelta(seconds=60)
+    assert [call.args[0] for call in cleanup.await_args_list] == [
+        "terminal-pending",
+        "terminal-failed",
+        "second-terminal-failed",
+        "unready-pending",
+        "unready-failed",
+    ]
+    assert queries == [
+        {
+            "$or": [
+                {
+                    "status": {
+                        "$in": [
+                            ActionFlowStatusEnum.COMPLETED,
+                            ActionFlowStatusEnum.FAILED,
+                            ActionFlowStatusEnum.CANCELLED,
+                            ActionFlowStatusEnum.TIMEOUT,
+                            ActionFlowStatusEnum.STOPPED,
+                        ]
+                    },
+                    "queue_cleanup_state": "failed",
+                },
+                {
+                    "status": {
+                        "$in": [
+                            ActionFlowStatusEnum.COMPLETED,
+                            ActionFlowStatusEnum.FAILED,
+                            ActionFlowStatusEnum.CANCELLED,
+                            ActionFlowStatusEnum.TIMEOUT,
+                            ActionFlowStatusEnum.STOPPED,
+                        ]
+                    },
+                    "queue_cleanup_state": "pending",
+                },
+                {
+                    "status": ActionFlowStatusEnum.UNREADY,
+                    "reference_queue_lifecycle": {
+                        "$in": ["closing", "cleanup_failed"]
+                    },
+                    "queue_cleanup_state": {
+                        "$in": ["pending", "failed"]
+                    },
+                },
+                {
+                    "status": ActionFlowStatusEnum.READY,
+                    "reference_queue_lifecycle": "provisioning",
+                    "queue_cleanup_state": "pending",
+                    "updated_at": {
+                        "$lte": queries[0]["$or"][3]["updated_at"]["$lte"]
+                    },
+                    "$or": [
+                        {
+                            action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: (
+                                None
+                            )
+                        },
+                        {
+                            action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: {
+                                "$exists": False
+                            }
+                        },
+                        {
+                            action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: (
+                                None
+                            )
+                        },
+                        {
+                            action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                                "$exists": False
+                            }
+                        },
+                        {
+                            action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                                "$lte": queries[0]["$or"][3]["$or"][4][
+                                    action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD
+                                ]["$lte"]
+                            }
+                        },
+                    ],
+                },
+            ],
+        }
+    ]
+    threshold = queries[0]["$or"][3]["updated_at"]["$lte"]
+    assert threshold_before <= threshold <= threshold_after
+
+
+@pytest.mark.asyncio
+async def test_queue_cleanup_recovers_only_stale_provisioning(monkeypatch):
+    now = datetime.now()
+    stale = SimpleNamespace(
+        id="stale-provisioning",
+        status=ActionFlowStatusEnum.READY,
+        reference_queue_lifecycle="provisioning",
+        queue_cleanup_state="pending",
+        updated_at=now - timedelta(seconds=61),
+    )
+    fresh = SimpleNamespace(
+        id="fresh-provisioning",
+        status=ActionFlowStatusEnum.READY,
+        reference_queue_lifecycle="provisioning",
+        queue_cleanup_state="pending",
+        updated_at=now - timedelta(seconds=30),
+    )
+    leased = SimpleNamespace(
+        id="leased-provisioning",
+        status=ActionFlowStatusEnum.READY,
+        reference_queue_lifecycle="provisioning",
+        queue_cleanup_state="pending",
+        updated_at=now - timedelta(seconds=61),
+    )
+    setattr(
+        leased,
+        action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD,
+        "active-token",
+    )
+    setattr(
+        leased,
+        action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD,
+        now + timedelta(seconds=30),
+    )
+    thresholds = []
+    lease_cutoffs = []
+
+    def find_actions(query):
+        provisioning_query = query["$or"][3]
+        threshold = provisioning_query["updated_at"]["$lte"]
+        lease_cutoff = provisioning_query["$or"][4][
+            action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD
+        ]["$lte"]
+        thresholds.append(threshold)
+        lease_cutoffs.append(lease_cutoff)
+        return _FindMany(
+            [
+                action
+                for action in [stale, fresh, leased]
+                if action.updated_at <= threshold
+                and (
+                    getattr(
+                        action,
+                        action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD,
+                        None,
+                    )
+                    is None
+                    or getattr(
+                        action,
+                        action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD,
+                        None,
+                    )
+                    <= lease_cutoff
+                )
+            ]
+        )
+
+    collection = SimpleNamespace(
+        update_one=AsyncMock(
+            return_value=SimpleNamespace(modified_count=1)
+        )
+    )
+
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(find_actions),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+    cleanup = AsyncMock(return_value=True)
     monkeypatch.setattr(
         ActionInstanceService,
         "cleanup_action_queues",
@@ -874,10 +1550,659 @@ async def test_failed_queue_cleanup_is_retried(monkeypatch):
     )
 
     assert await ActionInstanceService.retry_failed_queue_cleanup() == 1
-    assert [call.args[0] for call in cleanup.await_args_list] == [
-        "action-a",
-        "action-b",
+
+    assert stale.updated_at <= thresholds[0] < fresh.updated_at
+    assert lease_cutoffs[0] < getattr(
+        leased,
+        action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD,
+    )
+    cleanup.assert_awaited_once_with(stale.id)
+    claim_query, claim_update = collection.update_one.await_args.args
+    assert claim_query["_id"] == stale.id
+    assert claim_query["status"] == ActionFlowStatusEnum.READY.value
+    assert claim_query["reference_queue_lifecycle"] == "provisioning"
+    assert claim_query["queue_cleanup_state"] == "pending"
+    assert claim_query["updated_at"] == {"$lte": thresholds[0]}
+    expected_lease_filter = [
+        {action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: None},
+        {
+            action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD: {
+                "$exists": False
+            }
+        },
+        {action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: None},
+        {
+            action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                "$exists": False
+            }
+        },
+        {
+            action_service.REFERENCE_QUEUE_PROVISION_EXPIRES_FIELD: {
+                "$lte": lease_cutoffs[0]
+            }
+        },
     ]
+    assert claim_query["$or"] == expected_lease_filter
+    assert claim_update["$set"]["status"] == ActionFlowStatusEnum.UNREADY.value
+    assert claim_update["$set"]["reference_queue_lifecycle"] == "closing"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("deleted", "expected_cleanup_state", "expected_lifecycle"),
+    [
+        (True, "completed", "cleaned"),
+        (False, "failed", "cleanup_failed"),
+    ],
+)
+async def test_cleanup_action_queues_updates_managed_lifecycle(
+    monkeypatch,
+    deleted,
+    expected_cleanup_state,
+    expected_lifecycle,
+):
+    binding = ReferenceQueueBinding(
+        edge_id="edge-a",
+        stream_id="stream-a",
+        queue_name="queue-a",
+        owner_action_id="action-1",
+        source_node_id="source",
+        source_port_id="out",
+        target_node_id="target",
+        target_port_id="in",
+    )
+    action = SimpleNamespace(id="action-1")
+    node = SimpleNamespace(reference_queue_bindings={"edge-a": binding})
+    updates = []
+    find_results = iter(
+        [
+            _FindOne(action),
+            _FindOne(updates=updates),
+            _FindOne(updates=updates),
+        ]
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        staticmethod(lambda _query: next(find_results)),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([node])),
+    )
+    delete = AsyncMock(return_value=deleted)
+    monkeypatch.setattr(action_service, "delete_queue", delete)
+    _mock_empty_reference_abort_publish_state(monkeypatch)
+
+    assert (
+        await ActionInstanceService.cleanup_action_queues("action-1")
+        is deleted
+    )
+
+    delete.assert_awaited_once_with("queue-a")
+    assert updates[0]["$set"]["reference_queue_lifecycle"] == "closing"
+    assert updates[1]["$set"]["queue_cleanup_state"] == (
+        expected_cleanup_state
+    )
+    assert updates[1]["$set"]["reference_queue_lifecycle"] == (
+        expected_lifecycle
+    )
+
+
+@pytest.mark.asyncio
+async def test_terminal_cleanup_waits_for_abort_publish_release_before_delete(
+    monkeypatch,
+):
+    action = SimpleNamespace(
+        id="action-1",
+        status=ActionFlowStatusEnum.RUNNING,
+        reference_queue_lifecycle="active",
+        queue_cleanup_state="pending",
+    )
+    raw_action = {
+        "_id": action.id,
+        "status": ActionFlowStatusEnum.RUNNING.value,
+    }
+    binding = ReferenceQueueBinding(
+        edge_id="edge-a",
+        stream_id="stream-a",
+        queue_name="queue-a",
+        owner_action_id=action.id,
+        source_node_id="source",
+        source_port_id="out",
+        target_node_id="target",
+        target_port_id="in",
+    )
+    node = SimpleNamespace(
+        id="source-instance",
+        action_id=action.id,
+        error_message="生产者失败",
+        reference_queue_bindings={binding.edge_id: binding},
+        save=AsyncMock(),
+    )
+    events = []
+    publish_started = asyncio.Event()
+    allow_publish = asyncio.Event()
+    publish_closed = asyncio.Event()
+    missing = object()
+
+    def matches(document, query):
+        for field, expected in query.items():
+            if field == "$or":
+                if not any(matches(document, branch) for branch in expected):
+                    return False
+                continue
+            actual = document.get(field, missing)
+            if not isinstance(expected, dict):
+                if actual is missing or actual != expected:
+                    return False
+                continue
+            for operator, value in expected.items():
+                if operator == "$in" and actual not in value:
+                    return False
+                if operator == "$ne" and actual is not missing and actual == value:
+                    return False
+                if operator == "$exists" and (actual is not missing) != value:
+                    return False
+                if operator == "$lte" and (
+                    actual is missing or actual is None or actual > value
+                ):
+                    return False
+                if operator == "$gt" and (
+                    actual is missing or actual is None or actual <= value
+                ):
+                    return False
+        return True
+
+    def update_action(payload):
+        for field, value in payload.get("$set", {}).items():
+            setattr(action, field, value)
+
+    def find_actions(query):
+        statuses = query["status"]["$in"]
+        return _FindMany([action] if action.status in statuses else [])
+
+    def find_action(_query):
+        return _FindOne(
+            action,
+            modified_count=1,
+            on_update=update_action,
+        )
+
+    async def update_raw_action(query, update):
+        matched = matches(raw_action, query)
+        if not matched:
+            return SimpleNamespace(modified_count=0)
+        previous_token = raw_action.get(
+            action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD
+        )
+        raw_action.update(update.get("$set", {}))
+        if update.get("$set", {}).get(
+            action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD
+        ) is True:
+            events.append("close")
+            publish_closed.set()
+        for field in update.get("$unset", {}):
+            raw_action.pop(field, None)
+        current_token = raw_action.get(
+            action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD
+        )
+        if previous_token is None and current_token is not None:
+            events.append("claim")
+        if previous_token is not None and current_token is None:
+            events.append("release")
+        return SimpleNamespace(modified_count=1)
+
+    async def find_raw_action(query, _projection=None):
+        return dict(raw_action) if matches(raw_action, query) else None
+
+    collection = SimpleNamespace(
+        update_one=update_raw_action,
+        find_one=find_raw_action,
+    )
+
+    def find_nodes(query):
+        action_filter = query.get("action_id")
+        if action_filter == action.id or action_filter == {"$in": [action.id]}:
+            return _FindMany([node])
+        return _FindMany([])
+
+    async def publish_control(**_kwargs):
+        events.append("publish-start")
+        publish_started.set()
+        await allow_publish.wait()
+        events.append("publish-finished")
+
+    async def delete_queue(_queue_name):
+        events.append("delete")
+        return True
+
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find",
+        staticmethod(find_actions),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        staticmethod(find_action),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(find_nodes),
+    )
+    monkeypatch.setattr(
+        action_service,
+        "publish_reference_control",
+        publish_control,
+    )
+    monkeypatch.setattr(action_service, "delete_queue", delete_queue)
+
+    retry_task = asyncio.create_task(
+        ActionInstanceService.retry_open_reference_aborts()
+    )
+    await asyncio.wait_for(publish_started.wait(), timeout=1)
+    assert raw_action[action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD]
+
+    action.status = ActionFlowStatusEnum.TIMEOUT
+    action.reference_queue_lifecycle = "closing"
+    raw_action["status"] = ActionFlowStatusEnum.TIMEOUT.value
+    cleanup_task = asyncio.create_task(
+        ActionInstanceService.cleanup_action_queues(action.id)
+    )
+    await asyncio.wait_for(publish_closed.wait(), timeout=1)
+    assert "delete" not in events
+
+    allow_publish.set()
+    assert await asyncio.wait_for(retry_task, timeout=1) == 1
+    assert await asyncio.wait_for(cleanup_task, timeout=1) is True
+
+    assert events.index("close") < events.index("publish-finished")
+    assert events.index("publish-finished") < events.index("release")
+    assert events.index("release") < events.index("delete")
+    assert binding.control_status == "abort"
+    assert action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD not in raw_action
+    assert action.reference_queue_lifecycle == "cleaned"
+    assert action.queue_cleanup_state == "completed"
+    assert raw_action[action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD] is True
+    assert (
+        await ActionInstanceService._claim_reference_abort_publish(action.id)
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_terminal_cleanup_waits_for_queue_provision_before_delete(
+    monkeypatch,
+):
+    action = SimpleNamespace(
+        id="action-provisioning",
+        status=ActionFlowStatusEnum.READY,
+        reference_queue_lifecycle="provisioning",
+        queue_cleanup_state="pending",
+    )
+    bindings = {
+        queue_name: ReferenceQueueBinding(
+            edge_id=f"edge-{index}",
+            stream_id=f"stream-{index}",
+            queue_name=queue_name,
+            owner_action_id=action.id,
+            source_node_id="source",
+            source_port_id=f"out-{index}",
+            target_node_id="target",
+            target_port_id=f"in-{index}",
+        )
+        for index, queue_name in enumerate(["queue-1", "queue-2"], start=1)
+    }
+    node = SimpleNamespace(reference_queue_bindings=bindings)
+    raw_action = {
+        "_id": action.id,
+        "status": ActionFlowStatusEnum.READY.value,
+        "reference_queue_lifecycle": "provisioning",
+    }
+    events = []
+    declared_queues = set()
+    first_declare_started = asyncio.Event()
+    allow_first_declare = asyncio.Event()
+    publish_closed = asyncio.Event()
+    missing = object()
+
+    def matches(document, query):
+        for field, expected in query.items():
+            if field == "$or":
+                if not any(matches(document, branch) for branch in expected):
+                    return False
+                continue
+            actual = document.get(field, missing)
+            if not isinstance(expected, dict):
+                if actual is missing or actual != expected:
+                    return False
+                continue
+            for operator, value in expected.items():
+                if operator == "$in" and actual not in value:
+                    return False
+                if operator == "$ne" and actual is not missing and actual == value:
+                    return False
+                if operator == "$exists" and (actual is not missing) != value:
+                    return False
+                if operator == "$lte" and (
+                    actual is missing or actual is None or actual > value
+                ):
+                    return False
+                if operator == "$gt" and (
+                    actual is missing or actual is None or actual <= value
+                ):
+                    return False
+        return True
+
+    async def update_raw_action(query, update):
+        if not matches(raw_action, query):
+            return SimpleNamespace(modified_count=0)
+        previous_token = raw_action.get(
+            action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD
+        )
+        raw_action.update(update.get("$set", {}))
+        if update.get("$set", {}).get(
+            action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD
+        ) is True:
+            events.append("close")
+            publish_closed.set()
+        for field in update.get("$unset", {}):
+            raw_action.pop(field, None)
+        current_token = raw_action.get(
+            action_service.REFERENCE_QUEUE_PROVISION_TOKEN_FIELD
+        )
+        if previous_token is None and current_token is not None:
+            events.append("provision-claim")
+        if previous_token is not None and current_token is None:
+            events.append("provision-release")
+        return SimpleNamespace(modified_count=1)
+
+    async def find_raw_action(query, _projection=None):
+        return dict(raw_action) if matches(raw_action, query) else None
+
+    collection = SimpleNamespace(
+        update_one=update_raw_action,
+        find_one=find_raw_action,
+    )
+
+    def update_action(payload):
+        for field, value in payload.get("$set", {}).items():
+            setattr(action, field, value)
+
+    def find_action(_query):
+        return _FindOne(
+            action,
+            modified_count=1,
+            on_update=update_action,
+        )
+
+    async def declare_queue(queue_name, **_kwargs):
+        events.append(f"declare-start:{queue_name}")
+        if queue_name == "queue-1":
+            first_declare_started.set()
+            await allow_first_declare.wait()
+        declared_queues.add(queue_name)
+        events.append(f"declare-finished:{queue_name}")
+
+    async def close_channel():
+        events.append("channel-close")
+
+    channel = SimpleNamespace(
+        declare_queue=declare_queue,
+        close=close_channel,
+        is_closed=False,
+    )
+    connection = SimpleNamespace(channel=AsyncMock(return_value=channel))
+    monkeypatch.setattr(rabbit_mod, "rabbitmq_connection", connection)
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        staticmethod(find_action),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([node])),
+    )
+
+    async def delete_queue(queue_name):
+        events.append(f"delete:{queue_name}")
+        declared_queues.discard(queue_name)
+        return True
+
+    monkeypatch.setattr(action_service, "delete_queue", delete_queue)
+
+    async def run_provision():
+        token = await ActionInstanceService._claim_reference_queue_provision(
+            action.id
+        )
+        assert token is not None
+        try:
+            return await action_service.provision_reference_queues(
+                list(bindings),
+                before_declare=lambda: (
+                    ActionInstanceService._renew_reference_queue_provision(
+                        action.id,
+                        token,
+                    )
+                ),
+                declare_timeout_seconds=1,
+            )
+        finally:
+            await ActionInstanceService._release_reference_queue_provision(
+                action.id,
+                token,
+            )
+
+    provision_task = asyncio.create_task(run_provision())
+    await asyncio.wait_for(first_declare_started.wait(), timeout=1)
+    action.status = ActionFlowStatusEnum.TIMEOUT
+    action.reference_queue_lifecycle = "closing"
+    raw_action["status"] = ActionFlowStatusEnum.TIMEOUT.value
+    raw_action["reference_queue_lifecycle"] = "closing"
+
+    cleanup_task = asyncio.create_task(
+        ActionInstanceService.cleanup_action_queues(action.id)
+    )
+    await asyncio.wait_for(publish_closed.wait(), timeout=1)
+    assert not any(event.startswith("delete:") for event in events)
+
+    allow_first_declare.set()
+    with pytest.raises(RuntimeError, match="预声明租约已失效"):
+        await asyncio.wait_for(provision_task, timeout=1)
+    assert await asyncio.wait_for(cleanup_task, timeout=1) is True
+
+    assert "declare-start:queue-2" not in events
+    assert events.index("close") < events.index("provision-release")
+    first_delete = min(
+        index for index, event in enumerate(events) if event.startswith("delete:")
+    )
+    assert events.index("provision-release") < first_delete
+    assert declared_queues == set()
+    assert raw_action[action_service.REFERENCE_ABORT_PUBLISH_CLOSED_FIELD] is True
+    assert action.reference_queue_lifecycle == "cleaned"
+    assert action.queue_cleanup_state == "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "renew_method_name",
+    [
+        "_renew_reference_queue_provision",
+        "_renew_reference_abort_publish",
+    ],
+)
+async def test_reference_lease_renew_rejects_stale_mongo_response(
+    monkeypatch,
+    renew_method_name,
+):
+    """验证慢 Mongo 续租响应不会授权后续 RabbitMQ 操作。"""
+    started_at = datetime.now()
+    clock = SimpleNamespace(
+        now=MagicMock(
+            side_effect=[
+                started_at,
+                started_at + timedelta(seconds=20),
+            ]
+        )
+    )
+    collection = SimpleNamespace(
+        update_one=AsyncMock(
+            return_value=SimpleNamespace(modified_count=1)
+        )
+    )
+    monkeypatch.setattr(action_service, "datetime", clock)
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+
+    renew = getattr(ActionInstanceService, renew_method_name)
+    assert await renew("action-1", "lease-token") is False
+    collection.update_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_does_not_wait_for_expired_abort_publish_token(
+    monkeypatch,
+):
+    action = SimpleNamespace(
+        id="action-1",
+    )
+    collection = SimpleNamespace(
+        find_one=AsyncMock(
+            return_value={
+                action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: (
+                    "expired-token"
+                ),
+                action_service.REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: (
+                    datetime.now() - timedelta(seconds=1)
+                ),
+            }
+        ),
+        update_one=AsyncMock(
+            return_value=SimpleNamespace(modified_count=1)
+        ),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "get_motor_collection",
+        staticmethod(lambda: collection),
+    )
+
+    await ActionInstanceService._wait_for_reference_abort_publish(action)
+
+    collection.find_one.assert_awaited_once_with(
+        {"_id": action.id},
+        {
+            action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: 1,
+            action_service.REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: 1,
+        },
+    )
+    collection.update_one.assert_awaited_once_with(
+        {
+            "_id": action.id,
+            action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: (
+                "expired-token"
+            ),
+        },
+        {
+            "$unset": {
+                action_service.REFERENCE_ABORT_PUBLISH_TOKEN_FIELD: "",
+                action_service.REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD: "",
+            }
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_start_accepts_action_with_active_reference_queues(monkeypatch):
+    action = SimpleNamespace(
+        id="action-1",
+        implementation_period=60,
+        reference_queue_lifecycle="active",
+    )
+    updates = []
+    find_results = iter(
+        [
+            _FindOne(action),
+            _FindOne(modified_count=1, updates=updates),
+            _FindOne(action),
+        ]
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        staticmethod(lambda _query: next(find_results)),
+    )
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([])),
+    )
+    monkeypatch.setattr(
+        action_service,
+        "publish_action_status_observation",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "check_action_finished",
+        AsyncMock(return_value=False),
+    )
+
+    await ActionInstanceService.start("action-1")
+
+    assert updates[0]["$set"]["status"] == ActionFlowStatusEnum.RUNNING
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "lifecycle",
+    ["provisioning", "closing", "cleanup_failed", "cleaned"],
+)
+async def test_start_rejects_action_until_queues_are_active(
+    monkeypatch,
+    lifecycle,
+):
+    action = SimpleNamespace(
+        id="action-1",
+        implementation_period=60,
+        reference_queue_lifecycle=lifecycle,
+    )
+    find_one = MagicMock(return_value=_FindOne(action))
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        staticmethod(find_one),
+    )
+    node_find = MagicMock(return_value=_FindMany([]))
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find",
+        staticmethod(node_find),
+    )
+
+    await ActionInstanceService.start("action-1")
+
+    find_one.assert_called_once_with(
+        {"_id": "action-1", "status": ActionFlowStatusEnum.READY}
+    )
+    node_find.assert_not_called()
 
 
 @pytest.mark.asyncio

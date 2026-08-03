@@ -68,6 +68,13 @@ class ActionInstanceModel(Document):
         "failed",
         "cancelled",
     ] = Field(default="none", description="Reference 跨运行时交接状态")
+    reference_queue_lifecycle: Literal[
+        "provisioning",
+        "active",
+        "closing",
+        "cleanup_failed",
+        "cleaned",
+    ] = Field(default="provisioning", description="Reference 队列生命周期状态")
     queue_cleanup_state: Literal[
         "pending",
         "completed",
