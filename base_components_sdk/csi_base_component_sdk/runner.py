@@ -10,6 +10,7 @@ import os
 import signal
 import sys
 import threading
+import time
 import traceback
 import uuid
 from datetime import datetime, timezone
@@ -30,6 +31,10 @@ from .context import (
 )
 from .signals import ComponentSignalReporter
 from .telemetry import LogTransport, OutputCapture, TransportLogHandler
+
+
+_HEARTBEAT_RETRY_INITIAL_SECONDS = 1.0
+_HEARTBEAT_RETRY_MAX_SECONDS = 5.0
 
 
 class _LocalClient:
@@ -127,14 +132,41 @@ def _heartbeat_loop(
     interval: int,
     stop: threading.Event,
     original_stderr_fd: int | None,
+    *,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> None:
-    while not stop.wait(interval):
+    """按单调时钟固定节拍发送心跳，并在失败后快速重试。
+
+    常规心跳始终锚定线程启动时的单调时钟，不把请求耗时累加到下一次
+    心跳间隔。失败重试会插入常规节拍之间，并在成功后恢复固定节拍。
+    """
+    interval_seconds = max(float(interval), 1.0)
+    retry_delay = _HEARTBEAT_RETRY_INITIAL_SECONDS
+    next_regular_at = monotonic() + interval_seconds
+    next_attempt_at = next_regular_at
+
+    while not stop.wait(max(next_attempt_at - monotonic(), 0.0)):
+        succeeded = False
         try:
             response = client.heartbeat(context._progress, context._progress_message)
+            succeeded = True
             if response.get("command") == "cancel":
                 context._cancelled.set()
         except Exception as exc:
             _diagnostic(f"心跳上报失败: {exc}", original_stderr_fd)
+
+        now = monotonic()
+        if next_regular_at <= now:
+            elapsed_intervals = int(
+                (now - next_regular_at) // interval_seconds
+            ) + 1
+            next_regular_at += elapsed_intervals * interval_seconds
+        if succeeded:
+            retry_delay = _HEARTBEAT_RETRY_INITIAL_SECONDS
+            next_attempt_at = next_regular_at
+            continue
+        next_attempt_at = min(now + retry_delay, next_regular_at)
+        retry_delay = min(retry_delay * 2, _HEARTBEAT_RETRY_MAX_SECONDS)
 
 
 def _local_context(

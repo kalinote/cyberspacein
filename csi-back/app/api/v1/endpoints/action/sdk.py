@@ -219,11 +219,40 @@ async def heartbeat(component_run_id: str, data: SDKHeartbeatRequest):
             )
         )
     now = datetime.now()
-    component_run.progress = data.progress
-    component_run.last_heartbeat_at = now
-    component_run.lease_expires_at = now + timedelta(seconds=settings.COMPONENT_LEASE_SECONDS)
-    component_run.updated_at = now
-    await component_run.save()
+    lease_expires_at = now + timedelta(seconds=settings.COMPONENT_LEASE_SECONDS)
+    claim = await ComponentRunModel.find_one(
+        {
+            "_id": component_run_id,
+            "status": {
+                "$in": [
+                    ComponentRunStatusEnum.DISPATCHED,
+                    ComponentRunStatusEnum.RUNNING,
+                ]
+            },
+        }
+    ).update(
+        {
+            "$set": {
+                "progress": data.progress,
+                "last_heartbeat_at": now,
+                "lease_expires_at": lease_expires_at,
+                "updated_at": now,
+            }
+        }
+    )
+    if not claim or getattr(claim, "modified_count", 0) != 1:
+        current = await ComponentRunModel.find_one({"_id": component_run_id})
+        return ApiResponseSchema.success(
+            data=SDKHeartbeatResponse(
+                command="cancel",
+                lease_expires_at=(
+                    getattr(current, "lease_expires_at", None) or now
+                ).replace(tzinfo=timezone.utc).isoformat(),
+            )
+        )
+    component_run = await ComponentRunModel.find_one({"_id": component_run_id})
+    if component_run is None:
+        return ApiResponseSchema.error(code=240417, message="组件运行实例不存在")
     active_runs = await ComponentRunModel.find(
         {"node_instance_id": component_run.node_instance_id}
     ).to_list()
@@ -243,9 +272,7 @@ async def heartbeat(component_run_id: str, data: SDKHeartbeatRequest):
     return ApiResponseSchema.success(
         data=SDKHeartbeatResponse(
             command="cancel" if component_run.cancel_requested else "continue",
-            lease_expires_at=component_run.lease_expires_at.replace(
-                tzinfo=timezone.utc
-            ).isoformat(),
+            lease_expires_at=lease_expires_at.replace(tzinfo=timezone.utc).isoformat(),
             component_token=refreshed,
         )
     )

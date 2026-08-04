@@ -26,20 +26,46 @@ class BackendClient:
         self.api_base_url = api_base_url.rstrip("/")
         self.component_run_id = component_run_id
         self.attempt: int | None = None
+        self._token: str | None = None
         self._session = requests.Session()
         self._lock = threading.Lock()
+        self._heartbeat_session = requests.Session()
+        self._heartbeat_lock = threading.Lock()
 
     def _url(self, suffix: str) -> str:
         return f"{self.api_base_url}/action/sdk/{self.component_run_id}/{suffix}"
 
-    def _request(self, method: str, suffix: str, **kwargs) -> dict[str, Any]:
-        with self._lock:
-            response = self._session.request(method, self._url(suffix), **kwargs)
+    def _request_with_channel(
+        self,
+        session: requests.Session,
+        lock: threading.Lock,
+        method: str,
+        suffix: str,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """通过指定的独立会话和锁发送后端请求。"""
+        headers = dict(kwargs.pop("headers", {}) or {})
+        token = self._token
+        if token and not any(key.lower() == "authorization" for key in headers):
+            headers["Authorization"] = f"Bearer {token}"
+        if headers:
+            kwargs["headers"] = headers
+        with lock:
+            response = session.request(method, self._url(suffix), **kwargs)
         response.raise_for_status()
         body = response.json()
         if body.get("code") != 0:
             raise RuntimeError(body.get("message") or f"CSI API {suffix} 调用失败")
         return body.get("data") or {}
+
+    def _request(self, method: str, suffix: str, **kwargs) -> dict[str, Any]:
+        return self._request_with_channel(
+            self._session,
+            self._lock,
+            method,
+            suffix,
+            **kwargs,
+        )
 
     def exchange_token(self, bootstrap: str) -> str:
         data = self._request(
@@ -59,7 +85,7 @@ class BackendClient:
         return token
 
     def set_token(self, token: str) -> None:
-        self._session.headers.update({"Authorization": f"Bearer {token}"})
+        self._token = token
 
     def initialize(self) -> dict[str, Any]:
         return self._request(
@@ -69,7 +95,9 @@ class BackendClient:
         )
 
     def heartbeat(self, progress: float, message: str) -> dict[str, Any]:
-        data = self._request(
+        data = self._request_with_channel(
+            self._heartbeat_session,
+            self._heartbeat_lock,
             "POST",
             "heartbeat",
             json={"progress": progress, "message": message},
@@ -138,4 +166,7 @@ class BackendClient:
         raise RuntimeError(f"组件信号提交失败: {last_error}")
 
     def close(self) -> None:
-        self._session.close()
+        with self._heartbeat_lock:
+            self._heartbeat_session.close()
+        with self._lock:
+            self._session.close()

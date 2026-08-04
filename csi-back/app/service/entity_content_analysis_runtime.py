@@ -838,7 +838,7 @@ class EntityContentAnalysisRuntimeWorker:
                 if source.stream_id in ended:
                     continue
                 try:
-                    delivery = await rabbitmq.get_reference_message(
+                    delivery = await rabbitmq.get_reference_logical_message(
                         source.queue_name
                     )
                 except Exception as exc:

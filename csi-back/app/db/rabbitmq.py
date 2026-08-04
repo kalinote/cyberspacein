@@ -5,7 +5,8 @@ import json
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Any, Literal, Sequence
+from uuid import uuid4
 
 import aio_pika
 from aio_pika.abc import (
@@ -18,6 +19,13 @@ from pamqp.commands import Basic
 from urllib.parse import quote
 
 from app.core.config import settings
+from app.db.rabbitmq_fragmentation import (
+    FRAGMENT_MESSAGE_TYPE,
+    FragmentAssembler,
+    FragmentSettings,
+    encode_fragments,
+    parse_fragment,
+)
 from app.schemas.action.reference import (
     REFERENCE_ABORT_TYPE,
     REFERENCE_CONTROL_CONTENT_TYPE,
@@ -30,6 +38,7 @@ from app.schemas.action.reference import (
 logger = logger.bind(name=__name__)
 
 rabbitmq_connection: aio_pika.Connection = None
+fragment_settings = FragmentSettings.from_env()
 
 async def _get_reference_queue(
     channel: AbstractChannel,
@@ -53,19 +62,62 @@ class ReferenceMessageDelivery:
     channel: AbstractChannel
     message: AbstractIncomingMessage
     owns_channel: bool = True
+    physical_messages: tuple[AbstractIncomingMessage, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.physical_messages:
+            self.physical_messages = (self.message,)
 
     async def ack(self) -> None:
         """确认源消息。"""
-        await self.message.ack()
+        for message in self.physical_messages:
+            if not getattr(message, "processed", False):
+                await message.ack()
 
     async def nack(self, *, requeue: bool = True) -> None:
         """拒绝源消息并按需重新入队。"""
-        await self.message.nack(requeue=requeue)
+        for message in self.physical_messages:
+            if not getattr(message, "processed", False):
+                await message.nack(requeue=requeue)
 
     async def close(self) -> None:
         """关闭消息所属通道。"""
         if self.owns_channel and not self.channel.is_closed:
             await self.channel.close()
+
+
+class _LogicalIncomingMessage:
+    """向后端原生节点暴露重组后的完整消息属性。"""
+
+    def __init__(
+        self,
+        body: bytes,
+        message_id: str,
+        source: AbstractIncomingMessage,
+        physical_messages: tuple[AbstractIncomingMessage, ...],
+    ):
+        self.body = body
+        self.message_id = message_id
+        self._source = source
+        self._physical_messages = physical_messages
+        self.type = None
+        self.headers = {
+            key: value
+            for key, value in dict(source.headers or {}).items()
+            if not str(key).startswith("x-csi-fragment-")
+            and not str(key).startswith("x-csi-original-")
+        }
+
+    @property
+    def processed(self) -> bool:
+        """仅当全部物理分片均已确认或拒绝时视为已处理。"""
+        return all(
+            getattr(message, "processed", False)
+            for message in self._physical_messages
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._source, name)
 
 
 @dataclass
@@ -75,20 +127,62 @@ class ReferenceQueueConsumer:
     channel: AbstractChannel
     iterator: AbstractQueueIterator
     _closed: bool = False
+    assembler: FragmentAssembler[AbstractIncomingMessage] | None = None
 
     async def receive(self) -> ReferenceMessageDelivery | None:
         """等待下一条消息，消费者关闭后返回 None。"""
         if self._closed:
             return None
-        try:
-            message = await self.iterator.__anext__()
-        except StopAsyncIteration:
-            return None
-        return ReferenceMessageDelivery(
-            channel=self.channel,
-            message=message,
-            owns_channel=False,
-        )
+        if self.assembler is None:
+            self.assembler = FragmentAssembler(fragment_settings)
+        while True:
+            try:
+                message = await self.iterator.__anext__()
+            except StopAsyncIteration:
+                return None
+            control_kind = get_reference_control_kind(message)
+            if control_kind is not None:
+                if self.assembler.has_pending and control_kind == "abort":
+                    pending = self.assembler.discard_pending()
+                    return ReferenceMessageDelivery(
+                        channel=self.channel,
+                        message=message,
+                        owns_channel=False,
+                        physical_messages=(*pending, message),
+                    )
+                return ReferenceMessageDelivery(
+                    channel=self.channel,
+                    message=message,
+                    owns_channel=False,
+                )
+
+            fragment = parse_fragment(
+                message.body,
+                message.type,
+                message.headers,
+                fragment_settings,
+            )
+            if fragment is None:
+                return ReferenceMessageDelivery(
+                    channel=self.channel,
+                    message=message,
+                    owns_channel=False,
+                )
+            assembled = self.assembler.add(fragment, message)
+            if assembled is None:
+                continue
+            physical_messages = assembled.tokens
+            return ReferenceMessageDelivery(
+                channel=self.channel,
+                message=_LogicalIncomingMessage(
+                    assembled.body,
+                    assembled.message_id,
+                    physical_messages[0],
+                    physical_messages,
+                ),
+                owns_channel=False,
+                physical_messages=physical_messages,
+            )
 
     async def close(self) -> None:
         """关闭消费者和通道，使尚未确认的消息重新入队。"""
@@ -252,6 +346,70 @@ async def get_reference_message(
         raise
 
 
+async def get_reference_logical_message(
+    queue_name: str,
+) -> ReferenceMessageDelivery | None:
+    """获取一条完整逻辑消息，物理分片由后端在同一通道内重组。"""
+    if not rabbitmq_connection:
+        raise RuntimeError("RabbitMQ连接未初始化")
+    channel = await rabbitmq_connection.channel(
+        publisher_confirms=True,
+        on_return_raises=True,
+    )
+    assembler = FragmentAssembler[AbstractIncomingMessage](fragment_settings)
+    try:
+        queue = await _get_reference_queue(channel, queue_name)
+        while True:
+            message = await queue.get(fail=False, no_ack=False)
+            if message is None:
+                await channel.close()
+                return None
+
+            control_kind = get_reference_control_kind(message)
+            if control_kind is not None:
+                if assembler.has_pending and control_kind == "abort":
+                    pending = assembler.discard_pending()
+                    return ReferenceMessageDelivery(
+                        channel=channel,
+                        message=message,
+                        physical_messages=(*pending, message),
+                    )
+                return ReferenceMessageDelivery(
+                    channel=channel,
+                    message=message,
+                )
+
+            fragment = parse_fragment(
+                message.body,
+                message.type,
+                message.headers,
+                fragment_settings,
+            )
+            if fragment is None:
+                return ReferenceMessageDelivery(
+                    channel=channel,
+                    message=message,
+                )
+            assembled = assembler.add(fragment, message)
+            if assembled is None:
+                continue
+            physical_messages = assembled.tokens
+            return ReferenceMessageDelivery(
+                channel=channel,
+                message=_LogicalIncomingMessage(
+                    assembled.body,
+                    assembled.message_id,
+                    physical_messages[0],
+                    physical_messages,
+                ),
+                physical_messages=physical_messages,
+            )
+    except Exception:
+        if not channel.is_closed:
+            await channel.close()
+        raise
+
+
 async def open_reference_consumer(
     queue_name: str,
     *,
@@ -264,14 +422,26 @@ async def open_reference_consumer(
         raise ValueError("Reference消费者 prefetch_count 必须大于 0")
     channel = await rabbitmq_connection.channel()
     try:
-        await channel.set_qos(prefetch_count=prefetch_count)
+        logical_prefetch = prefetch_count
+        if prefetch_count == 1:
+            max_fragments = (
+                fragment_settings.max_logical_message_bytes
+                + fragment_settings.fragment_bytes
+                - 1
+            ) // fragment_settings.fragment_bytes
+            logical_prefetch = max_fragments * 2
+        await channel.set_qos(prefetch_count=logical_prefetch)
         queue = await _get_reference_queue(
             channel,
             queue_name,
         )
         iterator = queue.iterator(no_ack=False)
         await iterator.__aenter__()
-        return ReferenceQueueConsumer(channel=channel, iterator=iterator)
+        return ReferenceQueueConsumer(
+            channel=channel,
+            iterator=iterator,
+            assembler=FragmentAssembler(fragment_settings),
+        )
     except Exception:
         if not channel.is_closed:
             await channel.close()
@@ -320,28 +490,66 @@ async def publish_reference_json_delivery(
     """确认式发布变换后的 JSON DATA；成功返回前不得确认源消息。"""
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     source = delivery.message
-    for queue_name in dict.fromkeys(queue_names):
-        confirmation = await delivery.channel.default_exchange.publish(
-            aio_pika.Message(
-                body=body,
-                headers=dict(source.headers or {}),
-                content_type="application/json",
-                content_encoding="utf-8",
-                delivery_mode=source.delivery_mode,
-                priority=source.priority,
-                correlation_id=source.correlation_id,
-                reply_to=source.reply_to,
-                expiration=source.expiration,
-                message_id=source.message_id,
-                timestamp=source.timestamp,
-                type=source.type,
-                user_id=source.user_id,
-                app_id=source.app_id,
-            ),
-            routing_key=queue_name,
-            mandatory=True,
+    logical_message_id = str(source.message_id or uuid4().hex)
+    fragments = encode_fragments(
+        body,
+        logical_message_id,
+        fragment_settings,
+    )
+    source_headers = {
+        key: value
+        for key, value in dict(source.headers or {}).items()
+        if not str(key).startswith("x-csi-fragment-")
+        and not str(key).startswith("x-csi-original-")
+    }
+    publication_specs = (
+        [
+            (
+                fragment.body,
+                {**source_headers, **fragment.headers},
+                fragment.message_id,
+                FRAGMENT_MESSAGE_TYPE,
+            )
+            for fragment in fragments
+        ]
+        if fragments
+        else [(body, source_headers, logical_message_id, None)]
+    )
+    if fragments:
+        logger.info(
+            "Reference JSON 消息已分片: message_id={}, bytes={}, fragments={}",
+            logical_message_id,
+            len(body),
+            len(fragments),
         )
-        _ensure_publish_confirmed(confirmation, queue_name)
+    for queue_name in dict.fromkeys(queue_names):
+        for (
+            publication_body,
+            publication_headers,
+            publication_message_id,
+            publication_type,
+        ) in publication_specs:
+            confirmation = await delivery.channel.default_exchange.publish(
+                aio_pika.Message(
+                    body=publication_body,
+                    headers=publication_headers,
+                    content_type="application/json",
+                    content_encoding="utf-8",
+                    delivery_mode=source.delivery_mode,
+                    priority=source.priority,
+                    correlation_id=source.correlation_id,
+                    reply_to=source.reply_to,
+                    expiration=source.expiration,
+                    message_id=publication_message_id,
+                    timestamp=source.timestamp,
+                    type=publication_type,
+                    user_id=source.user_id,
+                    app_id=source.app_id,
+                ),
+                routing_key=queue_name,
+                mandatory=True,
+            )
+            _ensure_publish_confirmed(confirmation, queue_name)
 
 
 async def publish_reference_control(

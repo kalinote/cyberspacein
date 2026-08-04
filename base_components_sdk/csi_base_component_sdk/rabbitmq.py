@@ -12,6 +12,15 @@ import pika
 from dotenv import find_dotenv, load_dotenv
 from pika.exceptions import AMQPChannelError, AMQPConnectionError
 
+from .fragmentation import (
+    FRAGMENT_MESSAGE_TYPE,
+    FragmentAssembler,
+    FragmentProtocolError,
+    FragmentSettings,
+    encode_fragments,
+    parse_fragment,
+)
+
 logger = logging.getLogger("CSI_SDK")
 
 REFERENCE_EOS_TYPE = "csi.reference.eos.v1"
@@ -62,6 +71,12 @@ class _PendingDelivery:
     is_backend_owned: bool
 
 
+@dataclass(frozen=True)
+class _FragmentDeliveryToken:
+    method_frame: Any
+    properties: Any
+
+
 class RabbitMQClient:
     """SDK 内置 RabbitMQ 客户端，支持 REFERENCE EOS 协议。"""
 
@@ -89,6 +104,12 @@ class RabbitMQClient:
         self._reference_outputs: list[_ReferenceOutput] = []
         self._backend_owned_reference_queues: set[str] = set()
         self._pending_deliveries: dict[int, _PendingDelivery] = {}
+        self._logical_delivery_tags: dict[int, tuple[int, ...]] = {}
+        self._fragment_assemblers: dict[
+            str,
+            FragmentAssembler[_FragmentDeliveryToken],
+        ] = {}
+        self._fragment_settings = FragmentSettings.from_env()
         self._published_controls: set[tuple[str, str, str, str]] = set()
         self._cancel_check: Callable[[], None] | None = None
         self._poll_interval = max(
@@ -113,6 +134,8 @@ class RabbitMQClient:
         self._reference_inputs.clear()
         self._reference_outputs.clear()
         self._backend_owned_reference_queues.clear()
+        self._fragment_assemblers.clear()
+        self._logical_delivery_tags.clear()
         self._cancel_check = cancel_check
 
         for io_value in inputs.values():
@@ -171,6 +194,8 @@ class RabbitMQClient:
         """建立 RabbitMQ 连接和通道。"""
         self._raise_for_managed_pending_reconnect()
         self._pending_deliveries.clear()
+        self._fragment_assemblers.clear()
+        self._logical_delivery_tags.clear()
         connection = None
         channel = None
         try:
@@ -211,6 +236,8 @@ class RabbitMQClient:
         if not self.channel or self.channel.is_closed:
             self._raise_for_managed_pending_reconnect()
             self._pending_deliveries.clear()
+            self._fragment_assemblers.clear()
+            self._logical_delivery_tags.clear()
             try:
                 self.channel = self.connection.channel()
                 self.channel.confirm_delivery()
@@ -282,7 +309,7 @@ class RabbitMQClient:
     def _publish_to_queue(
         self,
         queue_name: str,
-        body: str,
+        body: bytes | str,
         properties: pika.BasicProperties,
         *,
         prepare: bool = True,
@@ -322,6 +349,8 @@ class RabbitMQClient:
             logger.error("关闭连接时发生错误: %s", exc)
         finally:
             self._pending_deliveries.clear()
+            self._fragment_assemblers.clear()
+            self._logical_delivery_tags.clear()
             self.channel = None
             self.connection = None
 
@@ -370,6 +399,48 @@ class RabbitMQClient:
                 f"message_id 的 UTF-8 长度不能超过 {MESSAGE_ID_MAX_BYTES} 字节"
             )
         return message_id
+
+    def _build_business_publications(
+        self,
+        message: dict,
+        message_id: str,
+    ) -> list[tuple[bytes, pika.BasicProperties]]:
+        """将业务对象编码为一个普通消息或多个协议分片。"""
+        body = json.dumps(message, ensure_ascii=False).encode("utf-8")
+        fragments = encode_fragments(body, message_id, self._fragment_settings)
+        if not fragments:
+            return [
+                (
+                    body,
+                    pika.BasicProperties(
+                        delivery_mode=2,
+                        message_id=message_id,
+                        content_type="application/json",
+                        content_encoding="utf-8",
+                    ),
+                )
+            ]
+
+        logger.info(
+            "RabbitMQ 业务消息已分片: message_id=%s, bytes=%s, fragments=%s",
+            message_id,
+            len(body),
+            len(fragments),
+        )
+        return [
+            (
+                fragment.body,
+                pika.BasicProperties(
+                    delivery_mode=2,
+                    message_id=fragment.message_id,
+                    content_type="application/json",
+                    content_encoding="utf-8",
+                    type=FRAGMENT_MESSAGE_TYPE,
+                    headers=fragment.headers,
+                ),
+            )
+            for fragment in fragments
+        ]
 
     def _handle_control(
         self,
@@ -466,15 +537,95 @@ class RabbitMQClient:
             )
 
             if state and self._control_type(properties):
+                assembler = self._fragment_assemblers.get(queue_name)
+                if (
+                    assembler
+                    and assembler.has_pending
+                    and self._control_type(properties) == REFERENCE_ABORT_TYPE
+                ):
+                    for token in assembler.discard_pending():
+                        self._ack_delivery(token.method_frame.delivery_tag)
                 self._handle_control(
                     queue_name,
                     method_frame.delivery_tag,
                     properties,
                 )
+                if assembler and assembler.has_pending and state.completed:
+                    for token in assembler.discard_pending():
+                        self._ack_delivery(token.method_frame.delivery_tag)
+                    raise FragmentProtocolError(
+                        f"REFERENCE 数据流 {state.stream_id} 结束时存在未完整消息分片"
+                    )
                 if state.completed:
                     return None
                 continue
             return method_frame, properties, body
+
+    def _next_business_delivery(
+        self,
+        queue_name: str,
+        *,
+        wait_for_data: bool,
+    ) -> tuple[Any, Any, bytes] | None:
+        """读取下一条完整业务消息，并在内部透明重组物理分片。"""
+        while True:
+            delivery = self._next_delivery(
+                queue_name,
+                wait_for_data=wait_for_data,
+            )
+            if delivery is None:
+                return None
+            method_frame, properties, body = delivery
+            fragment = parse_fragment(
+                body,
+                getattr(properties, "type", None),
+                getattr(properties, "headers", None),
+                self._fragment_settings,
+            )
+            if fragment is None:
+                return delivery
+
+            assembler = self._fragment_assemblers.setdefault(
+                queue_name,
+                FragmentAssembler(self._fragment_settings),
+            )
+            assembled = assembler.add(
+                fragment,
+                _FragmentDeliveryToken(method_frame, properties),
+            )
+            if assembled is None:
+                continue
+
+            primary = assembled.tokens[0]
+            delivery_tags = tuple(
+                token.method_frame.delivery_tag for token in assembled.tokens
+            )
+            self._logical_delivery_tags[
+                primary.method_frame.delivery_tag
+            ] = delivery_tags
+            logical_properties = pika.BasicProperties(
+                content_type=getattr(primary.properties, "content_type", None),
+                content_encoding=getattr(
+                    primary.properties,
+                    "content_encoding",
+                    None,
+                ),
+                delivery_mode=getattr(primary.properties, "delivery_mode", None),
+                priority=getattr(primary.properties, "priority", None),
+                correlation_id=getattr(
+                    primary.properties,
+                    "correlation_id",
+                    None,
+                ),
+                reply_to=getattr(primary.properties, "reply_to", None),
+                expiration=getattr(primary.properties, "expiration", None),
+                message_id=assembled.message_id,
+                timestamp=getattr(primary.properties, "timestamp", None),
+                type=None,
+                user_id=getattr(primary.properties, "user_id", None),
+                app_id=getattr(primary.properties, "app_id", None),
+            )
+            return primary.method_frame, logical_properties, assembled.body
 
     def get_message(self, queue_name: str) -> Optional[Dict[str, Any]]:
         """从队列获取单条业务消息，没有消息或流结束时返回 None。"""
@@ -495,7 +646,7 @@ class RabbitMQClient:
 
         try:
             self._prepare_queue(queue_name)
-            delivery = self._next_delivery(
+            delivery = self._next_business_delivery(
                 queue_name,
                 wait_for_data=queue_name in self._reference_inputs,
             )
@@ -519,9 +670,26 @@ class RabbitMQClient:
             logger.error("获取消息失败: %s", exc)
             return None
 
+    def _expand_delivery_tags(self, delivery_tags: List[int]) -> list[int]:
+        """将逻辑交付标签展开为去重后的物理 RabbitMQ 标签。"""
+        expanded: list[int] = []
+        for delivery_tag in delivery_tags:
+            expanded.extend(
+                self._logical_delivery_tags.get(delivery_tag, (delivery_tag,))
+            )
+        return list(dict.fromkeys(expanded))
+
     def ack_message(self, delivery_tag: int) -> bool:
         """确认消息。"""
-        pending = self._pending_deliveries.get(delivery_tag)
+        physical_tags = self._expand_delivery_tags([delivery_tag])
+        pending = next(
+            (
+                self._pending_deliveries.get(tag)
+                for tag in physical_tags
+                if self._pending_deliveries.get(tag) is not None
+            ),
+            None,
+        )
         if pending is None:
             return False
         is_managed = pending.is_backend_owned
@@ -531,10 +699,14 @@ class RabbitMQClient:
                     "后端托管 REFERENCE 队列 "
                     f"{pending.queue_name} ACK 失败: 连接或通道不可用"
                 )
-            self._pending_deliveries.pop(delivery_tag, None)
+            for tag in physical_tags:
+                self._pending_deliveries.pop(tag, None)
+            self._logical_delivery_tags.pop(delivery_tag, None)
             return False
         try:
-            self._ack_delivery(delivery_tag)
+            for tag in physical_tags:
+                self._ack_delivery(tag)
+            self._logical_delivery_tags.pop(delivery_tag, None)
             return True
         except Exception as exc:
             if is_managed:
@@ -543,13 +715,23 @@ class RabbitMQClient:
                     f"{pending.queue_name} ACK 失败: {exc}"
                 ) from exc
             if not self._is_transport_open():
-                self._pending_deliveries.pop(delivery_tag, None)
+                for tag in physical_tags:
+                    self._pending_deliveries.pop(tag, None)
+                self._logical_delivery_tags.pop(delivery_tag, None)
             logger.error("确认消息失败: %s", exc)
             return False
 
     def nack_message(self, delivery_tag: int, requeue: bool = True) -> bool:
         """拒绝消息。"""
-        pending = self._pending_deliveries.get(delivery_tag)
+        physical_tags = self._expand_delivery_tags([delivery_tag])
+        pending = next(
+            (
+                self._pending_deliveries.get(tag)
+                for tag in physical_tags
+                if self._pending_deliveries.get(tag) is not None
+            ),
+            None,
+        )
         if pending is None:
             return False
         is_managed = pending.is_backend_owned
@@ -559,10 +741,14 @@ class RabbitMQClient:
                     "后端托管 REFERENCE 队列 "
                     f"{pending.queue_name} NACK 失败: 连接或通道不可用"
                 )
-            self._pending_deliveries.pop(delivery_tag, None)
+            for tag in physical_tags:
+                self._pending_deliveries.pop(tag, None)
+            self._logical_delivery_tags.pop(delivery_tag, None)
             return False
         try:
-            self._nack_delivery(delivery_tag, requeue)
+            for tag in physical_tags:
+                self._nack_delivery(tag, requeue)
+            self._logical_delivery_tags.pop(delivery_tag, None)
             return True
         except Exception as exc:
             if is_managed:
@@ -571,7 +757,9 @@ class RabbitMQClient:
                     f"{pending.queue_name} NACK 失败: {exc}"
                 ) from exc
             if not self._is_transport_open():
-                self._pending_deliveries.pop(delivery_tag, None)
+                for tag in physical_tags:
+                    self._pending_deliveries.pop(tag, None)
+                self._logical_delivery_tags.pop(delivery_tag, None)
             logger.error("拒绝消息失败: %s", exc)
             return False
 
@@ -599,23 +787,25 @@ class RabbitMQClient:
             return False
 
         try:
-            published = self._publish_to_queue(
-                queue_name,
-                body=json.dumps(message, ensure_ascii=False),
-                properties=pika.BasicProperties(
-                    delivery_mode=2,
-                    message_id=resolved_message_id,
-                    content_type="application/json",
-                    content_encoding="utf-8",
-                ),
+            publications = self._build_business_publications(
+                message,
+                resolved_message_id,
             )
-            if published is False:
-                if self._is_backend_owned_reference_queue(queue_name):
-                    raise ReferenceStreamTransportError(
-                        f"后端托管 REFERENCE 队列 {queue_name} 发布未获确认"
-                    )
-                logger.error("RabbitMQ 拒绝确认业务消息: %s", queue_name)
-                return False
+            self._prepare_queue(queue_name)
+            for body, properties in publications:
+                published = self._publish_to_queue(
+                    queue_name,
+                    body=body,
+                    properties=properties,
+                    prepare=False,
+                )
+                if published is False:
+                    if self._is_backend_owned_reference_queue(queue_name):
+                        raise ReferenceStreamTransportError(
+                            f"后端托管 REFERENCE 队列 {queue_name} 发布未获确认"
+                        )
+                    logger.error("RabbitMQ 拒绝确认业务消息: %s", queue_name)
+                    return False
             return True
         except ReferenceStreamTransportError:
             raise
@@ -765,7 +955,7 @@ class RabbitMQClient:
                 stream_ended = False
 
                 for index in range(batch_size):
-                    delivery = self._next_delivery(
+                    delivery = self._next_business_delivery(
                         queue_name,
                         wait_for_data=is_reference and index == 0,
                     )
@@ -796,15 +986,14 @@ class RabbitMQClient:
                     except Exception as exc:
                         logger.error("批量处理消息时发生错误: %s", exc)
                         for delivery_tag in delivery_tags:
-                            self._nack_delivery(delivery_tag, True)
+                            self.nack_message(delivery_tag, True)
                     else:
                         if success:
-                            for delivery_tag in delivery_tags:
-                                self._ack_delivery(delivery_tag)
+                            self.ack_all_message(delivery_tags)
                             processed_count += len(batch_messages)
                         else:
                             for delivery_tag in delivery_tags:
-                                self._nack_delivery(delivery_tag, True)
+                                self.nack_message(delivery_tag, True)
 
                 if stream_ended or (not is_reference and not batch_messages):
                     break
@@ -854,7 +1043,7 @@ class RabbitMQClient:
             self._prepare_queue(queue_name)
             is_reference = queue_name in self._reference_inputs
             while len(messages) < batch_size:
-                delivery = self._next_delivery(
+                delivery = self._next_business_delivery(
                     queue_name,
                     wait_for_data=is_reference and not messages,
                 )
@@ -871,7 +1060,7 @@ class RabbitMQClient:
                     )
                 except json.JSONDecodeError as exc:
                     logger.error("消息JSON解析失败: %s，跳过该消息", exc)
-                    self._ack_delivery(method_frame.delivery_tag)
+                    self.ack_message(method_frame.delivery_tag)
             return messages
         except _CancellationSignal as signal:
             raise signal.error
@@ -887,33 +1076,40 @@ class RabbitMQClient:
 
     def ack_all_message(self, delivery_tags: List[int]) -> bool:
         """批量确认消息。"""
-        if any(tag not in self._pending_deliveries for tag in delivery_tags):
+        physical_tags = self._expand_delivery_tags(delivery_tags)
+        if any(tag not in self._pending_deliveries for tag in physical_tags):
             return False
-        managed_pending = self._first_managed_pending_delivery(delivery_tags)
+        managed_pending = self._first_managed_pending_delivery(physical_tags)
         if not self._is_transport_open():
             if managed_pending:
                 raise ReferenceStreamTransportError(
                     "后端托管 REFERENCE 队列 "
                     f"{managed_pending.queue_name} 批量 ACK 失败: 连接或通道不可用"
                 )
-            for tag in delivery_tags:
+            for tag in physical_tags:
                 self._pending_deliveries.pop(tag, None)
+            for tag in delivery_tags:
+                self._logical_delivery_tags.pop(tag, None)
             return False
         try:
-            for tag in delivery_tags:
+            for tag in physical_tags:
                 self.channel.basic_ack(delivery_tag=tag, multiple=False)
                 self._pending_deliveries.pop(tag, None)
+            for tag in delivery_tags:
+                self._logical_delivery_tags.pop(tag, None)
             return True
         except Exception as exc:
-            managed_pending = self._first_managed_pending_delivery(delivery_tags)
+            managed_pending = self._first_managed_pending_delivery(physical_tags)
             if managed_pending:
                 raise ReferenceStreamTransportError(
                     "后端托管 REFERENCE 队列 "
                     f"{managed_pending.queue_name} 批量 ACK 失败: {exc}"
                 ) from exc
             if not self._is_transport_open():
-                for tag in delivery_tags:
+                for tag in physical_tags:
                     self._pending_deliveries.pop(tag, None)
+                for tag in delivery_tags:
+                    self._logical_delivery_tags.pop(tag, None)
             logger.error("确认消息失败: %s", exc)
             return False
 
@@ -977,31 +1173,30 @@ class RabbitMQClient:
                 messages,
                 resolved_message_ids,
             ):
-                body = json.dumps(message, ensure_ascii=False)
-                for target_queue in dict.fromkeys(queue_names):
-                    active_queue = target_queue
-                    published = self._publish_to_queue(
-                        target_queue,
-                        body=body,
-                        properties=pika.BasicProperties(
-                            delivery_mode=2,
-                            message_id=resolved_message_id,
-                            content_type="application/json",
-                            content_encoding="utf-8",
-                        ),
-                        prepare=False,
-                    )
-                    if published is False:
-                        if self._is_backend_owned_reference_queue(target_queue):
-                            raise ReferenceStreamTransportError(
-                                "后端托管 REFERENCE 队列 "
-                                f"{target_queue} 批量发布未获确认"
-                            )
-                        logger.error(
-                            "RabbitMQ 拒绝确认批量业务消息: %s",
+                publications = self._build_business_publications(
+                    message,
+                    resolved_message_id,
+                )
+                for body, properties in publications:
+                    for target_queue in dict.fromkeys(queue_names):
+                        active_queue = target_queue
+                        published = self._publish_to_queue(
                             target_queue,
+                            body=body,
+                            properties=properties,
+                            prepare=False,
                         )
-                        return False
+                        if published is False:
+                            if self._is_backend_owned_reference_queue(target_queue):
+                                raise ReferenceStreamTransportError(
+                                    "后端托管 REFERENCE 队列 "
+                                    f"{target_queue} 批量发布未获确认"
+                                )
+                            logger.error(
+                                "RabbitMQ 拒绝确认批量业务消息: %s",
+                                target_queue,
+                            )
+                            return False
             return True
         except ReferenceStreamTransportError:
             raise

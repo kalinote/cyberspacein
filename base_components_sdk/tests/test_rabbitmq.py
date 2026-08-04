@@ -1,5 +1,6 @@
 """RabbitMQ 队列和 REFERENCE EOS 协议测试。"""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -7,6 +8,10 @@ import pika
 import pytest
 from pika.exceptions import ChannelClosedByBroker, UnroutableError
 
+from csi_base_component_sdk.fragmentation import (
+    FRAGMENT_MESSAGE_TYPE,
+    FragmentSettings,
+)
 from csi_base_component_sdk.rabbitmq import (
     REFERENCE_ABORT_TYPE,
     REFERENCE_CONTROL_CONTENT_TYPE,
@@ -342,6 +347,53 @@ def test_send_message_treats_negative_publisher_confirm_as_failure():
     client.channel.basic_publish.return_value = False
 
     assert client.send_message("queue-1", {"value": 1}) is False
+
+
+def test_send_message_fragments_oversized_json_before_publish():
+    client = _connected_client()
+    client._fragment_settings = FragmentSettings(32, 16, 256)
+
+    assert client.send_message(
+        "queue-1",
+        {"value": "中" * 30},
+        message_id="logical-1",
+    ) is True
+
+    calls = client.channel.basic_publish.call_args_list
+    assert len(calls) > 1
+    assert all(
+        call.kwargs["properties"].type == FRAGMENT_MESSAGE_TYPE
+        for call in calls
+    )
+    assert {
+        call.kwargs["properties"].headers["x-csi-original-message-id"]
+        for call in calls
+    } == {"logical-1"}
+    assert all(len(call.kwargs["body"]) <= 16 for call in calls)
+
+
+def test_get_message_reassembles_fragments_and_ack_confirms_every_part():
+    client = _connected_client()
+    client._fragment_settings = FragmentSettings(16, 8, 128)
+    publications = client._build_business_publications(
+        {"value": "中" * 12},
+        "logical-1",
+    )
+    client.channel.basic_get.side_effect = [
+        (_delivery(index + 1), properties, body)
+        for index, (body, properties) in enumerate(publications)
+    ]
+
+    message = client.get_message("queue-1")
+
+    assert message is not None
+    assert json.loads(message["body"]) == {"value": "中" * 12}
+    assert message["message_id"] == "logical-1"
+    assert client.ack_message(message["delivery_tag"]) is True
+    assert [
+        call.kwargs["delivery_tag"]
+        for call in client.channel.basic_ack.call_args_list
+    ] == list(range(1, len(publications) + 1))
 
 
 def test_send_messages_batch_reuses_message_id_for_fan_out():

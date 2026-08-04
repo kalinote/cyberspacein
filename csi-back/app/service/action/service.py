@@ -3184,7 +3184,10 @@ class ActionInstanceService:
     async def finish_component_run(
         component_run_id: str,
         result: SDKResultRequest,
+        *,
+        _active_run_filter: dict[str, Any] | None = None,
     ) -> bool:
+        """幂等收敛组件终态，并可附加活动运行的原子认领条件。"""
         component_run = await ComponentRunModel.find_one({"_id": component_run_id})
         if component_run is None or component_run.attempt != result.attempt:
             return False
@@ -3200,18 +3203,19 @@ class ActionInstanceService:
             "timed_out": ComponentRunStatusEnum.TIMED_OUT,
         }[result.status]
         now = datetime.now()
-        claim = await ComponentRunModel.find_one(
-            {
-                "_id": component_run_id,
-                "result_id": None,
-                "status": {
-                    "$in": [
-                        ComponentRunStatusEnum.DISPATCHED,
-                        ComponentRunStatusEnum.RUNNING,
-                    ]
-                },
-            }
-        ).update(
+        claim_filter: dict[str, Any] = {
+            "_id": component_run_id,
+            "result_id": None,
+            "status": {
+                "$in": [
+                    ComponentRunStatusEnum.DISPATCHED,
+                    ComponentRunStatusEnum.RUNNING,
+                ]
+            },
+        }
+        if _active_run_filter:
+            claim_filter.update(_active_run_filter)
+        claim = await ComponentRunModel.find_one(claim_filter).update(
             {
                 "$set": {
                     "status": terminal_status,
@@ -3485,37 +3489,63 @@ class ActionInstanceService:
                 }
             }
         ).to_list()
-        stale_runs = [
-            run
-            for run in active_runs
+        stale_runs = []
+        bootstrap_cutoff = now - timedelta(
+            seconds=settings.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS
+        )
+        for run in active_runs:
+            if run.lease_expires_at is not None and run.lease_expires_at <= now:
+                error_message = (
+                    "组件启动超时，未在引导凭证有效期内完成初始化"
+                    if (
+                        run.status == ComponentRunStatusEnum.DISPATCHED
+                        and run.started_at is None
+                    )
+                    else "组件心跳租约已过期"
+                )
+                stale_runs.append(
+                    (
+                        run,
+                        error_message,
+                        {"lease_expires_at": {"$lte": now}},
+                    )
+                )
+                continue
             if (
-                run.lease_expires_at is not None
-                and run.lease_expires_at <= now
-            )
-            or (
                 run.status == ComponentRunStatusEnum.DISPATCHED
                 and run.lease_expires_at is None
-                and (
-                    now - run.updated_at
-                ).total_seconds()
-                >= settings.COMPONENT_BOOTSTRAP_EXPIRE_SECONDS
-            )
-            or (
+                and run.updated_at <= bootstrap_cutoff
+            ):
+                stale_runs.append(
+                    (
+                        run,
+                        "组件启动超时，未在引导凭证有效期内完成初始化",
+                        {
+                            "status": ComponentRunStatusEnum.DISPATCHED,
+                            "lease_expires_at": None,
+                            "updated_at": {"$lte": bootstrap_cutoff},
+                        },
+                    )
+                )
+                continue
+            if (
                 run.timeout_seconds > 0
                 and run.started_at is not None
                 and (now - run.started_at).total_seconds() >= run.timeout_seconds
-            )
-        ]
-        expired = 0
-        for component_run in stale_runs:
-            error_message = (
-                "组件启动超时，未在引导凭证有效期内完成初始化"
-                if (
-                    component_run.status == ComponentRunStatusEnum.DISPATCHED
-                    and component_run.started_at is None
+            ):
+                stale_runs.append(
+                    (
+                        run,
+                        "组件运行时限已过期",
+                        {
+                            "timeout_seconds": run.timeout_seconds,
+                            "started_at": run.started_at,
+                        },
+                    )
                 )
-                else "组件心跳租约或运行时限已过期"
-            )
+        expired = 0
+        expired_runs = []
+        for component_run, error_message, active_run_filter in stale_runs:
             accepted = await ActionInstanceService.finish_component_run(
                 component_run.id,
                 SDKResultRequest(
@@ -3525,11 +3555,14 @@ class ActionInstanceService:
                     error=error_message,
                     exit_code=1,
                 ),
+                _active_run_filter=active_run_filter,
             )
             expired += int(accepted)
-        if stale_runs:
+            if accepted:
+                expired_runs.append(component_run)
+        if expired_runs:
             await asyncio.gather(
-                *(cancel_component_run(run) for run in stale_runs),
+                *(cancel_component_run(run) for run in expired_runs),
                 return_exceptions=True,
             )
         return expired

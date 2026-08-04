@@ -1,5 +1,6 @@
 """行动组件 SDK Reference 协议契约测试。"""
 
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -7,8 +8,10 @@ import pytest
 
 from app.api.v1.endpoints.action import sdk as sdk_endpoint
 from app.models.action.action import ActionConfigIOModel, ActionInstanceNodeModel
+from app.models.action.component_run import ComponentRunModel
 from app.schemas.action.reference import ReferenceQueueBinding
-from app.schemas.constants import ActionConfigIOTypeEnum
+from app.schemas.action.sdk import SDKHeartbeatRequest
+from app.schemas.constants import ActionConfigIOTypeEnum, ComponentRunStatusEnum
 
 
 class _FindMany:
@@ -17,6 +20,24 @@ class _FindMany:
 
     async def to_list(self):
         return self.values
+
+
+class _FindOne:
+    def __init__(self, value=None, *, modified_count=0, updates=None):
+        self.value = value
+        self.modified_count = modified_count
+        self.updates = updates
+
+    def __await__(self):
+        async def resolve():
+            return self.value
+
+        return resolve().__await__()
+
+    async def update(self, payload):
+        if self.updates is not None:
+            self.updates.append(payload)
+        return SimpleNamespace(modified_count=self.modified_count)
 
 
 @pytest.mark.asyncio
@@ -46,6 +67,109 @@ async def test_token_exchange_returns_component_attempt(monkeypatch):
         "component_token": "component-token",
         "attempt": 3,
     }
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_renews_lease_with_atomic_active_status_guard(monkeypatch):
+    before = datetime.now()
+    initial = SimpleNamespace(
+        id="run-1",
+        action_id="action-1",
+        node_instance_id="node-1",
+        status=ComponentRunStatusEnum.RUNNING,
+        cancel_requested=False,
+        lease_expires_at=before + timedelta(seconds=10),
+    )
+    updated = SimpleNamespace(
+        **initial.__dict__,
+        progress=40,
+    )
+    queries = []
+    updates = []
+    find_one_calls = 0
+
+    def find_run(query):
+        nonlocal find_one_calls
+        find_one_calls += 1
+        queries.append(query)
+        if find_one_calls == 2:
+            return _FindOne(modified_count=1, updates=updates)
+        return _FindOne(initial if find_one_calls == 1 else updated)
+
+    monkeypatch.setattr(ComponentRunModel, "find_one", staticmethod(find_run))
+    monkeypatch.setattr(
+        ComponentRunModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([updated])),
+    )
+    update_progress = AsyncMock()
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceService,
+        "update_progress",
+        update_progress,
+    )
+    monkeypatch.setattr(
+        sdk_endpoint,
+        "create_component_token",
+        lambda *_args: "refreshed-token",
+    )
+
+    response = await sdk_endpoint.heartbeat(
+        "run-1",
+        SDKHeartbeatRequest(progress=40, message="运行中"),
+    )
+
+    assert response.data.command == "continue"
+    assert response.data.component_token == "refreshed-token"
+    assert queries[1]["status"]["$in"] == [
+        ComponentRunStatusEnum.DISPATCHED,
+        ComponentRunStatusEnum.RUNNING,
+    ]
+    assert updates[0]["$set"]["progress"] == 40
+    lease_expires_at = updates[0]["$set"]["lease_expires_at"]
+    assert timedelta(seconds=29) <= lease_expires_at - before <= timedelta(seconds=31)
+    update_progress.assert_awaited_once_with("node-1", 40)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_cannot_resurrect_terminal_component(monkeypatch):
+    now = datetime.now()
+    active = SimpleNamespace(
+        id="run-1",
+        status=ComponentRunStatusEnum.RUNNING,
+        lease_expires_at=now + timedelta(seconds=10),
+    )
+    terminal = SimpleNamespace(
+        id="run-1",
+        status=ComponentRunStatusEnum.TIMED_OUT,
+        lease_expires_at=now,
+    )
+    find_one_calls = 0
+
+    def find_run(_query):
+        nonlocal find_one_calls
+        find_one_calls += 1
+        if find_one_calls == 1:
+            return _FindOne(active)
+        if find_one_calls == 2:
+            return _FindOne(modified_count=0)
+        return _FindOne(terminal)
+
+    monkeypatch.setattr(ComponentRunModel, "find_one", staticmethod(find_run))
+    update_progress = AsyncMock()
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceService,
+        "update_progress",
+        update_progress,
+    )
+
+    response = await sdk_endpoint.heartbeat(
+        "run-1",
+        SDKHeartbeatRequest(progress=40, message="运行中"),
+    )
+
+    assert response.data.command == "cancel"
+    update_progress.assert_not_awaited()
 
 
 @pytest.mark.asyncio

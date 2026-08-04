@@ -48,5 +48,5 @@ class ComponentRunModel(Document):
             ),
             "action_id",
             "node_instance_id",
-            "status",
+            IndexModel([("status", ASCENDING), ("lease_expires_at", ASCENDING)]),
         ]

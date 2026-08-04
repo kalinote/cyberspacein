@@ -224,6 +224,45 @@ async def test_node_becomes_timeout_after_other_components_finish(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_component_timeout_claim_keeps_lease_guard_atomic(monkeypatch):
+    now = datetime.now()
+    running = SimpleNamespace(
+        id="run-renewed",
+        attempt=1,
+        result_id=None,
+        progress=50,
+        status=ComponentRunStatusEnum.RUNNING,
+    )
+    queries = []
+    find_one_calls = 0
+
+    def find_run(query):
+        nonlocal find_one_calls
+        find_one_calls += 1
+        queries.append(query)
+        if find_one_calls == 2:
+            return _FindOne(modified_count=0)
+        return _FindOne(running)
+
+    monkeypatch.setattr(ComponentRunModel, "find_one", staticmethod(find_run))
+
+    accepted = await ActionInstanceService.finish_component_run(
+        running.id,
+        SDKResultRequest(
+            result_id="timeout:run-renewed:1",
+            attempt=1,
+            status="timed_out",
+            error="组件心跳租约已过期",
+            exit_code=1,
+        ),
+        _active_run_filter={"lease_expires_at": {"$lte": now}},
+    )
+
+    assert accepted is False
+    assert queries[1]["lease_expires_at"] == {"$lte": now}
+
+
+@pytest.mark.asyncio
 async def test_component_runtime_timeout_uses_own_limit_and_keeps_zero_unlimited(monkeypatch):
     now = datetime.now()
     unlimited = SimpleNamespace(
@@ -254,6 +293,11 @@ async def test_component_runtime_timeout_uses_own_limit_and_keeps_zero_unlimited
 
     assert await ActionInstanceService.expire_stale_component_runs() == 1
     assert finish_run.await_args.args[0] == "run-expired"
+    assert finish_run.await_args.kwargs["_active_run_filter"] == {
+        "timeout_seconds": 5,
+        "started_at": expired.started_at,
+    }
+    assert finish_run.await_args.args[1].error == "组件运行时限已过期"
     assert stop_run.await_args.args[0].id == "run-expired"
 
 
@@ -282,6 +326,9 @@ async def test_dispatched_component_expires_when_sdk_never_initializes(monkeypat
     result = finish_run.await_args.args[1]
     assert result.status == "timed_out"
     assert "完成初始化" in result.error
+    lease_guard = finish_run.await_args.kwargs["_active_run_filter"]
+    assert set(lease_guard) == {"lease_expires_at"}
+    assert now <= lease_guard["lease_expires_at"]["$lte"] <= datetime.now()
     stop_run.assert_awaited_once_with(dispatched)
 
 
@@ -314,7 +361,40 @@ async def test_legacy_dispatched_component_without_lease_is_recovered(monkeypatc
     assert await ActionInstanceService.expire_stale_component_runs() == 1
     assert finish_run.await_args.args[0] == "run-without-lease"
     assert "完成初始化" in finish_run.await_args.args[1].error
+    assert finish_run.await_args.kwargs["_active_run_filter"]["status"] == (
+        ComponentRunStatusEnum.DISPATCHED
+    )
+    assert (
+        finish_run.await_args.kwargs["_active_run_filter"]["lease_expires_at"]
+        is None
+    )
     stop_run.assert_awaited_once_with(dispatched)
+
+
+@pytest.mark.asyncio
+async def test_renewed_component_is_not_cancelled_from_stale_snapshot(monkeypatch):
+    now = datetime.now()
+    stale_snapshot = SimpleNamespace(
+        id="run-renewed",
+        attempt=1,
+        status=ComponentRunStatusEnum.RUNNING,
+        timeout_seconds=0,
+        started_at=now - timedelta(minutes=1),
+        lease_expires_at=now - timedelta(seconds=1),
+    )
+    monkeypatch.setattr(
+        ComponentRunModel,
+        "find",
+        staticmethod(lambda _query: _FindMany([stale_snapshot])),
+    )
+    finish_run = AsyncMock(return_value=False)
+    stop_run = AsyncMock(return_value=True)
+    monkeypatch.setattr(ActionInstanceService, "finish_component_run", finish_run)
+    monkeypatch.setattr(action_service, "cancel_component_run", stop_run)
+
+    assert await ActionInstanceService.expire_stale_component_runs() == 0
+    finish_run.assert_awaited_once()
+    stop_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio

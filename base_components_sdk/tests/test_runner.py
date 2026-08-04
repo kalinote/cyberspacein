@@ -32,6 +32,90 @@ def test_load_entrypoint_from_current_component_directory(tmp_path, monkeypatch)
         sys.modules.pop("component_entry", None)
 
 
+class _Clock:
+    def __init__(self):
+        self.current = 0.0
+
+    def monotonic(self):
+        return self.current
+
+
+class _HeartbeatStop:
+    def __init__(self, clock):
+        self.clock = clock
+        self.stopped = False
+
+    def wait(self, timeout):
+        if self.stopped:
+            return True
+        self.clock.current += timeout
+        return False
+
+
+def test_heartbeat_loop_keeps_fixed_monotonic_schedule():
+    clock = _Clock()
+    stop = _HeartbeatStop(clock)
+    call_times = []
+    durations = iter([2.0, 4.0, 1.0])
+
+    class _HeartbeatClient:
+        def heartbeat(self, _progress, _message):
+            call_times.append(clock.current)
+            clock.current += next(durations)
+            if len(call_times) == 3:
+                stop.stopped = True
+            return {"command": "continue"}
+
+    context = SimpleNamespace(
+        _progress=25,
+        _progress_message="运行中",
+        _cancelled=MagicMock(),
+    )
+
+    runner._heartbeat_loop(
+        _HeartbeatClient(),
+        context,
+        10,
+        stop,
+        None,
+        monotonic=clock.monotonic,
+    )
+
+    assert call_times == [10.0, 20.0, 30.0]
+
+
+def test_heartbeat_loop_retries_quickly_between_regular_ticks():
+    clock = _Clock()
+    stop = _HeartbeatStop(clock)
+    call_times = []
+
+    class _HeartbeatClient:
+        def heartbeat(self, _progress, _message):
+            call_times.append(clock.current)
+            if len(call_times) <= 2:
+                clock.current += 5.0
+                raise RuntimeError("临时失败")
+            stop.stopped = True
+            return {"command": "continue"}
+
+    context = SimpleNamespace(
+        _progress=25,
+        _progress_message="运行中",
+        _cancelled=MagicMock(),
+    )
+
+    runner._heartbeat_loop(
+        _HeartbeatClient(),
+        context,
+        10,
+        stop,
+        None,
+        monotonic=clock.monotonic,
+    )
+
+    assert call_times == [10.0, 16.0, 23.0]
+
+
 class _Capture:
     original_stderr_fd = None
 
