@@ -1,3 +1,5 @@
+import re
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
@@ -7,6 +9,7 @@ from app.models.action.blueprint import ActionBlueprintModel
 from app.schemas.action.action import (
     ActionControlResponse,
     ActionDetailResponse,
+    ActionHistorySummaryResponse,
     ActionInstanceBaseInfoResponse,
     ActionNodeDetailResponse,
     StartActionRequest,
@@ -17,6 +20,8 @@ from app.schemas.action.log import ActionNodeLogPage
 from app.schemas.response import ApiResponseSchema
 from app.schemas.constants import (
     ActionInstanceNodeStatusEnum,
+    ActionFlowStatusEnum,
+    ActionSchedulingModeEnum,
     ActionVisibilityEnum,
 )
 from app.service.action import ActionInstanceService, node_model_to_response
@@ -25,6 +30,34 @@ from app.utils.dict_helper import unpack_dict
 from app.utils.workflow import graph_model2schemas
 
 router = APIRouter(tags=["行动实例"])
+
+
+def _build_history_filters(
+    status: ActionFlowStatusEnum | None = None,
+    keyword: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> dict:
+    """构造普通行动历史的服务端过滤条件。"""
+    filters: dict = {}
+    if ActionInstanceModel._document_settings is not None:
+        filters["visibility"] = {"$ne": ActionVisibilityEnum.EMBEDDED}
+    if status is not None:
+        filters["status"] = status
+    normalized_keyword = (keyword or "").strip()
+    if normalized_keyword:
+        pattern = re.compile(re.escape(normalized_keyword), re.IGNORECASE)
+        filters["$or"] = [
+            {"blueprint_snapshot.name": {"$regex": pattern}},
+            {"blueprint_snapshot.description": {"$regex": pattern}},
+        ]
+    if created_from is not None or created_to is not None:
+        filters["created_at"] = {}
+        if created_from is not None:
+            filters["created_at"]["$gte"] = created_from
+        if created_to is not None:
+            filters["created_at"]["$lte"] = created_to
+    return filters
 
 
 @router.post("/start", response_model=ApiResponseSchema[StartActionResponse], summary="开始行动")
@@ -43,25 +76,50 @@ async def start_action(
         data.params,
         initiator_user_id=getattr(user, "id", None),
         debug=data.debug,
+        scheduling_mode=data.scheduling_mode,
     )
     if not result:
         return ApiResponseSchema.error(code=250004, message=message)
     background_tasks.add_task(ActionInstanceService.start, message)
+    created_action = await ActionInstanceModel.find_one({"_id": message})
+    effective_scheduling_mode = (
+        ActionInstanceService._get_scheduling_mode(created_action)
+        if created_action is not None
+        else data.scheduling_mode
+        or getattr(
+            blueprint,
+            "default_scheduling_mode",
+            ActionSchedulingModeEnum.BARRIER,
+        )
+    )
 
-    return ApiResponseSchema.success(data=StartActionResponse(action_id=message))
+    return ApiResponseSchema.success(
+        data=StartActionResponse(
+            action_id=message,
+            scheduling_mode=effective_scheduling_mode,
+        )
+    )
 
 
 @router.get("/list", response_model=PageResponseSchema[ActionInstanceBaseInfoResponse], summary="获取行动列表")
 async def get_action_instances(
-    params: PageParamsSchema = Depends()
+    params: PageParamsSchema = Depends(),
+    status: ActionFlowStatusEnum | None = None,
+    keyword: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
 ):
     skip = (params.page - 1) * params.page_size
-    if ActionInstanceModel._document_settings is None:
+    filters = _build_history_filters(
+        status=status,
+        keyword=keyword,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    if not filters:
         query = ActionInstanceModel.find_all()
     else:
-        query = ActionInstanceModel.find(
-            {"visibility": {"$ne": ActionVisibilityEnum.EMBEDDED}}
-        )
+        query = ActionInstanceModel.find(filters)
     total = await query.count()
     action_instances = await query.sort("-created_at").skip(skip).limit(params.page_size).to_list()
 
@@ -77,6 +135,11 @@ async def get_action_instances(
             description=blueprint.description,
             status=action_instance.status,
             debug=getattr(action_instance, "debug", False),
+            scheduling_mode=getattr(
+                action_instance.execution_plan_snapshot,
+                "scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            ),
             start_at=action_instance.start_at,
             paused_at=action_instance.paused_at,
             finished_at=action_instance.finished_at,
@@ -92,6 +155,49 @@ async def get_action_instances(
         ))
 
     return PageResponseSchema.create(results, total, params.page, params.page_size)
+
+
+@router.get(
+    "/summary",
+    response_model=ApiResponseSchema[ActionHistorySummaryResponse],
+    summary="获取行动历史全量统计",
+)
+async def get_action_history_summary():
+    base_filter = _build_history_filters()
+
+    def with_status(status_filter):
+        """在普通行动过滤条件上增加状态条件。"""
+        return {**base_filter, "status": status_filter}
+
+    total = await ActionInstanceModel.find(base_filter).count()
+    completed = await ActionInstanceModel.find(
+        with_status(ActionFlowStatusEnum.COMPLETED)
+    ).count()
+    partially_completed = await ActionInstanceModel.find(
+        with_status(ActionFlowStatusEnum.PARTIALLY_COMPLETED)
+    ).count()
+    running = await ActionInstanceModel.find(
+        with_status(ActionFlowStatusEnum.RUNNING)
+    ).count()
+    failed = await ActionInstanceModel.find(
+        with_status(
+            {
+                "$in": [
+                    ActionFlowStatusEnum.FAILED,
+                    ActionFlowStatusEnum.TIMEOUT,
+                ]
+            }
+        )
+    ).count()
+    return ApiResponseSchema.success(
+        data=ActionHistorySummaryResponse(
+            total=total,
+            completed=completed,
+            partially_completed=partially_completed,
+            running=running,
+            failed=failed,
+        )
+    )
 
 
 @router.get("/detail/{action_id}", response_model=ApiResponseSchema[ActionDetailResponse], summary="获取行动详情")
@@ -255,6 +361,11 @@ async def get_action_detail(action_id: str):
         description=blueprint.description,
         status=action_instance.status,
         debug=getattr(action_instance, "debug", False),
+        scheduling_mode=getattr(
+            action_instance.execution_plan_snapshot,
+            "scheduling_mode",
+            ActionSchedulingModeEnum.BARRIER,
+        ),
         resource=blueprint.resource,
         implementation_period=action_instance.implementation_period,
         start_at=action_instance.start_at,

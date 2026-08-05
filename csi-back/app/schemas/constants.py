@@ -69,6 +69,13 @@ class ActionInvocationModeEnum(str, Enum):
     SUBFLOW = "subflow"
 
 
+class ActionSchedulingModeEnum(str, Enum):
+    """行动节点调度模式。"""
+
+    BARRIER = "barrier"
+    STREAMING = "streaming"
+
+
 class ActionVisibilityEnum(str, Enum):
     """行动历史可见性。"""
 
@@ -85,6 +92,7 @@ class ActionFlowStatusEnum(str, Enum):
     READY = "ready"
     RUNNING = "running"
     COMPLETED = "completed"
+    PARTIALLY_COMPLETED = "partially_completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"

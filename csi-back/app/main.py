@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
                 await ActionInstanceService.expire_stale_actions()
                 await ActionInstanceService.expire_stale_component_runs()
                 await ActionInstanceService.reconcile_node_executions()
+                await ActionInstanceService.reconcile_ready_nodes()
                 await ActionInstanceService.retry_open_reference_aborts()
                 await ActionInstanceService.retry_failed_queue_cleanup()
             except Exception as exc:

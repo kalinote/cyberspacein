@@ -16,6 +16,7 @@ from app.models.action.blueprint import (
 from app.models.action.configs import ActionNodesHandleConfigModel
 from app.models.action.node import ActionNodeHandleModel, ActionNodeModel
 from app.schemas.action.execution import (
+    BlueprintExecutionPlan,
     NativeNodeExtensionSpec,
     NodeExecutionContext,
     NodeExecutionSpec,
@@ -28,6 +29,7 @@ from app.schemas.constants import (
     ActionInvocationModeEnum,
     ActionNodeDefinitionOriginEnum,
     ActionNodeKindEnum,
+    ActionSchedulingModeEnum,
 )
 from app.service.action.compiler import BlueprintCompiler
 from app.service.boundary_binding_validator import (
@@ -309,7 +311,7 @@ def test_subflow_keeps_boundaries_and_public_interface() -> None:
     assert definitions["blueprint.output"].handles[0].compatible_interface_type_ids == ["*"]
 
 
-def test_execution_plan_v2_freezes_reference_edge_contract() -> None:
+def test_execution_plan_v3_freezes_reference_edge_contract() -> None:
     definitions = {
         "source": _ordinary("source", inputs=()),
         "target": _ordinary("target", outputs=()),
@@ -325,11 +327,36 @@ def test_execution_plan_v2_freezes_reference_edge_contract() -> None:
         ActionInvocationModeEnum.STANDALONE,
     )
 
-    assert plan.plan_schema_version == 2
+    assert plan.plan_schema_version == 3
     assert plan.edges[0].data_type == "reference"
     assert plan.edges[0].reference_protocol == "eos-v1"
     assert plan.edges[0].source_handle_config_id == "source.out"
     assert plan.edges[0].target_handle_config_id == "target.in"
+
+
+def test_execution_plan_v2_always_uses_barrier_mode() -> None:
+    plan = BlueprintExecutionPlan(
+        plan_schema_version=2,
+        invocation_mode=ActionInvocationModeEnum.STANDALONE,
+        scheduling_mode=ActionSchedulingModeEnum.STREAMING,
+        nodes=[],
+        edges=[],
+    )
+
+    assert plan.scheduling_mode == ActionSchedulingModeEnum.BARRIER
+
+
+def test_compiler_freezes_streaming_mode_in_v3_plan() -> None:
+    plan = BlueprintCompiler.compile(
+        _graph([_node("source", "source")], []),
+        {"source": _ordinary("source", inputs=())},
+        ActionInvocationModeEnum.STANDALONE,
+        scheduling_mode=ActionSchedulingModeEnum.STREAMING,
+    )
+
+    assert plan.plan_schema_version == 3
+    assert plan.scheduling_mode == ActionSchedulingModeEnum.STREAMING
+    assert plan.extension["scheduler"]["readiness"] == "edge-v2"
 
 
 def test_debug_output_definition_has_mixed_multi_input_contract() -> None:
@@ -405,7 +432,7 @@ def test_debug_output_is_removed_normally_and_keeps_concrete_edge_types() -> Non
     assert normal_plan.edges == []
     assert [item.node_id for item in normal_plan.skipped_nodes] == ["debug"]
     assert debug_plan.debug is True
-    assert debug_plan.extension["scheduler"]["readiness"] == "edge-v1"
+    assert debug_plan.extension["scheduler"]["readiness"] == "edge-v2"
     assert {edge.id: edge.data_type for edge in debug_plan.edges} == {
         "reference-edge": "reference",
         "value-edge": "value",

@@ -885,6 +885,7 @@ async def test_retry_open_reference_abort_scans_active_actions(
     "status",
     [
         ActionFlowStatusEnum.COMPLETED,
+        ActionFlowStatusEnum.PARTIALLY_COMPLETED,
         ActionFlowStatusEnum.FAILED,
         ActionFlowStatusEnum.CANCELLED,
         ActionFlowStatusEnum.TIMEOUT,
@@ -1118,12 +1119,24 @@ async def test_missing_value_output_aborts_edge_and_notifies_debug_runtime(
     )
 
     assert target_updates == [
-        {
-            "$addToSet": {
-                "delivered_dependencies": source.node_id,
-                "aborted_input_edge_ids": {"$each": [edge.id]},
-            },
-        }
+        [
+            {
+                "$set": {
+                    "delivered_dependencies": {
+                        "$setUnion": [
+                            {"$ifNull": ["$delivered_dependencies", []]},
+                            {"$literal": [source.node_id]},
+                        ]
+                    },
+                    "aborted_input_edge_ids": {
+                        "$setUnion": [
+                            {"$ifNull": ["$aborted_input_edge_ids", []]},
+                            {"$literal": [edge.id]},
+                        ]
+                    },
+                }
+            }
+        ]
     ]
     abort_input.assert_awaited_once_with(
         action.id,
@@ -1186,7 +1199,10 @@ async def test_cascade_cancel_aborts_intermediate_reference_producer(
 
     def find_node(query):
         if query.get("_id") == middle.id:
-            return _FindOne(middle)
+            return _FindOne(
+                middle,
+                modified_count=1 if "status" in query else 0,
+            )
         return _FindOne(target, updates=target_updates)
 
     monkeypatch.setattr(ActionInstanceService, "find_next_node", next_nodes)
@@ -1206,7 +1222,7 @@ async def test_cascade_cancel_aborts_intermediate_reference_producer(
     )
 
     assert middle.status == ActionInstanceNodeStatusEnum.CANCELLED
-    assert middle.save.await_count == 2
+    assert middle.save.await_count == 1
     assert target.status == ActionInstanceNodeStatusEnum.RUNNING
     assert target_updates == [
         {"$addToSet": {"aborted_input_edge_ids": edge.id}}
@@ -1384,9 +1400,10 @@ async def test_queue_cleanup_retry_includes_all_recoverable_actions(monkeypatch)
             "$or": [
                 {
                     "status": {
-                        "$in": [
-                            ActionFlowStatusEnum.COMPLETED,
-                            ActionFlowStatusEnum.FAILED,
+                            "$in": [
+                                ActionFlowStatusEnum.COMPLETED,
+                                ActionFlowStatusEnum.PARTIALLY_COMPLETED,
+                                ActionFlowStatusEnum.FAILED,
                             ActionFlowStatusEnum.CANCELLED,
                             ActionFlowStatusEnum.TIMEOUT,
                             ActionFlowStatusEnum.STOPPED,
@@ -1396,9 +1413,10 @@ async def test_queue_cleanup_retry_includes_all_recoverable_actions(monkeypatch)
                 },
                 {
                     "status": {
-                        "$in": [
-                            ActionFlowStatusEnum.COMPLETED,
-                            ActionFlowStatusEnum.FAILED,
+                            "$in": [
+                                ActionFlowStatusEnum.COMPLETED,
+                                ActionFlowStatusEnum.PARTIALLY_COMPLETED,
+                                ActionFlowStatusEnum.FAILED,
                             ActionFlowStatusEnum.CANCELLED,
                             ActionFlowStatusEnum.TIMEOUT,
                             ActionFlowStatusEnum.STOPPED,

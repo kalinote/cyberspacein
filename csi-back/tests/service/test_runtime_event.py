@@ -96,3 +96,34 @@ async def test_embedded_action_terminal_event_is_published_and_consumed(
     event.update.assert_awaited_once_with(
         {"$addToSet": {"processed_by": "action-node-executor"}}
     )
+
+
+@pytest.mark.asyncio
+async def test_embedded_terminal_event_stays_pending_until_parent_reconciles(
+    monkeypatch,
+) -> None:
+    event = SimpleNamespace(
+        payload={"parent_node_execution_id": "parent-execution-1"},
+        update=AsyncMock(),
+    )
+    execution = SimpleNamespace(status=ActionInstanceNodeStatusEnum.RUNNING)
+    monkeypatch.setattr(
+        RuntimeDomainEventModel,
+        "find",
+        staticmethod(lambda _query: _Query([event])),
+    )
+    monkeypatch.setattr(
+        ActionNodeExecutionModel,
+        "find_one",
+        AsyncMock(return_value=execution),
+    )
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "_reconcile_node_execution",
+        AsyncMock(return_value=False),
+    )
+
+    consumed = await ActionInstanceService.consume_runtime_events()
+
+    assert consumed == 0
+    event.update.assert_not_awaited()

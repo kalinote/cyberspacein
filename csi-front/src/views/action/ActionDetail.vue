@@ -90,6 +90,12 @@
                                     {{ actionData.implementationPeriod > 0 ? formatDuration(actionData.implementationPeriod) : '未限制' }}
                                 </p>
                             </div>
+                            <div>
+                                <label class="text-xs text-gray-500">执行模式</label>
+                                <p class="text-sm text-gray-700 mt-1">
+                                    {{ actionData.schedulingMode === 'streaming' ? '异步执行' : '同步执行' }}
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -640,6 +646,7 @@ const actionData = ref({
     endTime: null,
     implementationPeriod: 0,
     debug: false,
+    schedulingMode: 'barrier',
     resource: {},
     graph: {
         nodes: [],
@@ -890,6 +897,7 @@ const loadActionData = async () => {
             endTime: apiData.finished_at || null,
             implementationPeriod: apiData.implementation_period ?? 0,
             debug: Boolean(apiData.debug),
+            schedulingMode: apiData.scheduling_mode === 'streaming' ? 'streaming' : 'barrier',
             resource: apiData.resource || {},
             graph: apiData.graph || {
                 nodes: [],
@@ -1178,6 +1186,9 @@ const updateActionData = async () => {
         actionData.value.startTime = apiData.start_at || null
         actionData.value.endTime = apiData.finished_at || null
         actionData.value.debug = Boolean(apiData.debug)
+        if (apiData.scheduling_mode) {
+            actionData.value.schedulingMode = apiData.scheduling_mode === 'streaming' ? 'streaming' : 'barrier'
+        }
         actionData.value.node_details = transformedNodeDetails
         
         elements.value.forEach(el => {

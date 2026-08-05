@@ -18,6 +18,7 @@ from app.models.action.blueprint import (
     GraphModel,
 )
 from app.models.action.component_run import ComponentRunModel
+from app.models.action.node_execution import ActionNodeExecutionModel
 from app.models.action.schedule import ActionScheduleModel
 from app.schemas.action.blueprint import (
     ActionBlueprintSchema,
@@ -34,7 +35,11 @@ from app.schemas.action.blueprint import (
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
 from app.schemas.response import ApiResponseSchema
-from app.schemas.constants import ActionFlowStatusEnum
+from app.schemas.constants import (
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ActionSchedulingModeEnum,
+)
 from app.service.action import ActionInstanceService, node_model_to_response
 from app.service.action.compiler import BlueprintCompiler
 from app.service.action.schedule import validate_blueprint_params
@@ -165,6 +170,11 @@ def _blueprint_detail(
         description=blueprint.description,
         target=blueprint.target,
         implementation_period=blueprint.implementation_period,
+        default_scheduling_mode=getattr(
+            blueprint,
+            "default_scheduling_mode",
+            ActionSchedulingModeEnum.BARRIER,
+        ),
         resource=blueprint.resource,
         graph=graph_model2schemas(blueprint.graph),
         created_at=blueprint.created_at,
@@ -200,6 +210,7 @@ async def create_blueprint(data: ActionBlueprintSchema):
         description=data.description,
         target=data.target,
         implementation_period=data.implementation_period,
+        default_scheduling_mode=data.default_scheduling_mode,
         resource=data.resource,
         graph=graph,
         is_template=data.is_template,
@@ -247,6 +258,11 @@ async def get_blueprints(
             description=blueprint.description,
             target=blueprint.target,
             implementation_period=blueprint.implementation_period,
+            default_scheduling_mode=getattr(
+                blueprint,
+                "default_scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            ),
             created_at=blueprint.created_at,
             updated_at=blueprint.updated_at,
             steps=steps,
@@ -301,6 +317,7 @@ async def update_blueprint(blueprint_id: str, data: ActionBlueprintSchema):
     blueprint.description = data.description
     blueprint.target = data.target
     blueprint.implementation_period = data.implementation_period
+    blueprint.default_scheduling_mode = data.default_scheduling_mode
     blueprint.resource = data.resource
     blueprint.graph = new_graph
     blueprint.is_template = data.is_template
@@ -549,6 +566,7 @@ async def delete_blueprint(blueprint_id: str):
 
     terminal_statuses = [
         ActionFlowStatusEnum.COMPLETED.value,
+        ActionFlowStatusEnum.PARTIALLY_COMPLETED.value,
         ActionFlowStatusEnum.FAILED.value,
         ActionFlowStatusEnum.CANCELLED.value,
         ActionFlowStatusEnum.TIMEOUT.value,
@@ -565,9 +583,52 @@ async def delete_blueprint(blueprint_id: str):
         await ActionInstanceService._clear_cache("blueprint", blueprint_id)
         return ApiResponseSchema.error(code=240423, message="该蓝图仍有未结束的行动，暂时无法删除")
 
+    pending_queue_cleanup = await ActionInstanceModel.find_one(
+        {
+            "blueprint_id": blueprint_id,
+            "queue_cleanup_state": {"$exists": True, "$ne": "completed"},
+        }
+    )
+    if pending_queue_cleanup:
+        blueprint.is_deleted = False
+        blueprint.updated_at = datetime.now()
+        await blueprint.save()
+        await ActionInstanceService._clear_cache("blueprint", blueprint_id)
+        return ApiResponseSchema.error(
+            code=240423,
+            message="该蓝图仍有行动队列等待清理，暂时无法删除",
+        )
+
     try:
         action_instances = await ActionInstanceModel.find({"blueprint_id": blueprint_id}).to_list()
         action_ids = [action.id for action in action_instances]
+
+        pending_subflow_reconciliation = (
+            await ActionNodeExecutionModel.find_one(
+                {
+                    "child_action_id": {"$in": action_ids},
+                    "status": {
+                        "$nin": [
+                            ActionInstanceNodeStatusEnum.COMPLETED.value,
+                            ActionInstanceNodeStatusEnum.FAILED.value,
+                            ActionInstanceNodeStatusEnum.CANCELLED.value,
+                            ActionInstanceNodeStatusEnum.TIMEOUT.value,
+                        ]
+                    },
+                }
+            )
+            if action_ids
+            else None
+        )
+        if pending_subflow_reconciliation:
+            blueprint.is_deleted = False
+            blueprint.updated_at = datetime.now()
+            await blueprint.save()
+            await ActionInstanceService._clear_cache("blueprint", blueprint_id)
+            return ApiResponseSchema.error(
+                code=240423,
+                message="该蓝图仍有嵌入式行动等待父流程对账，暂时无法删除",
+            )
 
         es = get_es()
         if es is not None and action_ids:

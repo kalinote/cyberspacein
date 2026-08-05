@@ -16,7 +16,7 @@ from app.schemas.action.execution import (
     SkippedNode,
 )
 from app.schemas.action.interface import BlueprintInterfaceSpec
-from app.schemas.constants import ActionInvocationModeEnum
+from app.schemas.constants import ActionInvocationModeEnum, ActionSchedulingModeEnum
 from app.schemas.constants import ActionExecutionDriverEnum
 from app.schemas.constants import ActionNodeKindEnum
 from app.service.boundary_binding_validator import validate_boundary_bindings
@@ -204,9 +204,13 @@ class BlueprintCompiler:
         *,
         revision_id: str | None = None,
         debug: bool = False,
+        scheduling_mode: ActionSchedulingModeEnum | str = (
+            ActionSchedulingModeEnum.BARRIER
+        ),
     ) -> BlueprintExecutionPlan:
         """校验设计图并调用注册适配器生成执行计划。"""
         invocation_mode = ActionInvocationModeEnum(invocation_mode)
+        scheduling_mode = ActionSchedulingModeEnum(scheduling_mode)
         BlueprintCompiler._validate_graph_identity(graph)
         node_by_id = {node.id: node for node in graph.nodes}
 
@@ -407,9 +411,10 @@ class BlueprintCompiler:
                 )
             )
         return BlueprintExecutionPlan(
-            plan_schema_version=2,
+            plan_schema_version=3,
             revision_id=revision_id,
             invocation_mode=invocation_mode,
+            scheduling_mode=scheduling_mode,
             debug=debug,
             nodes=plan_nodes,
             edges=plan_edges,
@@ -418,7 +423,7 @@ class BlueprintCompiler:
                 for node_id, reason in sorted(skipped.items())
             ],
             public_interface_snapshot=interface.model_dump(mode="python"),
-            extension={"scheduler": {"readiness": "edge-v1"}},
+            extension={"scheduler": {"readiness": "edge-v2"}},
         )
 
     @staticmethod

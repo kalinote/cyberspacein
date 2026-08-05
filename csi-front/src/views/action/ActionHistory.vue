@@ -35,11 +35,17 @@
               @change="handleFilterChange"
             >
               <el-option label="全部状态" value="" />
+              <el-option label="未知" :value="ACTION_STATUS.UNKNOWN" />
+              <el-option label="未就绪" :value="ACTION_STATUS.UNREADY" />
+              <el-option label="已就绪" :value="ACTION_STATUS.READY" />
               <el-option label="执行中" :value="ACTION_STATUS.RUNNING" />
               <el-option label="已完成" :value="ACTION_STATUS.COMPLETED" />
+              <el-option label="部分完成" :value="ACTION_STATUS.PARTIALLY_COMPLETED" />
               <el-option label="已暂停" :value="ACTION_STATUS.PAUSED" />
               <el-option label="已停止" :value="ACTION_STATUS.STOPPED" />
               <el-option label="失败" :value="ACTION_STATUS.FAILED" />
+              <el-option label="已取消" :value="ACTION_STATUS.CANCELLED" />
+              <el-option label="超时" :value="ACTION_STATUS.TIMEOUT" />
             </el-select>
           </div>
           <div>
@@ -64,7 +70,7 @@
       </div>
 
       <!-- 统计卡片 -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
         <div class="bg-white rounded-xl p-6 shadow-sm border border-blue-100">
           <div class="flex items-center justify-between">
             <div>
@@ -95,6 +101,17 @@
             </div>
             <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
               <Icon icon="mdi:play-circle" class="text-amber-600 text-2xl" />
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl p-6 shadow-sm border border-violet-100">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-500 mb-1">部分完成</p>
+              <p class="text-2xl font-bold text-gray-900">{{ statistics.partiallyCompleted }}</p>
+            </div>
+            <div class="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center">
+              <Icon icon="mdi:circle-slice-5" class="text-violet-600 text-2xl" />
             </div>
           </div>
         </div>
@@ -132,7 +149,7 @@
         <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-100">
           <!-- 卡片视图 -->
           <div v-if="viewMode === 'card'" class="p-6">
-            <div v-if="filteredActions.length === 0" class="flex flex-col items-center justify-center py-16">
+            <div v-if="actions.length === 0" class="flex flex-col items-center justify-center py-16">
               <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
               <p class="text-gray-500 text-lg mb-2">暂无行动记录</p>
               <p class="text-gray-400 text-sm">创建新行动后，历史记录将显示在这里</p>
@@ -140,7 +157,7 @@
 
             <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               <div
-                v-for="action in filteredActions"
+                v-for="action in actions"
                 :key="action.id"
                 class="bg-gray-50 rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-all cursor-pointer"
                 @click="viewActionDetail(action.id)"
@@ -158,6 +175,9 @@
                       class="border-slate-300! text-slate-600! bg-slate-50!"
                     >
                       调试
+                    </el-tag>
+                    <el-tag size="small" effect="plain" type="info">
+                      {{ action.schedulingMode === 'streaming' ? '异步执行' : '同步执行' }}
                     </el-tag>
                     <el-tag
                       :type="getStatusTagType(action.status)"
@@ -194,7 +214,7 @@
                 </div>
 
                 <div
-                  v-if="[ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED, ACTION_STATUS.COMPLETED].includes(action.status)"
+                  v-if="[ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED, ACTION_STATUS.COMPLETED, ACTION_STATUS.PARTIALLY_COMPLETED].includes(action.status)"
                   class="mb-4"
                 >
                   <div class="flex justify-between text-xs text-gray-600 mb-1">
@@ -217,7 +237,7 @@
                     查看详情
                   </el-button>
                   <el-button
-                    v-if="action.status === ACTION_STATUS.COMPLETED"
+                    v-if="[ACTION_STATUS.COMPLETED, ACTION_STATUS.PARTIALLY_COMPLETED].includes(action.status)"
                     type="success"
                     link
                     size="small"
@@ -267,7 +287,7 @@
 
           <!-- 表格视图 -->
           <div v-else class="overflow-x-auto">
-            <el-table :data="filteredActions" stripe style="width: 100%">
+            <el-table :data="actions" stripe style="width: 100%">
               <el-table-column prop="name" label="行动名称" min-width="200">
                 <template #default="{ row }">
                   <div class="flex items-center gap-2">
@@ -280,6 +300,9 @@
                       class="border-slate-300! text-slate-600! bg-slate-50!"
                     >
                       调试
+                    </el-tag>
+                    <el-tag size="small" effect="plain" type="info">
+                      {{ row.schedulingMode === 'streaming' ? '异步执行' : '同步执行' }}
                     </el-tag>
                   </div>
                 </template>
@@ -324,7 +347,7 @@
                       查看
                     </el-button>
                     <el-button
-                      v-if="row.status === ACTION_STATUS.COMPLETED"
+                      v-if="[ACTION_STATUS.COMPLETED, ACTION_STATUS.PARTIALLY_COMPLETED].includes(row.status)"
                       type="success"
                       link
                       size="small"
@@ -375,7 +398,7 @@
         </div>
 
         <!-- 分页 -->
-        <div v-if="filteredActions.length > 0" class="p-6 border-t border-gray-200 flex justify-center">
+        <div v-if="actions.length > 0" class="p-6 border-t border-gray-200 flex justify-center">
           <el-pagination
             v-model:current-page="pagination.page"
             v-model:page-size="pagination.pageSize"
@@ -393,7 +416,7 @@
 
 <script setup>
 defineOptions({ name: 'ActionHistory' })
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -430,6 +453,7 @@ const pagination = ref({
 const statistics = ref({
   total: 0,
   completed: 0,
+  partiallyCompleted: 0,
   running: 0,
   failed: 0
 })
@@ -437,27 +461,15 @@ const statistics = ref({
 const actions = ref([])
 const locallyDeletedActionIds = new Set()
 let isFetchingActions = false
-
-const filteredActions = computed(() => {
-  let result = [...actions.value]
-
-  if (filters.value.keyword) {
-    const keyword = filters.value.keyword.toLowerCase()
-    result = result.filter(action =>
-      action.name.toLowerCase().includes(keyword) ||
-      action.description.toLowerCase().includes(keyword)
-    )
-  }
-
-  if (filters.value.status) {
-    result = result.filter(action => action.status === filters.value.status)
-  }
-
-  return result
-})
+let fetchActionsQueued = false
+let queuedShowLoading = false
 
 const fetchActions = async (showLoading = true) => {
-  if (isFetchingActions) return
+  if (isFetchingActions) {
+    fetchActionsQueued = true
+    queuedShowLoading ||= showLoading
+    return
+  }
 
   isFetchingActions = true
   if (showLoading) loading.value = true
@@ -466,8 +478,21 @@ const fetchActions = async (showLoading = true) => {
       page: pagination.value.page,
       page_size: pagination.value.pageSize
     }
+    if (filters.value.keyword.trim()) params.keyword = filters.value.keyword.trim()
+    if (filters.value.status) params.status = filters.value.status
+    if (Array.isArray(filters.value.dateRange) && filters.value.dateRange.length === 2) {
+      const createdFrom = new Date(filters.value.dateRange[0])
+      const createdTo = new Date(filters.value.dateRange[1])
+      createdFrom.setHours(0, 0, 0, 0)
+      createdTo.setHours(23, 59, 59, 999)
+      params.created_from = createdFrom.toISOString()
+      params.created_to = createdTo.toISOString()
+    }
     
-    const result = await getPaginatedData(actionApi.getActionHistory, params)
+    const [result, summaryResponse] = await Promise.all([
+      getPaginatedData(actionApi.getActionHistory, params),
+      actionApi.getActionHistorySummary(showLoading ? {} : { silent: true }).catch(() => null)
+    ])
     
     actions.value = (result.items || [])
       .filter(item => !locallyDeletedActionIds.has(item.id))
@@ -477,36 +502,41 @@ const fetchActions = async (showLoading = true) => {
         endTime: item.finished_at || null,
         completedSteps: item.completed_steps || 0,
         totalSteps: item.total_steps || 0,
-        duration: item.duration ? item.duration * 1000 : 0
+        duration: item.duration ? item.duration * 1000 : 0,
+        schedulingMode: item.scheduling_mode === 'streaming' ? 'streaming' : 'barrier'
       }))
     
     pagination.value.total = result.pagination.total
     pagination.value.page = result.pagination.page
     pagination.value.pageSize = result.pagination.pageSize
     
-    updateStatistics()
+    if (summaryResponse?.code === 0 && summaryResponse.data) {
+      statistics.value = {
+        total: summaryResponse.data.total || 0,
+        completed: summaryResponse.data.completed || 0,
+        partiallyCompleted: summaryResponse.data.partially_completed || 0,
+        running: summaryResponse.data.running || 0,
+        failed: summaryResponse.data.failed || 0
+      }
+    }
   } catch (error) {
     console.error('获取行动历史失败:', error)
     if (showLoading) actions.value = []
   } finally {
     if (showLoading) loading.value = false
     isFetchingActions = false
+    if (fetchActionsQueued) {
+      const shouldShowLoading = queuedShowLoading
+      fetchActionsQueued = false
+      queuedShowLoading = false
+      void fetchActions(shouldShowLoading)
+    }
   }
 }
 
 const handleFilterChange = () => {
   pagination.value.page = 1
   fetchActions()
-}
-
-const updateStatistics = () => {
-  statistics.value.total = actions.value.length
-  statistics.value.completed = actions.value.filter(a => a.status === ACTION_STATUS.COMPLETED).length
-  statistics.value.running = actions.value.filter(a => a.status === ACTION_STATUS.RUNNING).length
-  statistics.value.failed = actions.value.filter(a => [
-    ACTION_STATUS.FAILED,
-    ACTION_STATUS.TIMEOUT
-  ].includes(a.status)).length
 }
 
 const handlePageChange = (page) => {
@@ -600,7 +630,6 @@ const deleteAction = (actionId) => {
     if (index > -1) {
       locallyDeletedActionIds.add(actionId)
       actions.value.splice(index, 1)
-      updateStatistics()
       ElMessage.success('行动已删除')
     }
   }).catch(() => {

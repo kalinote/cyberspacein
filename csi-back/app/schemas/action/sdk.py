@@ -8,6 +8,10 @@ class SDKResultRequest(BaseModel):
     status: Literal["success", "failed", "cancelled", "timed_out"] = Field(description="运行结果")
     error: str | None = Field(default=None, description="错误信息")
     outputs: dict[str, Any] = Field(default_factory=dict, description="输出结果")
+    has_successful_result: bool = Field(
+        default=False,
+        description="本次运行是否已产生至少一个成功业务结果",
+    )
     exit_code: int | None = None
 
 

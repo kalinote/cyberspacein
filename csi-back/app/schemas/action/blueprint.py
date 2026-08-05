@@ -6,7 +6,7 @@ from app.schemas.action.interface import (
     BlueprintInterfaceSpec,
     BoundaryBinding,
 )
-from app.schemas.constants import ActionNodeTypeEnum
+from app.schemas.constants import ActionNodeTypeEnum, ActionSchedulingModeEnum
 
 
 class PositionSchema(BaseModel):
@@ -96,6 +96,10 @@ class ActionBlueprintSchema(BaseModel):
     version: str = Field(description="蓝图版本")
     target: str = Field(description="行动目标")
     implementation_period: int = Field(default=0, ge=0, description="执行期限(秒)，0表示不限制")
+    default_scheduling_mode: ActionSchedulingModeEnum = Field(
+        default=ActionSchedulingModeEnum.BARRIER,
+        description="蓝图默认调度模式",
+    )
     resource: dict[str, Any] | None = Field(default=None, description="资源信息")
     graph: GraphSchema = Field(description="图结构")
     is_template: bool = Field(default=False, description="是否为模板")
@@ -136,6 +140,10 @@ class ActionBlueprintBaseInfoResponse(BaseModel):
     type_tag_color: str = Field(default="#dbeafe", description="蓝图分类tag颜色") # TODO: 后续改为可配置
     type_text_color: str = Field(default="#1e40af", description="蓝图分类tag文字颜色") # TODO: 后续改为可配置
     implementation_period: int = Field(default=0, ge=0, description="执行期限(秒)，0表示不限制")
+    default_scheduling_mode: ActionSchedulingModeEnum = Field(
+        default=ActionSchedulingModeEnum.BARRIER,
+        description="蓝图默认调度模式",
+    )
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
     steps: int = Field(description="总步骤数量")

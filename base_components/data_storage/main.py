@@ -563,6 +563,8 @@ def run(base_component: ComponentContext) -> dict:
                         total_processed += success_count + error_count
                         total_success += success_count
                         total_errors += error_count
+                        if success_count:
+                            base_component.mark_successful_result()
                         
                         progress = min(90, batch_number * 10)
                         base_component.report_progress(

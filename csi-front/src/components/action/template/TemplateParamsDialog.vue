@@ -14,6 +14,12 @@
             show-icon
             class="mb-4"
         />
+        <el-alert
+            :title="`本次将以${schedulingMode === 'streaming' ? '异步' : '同步'}模式执行。`"
+            type="info"
+            :closable="false"
+            class="mb-4"
+        />
         <div v-loading="loading" :element-loading-text="'加载参数中...'" class="min-h-[200px]">
             <div v-if="!loading && inputConfigs.length === 0" class="text-center py-8 text-gray-400">
                 <Icon icon="mdi:package-variant" class="text-4xl mb-2 block mx-auto" />
@@ -85,6 +91,10 @@ const props = defineProps({
     debug: {
         type: Boolean,
         default: false
+    },
+    schedulingMode: {
+        type: String,
+        default: 'barrier'
     },
     submitting: {
         type: Boolean,
@@ -209,6 +219,15 @@ const fetchBlueprintData = async () => {
 }
 
 const handleSubmit = async () => {
+    if (loading.value) return
+    if (!blueprintData.value) {
+        ElMessage.warning('蓝图参数尚未加载')
+        return
+    }
+    if (inputConfigs.value.length === 0) {
+        emit('submit', {})
+        return
+    }
     if (!formRef.value) return
     
     try {

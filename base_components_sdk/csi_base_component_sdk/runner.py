@@ -13,6 +13,7 @@ import threading
 import time
 import traceback
 import uuid
+from collections.abc import Sized
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -89,6 +90,7 @@ def _submit_initialization_failure(
                 "attempt": attempt,
                 "status": "failed",
                 "outputs": {},
+                "has_successful_result": False,
                 "error": error_message,
                 "exit_code": 2,
             }
@@ -124,6 +126,33 @@ def _run_callable(function: Callable, context: ComponentContext) -> dict[str, An
     if not isinstance(value, dict):
         raise ComponentFailure("组件入口返回值必须是 dict 或 None")
     return value
+
+
+def _has_declared_value_result(
+    output_declarations: dict[str, Any],
+    outputs: dict[str, Any],
+) -> bool:
+    """判断组件返回值中是否包含已声明且非空的 Value 输出。"""
+    if not isinstance(output_declarations, dict):
+        return False
+    for name, declaration in output_declarations.items():
+        if (
+            not isinstance(declaration, dict)
+            or declaration.get("type") != "value"
+            or name not in outputs
+        ):
+            continue
+        value = outputs[name]
+        if value is None:
+            continue
+        if isinstance(value, Sized):
+            try:
+                if len(value) == 0:
+                    continue
+            except Exception:
+                pass
+        return True
+    return False
 
 
 def _heartbeat_loop(
@@ -364,10 +393,19 @@ def run_component(args: argparse.Namespace) -> int:
         transport.close(timeout=5)
         root.removeHandler(handler)
 
+    if status == "success" and _has_declared_value_result(
+        getattr(context, "outputs", {}),
+        outputs,
+    ):
+        context.mark_successful_result()
+
     finished_at = datetime.now(timezone.utc)
     crawlab_payload = {
         "component_run_id": context.component_run_id,
         "status": status,
+        "has_successful_result": bool(
+            getattr(context, "has_successful_result", False)
+        ),
         "message": error or "运行成功",
         "outputs": json.dumps(outputs, ensure_ascii=False),
         "created_at": started_at.isoformat(),
@@ -384,6 +422,9 @@ def run_component(args: argparse.Namespace) -> int:
         "attempt": context.attempt,
         "status": status,
         "outputs": outputs,
+        "has_successful_result": bool(
+            getattr(context, "has_successful_result", False)
+        ),
         "error": error,
         "exit_code": exit_code,
     }

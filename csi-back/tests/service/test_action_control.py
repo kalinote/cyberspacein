@@ -140,8 +140,8 @@ async def test_resume_extends_deadline_and_restores_ready_node(monkeypatch):
         return _FindOne(paused_action if plain_find_calls == 1 else running_action)
 
     def find_nodes(query):
-        if "status" not in query:
-            return _FindMany([paused_node])
+        if query.get("status") == ActionInstanceNodeStatusEnum.PAUSED:
+            return _FindMany([paused_node], updates=node_updates)
         return _FindMany([])
 
     monkeypatch.setattr(ActionInstanceModel, "find_one", staticmethod(find_action))
@@ -163,6 +163,12 @@ async def test_resume_extends_deadline_and_restores_ready_node(monkeypatch):
         "check_action_finished",
         AsyncMock(return_value=False),
     )
+    schedule_ready = AsyncMock(return_value=1)
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "schedule_ready_nodes",
+        schedule_ready,
+    )
     resume_debug = AsyncMock(return_value=1)
     monkeypatch.setattr(
         DebugOutputRuntimeService,
@@ -177,7 +183,8 @@ async def test_resume_extends_deadline_and_restores_ready_node(monkeypatch):
     assert resume_fields["status"] == ActionFlowStatusEnum.RUNNING
     assert resume_fields["paused_at"] is None
     assert resume_fields["deadline_at"] > deadline_at
-    assert node_updates[0]["$set"]["status"] == ActionInstanceNodeStatusEnum.READY
+    assert node_updates[0]["$set"]["status"] == ActionInstanceNodeStatusEnum.UNREADY
+    schedule_ready.assert_awaited_once_with("action-1")
     resume_debug.assert_awaited_once_with("action-1")
 
 
@@ -224,14 +231,15 @@ async def test_stop_is_terminal_cancels_components_and_cleans_queues(monkeypatch
     monkeypatch.setattr(action_service, "cancel_component_run", cancel)
     monkeypatch.setattr(ActionInstanceService, "cleanup_action_queues", cleanup)
 
-    success, _ = await ActionInstanceService.stop("action-1")
+    success, message = await ActionInstanceService.stop("action-1")
 
     assert success is True
     assert action_updates[0]["$set"]["status"] == ActionFlowStatusEnum.STOPPED
     assert component_updates[0]["$set"]["status"] == ComponentRunStatusEnum.CANCELLED
     assert node_updates[0]["$set"]["status"] == ActionInstanceNodeStatusEnum.CANCELLED
     cancel.assert_awaited_once_with(active_run)
-    cleanup.assert_awaited_once_with("action-1")
+    cleanup.assert_not_awaited()
+    assert "组件退出宽限后清理" in message
 
 
 @pytest.mark.asyncio

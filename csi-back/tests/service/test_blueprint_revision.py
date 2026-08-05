@@ -28,6 +28,7 @@ from app.schemas.constants import (
     ActionInvocationModeEnum,
     ActionNodeDefinitionOriginEnum,
     ActionNodeKindEnum,
+    ActionSchedulingModeEnum,
 )
 from app.service.blueprint_revision import BlueprintRevisionService
 
@@ -230,9 +231,16 @@ async def test_publish_hash_includes_runtime_definition_snapshot(
     await BlueprintRevisionService.publish(blueprint)
     definition.command = "runner-two"
     await BlueprintRevisionService.publish(blueprint)
+    blueprint.default_scheduling_mode = ActionSchedulingModeEnum.STREAMING
+    await BlueprintRevisionService.publish(blueprint)
 
-    assert len(inserted) == 2
+    assert len(inserted) == 3
     assert inserted[0].content_hash != inserted[1].content_hash
+    assert inserted[1].content_hash != inserted[2].content_hash
+    assert (
+        inserted[2].blueprint_snapshot.default_scheduling_mode
+        == ActionSchedulingModeEnum.STREAMING
+    )
     assert inserted[0].runtime_contract_version == 2
     assert inserted[0].reference_protocol_version == "eos-v1"
 

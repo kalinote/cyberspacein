@@ -85,6 +85,10 @@ export const actionApi = {
   getActionHistory(params = {page: 1, page_size: 10}) {
     return request.get('/action/list', params)
   },
+  // 获取行动历史全量状态统计
+  getActionHistorySummary(config = {}) {
+    return request.get('/action/summary', undefined, config)
+  },
   // 运行行动
   runAction(data) {
     return request.post(`/action/start`, data)

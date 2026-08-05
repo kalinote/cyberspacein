@@ -111,6 +111,7 @@ class ActionInstanceAlertSource:
                                 ActionFlowStatusEnum.READY: "就绪",
                                 ActionFlowStatusEnum.RUNNING: "运行中",
                                 ActionFlowStatusEnum.COMPLETED: "已完成",
+                                ActionFlowStatusEnum.PARTIALLY_COMPLETED: "部分完成",
                                 ActionFlowStatusEnum.FAILED: "失败",
                                 ActionFlowStatusEnum.CANCELLED: "已取消",
                                 ActionFlowStatusEnum.TIMEOUT: "超时",

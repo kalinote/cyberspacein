@@ -592,17 +592,25 @@ async def test_managed_timeout_cleanup_is_not_reversed_by_abort_retry(
         staticmethod(lambda: reference_state_collection),
     )
 
-    round_results = []
-    for _ in range(2):
-        round_results.append(
-            (
-                await ActionInstanceService.expire_stale_actions(),
-                await ActionInstanceService.retry_open_reference_aborts(),
-                await ActionInstanceService.retry_failed_queue_cleanup(),
-            )
+    round_results = [
+        (
+            await ActionInstanceService.expire_stale_actions(),
+            await ActionInstanceService.retry_open_reference_aborts(),
+            await ActionInstanceService.retry_failed_queue_cleanup(),
         )
+    ]
+    action.finished_at = datetime.now() - timedelta(
+        seconds=action_service.REFERENCE_QUEUE_CLEANUP_GRACE_SECONDS + 1
+    )
+    round_results.append(
+        (
+            await ActionInstanceService.expire_stale_actions(),
+            await ActionInstanceService.retry_open_reference_aborts(),
+            await ActionInstanceService.retry_failed_queue_cleanup(),
+        )
+    )
 
-    assert round_results == [(1, 0, 0), (0, 0, 0)]
+    assert round_results == [(1, 0, 0), (0, 0, 1)]
     assert action.status == ActionFlowStatusEnum.TIMEOUT
     assert action.reference_queue_lifecycle == "cleaned"
     assert action.queue_cleanup_state == "completed"

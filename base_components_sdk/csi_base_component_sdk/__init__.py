@@ -29,4 +29,4 @@ __all__ = [
     "ReferenceStreamAborted",
     "ReferenceStreamTransportError",
 ]
-__version__ = "2.4.1"
+__version__ = "2.6.0"

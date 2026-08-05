@@ -14,7 +14,7 @@
         :closable="false"
       />
       <template v-else-if="detail">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-5">
           <div class="rounded-lg border border-gray-200 p-3">
             <p class="text-xs text-gray-500">内部行动</p>
             <p class="mt-1 font-medium text-gray-900">{{ detail.name }}</p>
@@ -33,6 +33,12 @@
             <p class="text-xs text-gray-500">节点</p>
             <p class="mt-1 font-medium text-gray-900">
               {{ detail.completed_steps || 0 }} / {{ detail.total_steps || 0 }}
+            </p>
+          </div>
+          <div class="rounded-lg border border-gray-200 p-3">
+            <p class="text-xs text-gray-500">执行模式</p>
+            <p class="mt-1 font-medium text-gray-900">
+              {{ detail.scheduling_mode === 'streaming' ? '异步执行' : '同步执行' }}
             </p>
           </div>
         </div>

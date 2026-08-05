@@ -21,6 +21,7 @@ from app.schemas.action.schedule import (
 from app.schemas.constants import (
     ActionFlowStatusEnum,
     ActionInstanceNodeStatusEnum,
+    ActionSchedulingModeEnum,
     ActionScheduleTypeEnum,
 )
 from app.schemas.general import PageParamsSchema, PageResponseSchema
@@ -72,7 +73,11 @@ async def run_response(action: ActionInstanceModel) -> ActionScheduleRunResponse
     if blueprint is None or not action.schedule_id:
         return None
     error_message = None
-    if action.status in {ActionFlowStatusEnum.FAILED, ActionFlowStatusEnum.TIMEOUT}:
+    if action.status in {
+        ActionFlowStatusEnum.FAILED,
+        ActionFlowStatusEnum.PARTIALLY_COMPLETED,
+        ActionFlowStatusEnum.TIMEOUT,
+    }:
         failed_node = await ActionInstanceNodeModel.find_one(
             {
                 "action_id": action.id,
@@ -93,6 +98,11 @@ async def run_response(action: ActionInstanceModel) -> ActionScheduleRunResponse
         blueprint_name=blueprint.name,
         priority=action.schedule_priority,
         status=action.status,
+        scheduling_mode=getattr(
+            action.execution_plan_snapshot,
+            "scheduling_mode",
+            ActionSchedulingModeEnum.BARRIER,
+        ),
         progress=action.progress,
         scheduled_for=action.scheduled_for,
         created_at=action.created_at,
@@ -234,6 +244,12 @@ async def get_schedule_summary():
             },
         }
     ).count()
+    partially_completed_count = await ActionInstanceModel.find(
+        {
+            **base_filter,
+            "status": ActionFlowStatusEnum.PARTIALLY_COMPLETED,
+        }
+    ).count()
     recent_actions = await ActionInstanceModel.find(base_filter).sort([("created_at", -1)]).limit(6).to_list()
     recent_runs = []
     for action in recent_actions:
@@ -248,6 +264,7 @@ async def get_schedule_summary():
             running_count=running_count,
             pending_count=pending_count,
             failed_count=failed_count,
+            partially_completed_count=partially_completed_count,
             recent_runs=recent_runs,
         )
     )

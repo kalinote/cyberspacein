@@ -72,6 +72,7 @@ routes:
 
   - {method: POST, path: "/action/start", principal: user, permission: "operation:action:instance:execute"}
   - {method: GET, path: "/action/list", principal: user, permission: "operation:action:instance:read"}
+  - {method: GET, path: "/action/summary", principal: user, permission: "operation:action:instance:read"}
   - {method: GET, path: "/action/detail/{action_id}", principal: user, permission: "operation:action:instance:read"}
   - {method: GET, path: "/action/instances/{action_id}/nodes/{node_id}/embedded", principal: user, permission: "operation:action:instance:read"}
   - {method: GET, path: "/action/instances/{action_id}/nodes/{node_id}/embedded/logs", principal: user, permission: "operation:action:instance-log:read"}

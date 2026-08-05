@@ -349,8 +349,128 @@ def test_send_message_treats_negative_publisher_confirm_as_failure():
     assert client.send_message("queue-1", {"value": 1}) is False
 
 
+def test_business_publish_notifies_successful_result_after_confirm():
+    client = _connected_client()
+    callback = MagicMock()
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "value": ["queue-1"],
+            }
+        },
+        successful_result_callback=callback,
+    )
+
+    assert client.send_message("queue-1", {"value": 1}) is True
+
+    callback.assert_called_once_with()
+
+
+def test_rejected_business_publish_does_not_notify_successful_result():
+    client = _connected_client()
+    callback = MagicMock()
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "value": ["queue-1"],
+            }
+        },
+        successful_result_callback=callback,
+    )
+    client.channel.basic_publish.return_value = False
+
+    assert client.send_message("queue-1", {"value": 1}) is False
+
+    callback.assert_not_called()
+
+
+def test_publish_to_undeclared_queue_does_not_notify_successful_result():
+    client = _connected_client()
+    callback = MagicMock()
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "value": ["queue-1"],
+            }
+        },
+        successful_result_callback=callback,
+    )
+
+    assert client.send_message("external-queue", {"value": 1}) is True
+
+    callback.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda client: client.send_message("queue-1", {}),
+        lambda client: client.send_messages_batch([], {"value": 1}),
+        lambda client: client.publish_messages("queue-1", []),
+        lambda client: client.publish_messages("queue-1", [{}, {}]),
+    ],
+)
+def test_empty_business_publish_does_not_notify_successful_result(operation):
+    client = _connected_client()
+    callback = MagicMock()
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "value": ["queue-1"],
+            }
+        },
+        successful_result_callback=callback,
+    )
+
+    operation(client)
+
+    callback.assert_not_called()
+
+
+def test_partial_fan_out_keeps_successful_result_notification():
+    client = _connected_client()
+    callback = MagicMock()
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "value": ["queue-1", "queue-2"],
+            }
+        },
+        successful_result_callback=callback,
+    )
+    client.channel.basic_publish.side_effect = [True, False]
+
+    assert client.send_messages_batch(
+        ["queue-1", "queue-2"],
+        {"value": 1},
+    ) == 1
+
+    callback.assert_called_once_with()
+
+
 def test_send_message_fragments_oversized_json_before_publish():
     client = _connected_client()
+    callback = MagicMock()
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "value": ["queue-1"],
+            }
+        },
+        successful_result_callback=callback,
+    )
     client._fragment_settings = FragmentSettings(32, 16, 256)
 
     assert client.send_message(
@@ -370,6 +490,7 @@ def test_send_message_fragments_oversized_json_before_publish():
         for call in calls
     } == {"logical-1"}
     assert all(len(call.kwargs["body"]) <= 16 for call in calls)
+    callback.assert_called_once_with()
 
 
 def test_get_message_reassembles_fragments_and_ack_confirms_every_part():
@@ -445,6 +566,28 @@ def test_publish_messages_uses_one_id_per_record_across_queues():
         properties = call.kwargs["properties"]
         assert properties.content_type == "application/json"
         assert properties.content_encoding == "utf-8"
+
+
+def test_publish_messages_notifies_once_per_non_empty_record():
+    client = _connected_client()
+    callback = MagicMock()
+    client.configure_reference_streams(
+        {},
+        {
+            "data_out": {
+                "type": "reference",
+                "value": ["queue-1", "queue-2"],
+            }
+        },
+        successful_result_callback=callback,
+    )
+
+    assert client.publish_messages(
+        ["queue-1", "queue-2"],
+        [{"value": 1}, {}, {"value": 2}],
+    ) is True
+
+    assert callback.call_count == 2
 
 
 def test_publish_messages_validates_id_count_before_publishing():
@@ -882,6 +1025,7 @@ def test_repeated_reference_terminal_keeps_first_state(control_type):
 
 def test_close_reference_outputs_publishes_amqp_eos_properties():
     client = _connected_client()
+    callback = MagicMock()
     client.configure_reference_streams(
         {},
         {
@@ -897,6 +1041,7 @@ def test_close_reference_outputs_publishes_amqp_eos_properties():
                 ],
             }
         },
+        successful_result_callback=callback,
     )
 
     assert client.close_reference_outputs(
@@ -914,6 +1059,7 @@ def test_close_reference_outputs_publishes_amqp_eos_properties():
         "x-csi-producer-id": "run-1",
         "x-csi-stream-id": "stream-1",
     }
+    callback.assert_not_called()
 
 
 def test_managed_reference_control_is_mandatory_without_declaration():

@@ -9,10 +9,31 @@ from app.api.v1.endpoints.action import instance as instance_endpoint
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
 from app.models.action.blueprint import ActionBlueprintModel, GraphModel, ViewportModel
 from app.models.action.component_run import ComponentRunModel
+from app.models.action.node_execution import ActionNodeExecutionModel
 from app.models.action.schedule import ActionScheduleModel
 from app.schemas.general import PageParamsSchema
 from app.schemas.action.blueprint import ActionBlueprintSchema
+from app.schemas.constants import (
+    ActionInstanceNodeStatusEnum,
+    ActionSchedulingModeEnum,
+)
 from app.service.action import ActionInstanceService
+
+
+def test_blueprint_schema_defaults_to_barrier_mode() -> None:
+    request = ActionBlueprintSchema(
+        name="兼容蓝图",
+        version="1.0.0",
+        description="",
+        target="目标",
+        graph={
+            "nodes": [],
+            "edges": [],
+            "viewport": {"x": 0, "y": 0, "zoom": 1},
+        },
+    )
+
+    assert request.default_scheduling_mode == ActionSchedulingModeEnum.BARRIER
 
 
 @pytest.mark.asyncio
@@ -79,6 +100,85 @@ async def test_delete_blueprint_rejects_unfinished_action(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_delete_blueprint_rejects_pending_queue_cleanup(monkeypatch):
+    blueprint = SimpleNamespace(
+        is_deleted=False,
+        updated_at=None,
+        save=AsyncMock(),
+        delete=AsyncMock(),
+    )
+    find_action = AsyncMock(
+        side_effect=[None, SimpleNamespace(id="action-pending-cleanup")]
+    )
+    clear_cache = AsyncMock()
+    monkeypatch.setattr(ActionBlueprintModel, "find_one", AsyncMock(return_value=blueprint))
+    monkeypatch.setattr(ActionScheduleModel, "find_one", AsyncMock(return_value=None))
+    monkeypatch.setattr(ActionInstanceModel, "find_one", find_action)
+    monkeypatch.setattr(ActionInstanceService, "_clear_cache", clear_cache)
+
+    response = await blueprint_endpoint.delete_blueprint("blueprint-1")
+
+    assert response.code == 240423
+    assert "队列等待清理" in response.message
+    assert find_action.await_args_list[1].args[0] == {
+        "blueprint_id": "blueprint-1",
+        "queue_cleanup_state": {"$exists": True, "$ne": "completed"},
+    }
+    assert blueprint.is_deleted is False
+    assert blueprint.save.await_count == 2
+    assert clear_cache.await_count == 2
+    blueprint.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_blueprint_rejects_pending_embedded_action_reconciliation(
+    monkeypatch,
+):
+    blueprint = SimpleNamespace(
+        is_deleted=False,
+        updated_at=None,
+        save=AsyncMock(),
+        delete=AsyncMock(),
+    )
+    action_list_query = Mock()
+    action_list_query.to_list = AsyncMock(
+        return_value=[SimpleNamespace(id="embedded-action-1")]
+    )
+    parent_execution = SimpleNamespace(
+        id="parent-execution-1",
+        status=ActionInstanceNodeStatusEnum.RUNNING,
+    )
+    find_parent_execution = AsyncMock(return_value=parent_execution)
+    clear_cache = AsyncMock()
+    monkeypatch.setattr(ActionBlueprintModel, "find_one", AsyncMock(return_value=blueprint))
+    monkeypatch.setattr(ActionScheduleModel, "find_one", AsyncMock(return_value=None))
+    monkeypatch.setattr(ActionInstanceModel, "find_one", AsyncMock(return_value=None))
+    monkeypatch.setattr(ActionInstanceModel, "find", Mock(return_value=action_list_query))
+    monkeypatch.setattr(ActionNodeExecutionModel, "find_one", find_parent_execution)
+    monkeypatch.setattr(ActionInstanceService, "_clear_cache", clear_cache)
+
+    response = await blueprint_endpoint.delete_blueprint("blueprint-1")
+
+    assert response.code == 240423
+    assert "等待父流程对账" in response.message
+    assert find_parent_execution.await_args.args[0] == {
+        "child_action_id": {"$in": ["embedded-action-1"]},
+        "status": {
+            "$nin": [
+                ActionInstanceNodeStatusEnum.COMPLETED.value,
+                ActionInstanceNodeStatusEnum.FAILED.value,
+                ActionInstanceNodeStatusEnum.CANCELLED.value,
+                ActionInstanceNodeStatusEnum.TIMEOUT.value,
+            ]
+        },
+    }
+    assert blueprint.is_deleted is False
+    assert blueprint.save.await_count == 2
+    assert clear_cache.await_count == 2
+    blueprint.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_delete_blueprint_cascades_historical_action_data(monkeypatch):
     blueprint = SimpleNamespace(is_deleted=False, updated_at=None, save=AsyncMock(), delete=AsyncMock())
     action_list_query = Mock()
@@ -98,6 +198,7 @@ async def test_delete_blueprint_cascades_historical_action_data(monkeypatch):
     monkeypatch.setattr(ActionScheduleModel, "find_one", AsyncMock(return_value=None))
     monkeypatch.setattr(ActionInstanceModel, "find_one", AsyncMock(return_value=None))
     monkeypatch.setattr(ActionInstanceModel, "find", Mock(side_effect=[action_list_query, action_delete_query]))
+    monkeypatch.setattr(ActionNodeExecutionModel, "find_one", AsyncMock(return_value=None))
     monkeypatch.setattr(ActionInstanceNodeModel, "find", Mock(return_value=node_delete_query))
     monkeypatch.setattr(ComponentRunModel, "find", Mock(return_value=run_delete_query))
     monkeypatch.setattr(ActionInstanceService, "_clear_cache", clear_cache)
@@ -180,6 +281,7 @@ async def test_update_blueprint_keeps_id_and_disables_invalid_schedules(
         description="新描述",
         target="新目标",
         implementation_period=120,
+        default_scheduling_mode=ActionSchedulingModeEnum.STREAMING,
         resource={"account": "new"},
         graph={
             "nodes": [],
@@ -196,6 +298,11 @@ async def test_update_blueprint_keeps_id_and_disables_invalid_schedules(
     assert response.data.blueprint.created_at == created_at
     assert blueprint.name == "新蓝图"
     assert blueprint.version == "2.0.0"
+    assert blueprint.default_scheduling_mode == ActionSchedulingModeEnum.STREAMING
+    assert (
+        response.data.blueprint.default_scheduling_mode
+        == ActionSchedulingModeEnum.STREAMING
+    )
     assert blueprint.template is None
     assert blueprint.created_at == created_at
     assert blueprint.updated_at != old_updated_at

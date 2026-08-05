@@ -9,6 +9,7 @@ from app.schemas.constants import (
     ActionFlowStatusEnum,
     ActionInstanceNodeStatusEnum,
     ActionInvocationModeEnum,
+    ActionSchedulingModeEnum,
     ActionTriggerTypeEnum,
     ActionVisibilityEnum,
 )
@@ -42,6 +43,10 @@ class ActionInstanceModel(Document):
         description="蓝图调用模式",
     )
     debug: bool = Field(default=False, description="是否以调试模式运行")
+    scheduling_mode_override: ActionSchedulingModeEnum | None = Field(
+        default=None,
+        description="本次启动显式指定并向封装调用传播的调度模式",
+    )
     visibility: ActionVisibilityEnum = Field(
         default=ActionVisibilityEnum.NORMAL,
         description="行动历史可见性",
@@ -190,6 +195,10 @@ class ActionInstanceNodeModel(Document):
     aborted_input_edge_ids: list[str] = Field(
         default_factory=list,
         description="已确认无法产生数据的输入边ID",
+    )
+    has_successful_result: bool = Field(
+        default=False,
+        description="该节点是否已确认产生至少一个成功业务结果",
     )
     
     class Settings:

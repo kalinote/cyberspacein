@@ -38,6 +38,7 @@ from app.schemas.constants import (
     ActionNodeTypeEnum,
     ActionExecutionDriverEnum,
     ActionInvocationModeEnum,
+    ActionSchedulingModeEnum,
     ActionNodeKindEnum,
     ActionVisibilityEnum,
     ComponentRunStatusEnum,
@@ -90,6 +91,7 @@ REFERENCE_QUEUE_PROVISION_LEASE_SECONDS = 30
 REFERENCE_QUEUE_PROVISION_DECLARE_TIMEOUT_SECONDS = 10
 REFERENCE_LEASE_OPERATION_MARGIN_SECONDS = 1
 REFERENCE_PROVISIONING_RECOVERY_SECONDS = 60
+REFERENCE_QUEUE_CLEANUP_GRACE_SECONDS = 30
 REFERENCE_ABORT_PUBLISH_TOKEN_FIELD = "_reference_abort_publish_token"
 REFERENCE_ABORT_PUBLISH_EXPIRES_FIELD = "_reference_abort_publish_expires_at"
 REFERENCE_ABORT_PUBLISH_CLOSED_FIELD = "_reference_abort_publish_closed"
@@ -181,6 +183,80 @@ async def node_model_to_response(node: ActionNodeModel) -> ActionNodeResponse:
 
 
 class ActionInstanceService:
+    _ready_reconcile_cursor: str | None = None
+
+    @staticmethod
+    def _get_scheduling_mode(
+        action: ActionInstanceModel,
+    ) -> ActionSchedulingModeEnum:
+        """从冻结执行计划读取调度模式，旧计划始终回退为同步屏障。"""
+        execution_plan = action.execution_plan_snapshot
+        if getattr(execution_plan, "plan_schema_version", 2) < 3:
+            return ActionSchedulingModeEnum.BARRIER
+        try:
+            return ActionSchedulingModeEnum(
+                getattr(
+                    execution_plan,
+                    "scheduling_mode",
+                    ActionSchedulingModeEnum.BARRIER,
+                )
+            )
+        except ValueError:
+            return ActionSchedulingModeEnum.BARRIER
+
+    @staticmethod
+    async def _persist_node_fields(
+        node_instance: ActionInstanceNodeModel,
+        fields: dict[str, Any],
+        *,
+        exact_map_entries: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        """以字段级原子更新持久化节点，并安全处理包含点号的 Map Key。"""
+        if exact_map_entries:
+            pipeline_fields = dict(fields)
+            for map_field, entries in exact_map_entries.items():
+                pipeline_fields[map_field] = (
+                    ActionInstanceService._build_exact_map_expression(
+                        map_field,
+                        entries,
+                    )
+                )
+            update_payload: dict[str, Any] | list[dict[str, Any]] = [
+                {"$set": pipeline_fields}
+            ]
+        else:
+            update_payload = {"$set": fields}
+        update = getattr(node_instance, "update", None)
+        if callable(update):
+            await update(update_payload)
+            return
+        save = getattr(node_instance, "save", None)
+        if callable(save):
+            await save()
+            return
+        await ActionInstanceNodeModel.find_one(
+            {"_id": node_instance.id}
+        ).update(update_payload)
+
+    @staticmethod
+    def _build_exact_map_expression(
+        map_field: str,
+        entries: dict[str, Any],
+    ) -> dict[str, Any]:
+        """构造 Mongo `$setField` 表达式，按字面量写入动态 Map Key。"""
+        expression: dict[str, Any] = {
+            "$ifNull": [f"${map_field}", {}],
+        }
+        for key, value in entries.items():
+            expression = {
+                "$setField": {
+                    "field": {"$literal": key},
+                    "input": expression,
+                    "value": {"$literal": value},
+                }
+            }
+        return expression
+
     @staticmethod
     def _build_reference_queue_bindings(
         action_id: str,
@@ -443,6 +519,7 @@ class ActionInstanceService:
         ) = None,
         initiator_user_id: str | None = None,
         debug: bool = False,
+        scheduling_mode: ActionSchedulingModeEnum | str | None = None,
         trigger_type=None,
         trigger_key: str | None = None,
         scheduled_for: datetime | None = None,
@@ -480,6 +557,19 @@ class ActionInstanceService:
                 return False, f"蓝图Revision不存在: {blueprint_revision_id}"
             graph = revision.graph_snapshot
         try:
+            scheduling_mode_override = (
+                ActionSchedulingModeEnum(scheduling_mode)
+                if scheduling_mode is not None
+                else None
+            )
+            effective_scheduling_mode = scheduling_mode_override or getattr(
+                revision.blueprint_snapshot if revision is not None else blueprint,
+                "default_scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            )
+            effective_scheduling_mode = ActionSchedulingModeEnum(
+                effective_scheduling_mode
+            )
             definitions = (
                 await BlueprintRevisionService.load_revision_definitions(revision)
                 if revision is not None
@@ -496,6 +586,7 @@ class ActionInstanceService:
                 invocation_mode,
                 revision_id=blueprint_revision_id,
                 debug=debug,
+                scheduling_mode=effective_scheduling_mode,
             )
             await BlueprintCompiler.validate_encapsulated_dependencies(
                 definitions
@@ -541,6 +632,7 @@ class ActionInstanceService:
             execution_plan_snapshot=execution_plan,
             invocation_mode=invocation_mode,
             debug=debug,
+            scheduling_mode_override=scheduling_mode_override,
             visibility=visibility,
             root_action_id=root_action_id or action_id,
             parent_action_id=parent_action_id,
@@ -586,6 +678,51 @@ class ActionInstanceService:
                 definitions,
             )
         )
+        graph_node_by_id = {node.id: node for node in graph.nodes}
+        reference_inputs_by_target: dict[
+            str,
+            dict[str, ActionConfigIOModel],
+        ] = {}
+        for edge in execution_plan.edges:
+            if edge.data_type != "reference":
+                continue
+            binding = reference_bindings_by_source.get(edge.source, {}).get(edge.id)
+            target_graph_node = graph_node_by_id.get(edge.target)
+            target_definition = (
+                definitions.get(target_graph_node.data.definition_id)
+                if target_graph_node is not None
+                else None
+            )
+            if binding is None or target_definition is None:
+                return False, f"Reference执行边缺少冻结绑定: {edge.id}"
+            _, target_handle_definition = await (
+                ActionInstanceService.resolve_node_handle_definition(
+                    target_definition,
+                    edge.target_port_id,
+                )
+            )
+            if target_handle_definition is None:
+                return False, f"Reference执行边缺少目标连接点定义: {edge.id}"
+            allow_multiple_inputs = bool(
+                (
+                    target_definition.extension.config.get("compiler", {})
+                    if target_definition.extension
+                    else {}
+                ).get("allow_multiple_inputs", False)
+            )
+            target_instance_id = generate_id(action_id + edge.target)
+            input_slot = (
+                generate_id(f"multi-input:{target_instance_id}:{edge.id}")
+                if allow_multiple_inputs
+                else edge.target_port_id
+            )
+            reference_inputs_by_target.setdefault(edge.target, {})[input_slot] = (
+                ActionConfigIOModel(
+                    key=target_handle_definition.handle_name,
+                    value=binding.queue_name,
+                    type=ActionConfigIOTypeEnum.REFERENCE,
+                )
+            )
         skipped_by_id = {
             node.node_id: node.reason for node in execution_plan.skipped_nodes
         }
@@ -630,6 +767,7 @@ class ActionInstanceService:
                     else ActionInstanceNodeStatusEnum.PENDING
                 ),
                 configs=form_data + default_configs,
+                inputs=reference_inputs_by_target.get(node.id, {}),
                 reference_queue_bindings=reference_bindings_by_source.get(
                     node.id,
                     {},
@@ -827,25 +965,24 @@ class ActionInstanceService:
         action = await ActionInstanceModel.find_one({"_id": action_id})
         if action is None:
             return
+        action.status = ActionFlowStatusEnum.RUNNING
+        action.start_at = getattr(action, "start_at", None) or now
+        action.deadline_at = (
+            now + timedelta(seconds=action.implementation_period)
+            if action.implementation_period > 0
+            else None
+        )
         await publish_action_status_observation(
             action,
             ActionFlowStatusEnum.RUNNING,
             now,
         )
 
-        ready_nodes = await ActionInstanceNodeModel.find({"action_id": action.id, "status": ActionInstanceNodeStatusEnum.READY}).to_list()
-        ready_nodes.sort(
-            key=lambda item: (
-                0
-                if item.extension_spec_snapshot
-                and item.extension_spec_snapshot.execution_policy
-                == "debug.observer"
-                else 1
-            )
+        await ActionInstanceService.schedule_ready_nodes(
+            action_id,
+            _action=action,
         )
-        for node in ready_nodes:
-            await ActionInstanceService.run_node(node.id, action_id)
-        if not ready_nodes and await ActionInstanceService.check_action_finished(action_id):
+        if await ActionInstanceService.check_action_finished(action_id):
             await ActionInstanceService.finish_action(action_id)
 
     @staticmethod
@@ -964,73 +1101,19 @@ class ActionInstanceService:
             except Exception as exc:
                 logger.error(f"恢复调试输出消费者失败，行动 {action_id}: {exc}")
 
-        node_instances = await ActionInstanceNodeModel.find(
-            {"action_id": action_id}
-        ).to_list()
-        node_by_id = {node.node_id: node for node in node_instances}
-        previous_by_node: dict[str, list[str]] = {}
-        execution_edges = action.execution_plan_snapshot.edges
-        for edge in execution_edges:
-            previous_by_node.setdefault(edge.target, []).append(edge.source)
-
-        for node_instance in node_instances:
-            if node_instance.status != ActionInstanceNodeStatusEnum.PAUSED:
-                continue
-            previous_nodes = [
-                node_by_id[node_id]
-                for node_id in previous_by_node.get(node_instance.node_id, [])
-                if node_id in node_by_id
-            ]
-            failed_previous = next(
-                (
-                    node
-                    for node in previous_nodes
-                    if node.status
-                    in {
-                        ActionInstanceNodeStatusEnum.FAILED,
-                        ActionInstanceNodeStatusEnum.CANCELLED,
-                        ActionInstanceNodeStatusEnum.TIMEOUT,
-                    }
-                ),
-                None,
-            )
-            extension_spec = getattr(
-                node_instance,
-                "extension_spec_snapshot",
-                None,
-            )
-            is_debug_observer = bool(
-                extension_spec
-                and extension_spec.execution_policy == "debug.observer"
-            )
-            if failed_previous is not None and not is_debug_observer:
-                node_status = ActionInstanceNodeStatusEnum.CANCELLED
-                node_update = {
-                    "status": node_status,
-                    "error_message": "前置节点未成功完成，节点不再运行",
-                    "finished_at": now,
-                    "finalization_claimed": True,
-                }
-            else:
-                node_status = (
-                    ActionInstanceNodeStatusEnum.READY
-                    if is_debug_observer
-                    or all(
-                        node.status == ActionInstanceNodeStatusEnum.COMPLETED
-                        for node in previous_nodes
-                    )
-                    else ActionInstanceNodeStatusEnum.UNREADY
-                )
-                node_update = {
-                    "status": node_status,
+        await ActionInstanceNodeModel.find(
+            {
+                "action_id": action_id,
+                "status": ActionInstanceNodeStatusEnum.PAUSED,
+            }
+        ).update(
+            {
+                "$set": {
+                    "status": ActionInstanceNodeStatusEnum.UNREADY,
                     "start_at": None,
                 }
-            await ActionInstanceNodeModel.find_one(
-                {
-                    "_id": node_instance.id,
-                    "status": ActionInstanceNodeStatusEnum.PAUSED,
-                }
-            ).update({"$set": node_update})
+            }
+        )
 
         action = await ActionInstanceModel.find_one(
             {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
@@ -1073,14 +1156,7 @@ class ActionInstanceService:
                     f"恢复普通节点组件派发失败，节点 {node_instance.id}: {exc}"
                 )
 
-        ready_nodes = await ActionInstanceNodeModel.find(
-            {
-                "action_id": action_id,
-                "status": ActionInstanceNodeStatusEnum.READY,
-            }
-        ).to_list()
-        for node_instance in ready_nodes:
-            await ActionInstanceService.run_node(node_instance.id, action_id)
+        await ActionInstanceService.schedule_ready_nodes(action_id)
 
         current_action = await ActionInstanceModel.find_one({"_id": action_id})
         if (
@@ -1102,7 +1178,7 @@ class ActionInstanceService:
 
     @staticmethod
     async def stop(action_id: str) -> tuple[bool, str]:
-        """不可逆地停止行动、终止活动组件并立即清理引用队列。"""
+        """不可逆地停止行动并请求取消，队列在退出宽限后后台清理。"""
         action = await ActionInstanceModel.find_one({"_id": action_id})
         if action is None:
             return False, f"行动不存在，ID: {action_id}"
@@ -1111,11 +1187,12 @@ class ActionInstanceService:
                 action_id,
                 "行动已停止",
             )
-            queues_cleaned = await ActionInstanceService.cleanup_action_queues(
-                action_id
+            queues_cleaned = (
+                action.queue_cleanup_state == "completed"
+                or await ActionInstanceService.cleanup_action_queues(action_id)
             )
             if not queues_cleaned:
-                return True, "行动已停止，但部分引用队列清理仍然失败"
+                return True, "行动已停止，引用队列正在等待后台清理"
             return True, "行动已处于停止状态，引用队列已清理"
 
         stoppable_statuses = {
@@ -1240,10 +1317,227 @@ class ActionInstanceService:
             action_id,
             "行动已停止",
         )
-        queues_cleaned = await ActionInstanceService.cleanup_action_queues(action_id)
-        if not queues_cleaned:
-            return True, "行动已停止，但部分引用队列清理失败"
-        return True, "行动已停止，引用队列已清理"
+        return True, "行动已停止，引用队列将在组件退出宽限后清理"
+
+    @staticmethod
+    async def _record_node_finished(
+        action_id: str,
+        node_instance_id: str,
+        *,
+        _action: ActionInstanceModel | None = None,
+    ) -> None:
+        """原子记录节点终态，并按数据库中的真实终态节点数刷新进度。"""
+        action = _action
+        if action is None:
+            try:
+                action = await ActionInstanceModel.find_one({"_id": action_id})
+            except CollectionWasNotInitialized:
+                return
+        if action is None:
+            return
+        update = getattr(action, "update", None)
+        if callable(update):
+            await update(
+                {"$addToSet": {"finished_nodes_instance": node_instance_id}}
+            )
+        else:
+            finished_nodes = getattr(action, "finished_nodes_instance", None)
+            if finished_nodes is not None and node_instance_id not in finished_nodes:
+                finished_nodes.append(node_instance_id)
+            save = getattr(action, "save", None)
+            if callable(save):
+                await save()
+        try:
+            terminal_nodes = await ActionInstanceNodeModel.find(
+                {
+                    "action_id": action_id,
+                    "status": {
+                        "$in": [
+                            ActionInstanceNodeStatusEnum.COMPLETED,
+                            ActionInstanceNodeStatusEnum.FAILED,
+                            ActionInstanceNodeStatusEnum.CANCELLED,
+                            ActionInstanceNodeStatusEnum.TIMEOUT,
+                            ActionInstanceNodeStatusEnum.SKIPPED,
+                        ]
+                    },
+                }
+            ).to_list()
+        except CollectionWasNotInitialized:
+            return
+        terminal_count = len(terminal_nodes)
+        executable_node_count = len(action.execution_plan_snapshot.nodes)
+        progress = (
+            round(terminal_count / executable_node_count * 100, 2)
+            if executable_node_count
+            else 100.0
+        )
+        if callable(update):
+            await update(
+                {
+                    "$max": {"progress": progress},
+                    "$set": {"updated_at": datetime.now()},
+                }
+            )
+
+    @staticmethod
+    def _get_business_node_ids(action: ActionInstanceModel) -> set[str]:
+        """返回排除调试观察器和控制边界后的业务执行节点。"""
+        business_node_ids = set()
+        for plan_node in action.execution_plan_snapshot.nodes:
+            extension = getattr(plan_node, "extension", {}) or {}
+            extension_spec = getattr(plan_node, "extension_spec", None)
+            if extension.get("boundary"):
+                continue
+            if (
+                extension_spec
+                and extension_spec.execution_policy == "debug.observer"
+            ):
+                continue
+            business_node_ids.add(plan_node.id)
+        return business_node_ids
+
+    @staticmethod
+    async def _has_successful_terminal_result(
+        action: ActionInstanceModel,
+    ) -> bool:
+        """判断有效执行图中的业务终点或出口桥是否确认产生成功结果。"""
+        business_node_ids = ActionInstanceService._get_business_node_ids(action)
+        execution_edges = getattr(action.execution_plan_snapshot, "edges", [])
+        if execution_edges:
+            business_nodes_with_successors = {
+                edge.source
+                for edge in execution_edges
+                if edge.source in business_node_ids
+                and edge.target in business_node_ids
+            }
+            terminal_node_ids = list(
+                business_node_ids - business_nodes_with_successors
+            )
+        else:
+            terminal_node_ids = [
+                plan_node.id
+                for plan_node in action.execution_plan_snapshot.nodes
+                if plan_node.id in business_node_ids
+                and getattr(plan_node, "effective_out_degree", 0) == 0
+            ]
+        if terminal_node_ids:
+            successful_terminal_count = await ActionInstanceNodeModel.find(
+                {
+                    "action_id": action.id,
+                    "node_id": {"$in": terminal_node_ids},
+                    "has_successful_result": True,
+                }
+            ).count()
+            if successful_terminal_count:
+                return True
+        try:
+            successful_bridge_count = await ReferenceBridgeModel.find(
+                {
+                    "child_action_id": action.id,
+                    "direction": ReferenceBridgeDirectionEnum.EGRESS,
+                    "copied_message_count": {"$gt": 0},
+                }
+            ).count()
+        except CollectionWasNotInitialized:
+            successful_bridge_count = 0
+        return successful_bridge_count > 0
+
+    @staticmethod
+    async def schedule_ready_nodes(
+        action_id: str,
+        node_ids: list[str] | None = None,
+        *,
+        _action: ActionInstanceModel | None = None,
+    ) -> int:
+        """使用统一模式感知就绪规则补偿派发待运行节点。"""
+        action = _action
+        if action is None:
+            action = await ActionInstanceModel.find_one(
+                {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
+            )
+        if action is None or action.status != ActionFlowStatusEnum.RUNNING:
+            return 0
+        query: dict[str, Any] = {
+            "action_id": action_id,
+            "status": {
+                "$in": [
+                    ActionInstanceNodeStatusEnum.PENDING,
+                    ActionInstanceNodeStatusEnum.UNKNOWN,
+                    ActionInstanceNodeStatusEnum.UNREADY,
+                    ActionInstanceNodeStatusEnum.READY,
+                ]
+            },
+        }
+        if node_ids is not None:
+            if not node_ids:
+                return 0
+            query["node_id"] = {"$in": list(dict.fromkeys(node_ids))}
+        node_instances = await ActionInstanceNodeModel.find(query).to_list()
+        node_instances.sort(
+            key=lambda item: (
+                0
+                if item.extension_spec_snapshot
+                and item.extension_spec_snapshot.execution_policy == "debug.observer"
+                else 1,
+                item.node_id,
+            )
+        )
+        dispatched = 0
+        for node_instance in node_instances:
+            dispatched += int(
+                bool(
+                    await ActionInstanceService.run_node(
+                        node_instance.id,
+                        action_id,
+                    )
+                )
+            )
+        return dispatched
+
+    @staticmethod
+    async def reconcile_ready_nodes(limit: int = 100) -> int:
+        """轮转扫描待运行节点，补偿已持久化但尚未派发的就绪状态。"""
+        query: dict[str, Any] = {
+            "status": {
+                "$in": [
+                    ActionInstanceNodeStatusEnum.PENDING,
+                    ActionInstanceNodeStatusEnum.UNKNOWN,
+                    ActionInstanceNodeStatusEnum.UNREADY,
+                    ActionInstanceNodeStatusEnum.READY,
+                ]
+            }
+        }
+        if ActionInstanceService._ready_reconcile_cursor is not None:
+            query["_id"] = {
+                "$gt": ActionInstanceService._ready_reconcile_cursor,
+            }
+        nodes = await (
+            ActionInstanceNodeModel.find(query)
+            .sort("_id")
+            .limit(limit)
+            .to_list()
+        )
+        if not nodes and ActionInstanceService._ready_reconcile_cursor is not None:
+            ActionInstanceService._ready_reconcile_cursor = None
+            query.pop("_id", None)
+            nodes = await (
+                ActionInstanceNodeModel.find(query)
+                .sort("_id")
+                .limit(limit)
+                .to_list()
+            )
+        if nodes:
+            ActionInstanceService._ready_reconcile_cursor = nodes[-1].id
+        nodes_by_action: dict[str, list[str]] = {}
+        for node in nodes:
+            nodes_by_action.setdefault(node.action_id, []).append(node.node_id)
+        reconciled = 0
+        for action_id, node_ids in nodes_by_action.items():
+            reconciled += await ActionInstanceService.schedule_ready_nodes(
+                action_id,
+                node_ids,
+            )
+        return reconciled
 
     @staticmethod
     async def run_node(node_instance_id: str, action_id: str):
@@ -1288,46 +1582,6 @@ class ActionInstanceService:
             ).update({"$set": {"status": target_status}})
             return False
         
-        # 检查前置节点是否全部完成
-        all_previous_nodes = await ActionInstanceService.find_all_previous_nodes(action_id, node_instance.node_id)
-        previous_node_instances = await ActionInstanceNodeModel.find({
-            "action_id": action_id,
-            "node_id": {"$in": all_previous_nodes}
-        }).to_list()
-        plan_extension = (
-            getattr(action.execution_plan_snapshot, "extension", {}) or {}
-        )
-        readiness_mode = plan_extension.get("scheduler", {}).get(
-            "readiness"
-        )
-        if readiness_mode == "edge-v1":
-            incoming_edge_ids = {
-                edge.id
-                for edge in action.execution_plan_snapshot.edges
-                if edge.target == node_instance.node_id
-            }
-            completed_dependencies = len(
-                incoming_edge_ids
-                & set(
-                    getattr(
-                        node_instance,
-                        "delivered_input_edge_ids",
-                        [],
-                    )
-                    + getattr(
-                        node_instance,
-                        "aborted_input_edge_ids",
-                        [],
-                    )
-                )
-            )
-        else:
-            completed_dependencies = sum(
-                previous.status == ActionInstanceNodeStatusEnum.COMPLETED
-                and previous.node_id
-                in getattr(node_instance, "delivered_dependencies", [])
-                for previous in previous_node_instances
-            )
         plan_node = next(
             (
                 item
@@ -1352,20 +1606,97 @@ class ActionInstanceService:
             else 1
         )
         policy = execution_policies.require(policy_key, policy_version)
-        failed_previous = next(
-            (
-                previous
+
+        all_previous_nodes = await ActionInstanceService.find_all_previous_nodes(
+            action_id,
+            node_instance.node_id,
+        )
+        previous_node_instances = (
+            await ActionInstanceNodeModel.find(
+                {
+                    "action_id": action_id,
+                    "node_id": {"$in": all_previous_nodes},
+                }
+            ).to_list()
+            if all_previous_nodes
+            else []
+        )
+        previous_by_node_id = {
+            previous.node_id: previous for previous in previous_node_instances
+        }
+        execution_plan = action.execution_plan_snapshot
+        incoming_edges = [
+            edge
+            for edge in getattr(execution_plan, "edges", [])
+            if edge.target == node_instance.node_id
+        ]
+        delivered_edge_ids = set(
+            getattr(node_instance, "delivered_input_edge_ids", [])
+        )
+        aborted_edge_ids = set(
+            getattr(node_instance, "aborted_input_edge_ids", [])
+        )
+        activated_edge_ids = set(
+            getattr(node_instance, "activated_input_edge_ids", [])
+        )
+        plan_extension = getattr(execution_plan, "extension", {}) or {}
+        readiness_contract = plan_extension.get("scheduler", {}).get("readiness")
+        scheduling_mode = ActionInstanceService._get_scheduling_mode(action)
+        edge_aware = readiness_contract in {"edge-v1", "edge-v2"} or bool(
+            incoming_edges
+        )
+        blocking_failure = False
+        if edge_aware:
+            completed_dependencies = 0
+            for edge in incoming_edges:
+                edge_id = edge.id
+                source = previous_by_node_id.get(getattr(edge, "source", ""))
+                source_failed = bool(
+                    source
+                    and source.status
+                    in {
+                        ActionInstanceNodeStatusEnum.FAILED,
+                        ActionInstanceNodeStatusEnum.CANCELLED,
+                        ActionInstanceNodeStatusEnum.TIMEOUT,
+                    }
+                )
+                edge_aborted = edge_id in aborted_edge_ids
+                is_reference = getattr(edge, "data_type", "value") == "reference"
+                activated_stream = (
+                    scheduling_mode == ActionSchedulingModeEnum.STREAMING
+                    and is_reference
+                    and edge_id in activated_edge_ids
+                )
+                if (source_failed or edge_aborted) and not activated_stream:
+                    blocking_failure = True
+                if scheduling_mode == ActionSchedulingModeEnum.STREAMING and is_reference:
+                    completed_dependencies += int(
+                        edge_id in activated_edge_ids
+                        or edge_id in delivered_edge_ids
+                        or edge_aborted
+                    )
+                else:
+                    completed_dependencies += int(
+                        edge_id in delivered_edge_ids or edge_aborted
+                    )
+        else:
+            completed_dependencies = sum(
+                previous.status == ActionInstanceNodeStatusEnum.COMPLETED
+                and previous.node_id
+                in getattr(node_instance, "delivered_dependencies", [])
                 for previous in previous_node_instances
-                if previous.status
+            )
+            blocking_failure = any(
+                previous.status
                 in {
                     ActionInstanceNodeStatusEnum.FAILED,
                     ActionInstanceNodeStatusEnum.CANCELLED,
                     ActionInstanceNodeStatusEnum.TIMEOUT,
                 }
-            ),
-            None,
-        )
-        if failed_previous is not None and policy_key != "debug.observer":
+                for previous in previous_node_instances
+            )
+
+        if blocking_failure and policy_key != "debug.observer":
             now = datetime.now()
             cancelled = await ActionInstanceNodeModel.find_one(
                 {
@@ -1396,6 +1727,18 @@ class ActionInstanceService:
                     node_instance,
                     "前置节点未成功完成，当前节点无法产生输出",
                 )
+                await ActionInstanceService._record_node_finished(
+                    action.id,
+                    node_instance.id,
+                    _action=action,
+                )
+                await ActionInstanceService.cancel_following_nodes(
+                    action.id,
+                    node_instance.node_id,
+                    _action=action,
+                )
+                if await ActionInstanceService.check_action_finished(action.id):
+                    await ActionInstanceService.finish_action(action.id)
             return False
         is_ready = policy.is_ready(plan_node, completed_dependencies)
         if not is_ready:
@@ -1791,10 +2134,11 @@ class ActionInstanceService:
                 update_fields["child_action_id"] = result.provider_run_id
             await execution.update({"$set": update_fields})
             execution.provider_run_id = result.provider_run_id
-            await ActionInstanceService._mark_reference_outputs_activated(
-                action,
-                node_instance,
-            )
+            if execution_spec.driver != ActionExecutionDriverEnum.COMPONENT:
+                await ActionInstanceService._mark_reference_outputs_activated(
+                    action,
+                    node_instance,
+                )
             await ActionLogService.ingest_node_event(
                 execution,
                 event_key="started",
@@ -2012,6 +2356,7 @@ class ActionInstanceService:
             invocation_reference_inputs=invocation_reference_inputs,
             initiator_user_id=action.initiator_user_id,
             debug=getattr(action, "debug", False),
+            scheduling_mode=getattr(action, "scheduling_mode_override", None),
             trigger_key=f"subflow:{execution.id}",
             trigger_type="api",
         )
@@ -2234,6 +2579,7 @@ class ActionInstanceService:
             ActionFlowStatusEnum.RUNNING: "running",
             ActionFlowStatusEnum.PAUSED: "paused",
             ActionFlowStatusEnum.COMPLETED: "completed",
+            ActionFlowStatusEnum.PARTIALLY_COMPLETED: "failed",
             ActionFlowStatusEnum.FAILED: "failed",
             ActionFlowStatusEnum.CANCELLED: "cancelled",
             ActionFlowStatusEnum.TIMEOUT: "timeout",
@@ -2241,14 +2587,28 @@ class ActionInstanceService:
         }
         terminal_error_statuses = {
             ActionFlowStatusEnum.FAILED,
+            ActionFlowStatusEnum.PARTIALLY_COMPLETED,
             ActionFlowStatusEnum.CANCELLED,
             ActionFlowStatusEnum.TIMEOUT,
             ActionFlowStatusEnum.STOPPED,
         }
+        terminal_statuses = {
+            ActionFlowStatusEnum.COMPLETED,
+            ActionFlowStatusEnum.PARTIALLY_COMPLETED,
+            *terminal_error_statuses,
+        }
+        has_successful_result = (
+            await ActionInstanceService._has_successful_terminal_result(child)
+            if child.status in terminal_statuses
+            else False
+        )
         return NodeExecutionOutcome(
             status=child_status_map.get(child.status, "running"),
             outputs=child.invocation_outputs,
             progress=child.progress,
+            extension_result={
+                "has_successful_result": has_successful_result,
+            },
             error_message=(
                 f"嵌入式子行动状态: {child.status.value}"
                 if child.status in terminal_error_statuses
@@ -2295,7 +2655,14 @@ class ActionInstanceService:
                 )
                 return False
             binding.control_status = status
-            await node_instance.save()
+            await ActionInstanceService._persist_node_fields(
+                node_instance,
+                {
+                    f"reference_queue_bindings.{binding.edge_id}.control_status": (
+                        status
+                    )
+                },
+            )
         return True
 
     @staticmethod
@@ -2303,10 +2670,40 @@ class ActionInstanceService:
         action: ActionInstanceModel,
         node_instance: ActionInstanceNodeModel,
     ) -> None:
-        """按执行边标记 Reference 生产者已成功启动。"""
+        """持久化已实际启动的 Reference 输出边，并唤醒对应消费者。"""
+        component_bindings = [
+            binding
+            for binding in node_instance.reference_queue_bindings.values()
+            if binding.producer_kind == ReferenceProducerKindEnum.COMPONENT
+        ]
+        started_component_run_ids: set[str] = set()
+        if component_bindings:
+            expected_component_run_ids = {
+                producer_id
+                for binding in component_bindings
+                for producer_id in binding.expected_producer_ids
+            }
+            component_runs = await ComponentRunModel.find(
+                {"_id": {"$in": list(expected_component_run_ids)}}
+            ).to_list()
+            started_component_run_ids = {
+                component_run.id
+                for component_run in component_runs
+                if component_run.started_at is not None
+            }
         edges_by_target: dict[str, list[str]] = {}
         for edge in action.execution_plan_snapshot.edges:
             if edge.source != node_instance.node_id or edge.data_type != "reference":
+                continue
+            binding = node_instance.reference_queue_bindings.get(edge.id)
+            if binding is None:
+                continue
+            if (
+                binding.producer_kind == ReferenceProducerKindEnum.COMPONENT
+                and not set(binding.expected_producer_ids).issubset(
+                    started_component_run_ids
+                )
+            ):
                 continue
             edges_by_target.setdefault(edge.target, []).append(edge.id)
         for target_node_id, edge_ids in edges_by_target.items():
@@ -2319,6 +2716,35 @@ class ActionInstanceService:
                     }
                 }
             )
+        if action.status == ActionFlowStatusEnum.RUNNING and edges_by_target:
+            await ActionInstanceService.schedule_ready_nodes(
+                action.id,
+                list(edges_by_target),
+            )
+
+    @staticmethod
+    async def activate_component_reference_outputs(component_run_id: str) -> None:
+        """在组件完成 SDK 初始化后激活其节点的 Reference 输出。"""
+        component_run = await ComponentRunModel.find_one(
+            {
+                "_id": component_run_id,
+                "status": ComponentRunStatusEnum.RUNNING,
+            }
+        )
+        if component_run is None or component_run.started_at is None:
+            return
+        node_instance = await ActionInstanceNodeModel.find_one(
+            {"_id": component_run.node_instance_id}
+        )
+        action = await ActionInstanceModel.find_one(
+            {"_id": component_run.action_id}
+        )
+        if node_instance is None or action is None:
+            return
+        await ActionInstanceService._mark_reference_outputs_activated(
+            action,
+            node_instance,
+        )
 
     @staticmethod
     async def _abort_outgoing_edges(
@@ -2372,7 +2798,6 @@ class ActionInstanceService:
         if token is None:
             return
         try:
-            changed = False
             for binding in open_bindings:
                 producer_ids = binding.expected_producer_ids or [node_instance.id]
                 all_published = True
@@ -2410,9 +2835,14 @@ class ActionInstanceService:
                 if not all_published:
                     continue
                 binding.control_status = "abort"
-                changed = True
-            if changed:
-                await node_instance.save()
+                await ActionInstanceService._persist_node_fields(
+                    node_instance,
+                    {
+                        f"reference_queue_bindings.{binding.edge_id}.control_status": (
+                            "abort"
+                        )
+                    },
+                )
         finally:
             await ActionInstanceService._release_reference_abort_publish(
                 action.id,
@@ -2746,6 +3176,10 @@ class ActionInstanceService:
         ).sort("execution_key").to_list()
         if not executions:
             return False
+        has_successful_result = any(
+            bool((item.extension_result or {}).get("has_successful_result"))
+            for item in executions
+        )
         active_statuses = {
             ActionInstanceNodeStatusEnum.QUEUED,
             ActionInstanceNodeStatusEnum.RUNNING,
@@ -2825,6 +3259,7 @@ class ActionInstanceService:
                     attempt=failed.attempt,
                     status=sdk_status,
                     error=failed.error_message,
+                    has_successful_result=has_successful_result,
                 ),
             )
 
@@ -2853,6 +3288,7 @@ class ActionInstanceService:
                     attempt=max(item.attempt for item in executions),
                     status="failed",
                     error="原生节点Reference EOS发布失败",
+                    has_successful_result=has_successful_result,
                     exit_code=1,
                 ),
             )
@@ -2863,6 +3299,7 @@ class ActionInstanceService:
                 attempt=max(item.attempt for item in executions),
                 status="success",
                 outputs=merged_outputs,
+                has_successful_result=has_successful_result,
                 exit_code=0,
             ),
         )
@@ -3155,10 +3592,47 @@ class ActionInstanceService:
                 ActionInstanceNodeStatusEnum.UNKNOWN,
                 ActionInstanceNodeStatusEnum.PAUSED,
             ]:
+                now = datetime.now()
+                claim_query = ActionInstanceNodeModel.find_one(
+                    {
+                        "_id": node_instance.id,
+                        "status": {
+                            "$in": [
+                                ActionInstanceNodeStatusEnum.PENDING,
+                                ActionInstanceNodeStatusEnum.UNREADY,
+                                ActionInstanceNodeStatusEnum.READY,
+                                ActionInstanceNodeStatusEnum.QUEUED,
+                                ActionInstanceNodeStatusEnum.UNKNOWN,
+                                ActionInstanceNodeStatusEnum.PAUSED,
+                            ]
+                        },
+                    }
+                )
+                cancel_fields = {
+                    "status": ActionInstanceNodeStatusEnum.CANCELLED,
+                    "error_message": "前置节点未成功完成，节点不再运行",
+                    "finished_at": now,
+                    "finalization_claimed": True,
+                }
+                claim_update = getattr(claim_query, "update", None)
+                if callable(claim_update):
+                    claim = await claim_update({"$set": cancel_fields})
+                else:
+                    current_node = await claim_query
+                    if current_node is None:
+                        continue
+                    current_node.status = ActionInstanceNodeStatusEnum.CANCELLED
+                    current_node.error_message = cancel_fields["error_message"]
+                    current_node.finished_at = now
+                    current_node.finalization_claimed = True
+                    save = getattr(current_node, "save", None)
+                    if callable(save):
+                        await save()
+                    claim = SimpleNamespace(modified_count=1)
+                if not claim or getattr(claim, "modified_count", 0) != 1:
+                    continue
                 node_instance.status = ActionInstanceNodeStatusEnum.CANCELLED
-                node_instance.finished_at = datetime.now()
-                await node_instance.save()
-
+                node_instance.finished_at = now
                 action = _action
                 if action is None:
                     try:
@@ -3167,6 +3641,11 @@ class ActionInstanceService:
                         )
                     except CollectionWasNotInitialized:
                         action = None
+                await ActionInstanceService._record_node_finished(
+                    action_id,
+                    node_instance.id,
+                    _action=action,
+                )
                 if action is not None:
                     await ActionInstanceService._abort_outgoing_edges(
                         action,
@@ -3191,9 +3670,10 @@ class ActionInstanceService:
         component_run = await ComponentRunModel.find_one({"_id": component_run_id})
         if component_run is None or component_run.attempt != result.attempt:
             return False
-        if component_run.result_id == result.result_id:
-            return True
-        if component_run.result_id is not None:
+        if (
+            component_run.result_id is not None
+            and component_run.result_id != result.result_id
+        ):
             return False
 
         terminal_status = {
@@ -3203,35 +3683,44 @@ class ActionInstanceService:
             "timed_out": ComponentRunStatusEnum.TIMED_OUT,
         }[result.status]
         now = datetime.now()
-        claim_filter: dict[str, Any] = {
-            "_id": component_run_id,
-            "result_id": None,
-            "status": {
-                "$in": [
-                    ComponentRunStatusEnum.DISPATCHED,
-                    ComponentRunStatusEnum.RUNNING,
-                ]
-            },
-        }
-        if _active_run_filter:
-            claim_filter.update(_active_run_filter)
-        claim = await ComponentRunModel.find_one(claim_filter).update(
-            {
-                "$set": {
-                    "status": terminal_status,
-                    "result_id": result.result_id,
-                    "outputs": result.outputs,
-                    "error_message": result.error,
-                    "exit_code": result.exit_code,
-                    "finished_at": now,
-                    "updated_at": now,
-                    "progress": 100 if result.status == "success" else component_run.progress,
-                }
+        if component_run.result_id is None:
+            claim_filter: dict[str, Any] = {
+                "_id": component_run_id,
+                "result_id": None,
+                "status": {
+                    "$in": [
+                        ComponentRunStatusEnum.DISPATCHED,
+                        ComponentRunStatusEnum.RUNNING,
+                    ]
+                },
             }
-        )
-        if not claim or getattr(claim, "modified_count", 0) != 1:
-            current = await ComponentRunModel.find_one({"_id": component_run_id})
-            return bool(current and current.result_id == result.result_id)
+            if _active_run_filter:
+                claim_filter.update(_active_run_filter)
+            claim = await ComponentRunModel.find_one(claim_filter).update(
+                {
+                    "$set": {
+                        "status": terminal_status,
+                        "result_id": result.result_id,
+                        "outputs": result.outputs,
+                        "has_successful_result": result.has_successful_result,
+                        "error_message": result.error,
+                        "exit_code": result.exit_code,
+                        "finished_at": now,
+                        "updated_at": now,
+                        "progress": (
+                            100
+                            if result.status == "success"
+                            else component_run.progress
+                        ),
+                    }
+                }
+            )
+            if not claim or getattr(claim, "modified_count", 0) != 1:
+                current = await ComponentRunModel.find_one(
+                    {"_id": component_run_id}
+                )
+                if current is None or current.result_id != result.result_id:
+                    return False
 
         component_run = await ComponentRunModel.find_one({"_id": component_run_id})
         if component_run is None:
@@ -3250,7 +3739,6 @@ class ActionInstanceService:
             ComponentRunStatusEnum.DISPATCHED,
             ComponentRunStatusEnum.RUNNING,
         }
-        has_active_runs = any(run.status in active_statuses for run in component_runs)
         timed_out_run = next(
             (
                 run
@@ -3263,19 +3751,91 @@ class ActionInstanceService:
             (
                 run
                 for run in component_runs
-                if run.status
-                in {
-                    ComponentRunStatusEnum.FAILED,
-                    ComponentRunStatusEnum.CANCELLED,
-                }
+                if run.status == ComponentRunStatusEnum.FAILED
+            ),
+            None,
+        ) or next(
+            (
+                run
+                for run in component_runs
+                if run.status == ComponentRunStatusEnum.CANCELLED
             ),
             None,
         )
-        if has_active_runs and (timed_out_run is not None or failed_run is None):
-            return True
         failed = timed_out_run or failed_run
+        if failed:
+            cancel_reason = "同节点其他组件已失败，取消当前组件"
+            await ComponentRunModel.find(
+                {
+                    "node_instance_id": node_instance.id,
+                    "status": {
+                        "$in": [
+                            ComponentRunStatusEnum.CREATED,
+                            ComponentRunStatusEnum.DISPATCHED,
+                        ]
+                    },
+                }
+            ).update(
+                {
+                    "$set": {
+                        "status": ComponentRunStatusEnum.CANCELLED,
+                        "cancel_requested": True,
+                        "error_message": cancel_reason,
+                        "finished_at": now,
+                        "updated_at": now,
+                    }
+                }
+            )
+            await ComponentRunModel.find(
+                {
+                    "node_instance_id": node_instance.id,
+                    "status": ComponentRunStatusEnum.RUNNING,
+                }
+            ).update(
+                {
+                    "$set": {
+                        "cancel_requested": True,
+                        "updated_at": now,
+                    }
+                }
+            )
+            component_runs = await ComponentRunModel.find(
+                {"node_instance_id": node_instance.id}
+            ).to_list()
+            if any(run.status in active_statuses for run in component_runs):
+                return True
+            timed_out_run = next(
+                (
+                    run
+                    for run in component_runs
+                    if run.status == ComponentRunStatusEnum.TIMED_OUT
+                ),
+                None,
+            )
+            failed_run = next(
+                (
+                    run
+                    for run in component_runs
+                    if run.status == ComponentRunStatusEnum.FAILED
+                ),
+                None,
+            ) or next(
+                (
+                    run
+                    for run in component_runs
+                    if run.status == ComponentRunStatusEnum.CANCELLED
+                ),
+                None,
+            )
+            failed = timed_out_run or failed_run
+        elif any(run.status in active_statuses for run in component_runs):
+            return True
         all_succeeded = bool(component_runs) and all(
             run.status == ComponentRunStatusEnum.SUCCEEDED for run in component_runs
+        )
+        has_successful_result = any(
+            getattr(run, "has_successful_result", False)
+            for run in component_runs
         )
         if not failed and not all_succeeded:
             return True
@@ -3287,13 +3847,6 @@ class ActionInstanceService:
             return True
 
         if failed:
-            if failed.status != ComponentRunStatusEnum.TIMED_OUT:
-                await ComponentRunModel.find(
-                    {
-                        "node_instance_id": node_instance.id,
-                        "status": {"$in": list(active_statuses)},
-                    }
-                ).update({"$set": {"cancel_requested": True}})
             failed_status = {
                 ComponentRunStatusEnum.CANCELLED: "cancelled",
                 ComponentRunStatusEnum.TIMED_OUT: "timed_out",
@@ -3303,6 +3856,7 @@ class ActionInstanceService:
                 attempt=result.attempt,
                 status=failed_status,
                 error=failed.error_message or "组件运行失败",
+                has_successful_result=has_successful_result,
                 exit_code=failed.exit_code,
             )
         else:
@@ -3321,6 +3875,7 @@ class ActionInstanceService:
                 attempt=result.attempt,
                 status="success",
                 outputs=merged_outputs,
+                has_successful_result=has_successful_result,
                 exit_code=0,
             )
         await ActionInstanceService.finish_node(node_instance.id, node_result)
@@ -3611,10 +4166,11 @@ class ActionInstanceService:
             node_instance.progress = 100.0
             node_instance.finished_at = datetime.now()
             node_instance.duration = (
-                (datetime.now() - node_instance.start_at).total_seconds()
+                (node_instance.finished_at - node_instance.start_at).total_seconds()
                 if node_instance.start_at
                 else 0
             )
+            node_instance.has_successful_result = result.has_successful_result
             for handle_name, value in result.outputs.items():
                 output_handle = None
                 handle_definition = None
@@ -3686,7 +4242,23 @@ class ActionInstanceService:
                     type=handle_definition.type
                 )
                 
-            await node_instance.save()
+            node_update_fields: dict[str, Any] = {
+                "status": ActionInstanceNodeStatusEnum.COMPLETED,
+                "progress": 100.0,
+                "finished_at": node_instance.finished_at,
+                "duration": node_instance.duration,
+                "has_successful_result": result.has_successful_result,
+            }
+            await ActionInstanceService._persist_node_fields(
+                node_instance,
+                node_update_fields,
+                exact_map_entries={
+                    "outputs": {
+                        output_key: output_value.model_dump(mode="python")
+                        for output_key, output_value in node_instance.outputs.items()
+                    }
+                },
+            )
 
             action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
             if action is None or action.status not in {
@@ -3694,16 +4266,50 @@ class ActionInstanceService:
                 ActionFlowStatusEnum.PAUSED,
             }:
                 return False
-            if node_instance.id not in action.finished_nodes_instance:
-                action.finished_nodes_instance.append(node_instance.id)
+            invocation_output_entries = {}
             for output_id in public_output_ids:
                 if (
                     public_output_types.get(output_id) != "reference"
                     and output_id in result.outputs
                 ):
-                    action.invocation_outputs[output_id] = result.outputs[output_id]
+                    invocation_output_entries[output_id] = result.outputs[output_id]
             node_instance.progress = 100.0
-            await action.save()
+            if invocation_output_entries:
+                action.invocation_outputs.update(invocation_output_entries)
+                if isinstance(action, ActionInstanceModel):
+                    await ActionInstanceModel.find_one(
+                        {
+                            "_id": action.id,
+                            "status": {
+                                "$in": [
+                                    ActionFlowStatusEnum.RUNNING,
+                                    ActionFlowStatusEnum.PAUSED,
+                                ]
+                            },
+                        }
+                    ).update(
+                        [
+                            {
+                                "$set": {
+                                    "invocation_outputs": (
+                                        ActionInstanceService._build_exact_map_expression(
+                                            "invocation_outputs",
+                                            invocation_output_entries,
+                                        )
+                                    )
+                                }
+                            }
+                        ]
+                    )
+                else:
+                    save_action = getattr(action, "save", None)
+                    if callable(save_action):
+                        await save_action()
+            await ActionInstanceService._record_node_finished(
+                action.id,
+                node_instance.id,
+                _action=action,
+            )
             current_execution_id = getattr(
                 node_instance,
                 "current_execution_id",
@@ -3732,11 +4338,21 @@ class ActionInstanceService:
             node_instance.error_message = result.error
             node_instance.finished_at = datetime.now()
             node_instance.duration = (
-                (datetime.now() - node_instance.start_at).total_seconds()
+                (node_instance.finished_at - node_instance.start_at).total_seconds()
                 if node_instance.start_at
                 else 0
             )
-            await node_instance.save()
+            node_instance.has_successful_result = result.has_successful_result
+            await ActionInstanceService._persist_node_fields(
+                node_instance,
+                {
+                    "status": node_instance.status,
+                    "error_message": result.error,
+                    "finished_at": node_instance.finished_at,
+                    "duration": node_instance.duration,
+                    "has_successful_result": result.has_successful_result,
+                },
+            )
             current_execution_id = getattr(
                 node_instance,
                 "current_execution_id",
@@ -3764,23 +4380,29 @@ class ActionInstanceService:
                     node_instance,
                     result.error or "上游节点未能产生输入",
                 )
-                if node_instance.id not in action.finished_nodes_instance:
-                    action.finished_nodes_instance.append(node_instance.id)
-                executable_node_count = len(action.execution_plan_snapshot.nodes)
-                action.progress = (
-                    round(
-                        len(action.finished_nodes_instance)
-                        / executable_node_count
-                        * 100,
-                        2,
-                    )
-                    if executable_node_count > 0
-                    else 100.0
+                await ActionInstanceService._record_node_finished(
+                    action.id,
+                    node_instance.id,
+                    _action=action,
                 )
-                await action.save()
-            
-            # 取消后续节点
-            await ActionInstanceService.cancel_following_nodes(node_instance.action_id, node_instance.node_id)
+                if (
+                    ActionInstanceService._get_scheduling_mode(action)
+                    == ActionSchedulingModeEnum.STREAMING
+                ):
+                    await ActionInstanceService.schedule_ready_nodes(
+                        action.id,
+                        [
+                            edge.target
+                            for edge in action.execution_plan_snapshot.edges
+                            if edge.source == node_instance.node_id
+                        ],
+                    )
+                else:
+                    await ActionInstanceService.cancel_following_nodes(
+                        node_instance.action_id,
+                        node_instance.node_id,
+                        _action=action,
+                    )
 
             # 检查行动是否完成
             action = await ActionInstanceModel.find_one(
@@ -3800,7 +4422,14 @@ class ActionInstanceService:
             node_instance.status = ActionInstanceNodeStatusEnum.UNKNOWN
             node_instance.finished_at = datetime.now()
             node_instance.duration = (datetime.now() - node_instance.start_at).total_seconds()
-            await node_instance.save()
+            await ActionInstanceService._persist_node_fields(
+                node_instance,
+                {
+                    "status": node_instance.status,
+                    "finished_at": node_instance.finished_at,
+                    "duration": node_instance.duration,
+                },
+            )
             return False
         
         action = await ActionInstanceModel.find_one({"_id": node_instance.action_id})
@@ -3850,7 +4479,7 @@ class ActionInstanceService:
                     else {}
                 ).get("allow_multiple_inputs", False)
             )
-            multi_input_updates = {}
+            multi_input_updates: dict[str, Any] = {}
             delivered_edge_ids: list[str] = []
             aborted_edge_ids: list[str] = []
             delivered_values: list[tuple[str, Any, dict[str, str]]] = []
@@ -3906,12 +4535,11 @@ class ActionInstanceService:
                         value=queue_name,
                         type=ActionConfigIOTypeEnum.REFERENCE,
                     )
-                    if allow_multiple_inputs:
-                        multi_input_updates[f"inputs.{input_slot}"] = (
-                            next_node_instance.inputs[input_slot].model_dump(
-                                mode="python"
-                            )
+                    multi_input_updates[input_slot] = (
+                        next_node_instance.inputs[input_slot].model_dump(
+                            mode="python"
                         )
+                    )
                     logger.info(
                         f"按执行边 {reference_binding.edge_id} 传递队列 "
                         f"{queue_name} 给节点 {next_node_instance.node_id}"
@@ -3950,12 +4578,11 @@ class ActionInstanceService:
                             value=source_output.value,
                             type=source_output.type
                         )
-                        if allow_multiple_inputs:
-                            multi_input_updates[f"inputs.{input_slot}"] = (
-                                next_node_instance.inputs[input_slot].model_dump(
-                                    mode="python"
-                                )
+                        multi_input_updates[input_slot] = (
+                            next_node_instance.inputs[input_slot].model_dump(
+                                mode="python"
                             )
+                        )
                         delivered_edge_ids.append(plan_edge.id)
                         delivered_values.append(
                             (
@@ -3975,28 +4602,38 @@ class ActionInstanceService:
                         )
                         aborted_edge_ids.append(plan_edge.id)
 
-            delivery_update = {
-                "$addToSet": {
-                    "delivered_dependencies": node_instance.node_id,
-                }
+            delivery_fields: dict[str, Any] = {
+                "delivered_dependencies": {
+                    "$setUnion": [
+                        {"$ifNull": ["$delivered_dependencies", []]},
+                        {"$literal": [node_instance.node_id]},
+                    ]
+                },
             }
             if delivered_edge_ids:
-                delivery_update["$addToSet"]["delivered_input_edge_ids"] = {
-                    "$each": delivered_edge_ids,
+                delivery_fields["delivered_input_edge_ids"] = {
+                    "$setUnion": [
+                        {"$ifNull": ["$delivered_input_edge_ids", []]},
+                        {"$literal": delivered_edge_ids},
+                    ]
                 }
             if aborted_edge_ids:
-                delivery_update["$addToSet"]["aborted_input_edge_ids"] = {
-                    "$each": aborted_edge_ids,
+                delivery_fields["aborted_input_edge_ids"] = {
+                    "$setUnion": [
+                        {"$ifNull": ["$aborted_input_edge_ids", []]},
+                        {"$literal": aborted_edge_ids},
+                    ]
                 }
-            if multi_input_updates or not allow_multiple_inputs:
-                delivery_update["$set"] = (
-                    multi_input_updates
-                    if allow_multiple_inputs
-                    else {"inputs": next_node_instance.inputs}
+            if multi_input_updates:
+                delivery_fields["inputs"] = (
+                    ActionInstanceService._build_exact_map_expression(
+                        "inputs",
+                        multi_input_updates,
+                    )
                 )
             await ActionInstanceNodeModel.find_one(
                 {"_id": next_node_instance.id}
-            ).update(delivery_update)
+            ).update([{"$set": delivery_fields}])
 
             if (
                 target_node_definition
@@ -4192,6 +4829,18 @@ class ActionInstanceService:
         if action is None:
             logger.error(f"清理队列失败，未找到行动: {action_id}")
             return False
+        if (
+            getattr(action, "status", None)
+            in {
+                ActionFlowStatusEnum.STOPPED,
+                ActionFlowStatusEnum.TIMEOUT,
+            }
+            and getattr(action, "finished_at", None) is not None
+            and datetime.now()
+            < action.finished_at
+            + timedelta(seconds=REFERENCE_QUEUE_CLEANUP_GRACE_SECONDS)
+        ):
+            return False
         await ActionInstanceModel.find_one({"_id": action_id}).update(
             {
                 "$set": {
@@ -4242,6 +4891,7 @@ class ActionInstanceService:
         now = datetime.now()
         terminal_statuses = [
             ActionFlowStatusEnum.COMPLETED,
+            ActionFlowStatusEnum.PARTIALLY_COMPLETED,
             ActionFlowStatusEnum.FAILED,
             ActionFlowStatusEnum.CANCELLED,
             ActionFlowStatusEnum.TIMEOUT,
@@ -4409,21 +5059,50 @@ class ActionInstanceService:
                 ]
             }
         }).count()
+        business_failed_count = 0
+        if failed_count:
+            business_node_ids = ActionInstanceService._get_business_node_ids(action)
+            if business_node_ids:
+                business_failed_count = await ActionInstanceNodeModel.find(
+                    {
+                        "action_id": action_id,
+                        "node_id": {"$in": list(business_node_ids)},
+                        "status": {
+                            "$in": [
+                                ActionInstanceNodeStatusEnum.FAILED,
+                                ActionInstanceNodeStatusEnum.CANCELLED,
+                            ]
+                        },
+                    }
+                ).count()
 
-        status = (
-            ActionFlowStatusEnum.TIMEOUT
-            if timeout_count > 0
-            else ActionFlowStatusEnum.FAILED
-            if failed_count > 0
-            else ActionFlowStatusEnum.COMPLETED
-        )
+        if timeout_count > 0:
+            status = ActionFlowStatusEnum.TIMEOUT
+        elif failed_count > 0:
+            status = ActionFlowStatusEnum.FAILED
+            if (
+                ActionInstanceService._get_scheduling_mode(action)
+                == ActionSchedulingModeEnum.STREAMING
+                and business_failed_count > 0
+                and await ActionInstanceService._has_successful_terminal_result(
+                    action
+                )
+            ):
+                status = ActionFlowStatusEnum.PARTIALLY_COMPLETED
+        else:
+            status = ActionFlowStatusEnum.COMPLETED
         reference_finalization_state = getattr(
             action,
             "reference_finalization_state",
             "none",
         )
         if (
-            status == ActionFlowStatusEnum.COMPLETED
+            status
+            in {
+                ActionFlowStatusEnum.COMPLETED,
+                ActionFlowStatusEnum.PARTIALLY_COMPLETED,
+                ActionFlowStatusEnum.FAILED,
+            }
             and reference_finalization_state == "bridging"
         ):
             bridges = await ReferenceBridgeModel.find(
@@ -4450,10 +5129,7 @@ class ActionInstanceService:
                     ReferenceBridgeStatusEnum.RUNNING,
                 }
             ]
-            if failed_bridge is not None:
-                status = ActionFlowStatusEnum.FAILED
-                reference_finalization_state = "failed"
-            elif active_bridges:
+            if active_bridges:
                 await ActionInstanceModel.find_one(
                     {
                         "_id": action_id,
@@ -4469,9 +5145,37 @@ class ActionInstanceService:
                     }
                 )
                 return True
-            else:
-                reference_finalization_state = "completed"
+            if (
+                failed_bridge is not None
+                and status == ActionFlowStatusEnum.COMPLETED
+            ):
+                status = (
+                    ActionFlowStatusEnum.PARTIALLY_COMPLETED
+                    if ActionInstanceService._get_scheduling_mode(action)
+                    == ActionSchedulingModeEnum.STREAMING
+                    and await ActionInstanceService._has_successful_terminal_result(
+                        action
+                    )
+                    else ActionFlowStatusEnum.FAILED
+                )
+            reference_finalization_state = (
+                "failed" if failed_bridge is not None else "completed"
+            )
         executable_node_count = len(action.execution_plan_snapshot.nodes)
+        terminal_node_count = await ActionInstanceNodeModel.find(
+            {
+                "action_id": action_id,
+                "status": {
+                    "$in": [
+                        ActionInstanceNodeStatusEnum.COMPLETED,
+                        ActionInstanceNodeStatusEnum.FAILED,
+                        ActionInstanceNodeStatusEnum.CANCELLED,
+                        ActionInstanceNodeStatusEnum.TIMEOUT,
+                        ActionInstanceNodeStatusEnum.SKIPPED,
+                    ]
+                },
+            }
+        ).count()
         now = datetime.now()
         claim = await ActionInstanceModel.find_one(
             {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
@@ -4491,7 +5195,7 @@ class ActionInstanceService:
                     ),
                     "progress": (
                         round(
-                            len(action.finished_nodes_instance)
+                            terminal_node_count
                             / executable_node_count
                             * 100,
                             2,
@@ -4560,13 +5264,22 @@ class ActionInstanceService:
         
         progress = round(progress, 2)
         
-        node_instance = await ActionInstanceNodeModel.find_one({"_id": node_instance_id})
-        if not node_instance:
+        update_result = await ActionInstanceNodeModel.find_one(
+            {
+                "_id": node_instance_id,
+                "status": {
+                    "$in": [
+                        ActionInstanceNodeStatusEnum.QUEUED,
+                        ActionInstanceNodeStatusEnum.RUNNING,
+                        ActionInstanceNodeStatusEnum.WAITING,
+                        ActionInstanceNodeStatusEnum.AWAITING_APPROVAL,
+                    ]
+                },
+            }
+        ).update({"$set": {"progress": progress}})
+        if not update_result or getattr(update_result, "modified_count", 0) != 1:
             logger.error(f"未找到节点实例，Node Instance ID: {node_instance_id}")
             return False
-        
-        node_instance.progress = progress
-        await node_instance.save()
         return True
 
 

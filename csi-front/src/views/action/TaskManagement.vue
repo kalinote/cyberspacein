@@ -6,7 +6,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div class="lg:col-span-2">
             <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">基础组件</span>任务</h1>
-            <p class="text-gray-600 text-lg mb-6">统一管理完整行动的定时计划与执行记录，节点仍按行动依赖关系依次运行。</p>
+            <p class="text-gray-600 text-lg mb-6">统一管理完整行动的定时计划与执行记录，节点按所选调度模式和依赖关系运行。</p>
             <div class="flex flex-wrap gap-4">
               <div v-for="item in metricCards" :key="item.label" class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center gap-3">
                 <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" :class="item.bgClass">
@@ -75,6 +75,9 @@
                 <p class="text-sm text-gray-500 mt-1">{{ run.schedule_name }}</p>
               </div>
               <el-tag :type="getStatusTagType(run.status)" size="small">{{ getStatusText(run.status) }}</el-tag>
+              <el-tag type="info" size="small" effect="plain">
+                {{ run.scheduling_mode === 'streaming' ? '异步执行' : '同步执行' }}
+              </el-tag>
             </div>
             <div class="space-y-3 text-sm">
               <div class="flex items-center gap-2"><Icon icon="mdi:calendar-clock" class="text-blue-500" /><span class="text-gray-500">计划时间</span><span class="font-medium text-gray-900">{{ formatDateTime(run.scheduled_for) }}</span></div>
@@ -122,6 +125,7 @@ const summary = ref({
   running_count: 0,
   pending_count: 0,
   failed_count: 0,
+  partially_completed_count: 0,
   recent_runs: []
 })
 const canCreateSchedule = computed(() => hasPerm(PERM.operations.action.schedule.create))
@@ -129,6 +133,7 @@ const metricCards = computed(() => [
   { label: '执行任务', value: summary.value.task_count, icon: 'mdi:clipboard-list-outline', bgClass: 'bg-blue-100', iconClass: 'text-blue-600' },
   { label: '运行中', value: summary.value.running_count, icon: 'mdi:progress-clock', bgClass: 'bg-green-100', iconClass: 'text-green-600' },
   { label: '待执行', value: summary.value.pending_count, icon: 'mdi:clock-outline', bgClass: 'bg-amber-100', iconClass: 'text-amber-600' },
+  { label: '部分完成', value: summary.value.partially_completed_count, icon: 'mdi:circle-slice-5', bgClass: 'bg-violet-100', iconClass: 'text-violet-600' },
   { label: '失败', value: summary.value.failed_count, icon: 'mdi:alert-circle-outline', bgClass: 'bg-red-100', iconClass: 'text-red-600' }
 ])
 
@@ -144,7 +149,7 @@ async function fetchSummary() {
   loading.value = true
   try {
     const response = await actionScheduleApi.getSummary()
-    if (response.code === 0 && response.data) summary.value = response.data
+    if (response.code === 0 && response.data) summary.value = { ...summary.value, ...response.data }
   } finally {
     loading.value = false
   }

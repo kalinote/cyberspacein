@@ -26,6 +26,7 @@ from app.schemas.constants import (
     ActionInvocationModeEnum,
     ActionNodeDefinitionOriginEnum,
     ActionNodeKindEnum,
+    ActionSchedulingModeEnum,
 )
 from app.service.action.compiler import BlueprintCompiler
 from app.service.encapsulated_node import (
@@ -56,23 +57,43 @@ class BlueprintRevisionService:
             blueprint.graph,
             definitions,
             ActionInvocationModeEnum.STANDALONE,
+            scheduling_mode=getattr(
+                blueprint,
+                "default_scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            ),
         )
         subflow = BlueprintCompiler.compile(
             blueprint.graph,
             definitions,
             ActionInvocationModeEnum.SUBFLOW,
+            scheduling_mode=getattr(
+                blueprint,
+                "default_scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            ),
         )
         BlueprintCompiler.compile(
             blueprint.graph,
             definitions,
             ActionInvocationModeEnum.STANDALONE,
             debug=True,
+            scheduling_mode=getattr(
+                blueprint,
+                "default_scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            ),
         )
         BlueprintCompiler.compile(
             blueprint.graph,
             definitions,
             ActionInvocationModeEnum.SUBFLOW,
             debug=True,
+            scheduling_mode=getattr(
+                blueprint,
+                "default_scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            ),
         )
         await BlueprintCompiler.validate_encapsulated_dependencies(definitions)
         return standalone, subflow, definitions
@@ -163,6 +184,11 @@ class BlueprintRevisionService:
             "description": blueprint.description,
             "target": blueprint.target,
             "implementation_period": blueprint.implementation_period,
+            "default_scheduling_mode": getattr(
+                blueprint,
+                "default_scheduling_mode",
+                ActionSchedulingModeEnum.BARRIER,
+            ).value,
             "resource": blueprint.resource,
             "graph": blueprint.graph.model_dump(mode="json"),
             "template": blueprint.template,

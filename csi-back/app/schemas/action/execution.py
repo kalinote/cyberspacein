@@ -10,6 +10,7 @@ from app.schemas.constants import (
     ActionExecutionDriverEnum,
     ActionInvocationModeEnum,
     ActionNodeKindEnum,
+    ActionSchedulingModeEnum,
     DEFAULT_COMPONENT_COMMAND,
     DEFAULT_COMPONENT_COMMAND_ARGS,
 )
@@ -264,15 +265,23 @@ class SkippedNode(BaseModel):
 class BlueprintExecutionPlan(BaseModel):
     """一次调用使用的不可变蓝图执行计划。"""
 
-    plan_schema_version: Literal[2]
+    plan_schema_version: Literal[2, 3]
     revision_id: str | None = None
     invocation_mode: ActionInvocationModeEnum
+    scheduling_mode: ActionSchedulingModeEnum = ActionSchedulingModeEnum.BARRIER
     debug: bool = False
     nodes: list[ExecutionPlanNode]
     edges: list[ExecutionPlanEdge]
     skipped_nodes: list[SkippedNode] = Field(default_factory=list)
     public_interface_snapshot: dict[str, Any] = Field(default_factory=dict)
     extension: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def normalize_legacy_scheduling_mode(self):
+        """旧版执行计划始终按同步屏障模式解释。"""
+        if self.plan_schema_version == 2:
+            self.scheduling_mode = ActionSchedulingModeEnum.BARRIER
+        return self
 
 
 def default_component_execution() -> NodeExecutionSpec:

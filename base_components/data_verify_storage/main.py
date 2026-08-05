@@ -125,6 +125,7 @@ def _process_batch(
         for position, (document, delivery_tag) in enumerate(entries):
             failure = failures_by_position.get(position)
             if failure is None:
+                component.mark_successful_result()
                 if component.rabbitmq.ack_message(delivery_tag):
                     stats.stored += 1
                 else:

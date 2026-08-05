@@ -11,7 +11,12 @@ from app.models.action.action import ActionConfigIOModel, ActionInstanceNodeMode
 from app.models.action.component_run import ComponentRunModel
 from app.schemas.action.reference import ReferenceQueueBinding
 from app.schemas.action.sdk import SDKHeartbeatRequest
-from app.schemas.constants import ActionConfigIOTypeEnum, ComponentRunStatusEnum
+from app.schemas.constants import (
+    ActionConfigIOTypeEnum,
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ComponentRunStatusEnum,
+)
 
 
 class _FindMany:
@@ -67,6 +72,114 @@ async def test_token_exchange_returns_component_attempt(monkeypatch):
         "component_token": "component-token",
         "attempt": 3,
     }
+
+
+@pytest.mark.asyncio
+async def test_component_init_rejects_cancel_requested_run(monkeypatch):
+    monkeypatch.setattr(
+        ComponentRunModel,
+        "find_one",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                status=ComponentRunStatusEnum.DISPATCHED,
+                cancel_requested=True,
+            )
+        ),
+    )
+
+    response = await sdk_endpoint.get_component_init("run-cancelled")
+
+    assert response.code == 240420
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("post_status", "post_cancel_requested", "expected_code"),
+    [
+        (ComponentRunStatusEnum.RUNNING, False, 0),
+        (ComponentRunStatusEnum.CANCELLED, True, 240420),
+    ],
+)
+async def test_component_init_claim_guards_cancel_and_runtime_state(
+    monkeypatch,
+    post_status,
+    post_cancel_requested,
+    expected_code,
+):
+    component_run = SimpleNamespace(
+        id="run-1",
+        action_id="action-1",
+        node_instance_id="node-1",
+        component_id="component-1",
+        attempt=1,
+        status=ComponentRunStatusEnum.DISPATCHED,
+        cancel_requested=False,
+        started_at=None,
+        timeout_seconds=0,
+    )
+    node = SimpleNamespace(
+        id="node-1",
+        status=ActionInstanceNodeStatusEnum.RUNNING,
+        finalization_claimed=False,
+        configs=[],
+    )
+    queries = []
+    updates = []
+    post_claim_run = SimpleNamespace(
+        **{
+            **component_run.__dict__,
+            "status": post_status,
+            "cancel_requested": post_cancel_requested,
+        }
+    )
+
+    def find_run(query):
+        queries.append(query)
+        if len(queries) == 1:
+            return _FindOne(component_run)
+        if len(queries) == 2:
+            return _FindOne(modified_count=1, updates=updates)
+        return _FindOne(post_claim_run)
+
+    monkeypatch.setattr(ComponentRunModel, "find_one", staticmethod(find_run))
+    monkeypatch.setattr(
+        ActionInstanceNodeModel,
+        "find_one",
+        AsyncMock(return_value=node),
+    )
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceModel,
+        "find_one",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id="action-1",
+                status=ActionFlowStatusEnum.RUNNING,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceService,
+        "get_instance_node_definition",
+        AsyncMock(return_value=SimpleNamespace(id="definition-1")),
+    )
+    monkeypatch.setattr(
+        sdk_endpoint,
+        "_build_io",
+        AsyncMock(return_value=({}, {})),
+    )
+    activate = AsyncMock()
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceService,
+        "activate_component_reference_outputs",
+        activate,
+    )
+
+    response = await sdk_endpoint.get_component_init(component_run.id)
+
+    assert response.code == expected_code
+    assert queries[1]["cancel_requested"] == {"$ne": True}
+    assert updates[0]["$set"]["status"] == ComponentRunStatusEnum.RUNNING
+    activate.assert_awaited_once_with(component_run.id)
 
 
 @pytest.mark.asyncio
@@ -265,6 +378,60 @@ async def test_build_io_keeps_value_list_without_queue_lookup(monkeypatch):
         "platforms": {"type": "value", "value": ["javbus"]},
     }
     find_nodes.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_io_declares_value_outputs_from_frozen_definition(monkeypatch):
+    value_handle = SimpleNamespace(
+        id="node.dict_out",
+        port_id="node.dict_out",
+        handle_name="dict_out",
+        relabel=None,
+        data_type="value",
+        type="source",
+    )
+    reference_handle = SimpleNamespace(
+        id="node.data_out",
+        port_id="node.data_out",
+        handle_name="data_out",
+        relabel=None,
+        data_type="reference",
+        type="source",
+    )
+    definition = SimpleNamespace(handles=[value_handle, reference_handle])
+    target = SimpleNamespace(
+        id="target-instance",
+        action_id="action-1",
+        node_id="target",
+        inputs={},
+        outputs={},
+        reference_queue_bindings={},
+    )
+
+    async def resolve_handle(_definition, handle_id):
+        handle = next(item for item in definition.handles if item.id == handle_id)
+        return handle, SimpleNamespace(
+            handle_name=handle.handle_name,
+            type=ActionConfigIOTypeEnum(handle.data_type),
+        )
+
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceService,
+        "resolve_node_handle_definition",
+        resolve_handle,
+    )
+    monkeypatch.setattr(
+        sdk_endpoint.ActionInstanceModel,
+        "find_one",
+        AsyncMock(return_value=None),
+    )
+
+    inputs, outputs = await sdk_endpoint._build_io(target, definition)
+
+    assert inputs == {}
+    assert outputs == {
+        "dict_out": {"type": "value", "value": None},
+    }
 
 
 @pytest.mark.asyncio

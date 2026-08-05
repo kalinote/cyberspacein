@@ -8,6 +8,7 @@ from app.schemas.constants import (
     ActionScheduleMisfirePolicyEnum,
     ActionScheduleOverlapPolicyEnum,
     ActionScheduleTypeEnum,
+    ActionSchedulingModeEnum,
 )
 
 
@@ -117,6 +118,7 @@ class ActionScheduleRunResponse(BaseModel):
     blueprint_name: str
     priority: int
     status: ActionFlowStatusEnum
+    scheduling_mode: ActionSchedulingModeEnum = ActionSchedulingModeEnum.BARRIER
     progress: float
     scheduled_for: datetime | None = None
     created_at: datetime
@@ -135,6 +137,7 @@ class ActionScheduleSummaryResponse(BaseModel):
     running_count: int
     pending_count: int
     failed_count: int
+    partially_completed_count: int
     recent_runs: list[ActionScheduleRunResponse]
 
 

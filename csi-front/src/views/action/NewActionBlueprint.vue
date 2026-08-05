@@ -112,6 +112,23 @@
                         <div class="text-xs text-gray-400 mt-1">设置为 0 时不限制行动执行时间</div>
                     </el-form-item>
 
+                    <el-form-item class="shrink-0 mb-0 -mt-2">
+                        <template #label>
+                            <div class="flex items-center justify-between w-full">
+                                <span class="text-sm font-medium text-gray-700">默认异步执行</span>
+                                <el-tooltip content="作为立即执行、调试运行、定时任务和未显式指定模式的 API 调用默认值；立即执行可在下拉菜单切换" placement="top">
+                                    <Icon icon="mdi:information-outline" class="text-gray-400 text-sm cursor-help" />
+                                </el-tooltip>
+                            </div>
+                        </template>
+                        <el-switch
+                            :model-value="actionForm.default_scheduling_mode === 'streaming'"
+                            active-text="启用"
+                            inactive-text="禁用"
+                            @update:model-value="actionForm.default_scheduling_mode = $event ? 'streaming' : 'barrier'"
+                        />
+                    </el-form-item>
+
                     <!-- 详细信息输入框 -->
                     <el-form-item prop="description" class="shrink-0 mb-0">
                         <template #label>
@@ -845,7 +862,8 @@ const actionForm = ref({
     version: '1.0.0',
     implementation_period: 0,
     description: '',
-    target: ''
+    target: '',
+    default_scheduling_mode: 'barrier'
 })
 
 const actionFormRules = {
@@ -932,7 +950,8 @@ const resetEditor = () => {
         version: '1.0.0',
         implementation_period: 0,
         description: '',
-        target: ''
+        target: '',
+        default_scheduling_mode: 'barrier'
     }
     isTemplate.value = false
     resourceConfigEnabled.value = false
@@ -983,7 +1002,8 @@ const loadBlueprintForEdit = async () => {
             version: blueprint.version,
             implementation_period: blueprint.implementation_period ?? 0,
             description: blueprint.description || '',
-            target: blueprint.target
+            target: blueprint.target,
+            default_scheduling_mode: blueprint.default_scheduling_mode === 'streaming' ? 'streaming' : 'barrier'
         }
         isTemplate.value = Boolean(blueprint.is_template)
         templateParams.value = (blueprint.template?.params || []).map(param => ({ ...param }))
@@ -1526,6 +1546,7 @@ const persistBlueprint = async ({ navigate = true, notify = true } = {}) => {
         description: actionForm.value.description || '',
         target: actionForm.value.target,
         implementation_period: actionForm.value.implementation_period,
+        default_scheduling_mode: actionForm.value.default_scheduling_mode === 'streaming' ? 'streaming' : 'barrier',
         resource: isEditMode.value ? resourceData.value : {},
         is_template: isTemplate.value,
         ...(isTemplate.value && {

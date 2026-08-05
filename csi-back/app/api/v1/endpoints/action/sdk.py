@@ -16,7 +16,12 @@ from app.schemas.action.sdk import (
     SDKHeartbeatResponse,
     SDKResultRequest,
 )
-from app.schemas.constants import ActionConfigIOTypeEnum, ComponentRunStatusEnum
+from app.schemas.constants import (
+    ActionConfigIOTypeEnum,
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ComponentRunStatusEnum,
+)
 from app.schemas.component_signal import (
     ComponentSignalBatchRequest,
     ComponentSignalBatchResponse,
@@ -139,6 +144,38 @@ async def _build_io(
                     "value": queue_names,
                     "streams": handle_streams[handle_id],
                 }
+    if definition:
+        for source_handle in getattr(definition, "handles", []):
+            if source_handle.type != "source":
+                continue
+            snapshot_handle, handle_definition = await (
+                ActionInstanceService.resolve_node_handle_definition(
+                    definition,
+                    source_handle.id,
+                )
+            )
+            handle_type = getattr(handle_definition, "type", None)
+            handle_type = getattr(handle_type, "value", handle_type)
+            if handle_type is None and snapshot_handle is not None:
+                handle_type = snapshot_handle.data_type or "value"
+            if handle_type != "value":
+                continue
+            if handle_definition:
+                handle_name = handle_definition.handle_name
+            elif snapshot_handle:
+                handle_name = (
+                    snapshot_handle.handle_name
+                    or snapshot_handle.relabel
+                    or snapshot_handle.port_id
+                    or snapshot_handle.id
+                )
+            else:
+                handle_name = None
+            if handle_name:
+                outputs.setdefault(
+                    handle_name,
+                    {"type": "value", "value": None},
+                )
     for value in node_instance.outputs.values():
         if value.type != ActionConfigIOTypeEnum.REFERENCE:
             outputs[value.key] = {"type": value.type.value, "value": value.value}
@@ -157,13 +194,30 @@ async def get_component_init(component_run_id: str):
     if component_run.status not in {
         ComponentRunStatusEnum.DISPATCHED,
         ComponentRunStatusEnum.RUNNING,
-    }:
+    } or component_run.cancel_requested:
         return ApiResponseSchema.error(code=240420, message="组件运行实例已结束")
     node_instance = await ActionInstanceNodeModel.find_one(
         {"_id": component_run.node_instance_id, "action_id": component_run.action_id}
     )
     if node_instance is None:
         return ApiResponseSchema.error(code=240417, message="节点实例不存在")
+    action = await ActionInstanceModel.find_one(
+        {
+            "_id": component_run.action_id,
+            "status": {
+                "$in": [
+                    ActionFlowStatusEnum.RUNNING,
+                    ActionFlowStatusEnum.PAUSED,
+                ]
+            },
+        }
+    )
+    if (
+        action is None
+        or node_instance.status != ActionInstanceNodeStatusEnum.RUNNING
+        or node_instance.finalization_claimed
+    ):
+        return ApiResponseSchema.error(code=240420, message="组件运行实例已结束")
     definition = await ActionInstanceService.get_instance_node_definition(
         node_instance
     )
@@ -173,12 +227,67 @@ async def get_component_init(component_run_id: str):
     inputs, outputs = await _build_io(node_instance, definition)
 
     now = datetime.now()
+    started_at = component_run.started_at or now
+    lease_expires_at = now + timedelta(seconds=settings.COMPONENT_LEASE_SECONDS)
+    claim = await ComponentRunModel.find_one(
+        {
+            "_id": component_run_id,
+            "status": {
+                "$in": [
+                    ComponentRunStatusEnum.DISPATCHED,
+                    ComponentRunStatusEnum.RUNNING,
+                ]
+            },
+            "cancel_requested": {"$ne": True},
+        }
+    ).update(
+        {
+            "$set": {
+                "status": ComponentRunStatusEnum.RUNNING,
+                "started_at": started_at,
+                "last_heartbeat_at": now,
+                "lease_expires_at": lease_expires_at,
+                "updated_at": now,
+            }
+        }
+    )
+    if not claim or getattr(claim, "modified_count", 0) != 1:
+        return ApiResponseSchema.error(code=240420, message="组件运行实例已结束")
     component_run.status = ComponentRunStatusEnum.RUNNING
-    component_run.started_at = component_run.started_at or now
+    component_run.started_at = started_at
     component_run.last_heartbeat_at = now
-    component_run.lease_expires_at = now + timedelta(seconds=settings.COMPONENT_LEASE_SECONDS)
-    component_run.updated_at = now
-    await component_run.save()
+    component_run.lease_expires_at = lease_expires_at
+    await ActionInstanceService.activate_component_reference_outputs(
+        component_run_id
+    )
+    component_run = await ComponentRunModel.find_one({"_id": component_run_id})
+    node_instance = await ActionInstanceNodeModel.find_one(
+        {
+            "_id": node_instance.id,
+            "action_id": action.id,
+        }
+    )
+    action = await ActionInstanceModel.find_one(
+        {
+            "_id": action.id,
+            "status": {
+                "$in": [
+                    ActionFlowStatusEnum.RUNNING,
+                    ActionFlowStatusEnum.PAUSED,
+                ]
+            },
+        }
+    )
+    if (
+        component_run is None
+        or component_run.status != ComponentRunStatusEnum.RUNNING
+        or component_run.cancel_requested
+        or node_instance is None
+        or node_instance.status != ActionInstanceNodeStatusEnum.RUNNING
+        or node_instance.finalization_claimed
+        or action is None
+    ):
+        return ApiResponseSchema.error(code=240420, message="组件运行实例已结束")
 
     return ApiResponseSchema.success(
         data=SDKComponentInitResponse(

@@ -73,7 +73,8 @@
                 <div class="mb-4">
                   <h3 class="text-xl font-bold text-gray-900 mb-4 line-clamp-2">{{ blueprint.title }}</h3>
                   <div class="flex items-center gap-2 flex-wrap">
-                    <el-tag 
+                    <el-tag
+                      v-if="blueprint.taskType"
                       class="border-0" 
                       :style="{ backgroundColor: blueprint.taskTypeTagColor, color: blueprint.taskTypeTagTextColor }"
                     >
@@ -216,8 +217,9 @@
                   </div>
                   <BlueprintRunControl
                     :disabled="actionStarting"
-                    @run="createActionFromBlueprint(blueprint)"
-                    @debug="createActionFromBlueprint(blueprint, true)"
+                    :scheduling-mode="blueprint.defaultSchedulingMode"
+                    @run="createActionFromBlueprint(blueprint, false, $event)"
+                    @debug="createActionFromBlueprint(blueprint, true, $event)"
                   />
                   <el-button 
                     v-if="hasPerm(PERM.operations.action.blueprint.delete)"
@@ -253,7 +255,8 @@
               </el-table-column>
               <el-table-column prop="taskType" label="类型" width="150">
                 <template #default="{ row }">
-                  <el-tag 
+                  <el-tag
+                    v-if="row.taskType"
                     class="border-0" 
                     :style="{ backgroundColor: row.taskTypeTagColor, color: row.taskTypeTagTextColor }"
                   >
@@ -281,8 +284,9 @@
                     <BlueprintRunControl
                       compact
                       :disabled="actionStarting"
-                      @run="createActionFromBlueprint(row)"
-                      @debug="createActionFromBlueprint(row, true)"
+                      :scheduling-mode="row.defaultSchedulingMode"
+                      @run="createActionFromBlueprint(row, false, $event)"
+                      @debug="createActionFromBlueprint(row, true, $event)"
                     />
                     <el-button v-if="hasPerm(PERM.operations.action.blueprint.update)" type="primary" link size="small" @click="editBlueprint(row)">
                       <template #icon><Icon icon="mdi:pencil" /></template>
@@ -338,6 +342,7 @@
       v-model="templateParamsDialogVisible"
       :blueprint-id="selectedBlueprintForRun?.id"
       :debug="selectedRunDebug"
+      :scheduling-mode="selectedRunSchedulingMode"
       :submitting="actionStarting"
       @submit="handleParamsSubmit"
     />
@@ -412,6 +417,7 @@ const selectedBlueprintId = ref(null)
 const templateParamsDialogVisible = ref(false)
 const selectedBlueprintForRun = ref(null)
 const selectedRunDebug = ref(false)
+const selectedRunSchedulingMode = ref('barrier')
 const actionStarting = ref(false)
 const selectedBlueprintForRelease = ref(null)
 const publishDialogVisible = ref(false)
@@ -473,7 +479,7 @@ const fetchBlueprints = async () => {
       return {
         id: item.id,
         title: item.name || '',
-        taskType: item.type || '尚未实现',
+        taskType: item.default_scheduling_mode === 'streaming' ? '异步执行' : '',
         taskTypeTagColor: item.type_tag_color || '#dbeafe',
         taskTypeTagTextColor: item.type_text_color || '#1e40af',
         taskGoal: item.target || '',
@@ -482,6 +488,7 @@ const fetchBlueprints = async () => {
         branchCount: item.branches || 0,
         stepCount: item.steps || 0,
         isTemplate: item.is_template || false,
+        defaultSchedulingMode: item.default_scheduling_mode === 'streaming' ? 'streaming' : 'barrier',
         latestRevisionNumber: item.latest_revision_number,
         encapsulatedNodeCount: item.encapsulated_node_count || 0
       }
@@ -524,7 +531,11 @@ const viewBlueprint = (blueprint) => {
   blueprintDialogVisible.value = true
 }
 
-const createActionFromBlueprint = async (blueprint, debug = false) => {
+const createActionFromBlueprint = async (
+  blueprint,
+  debug = false,
+  schedulingMode = blueprint?.defaultSchedulingMode || 'barrier'
+) => {
   if (!blueprint || !blueprint.id) {
     ElMessage.error('蓝图ID不存在')
     return
@@ -547,19 +558,20 @@ const createActionFromBlueprint = async (blueprint, debug = false) => {
   }
 
   selectedRunDebug.value = debug
+  selectedRunSchedulingMode.value = schedulingMode === 'streaming' ? 'streaming' : 'barrier'
   if (blueprint.isTemplate) {
     templateParamsDialogVisible.value = true
     selectedBlueprintForRun.value = blueprint
   } else {
-    await runBlueprint(blueprint.id, null, debug)
+    await runBlueprint(blueprint.id, null, debug, selectedRunSchedulingMode.value)
   }
 }
 
-const runBlueprint = async (blueprintId, params, debug = false) => {
+const runBlueprint = async (blueprintId, params, debug = false, schedulingMode = 'barrier') => {
   if (actionStarting.value) return false
   actionStarting.value = true
   try {
-    const data = buildActionRunRequest(blueprintId, params, debug)
+    const data = buildActionRunRequest(blueprintId, params, debug, schedulingMode)
 
     const response = await actionApi.runAction(data)
 
@@ -584,7 +596,8 @@ const handleParamsSubmit = async (params) => {
   const started = await runBlueprint(
     selectedBlueprintForRun.value.id,
     params,
-    selectedRunDebug.value
+    selectedRunDebug.value,
+    selectedRunSchedulingMode.value
   )
   if (started) templateParamsDialogVisible.value = false
 }

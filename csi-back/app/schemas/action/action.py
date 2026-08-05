@@ -8,15 +8,21 @@ from app.schemas.constants import (
     ActionInstanceNodeStatusEnum,
     ActionNodeDefinitionOriginEnum,
     ActionNodeKindEnum,
+    ActionSchedulingModeEnum,
 )
 
 class StartActionRequest(BaseModel):
     blueprint_id: str = Field(description="蓝图ID")
     params: dict[str, Any] | None = Field(default=None, description="行动参数")
     debug: bool = Field(default=False, description="是否以调试模式运行")
+    scheduling_mode: ActionSchedulingModeEnum | None = Field(
+        default=None,
+        description="本次执行覆盖蓝图默认值的调度模式",
+    )
     
 class StartActionResponse(BaseModel):
     action_id: str = Field(description="行动ID")
+    scheduling_mode: ActionSchedulingModeEnum = Field(description="实际调度模式")
 
 
 class ActionControlResponse(BaseModel):
@@ -29,6 +35,10 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     description: str = Field(description="行动描述")
     status: ActionFlowStatusEnum = Field(description="行动实例化流程状态")
     debug: bool = Field(default=False, description="是否为调试运行")
+    scheduling_mode: ActionSchedulingModeEnum = Field(
+        default=ActionSchedulingModeEnum.BARRIER,
+        description="行动实际调度模式",
+    )
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
     paused_at: datetime | None = Field(default=None, description="行动最近一次暂停时间")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")
@@ -41,6 +51,16 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     schedule_priority: int = 5
     scheduled_for: datetime | None = None
     created_at: datetime | None = None
+
+
+class ActionHistorySummaryResponse(BaseModel):
+    """行动历史全量状态统计。"""
+
+    total: int = 0
+    completed: int = 0
+    partially_completed: int = 0
+    running: int = 0
+    failed: int = 0
     
 
 class ActionNodeDetailResponse(BaseModel):

@@ -5,6 +5,7 @@ from beanie import Document
 from pydantic import BaseModel, Field
 from app.schemas.action.interface import BlueprintInterfaceSpec, BoundaryBinding
 from app.schemas.general import DictModelSchema
+from app.schemas.constants import ActionSchedulingModeEnum
 
 
 class PositionModel(BaseModel):
@@ -78,6 +79,9 @@ class ActionBlueprintSnapshotModel(BaseModel):
     description: str
     target: str
     implementation_period: int = 0
+    default_scheduling_mode: ActionSchedulingModeEnum = (
+        ActionSchedulingModeEnum.BARRIER
+    )
     resource: dict[str, Any] | None = None
     graph: GraphModel
     is_template: bool = False
@@ -95,6 +99,10 @@ class ActionBlueprintModel(Document):
     description: str
     target: str
     implementation_period: int = 0
+    default_scheduling_mode: ActionSchedulingModeEnum = Field(
+        default=ActionSchedulingModeEnum.BARRIER,
+        description="蓝图默认调度模式",
+    )
     resource: dict[str, Any] | None = None
     graph: GraphModel
     is_deleted: bool = Field(default=False, description="是否已删除")
@@ -128,6 +136,11 @@ def create_blueprint_snapshot(
         description=blueprint.description,
         target=blueprint.target,
         implementation_period=blueprint.implementation_period,
+        default_scheduling_mode=getattr(
+            blueprint,
+            "default_scheduling_mode",
+            ActionSchedulingModeEnum.BARRIER,
+        ),
         resource=deepcopy(blueprint.resource),
         graph=blueprint.graph.model_copy(deep=True),
         is_template=blueprint.is_template,

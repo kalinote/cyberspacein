@@ -70,6 +70,10 @@ class ComponentContext:
     _timed_out: threading.Event = field(default_factory=threading.Event, repr=False)
     _progress: float = field(default=0, repr=False)
     _progress_message: str = field(default="", repr=False)
+    _has_successful_result: threading.Event = field(
+        default_factory=threading.Event,
+        repr=False,
+    )
     _rabbitmq: RabbitMQClient | None = field(default=None, repr=False)
     _signal_reporter: ComponentSignalReporter | None = field(
         default=None,
@@ -87,6 +91,15 @@ class ComponentContext:
         self.raise_if_cancelled()
         self._progress = max(0, min(100, float(percentage)))
         self._progress_message = message
+
+    def mark_successful_result(self) -> None:
+        """标记当前组件已经确认至少一条成功业务结果。"""
+        self._has_successful_result.set()
+
+    @property
+    def has_successful_result(self) -> bool:
+        """返回当前组件是否已经确认成功业务结果。"""
+        return self._has_successful_result.is_set()
 
     def raise_if_cancelled(self) -> None:
         if self._timed_out.is_set():
@@ -168,7 +181,8 @@ class ComponentContext:
             client.configure_reference_streams(
                 self.inputs,
                 self.outputs,
-                self.raise_if_cancelled,
+                cancel_check=self.raise_if_cancelled,
+                successful_result_callback=self.mark_successful_result,
             )
             if not client.connect():
                 raise ComponentFailure("无法连接 RabbitMQ")

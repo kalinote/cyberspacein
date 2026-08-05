@@ -80,6 +80,9 @@
                 <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="text-lg font-bold text-gray-900">{{ task.blueprint_name }}</h3>
                   <el-tag :type="getStatusTagType(task.status)" size="small" class="border-0">{{ getStatusText(task.status) }}</el-tag>
+                  <el-tag type="info" size="small" effect="plain">
+                    {{ task.scheduling_mode === 'streaming' ? '异步执行' : '同步执行' }}
+                  </el-tag>
                   <el-tag type="warning" size="small" class="border-0">优先级 {{ task.priority }}</el-tag>
                 </div>
                 <p class="text-sm text-gray-500 mt-1">{{ task.schedule_name }}</p>
@@ -275,6 +278,7 @@ const statusOptions = [
   { label: '待执行', value: ACTION_STATUS.READY },
   { label: '运行中', value: ACTION_STATUS.RUNNING },
   { label: '已完成', value: ACTION_STATUS.COMPLETED },
+  { label: '部分完成', value: ACTION_STATUS.PARTIALLY_COMPLETED },
   { label: '失败', value: ACTION_STATUS.FAILED },
   { label: '已取消', value: ACTION_STATUS.CANCELLED }
 ]

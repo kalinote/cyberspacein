@@ -102,6 +102,7 @@ class RabbitMQClient:
         self.channel: Optional[pika.channel.Channel] = None
         self._reference_inputs: dict[str, _ReferenceInputState] = {}
         self._reference_outputs: list[_ReferenceOutput] = []
+        self._reference_result_queues: set[str] = set()
         self._backend_owned_reference_queues: set[str] = set()
         self._pending_deliveries: dict[int, _PendingDelivery] = {}
         self._logical_delivery_tags: dict[int, tuple[int, ...]] = {}
@@ -112,6 +113,7 @@ class RabbitMQClient:
         self._fragment_settings = FragmentSettings.from_env()
         self._published_controls: set[tuple[str, str, str, str]] = set()
         self._cancel_check: Callable[[], None] | None = None
+        self._successful_result_callback: Callable[[], None] | None = None
         self._poll_interval = max(
             0.01,
             float(os.getenv("CSI_REFERENCE_POLL_INTERVAL", "0.1")),
@@ -129,14 +131,17 @@ class RabbitMQClient:
         inputs: dict[str, Any],
         outputs: dict[str, Any],
         cancel_check: Callable[[], None] | None = None,
+        successful_result_callback: Callable[[], None] | None = None,
     ) -> None:
         """注册运行上下文中的 EOS v1 输入输出流。"""
         self._reference_inputs.clear()
         self._reference_outputs.clear()
+        self._reference_result_queues.clear()
         self._backend_owned_reference_queues.clear()
         self._fragment_assemblers.clear()
         self._logical_delivery_tags.clear()
         self._cancel_check = cancel_check
+        self._successful_result_callback = successful_result_callback
 
         for io_value in inputs.values():
             if not isinstance(io_value, dict) or io_value.get("type") != "reference":
@@ -165,6 +170,16 @@ class RabbitMQClient:
         for io_value in outputs.values():
             if not isinstance(io_value, dict) or io_value.get("type") != "reference":
                 continue
+            value_queues = io_value.get("value") or []
+            if isinstance(value_queues, str):
+                value_queues = [value_queues]
+            elif not isinstance(value_queues, (list, tuple, set, frozenset)):
+                value_queues = []
+            self._reference_result_queues.update(
+                queue_name
+                for queue_name in value_queues
+                if isinstance(queue_name, str) and queue_name
+            )
             for stream in io_value.get("streams") or []:
                 if not isinstance(stream, dict) or stream.get("protocol") != REFERENCE_PROTOCOL:
                     continue
@@ -172,6 +187,7 @@ class RabbitMQClient:
                 stream_id = stream.get("stream_id")
                 if not isinstance(queue_name, str) or not queue_name:
                     continue
+                self._reference_result_queues.add(queue_name)
                 if not isinstance(stream_id, str) or not stream_id:
                     stream_id = queue_name
                 self._register_reference_queue(queue_name)
@@ -189,6 +205,15 @@ class RabbitMQClient:
     def has_reference_outputs(self) -> bool:
         """返回当前上下文是否声明了 EOS v1 输出流。"""
         return bool(self._reference_outputs)
+
+    def _notify_successful_result(self) -> None:
+        """通知运行上下文已经成功发布至少一条业务数据。"""
+        if self._successful_result_callback is None:
+            return
+        try:
+            self._successful_result_callback()
+        except Exception as exc:
+            logger.warning("业务结果状态回调失败: %s", exc)
 
     def connect(self) -> bool:
         """建立 RabbitMQ 连接和通道。"""
@@ -806,6 +831,8 @@ class RabbitMQClient:
                         )
                     logger.error("RabbitMQ 拒绝确认业务消息: %s", queue_name)
                     return False
+            if message and queue_name in self._reference_result_queues:
+                self._notify_successful_result()
             return True
         except ReferenceStreamTransportError:
             raise
@@ -1177,6 +1204,10 @@ class RabbitMQClient:
                     message,
                     resolved_message_id,
                 )
+                completed_publications = {
+                    target_queue: 0 for target_queue in dict.fromkeys(queue_names)
+                }
+                result_reported = False
                 for body, properties in publications:
                     for target_queue in dict.fromkeys(queue_names):
                         active_queue = target_queue
@@ -1197,6 +1228,16 @@ class RabbitMQClient:
                                 target_queue,
                             )
                             return False
+                        completed_publications[target_queue] += 1
+                        if (
+                            message
+                            and not result_reported
+                            and target_queue in self._reference_result_queues
+                            and completed_publications[target_queue]
+                            == len(publications)
+                        ):
+                            self._notify_successful_result()
+                            result_reported = True
             return True
         except ReferenceStreamTransportError:
             raise

@@ -27,6 +27,7 @@ class ComponentRunModel(Document):
     error_message: str | None = None
     result_id: str | None = None
     outputs: dict[str, Any] = Field(default_factory=dict)
+    has_successful_result: bool = False
     cancel_requested: bool = False
     log_count: int = 0
     error_log_count: int = 0
