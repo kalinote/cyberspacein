@@ -2,6 +2,7 @@
 """行动实例编排与运行服务。"""
 
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timedelta
 import random
 from types import SimpleNamespace
@@ -526,6 +527,7 @@ class ActionInstanceService:
         schedule_id: str | None = None,
         schedule_name: str | None = None,
         schedule_priority: int = 5,
+        _replay_source: ActionInstanceModel | None = None,
     ) -> tuple[bool, str]:
         """
         初始化行动实例
@@ -538,14 +540,83 @@ class ActionInstanceService:
                 return True, existing.id
         action_id = generate_id(blueprint_id + datetime.now().strftime("%Y%m%d%H%M%S") + str(random.randint(1000, 9999)))
 
-        blueprint = await ActionInstanceService.get_blueprint(blueprint_id)
-        if not blueprint:
-            logger.error(f"行动实例初始化失败，蓝图不存在: {blueprint_id}")
-            return False, f"行动实例初始化失败，蓝图不存在: {blueprint_id}"
+        replay_node_map: dict[str, ActionInstanceNodeModel] = {}
+        if _replay_source is not None:
+            if _replay_source.blueprint_id != blueprint_id:
+                return False, "重试来源行动与蓝图不匹配"
+            blueprint = _replay_source.blueprint_snapshot.model_copy(deep=True)
+            replay_nodes = await ActionInstanceNodeModel.find(
+                {"action_id": _replay_source.id}
+            ).to_list()
+            replay_node_map = {node.node_id: node for node in replay_nodes}
+            missing_node_ids = {
+                node.id for node in blueprint.graph.nodes
+            } - set(replay_node_map)
+            if missing_node_ids:
+                return False, (
+                    "重试来源行动缺少节点快照: "
+                    + ", ".join(sorted(missing_node_ids))
+                )
+        else:
+            blueprint = await ActionInstanceService.get_blueprint(blueprint_id)
+            if not blueprint:
+                logger.error(f"行动实例初始化失败，蓝图不存在: {blueprint_id}")
+                return False, f"行动实例初始化失败，蓝图不存在: {blueprint_id}"
 
         revision = None
         graph = blueprint.graph
-        if blueprint_revision_id:
+        if _replay_source is not None:
+            blueprint_revision_id = _replay_source.blueprint_revision_id
+            invocation_mode = _replay_source.invocation_mode
+            debug = getattr(_replay_source, "debug", False)
+            scheduling_mode_override = getattr(
+                _replay_source,
+                "scheduling_mode_override",
+                None,
+            )
+            execution_plan = _replay_source.execution_plan_snapshot.model_copy(
+                deep=True
+            )
+            if execution_plan.invocation_mode != invocation_mode:
+                return False, "重试来源行动的调用模式快照不一致"
+            definitions = {}
+            for node in graph.nodes:
+                replay_node = replay_node_map[node.id]
+                try:
+                    definition = ActionNodeModel.model_validate(
+                        replay_node.definition_snapshot
+                    )
+                except ValueError as exc:
+                    return False, f"重试来源行动节点定义快照无效: {node.id}: {exc}"
+                if definition.id != node.data.definition_id:
+                    return False, f"重试来源行动节点定义不匹配: {node.id}"
+                definitions[definition.id] = definition
+            for edge in execution_plan.edges:
+                if edge.data_type != "reference":
+                    continue
+                replay_source_node = replay_node_map.get(edge.source)
+                replay_target_node = replay_node_map.get(edge.target)
+                replay_binding = (
+                    replay_source_node.reference_queue_bindings.get(edge.id)
+                    if replay_source_node is not None
+                    else None
+                )
+                if replay_binding is None or replay_target_node is None:
+                    return False, f"重试来源行动缺少Reference快照: {edge.id}"
+                if not any(
+                    item.type == ActionConfigIOTypeEnum.REFERENCE
+                    and item.value == replay_binding.queue_name
+                    for item in replay_target_node.inputs.values()
+                ):
+                    return False, f"重试来源行动缺少Reference输入快照: {edge.id}"
+            try:
+                await BlueprintCompiler.validate_encapsulated_dependencies(
+                    definitions
+                )
+            except ValueError as exc:
+                logger.error(f"行动实例初始化失败，蓝图编译错误: {exc}")
+                return False, f"蓝图编译失败: {exc}"
+        elif blueprint_revision_id:
             revision = await ActionBlueprintRevisionModel.find_one(
                 {
                     "_id": blueprint_revision_id,
@@ -556,44 +627,45 @@ class ActionInstanceService:
             if revision is None:
                 return False, f"蓝图Revision不存在: {blueprint_revision_id}"
             graph = revision.graph_snapshot
-        try:
-            scheduling_mode_override = (
-                ActionSchedulingModeEnum(scheduling_mode)
-                if scheduling_mode is not None
-                else None
-            )
-            effective_scheduling_mode = scheduling_mode_override or getattr(
-                revision.blueprint_snapshot if revision is not None else blueprint,
-                "default_scheduling_mode",
-                ActionSchedulingModeEnum.BARRIER,
-            )
-            effective_scheduling_mode = ActionSchedulingModeEnum(
-                effective_scheduling_mode
-            )
-            definitions = (
-                await BlueprintRevisionService.load_revision_definitions(revision)
-                if revision is not None
-                else await BlueprintCompiler.load_definitions(graph)
-            )
-            if revision is None:
-                await BlueprintCompiler.hydrate_interface_handle_selections(
+        if _replay_source is None:
+            try:
+                scheduling_mode_override = (
+                    ActionSchedulingModeEnum(scheduling_mode)
+                    if scheduling_mode is not None
+                    else None
+                )
+                effective_scheduling_mode = scheduling_mode_override or getattr(
+                    revision.blueprint_snapshot if revision is not None else blueprint,
+                    "default_scheduling_mode",
+                    ActionSchedulingModeEnum.BARRIER,
+                )
+                effective_scheduling_mode = ActionSchedulingModeEnum(
+                    effective_scheduling_mode
+                )
+                definitions = (
+                    await BlueprintRevisionService.load_revision_definitions(revision)
+                    if revision is not None
+                    else await BlueprintCompiler.load_definitions(graph)
+                )
+                if revision is None:
+                    await BlueprintCompiler.hydrate_interface_handle_selections(
+                        graph,
+                        definitions,
+                    )
+                execution_plan = BlueprintCompiler.compile(
                     graph,
                     definitions,
+                    invocation_mode,
+                    revision_id=blueprint_revision_id,
+                    debug=debug,
+                    scheduling_mode=effective_scheduling_mode,
                 )
-            execution_plan = BlueprintCompiler.compile(
-                graph,
-                definitions,
-                invocation_mode,
-                revision_id=blueprint_revision_id,
-                debug=debug,
-                scheduling_mode=effective_scheduling_mode,
-            )
-            await BlueprintCompiler.validate_encapsulated_dependencies(
-                definitions
-            )
-        except ValueError as exc:
-            logger.error(f"行动实例初始化失败，蓝图编译错误: {exc}")
-            return False, f"蓝图编译失败: {exc}"
+                await BlueprintCompiler.validate_encapsulated_dependencies(
+                    definitions
+                )
+            except ValueError as exc:
+                logger.error(f"行动实例初始化失败，蓝图编译错误: {exc}")
+                return False, f"蓝图编译失败: {exc}"
         
         param_required_map: dict[str, bool] = {}
         template_bindings: dict[str, dict[str, str]] = {}
@@ -603,7 +675,7 @@ class ActionInstanceService:
             if revision is not None
             else blueprint.template
         )
-        is_template = bool(template_snapshot)
+        is_template = bool(template_snapshot) and _replay_source is None
         if is_template:
             if not template_snapshot:
                 logger.error(f"模板蓝图缺少模板配置: {blueprint_id}")
@@ -620,7 +692,9 @@ class ActionInstanceService:
                 template_bindings = template["bindings"]
         
         blueprint_snapshot = (
-            revision.blueprint_snapshot.model_copy(deep=True)
+            _replay_source.blueprint_snapshot.model_copy(deep=True)
+            if _replay_source is not None
+            else revision.blueprint_snapshot.model_copy(deep=True)
             if revision is not None
             else create_blueprint_snapshot(blueprint)
         )
@@ -644,6 +718,9 @@ class ActionInstanceService:
             invocation_reference_outputs=invocation_reference_outputs or {},
             reference_queue_lifecycle="provisioning",
             initiator_user_id=initiator_user_id,
+            retry_of_action_id=(
+                _replay_source.id if _replay_source is not None else None
+            ),
             status=ActionFlowStatusEnum.READY,
             implementation_period=blueprint_snapshot.implementation_period,
             nodes_id=[node.id for node in graph.nodes],
@@ -695,14 +772,43 @@ class ActionInstanceService:
             )
             if binding is None or target_definition is None:
                 return False, f"Reference执行边缺少冻结绑定: {edge.id}"
-            _, target_handle_definition = await (
-                ActionInstanceService.resolve_node_handle_definition(
-                    target_definition,
-                    edge.target_port_id,
+            if _replay_source is not None:
+                replay_source_node = replay_node_map.get(edge.source)
+                replay_target_node = replay_node_map.get(edge.target)
+                replay_binding = (
+                    replay_source_node.reference_queue_bindings.get(edge.id)
+                    if replay_source_node is not None
+                    else None
                 )
-            )
-            if target_handle_definition is None:
-                return False, f"Reference执行边缺少目标连接点定义: {edge.id}"
+                replay_input = (
+                    next(
+                        (
+                            item
+                            for item in replay_target_node.inputs.values()
+                            if item.type == ActionConfigIOTypeEnum.REFERENCE
+                            and replay_binding is not None
+                            and item.value == replay_binding.queue_name
+                        ),
+                        None,
+                    )
+                    if replay_target_node is not None
+                    else None
+                )
+                if replay_input is None:
+                    return False, f"重试来源行动缺少Reference输入快照: {edge.id}"
+                input_key = replay_input.key
+                input_type = replay_input.type
+            else:
+                _, target_handle_definition = await (
+                    ActionInstanceService.resolve_node_handle_definition(
+                        target_definition,
+                        edge.target_port_id,
+                    )
+                )
+                if target_handle_definition is None:
+                    return False, f"Reference执行边缺少目标连接点定义: {edge.id}"
+                input_key = target_handle_definition.handle_name
+                input_type = ActionConfigIOTypeEnum.REFERENCE
             allow_multiple_inputs = bool(
                 (
                     target_definition.extension.config.get("compiler", {})
@@ -718,9 +824,9 @@ class ActionInstanceService:
             )
             reference_inputs_by_target.setdefault(edge.target, {})[input_slot] = (
                 ActionConfigIOModel(
-                    key=target_handle_definition.handle_name,
+                    key=input_key,
                     value=binding.queue_name,
-                    type=ActionConfigIOTypeEnum.REFERENCE,
+                    type=input_type,
                 )
             )
         skipped_by_id = {
@@ -757,6 +863,7 @@ class ActionInstanceService:
                 
                 form_data = pack_dict(form_data_dict) or []
                 
+            replay_node = replay_node_map.get(node.id)
             action_instance_node = ActionInstanceNodeModel(
                 id=generate_id(action_id + node.id),
                 action_id=action_id,
@@ -766,30 +873,55 @@ class ActionInstanceService:
                     if node.id in skipped_by_id
                     else ActionInstanceNodeStatusEnum.PENDING
                 ),
-                configs=form_data + default_configs,
+                configs=(
+                    deepcopy(replay_node.configs)
+                    if replay_node is not None
+                    else form_data + default_configs
+                ),
                 inputs=reference_inputs_by_target.get(node.id, {}),
                 reference_queue_bindings=reference_bindings_by_source.get(
                     node.id,
                     {},
                 ),
-                definition_id=node.data.definition_id,
-                definition_snapshot=node_definition.model_dump(
-                    mode="python",
-                    by_alias=True,
+                definition_id=(
+                    replay_node.definition_id
+                    if replay_node is not None
+                    else node.data.definition_id
+                ),
+                definition_snapshot=(
+                    deepcopy(replay_node.definition_snapshot)
+                    if replay_node is not None
+                    else node_definition.model_dump(
+                        mode="python",
+                        by_alias=True,
+                    )
                 ),
                 execution_spec_snapshot=(
-                    plan_node_by_id[node.id].execution
+                    replay_node.execution_spec_snapshot.model_copy(deep=True)
+                    if replay_node is not None
+                    else plan_node_by_id[node.id].execution
                     if node.id in plan_node_by_id
                     else node_definition.execution
                 ),
                 extension_spec_snapshot=(
-                    plan_node_by_id[node.id].extension_spec
+                    replay_node.extension_spec_snapshot.model_copy(deep=True)
+                    if replay_node is not None
+                    and replay_node.extension_spec_snapshot is not None
+                    else None
+                    if replay_node is not None
+                    else plan_node_by_id[node.id].extension_spec
                     if node.id in plan_node_by_id
                     else node_definition.extension
                 ),
-                node_definition_version=node_definition.definition_version,
+                node_definition_version=(
+                    replay_node.node_definition_version
+                    if replay_node is not None
+                    else node_definition.definition_version
+                ),
                 extension_contract_version=(
-                    node_definition.extension.contract_version
+                    replay_node.extension_contract_version
+                    if replay_node is not None
+                    else node_definition.extension.contract_version
                     if node_definition.extension
                     else None
                 ),
@@ -805,7 +937,9 @@ class ActionInstanceService:
                     else 0
                 ),
                 instance_config=(
-                    plan_node_by_id[node.id].instance_config
+                    deepcopy(replay_node.instance_config)
+                    if replay_node is not None
+                    else plan_node_by_id[node.id].instance_config
                     if node.id in plan_node_by_id
                     else {
                         **form_data_dict,
@@ -924,6 +1058,34 @@ class ActionInstanceService:
             return False, f"行动状态在 Reference 队列预声明期间发生变化: {action_id}"
         
         return True, action_id
+
+    @staticmethod
+    async def retry(
+        source_action_id: str,
+        *,
+        initiator_user_id: str | None = None,
+    ) -> tuple[bool, str]:
+        """以可重放的独立行动冻结快照创建一次全新执行。"""
+        source = await ActionInstanceModel.find_one({"_id": source_action_id})
+        if source is None or getattr(source, "is_deleted", False):
+            return False, f"行动不存在，ID: {source_action_id}"
+        if (
+            source.invocation_mode != ActionInvocationModeEnum.STANDALONE
+            or source.visibility != ActionVisibilityEnum.NORMAL
+        ):
+            return False, "仅支持重试或重新执行普通独立行动"
+        if source.status not in {
+            ActionFlowStatusEnum.FAILED,
+            ActionFlowStatusEnum.TIMEOUT,
+            ActionFlowStatusEnum.COMPLETED,
+            ActionFlowStatusEnum.PARTIALLY_COMPLETED,
+        }:
+            return False, f"当前状态不允许重试或重新执行: {source.status.value}"
+        return await ActionInstanceService.init(
+            source.blueprint_id,
+            initiator_user_id=initiator_user_id,
+            _replay_source=source,
+        )
 
     @staticmethod
     async def start(action_id: str):

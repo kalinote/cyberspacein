@@ -93,6 +93,10 @@ export const actionApi = {
   runAction(data) {
     return request.post(`/action/start`, data)
   },
+  // 基于历史行动的冻结快照创建一次全新执行
+  retryAction(id) {
+    return request.post(`/action/${id}/retry`)
+  },
   // 暂停行动
   pauseAction(id) {
     return request.post(`/action/${id}/pause`)

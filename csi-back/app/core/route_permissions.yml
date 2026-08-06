@@ -79,6 +79,7 @@ routes:
   - {method: POST, path: "/action/{action_id}/pause", principal: user, permission: "operation:action:instance:execute"}
   - {method: POST, path: "/action/{action_id}/resume", principal: user, permission: "operation:action:instance:execute"}
   - {method: POST, path: "/action/{action_id}/stop", principal: user, permission: "operation:action:instance:execute"}
+  - {method: POST, path: "/action/{action_id}/retry", principal: user, permission: "operation:action:instance:execute"}
   - {method: GET, path: "/action/nodes/{node_instance_id}/logs", principal: user, permission: "operation:action:instance-log:read"}
   - {method: POST, path: "/action/blueprint", principal: user, permission: "operation:action:blueprint:create"}
   - {method: GET, path: "/action/blueprint/list", principal: user, permission: "operation:action:blueprint:read"}

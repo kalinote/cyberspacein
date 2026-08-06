@@ -474,6 +474,41 @@ async def get_embedded_action_logs(
     return ApiResponseSchema.success(data=page)
 
 
+@router.post(
+    "/{action_id}/retry",
+    response_model=ApiResponseSchema[StartActionResponse],
+    summary="重试或重新执行行动",
+)
+async def retry_action(
+    action_id: str,
+    background_tasks: BackgroundTasks,
+    request: Request,
+):
+    """以失败、超时、已完成或部分完成行动的冻结上下文创建全新行动。"""
+    user = getattr(getattr(request.state, "auth_context", None), "user", None)
+    success, message = await ActionInstanceService.retry(
+        action_id,
+        initiator_user_id=getattr(user, "id", None),
+    )
+    if not success:
+        return ApiResponseSchema.error(code=240424, message=message)
+    created_action = await ActionInstanceModel.find_one({"_id": message})
+    if created_action is None:
+        return ApiResponseSchema.error(
+            code=250004,
+            message="重试或重新执行行动的创建结果不存在",
+        )
+    background_tasks.add_task(ActionInstanceService.start, message)
+    return ApiResponseSchema.success(
+        data=StartActionResponse(
+            action_id=message,
+            scheduling_mode=ActionInstanceService._get_scheduling_mode(
+                created_action
+            ),
+        )
+    )
+
+
 async def _control_action(
     action_id: str,
     operation: str,

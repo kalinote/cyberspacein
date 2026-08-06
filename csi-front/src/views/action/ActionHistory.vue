@@ -176,7 +176,11 @@
                     >
                       调试
                     </el-tag>
-                    <el-tag size="small" effect="plain" type="info">
+                    <el-tag
+                      size="small"
+                      effect="plain"
+                      :class="SCHEDULING_MODE_TAG_CLASSES[action.schedulingMode]"
+                    >
                       {{ action.schedulingMode === 'streaming' ? '异步执行' : '同步执行' }}
                     </el-tag>
                     <el-tag
@@ -214,18 +218,21 @@
                 </div>
 
                 <div
-                  v-if="[ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED, ACTION_STATUS.COMPLETED, ACTION_STATUS.PARTIALLY_COMPLETED].includes(action.status)"
+                  v-if="ACTION_PROGRESS_STATUSES.has(action.status)"
                   class="mb-4"
                 >
                   <div class="flex justify-between text-xs text-gray-600 mb-1">
                     <span>执行进度</span>
-                    <span v-if="action.completedSteps && action.totalSteps">
+                    <span v-if="action.totalSteps">
                       {{ action.completedSteps }}/{{ action.totalSteps }} 步骤
                     </span>
                   </div>
                   <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div
-                      class="h-full bg-linear-to-r from-blue-500 to-cyan-400 rounded-full transition-all"
+                      class="h-full rounded-full transition-all"
+                      :class="UNSUCCESSFUL_TERMINAL_STATUSES.has(action.status)
+                        ? 'bg-linear-to-r from-red-500 to-yellow-400'
+                        : 'bg-linear-to-r from-blue-500 to-cyan-400'"
                       :style="{ width: (action.progress || 0) + '%' }"
                     ></div>
                   </div>
@@ -237,14 +244,17 @@
                     查看详情
                   </el-button>
                   <el-button
-                    v-if="[ACTION_STATUS.COMPLETED, ACTION_STATUS.PARTIALLY_COMPLETED].includes(action.status)"
-                    type="success"
+                    v-if="REPLAYABLE_ACTION_STATUSES.has(action.status)"
+                    :type="RETRYABLE_ACTION_STATUSES.has(action.status) ? 'warning' : 'success'"
                     link
                     size="small"
-                    @click.stop="rerunAction(action.id)"
+                    :loading="retryingActionId === action.id"
+                    @click.stop="replayAction(action)"
                   >
-                    <template #icon><Icon icon="mdi:replay" /></template>
-                    重新执行
+                    <template #icon>
+                      <Icon :icon="RETRYABLE_ACTION_STATUSES.has(action.status) ? 'mdi:refresh' : 'mdi:replay'" />
+                    </template>
+                    {{ RETRYABLE_ACTION_STATUSES.has(action.status) ? '重试' : '重新执行' }}
                   </el-button>
                   <el-button
                     v-if="action.status === ACTION_STATUS.RUNNING"
@@ -301,7 +311,11 @@
                     >
                       调试
                     </el-tag>
-                    <el-tag size="small" effect="plain" type="info">
+                    <el-tag
+                      size="small"
+                      effect="plain"
+                      :class="SCHEDULING_MODE_TAG_CLASSES[row.schedulingMode]"
+                    >
                       {{ row.schedulingMode === 'streaming' ? '异步执行' : '同步执行' }}
                     </el-tag>
                   </div>
@@ -327,14 +341,17 @@
               </el-table-column>
               <el-table-column prop="progress" label="进度" width="120">
                 <template #default="{ row }">
-                  <div v-if="row.progress !== undefined" class="flex items-center gap-2">
+                  <div v-if="ACTION_PROGRESS_STATUSES.has(row.status)" class="flex items-center gap-2">
                     <div class="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div
-                        class="h-full bg-blue-500 rounded-full"
-                        :style="{ width: row.progress + '%' }"
+                        class="h-full rounded-full"
+                        :class="UNSUCCESSFUL_TERMINAL_STATUSES.has(row.status)
+                          ? 'bg-linear-to-r from-red-500 to-yellow-400'
+                          : 'bg-linear-to-r from-blue-500 to-cyan-400'"
+                        :style="{ width: (row.progress || 0) + '%' }"
                       ></div>
                     </div>
-                    <span class="text-xs text-gray-600 w-10 text-right">{{ row.progress }}%</span>
+                    <span class="text-xs text-gray-600 w-10 text-right">{{ row.progress || 0 }}%</span>
                   </div>
                   <span v-else class="text-gray-400">-</span>
                 </template>
@@ -347,14 +364,17 @@
                       查看
                     </el-button>
                     <el-button
-                      v-if="[ACTION_STATUS.COMPLETED, ACTION_STATUS.PARTIALLY_COMPLETED].includes(row.status)"
-                      type="success"
+                      v-if="REPLAYABLE_ACTION_STATUSES.has(row.status)"
+                      :type="RETRYABLE_ACTION_STATUSES.has(row.status) ? 'warning' : 'success'"
                       link
                       size="small"
-                      @click="rerunAction(row.id)"
+                      :loading="retryingActionId === row.id"
+                      @click="replayAction(row)"
                     >
-                      <template #icon><Icon icon="mdi:replay" /></template>
-                      重跑
+                      <template #icon>
+                        <Icon :icon="RETRYABLE_ACTION_STATUSES.has(row.status) ? 'mdi:refresh' : 'mdi:replay'" />
+                      </template>
+                      {{ RETRYABLE_ACTION_STATUSES.has(row.status) ? '重试' : '重新执行' }}
                     </el-button>
                     <el-button
                       v-if="row.status === ACTION_STATUS.RUNNING"
@@ -435,8 +455,36 @@ import { getPaginatedData } from '@/utils/request'
 
 const router = useRouter()
 
+const SCHEDULING_MODE_TAG_CLASSES = Object.freeze({
+  barrier: 'border-blue-200! bg-blue-50! text-blue-600!',
+  streaming: 'border-violet-200! bg-violet-50! text-violet-600!'
+})
+const UNSUCCESSFUL_TERMINAL_STATUSES = new Set([
+  ACTION_STATUS.FAILED,
+  ACTION_STATUS.TIMEOUT,
+  ACTION_STATUS.CANCELLED,
+  ACTION_STATUS.STOPPED
+])
+const ACTION_PROGRESS_STATUSES = new Set([
+  ACTION_STATUS.RUNNING,
+  ACTION_STATUS.PAUSED,
+  ACTION_STATUS.COMPLETED,
+  ACTION_STATUS.PARTIALLY_COMPLETED,
+  ...UNSUCCESSFUL_TERMINAL_STATUSES
+])
+const RETRYABLE_ACTION_STATUSES = new Set([
+  ACTION_STATUS.FAILED,
+  ACTION_STATUS.TIMEOUT
+])
+const REPLAYABLE_ACTION_STATUSES = new Set([
+  ...RETRYABLE_ACTION_STATUSES,
+  ACTION_STATUS.COMPLETED,
+  ACTION_STATUS.PARTIALLY_COMPLETED
+])
+
 const loading = ref(false)
 const viewMode = ref('card')
+const retryingActionId = ref(null)
 
 const filters = ref({
   keyword: '',
@@ -598,21 +646,36 @@ const stopAction = async (actionId) => {
   }
 }
 
-// 占位方法：重新执行行动，等待后端API完成
-const rerunAction = (actionId) => {
-  ElMessageBox.confirm(
-    '确定要重新执行此行动吗？',
-    '确认重新执行',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'info'
-    }
-  ).then(() => {
-    ElMessage.success('行动已加入执行队列')
-  }).catch(() => {
-    ElMessage.info('已取消')
-  })
+const replayAction = async (action) => {
+  if (retryingActionId.value !== null) return
+
+  const operationText = RETRYABLE_ACTION_STATUSES.has(action.status) ? '重试' : '重新执行'
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要${operationText}此行动吗？系统将基于执行快照创建并启动一个新行动。`,
+      `确认${operationText}`,
+      {
+        confirmButtonText: `确定${operationText}`,
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  retryingActionId.value = action.id
+  try {
+    const response = await actionApi.retryAction(action.id)
+    if (!response.data?.action_id) throw new Error(response.message || `${operationText}失败`)
+    ElMessage.success('新行动已创建并开始执行')
+    await fetchActions(false)
+  } catch (error) {
+    ElMessage.error(error?.message || `${operationText}失败`)
+  } finally {
+    retryingActionId.value = null
+  }
 }
 
 // 占位方法：删除行动（仅本地删除），等待后端API完成

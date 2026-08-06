@@ -148,6 +148,98 @@ async def test_start_action_response_uses_frozen_plan_mode(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_retry_action_starts_new_action_with_current_user(monkeypatch) -> None:
+    retry = AsyncMock(return_value=(True, "new-action"))
+    monkeypatch.setattr(ActionInstanceService, "retry", retry)
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                execution_plan_snapshot=SimpleNamespace(
+                    plan_schema_version=3,
+                    scheduling_mode=ActionSchedulingModeEnum.STREAMING,
+                )
+            )
+        ),
+    )
+    background_tasks = BackgroundTasks()
+
+    response = await instance_endpoint.retry_action(
+        "source-action",
+        background_tasks,
+        SimpleNamespace(
+            state=SimpleNamespace(
+                auth_context=SimpleNamespace(
+                    user=SimpleNamespace(id="retry-user")
+                )
+            )
+        ),
+    )
+
+    assert response.code == 0
+    assert response.data.action_id == "new-action"
+    assert response.data.scheduling_mode == ActionSchedulingModeEnum.STREAMING
+    retry.assert_awaited_once_with(
+        "source-action",
+        initiator_user_id="retry-user",
+    )
+    assert len(background_tasks.tasks) == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_action_failure_does_not_enqueue_background_start(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "retry",
+        AsyncMock(return_value=(False, "当前状态不允许重试或重新执行")),
+    )
+    find_action = AsyncMock()
+    monkeypatch.setattr(ActionInstanceModel, "find_one", find_action)
+    background_tasks = BackgroundTasks()
+
+    response = await instance_endpoint.retry_action(
+        "source-action",
+        background_tasks,
+        SimpleNamespace(state=SimpleNamespace(auth_context=None)),
+    )
+
+    assert response.code != 0
+    assert response.message == "当前状态不允许重试或重新执行"
+    assert background_tasks.tasks == []
+    find_action.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_retry_action_missing_created_action_does_not_start(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        ActionInstanceService,
+        "retry",
+        AsyncMock(return_value=(True, "missing-action")),
+    )
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        AsyncMock(return_value=None),
+    )
+    background_tasks = BackgroundTasks()
+
+    response = await instance_endpoint.retry_action(
+        "source-action",
+        background_tasks,
+        SimpleNamespace(state=SimpleNamespace(auth_context=None)),
+    )
+
+    assert response.code != 0
+    assert response.message == "重试或重新执行行动的创建结果不存在"
+    assert background_tasks.tasks == []
+
+
+@pytest.mark.asyncio
 async def test_action_list_returns_debug_flag_with_old_action_fallback(
     monkeypatch,
 ) -> None:

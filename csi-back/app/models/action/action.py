@@ -86,6 +86,10 @@ class ActionInstanceModel(Document):
         "failed",
     ] = Field(default="pending", description="行动自有队列清理状态")
     initiator_user_id: str | None = Field(default=None, description="行动发起用户ID")
+    retry_of_action_id: str | None = Field(
+        default=None,
+        description="本次行动重试所来源的行动ID",
+    )
     is_deleted: bool = Field(default=False, description="是否已删除")
 
     start_at: datetime | None = Field(default=None, description="行动实例化流程开始时间")
@@ -120,6 +124,7 @@ class ActionInstanceModel(Document):
             "root_action_id",
             "parent_action_id",
             "blueprint_revision_id",
+            "retry_of_action_id",
             IndexModel(
                 [("trigger_key", ASCENDING)],
                 unique=True,
