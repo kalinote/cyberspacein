@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pika
 import pytest
+from pika.adapters.blocking_connection import BlockingChannel
 from pika.exceptions import ChannelClosedByBroker, UnroutableError
 
 from csi_base_component_sdk.fragmentation import (
@@ -19,6 +20,7 @@ from csi_base_component_sdk.rabbitmq import (
     RabbitMQClient,
     ReferenceStreamAborted,
     ReferenceStreamTransportError,
+    _PendingDelivery,
 )
 
 
@@ -104,6 +106,19 @@ def _receive_message(client: RabbitMQClient, tag: int = 1) -> dict:
     return client.get_message("queue-1")
 
 
+def _track_pending_delivery(client: RabbitMQClient, tag: int) -> None:
+    """为私有控制帧状态机测试登记一条交付。"""
+    client._pending_deliveries[tag] = _PendingDelivery(
+        logical_id=tag,
+        physical_tags=(tag,),
+        queue_name="queue-1",
+        is_backend_owned=True,
+        channel_generation=client._consumer_channel_generation,
+        received_at=0,
+        deadline_at=float("inf"),
+    )
+
+
 def test_client_loads_rabbitmq_config_from_parent_dotenv(
     monkeypatch,
     tmp_path,
@@ -171,9 +186,10 @@ def test_client_config_priority_is_argument_then_environment_then_dotenv(
 
 
 def test_connect_enables_publisher_confirms(monkeypatch):
-    channel = MagicMock()
+    consumer_channel = MagicMock()
+    publisher_channel = MagicMock()
     connection = MagicMock()
-    connection.channel.return_value = channel
+    connection.channel.side_effect = [consumer_channel, publisher_channel]
     monkeypatch.setattr(
         "csi_base_component_sdk.rabbitmq.pika.BlockingConnection",
         MagicMock(return_value=connection),
@@ -182,24 +198,248 @@ def test_connect_enables_publisher_confirms(monkeypatch):
     client = RabbitMQClient()
 
     assert client.connect() is True
-    channel.confirm_delivery.assert_called_once_with()
+    assert client.consumer_channel is consumer_channel
+    assert client.publisher_channel is publisher_channel
+    consumer_channel.confirm_delivery.assert_not_called()
+    publisher_channel.confirm_delivery.assert_called_once_with()
+    consumer_channel._impl.add_on_close_callback.assert_called_once()
+    publisher_channel._impl.add_on_close_callback.assert_called_once()
 
 
-def test_ensure_connection_rebuilds_closed_channel_with_confirms():
+def test_connect_registers_close_callback_on_blocking_channel_impl(monkeypatch):
+    class _BlockingChannelLike:
+        is_closed = False
+
+        def __init__(self):
+            self._impl = MagicMock()
+            self.confirm_delivery = MagicMock()
+            self.close = MagicMock()
+
+    consumer_channel = _BlockingChannelLike()
+    publisher_channel = _BlockingChannelLike()
+    connection = MagicMock()
+    connection.channel.side_effect = [consumer_channel, publisher_channel]
+    monkeypatch.setattr(
+        "csi_base_component_sdk.rabbitmq.pika.BlockingConnection",
+        MagicMock(return_value=connection),
+    )
+
+    client = RabbitMQClient()
+
+    assert not hasattr(BlockingChannel, "add_on_close_callback")
+    assert not hasattr(consumer_channel, "add_on_close_callback")
+    assert client.connect() is True
+    consumer_channel._impl.add_on_close_callback.assert_called_once()
+    publisher_channel._impl.add_on_close_callback.assert_called_once()
+
+
+def test_consumer_generation_prevents_reused_physical_tag_ack():
+    client = _connected_client()
+    original_channel = client.consumer_channel
+    first = _receive_message(client, 1)
+    replacement_channel = MagicMock(is_closed=False)
+    replacement_channel.basic_get.return_value = (
+        _delivery(1),
+        _properties(message_id="data-new"),
+        b'{"value": 2}',
+    )
+    connection = MagicMock(is_closed=False)
+    connection.channel.return_value = replacement_channel
+    client.connection = connection
+    original_channel.is_closed = True
+
+    assert client._ensure_consumer_channel() is True
+    second = client.get_message("queue-1")
+
+    assert first["delivery_tag"] == 1
+    assert second["delivery_tag"] == 2
+    assert client.ack_message(first["delivery_tag"]) is False
+    assert client.ack_message(second["delivery_tag"]) is True
+    original_channel.basic_ack.assert_not_called()
+    replacement_channel.basic_ack.assert_called_once_with(delivery_tag=1)
+
+
+def test_process_data_events_raises_first_406_from_close_callback():
+    client = _connected_client()
+    _configure_managed_input(client)
+    _receive_message(client)
+    reason = ChannelClosedByBroker(
+        406,
+        "PRECONDITION_FAILED - delivery acknowledgement timed out",
+    )
+
+    def dispatch_events():
+        client._on_consumer_channel_closed(
+            client.consumer_channel,
+            reason,
+            client._consumer_channel_generation,
+        )
+        raise RuntimeError("事件派发中断")
+
+    client.connection.process_data_events.side_effect = dispatch_events
+
+    with pytest.raises(
+        ReferenceStreamTransportError,
+        match=r"Channel\.Close \(406\).*acknowledgement timed out",
+    ) as raised:
+        client.process_data_events()
+
+    with pytest.raises(ReferenceStreamTransportError) as repeated:
+        client.nack_message(1)
+    assert repeated.value is raised.value
+    client.consumer_channel.basic_nack.assert_not_called()
+
+
+def test_publisher_channel_rebuild_does_not_invalidate_consumer_delivery():
+    client = _connected_client()
+    client.configure_reference_streams(
+        {
+            "data_in": {
+                "type": "reference",
+                "streams": [
+                    {
+                        "queue_name": "queue-1",
+                        "stream_id": "input-stream",
+                        "protocol": "eos-v1",
+                    }
+                ],
+            }
+        },
+        {
+            "data_out": {
+                "type": "reference",
+                "streams": [
+                    {
+                        "queue_name": "queue-2",
+                        "stream_id": "output-stream",
+                        "protocol": "eos-v1",
+                    }
+                ],
+            }
+        },
+    )
+    message = _receive_message(client)
+    consumer_channel = client.consumer_channel
+    client.publisher_channel = MagicMock(is_closed=True)
+    replacement_publisher = MagicMock(is_closed=False)
+    client.connection.channel = MagicMock(return_value=replacement_publisher)
+
+    assert client.send_message("queue-2", {"value": 2}) is True
+
+    assert client.consumer_channel is consumer_channel
+    assert message["delivery_tag"] in client._pending_deliveries
+    replacement_publisher.confirm_delivery.assert_called_once_with()
+    replacement_publisher.basic_publish.assert_called_once()
+
+
+def test_consumer_fatal_blocks_business_and_success_eos_but_allows_abort():
+    client = _connected_client()
+    client.configure_reference_streams(
+        {
+            "data_in": {
+                "type": "reference",
+                "streams": [
+                    {
+                        "queue_name": "queue-1",
+                        "stream_id": "input-stream",
+                        "protocol": "eos-v1",
+                    }
+                ],
+            }
+        },
+        {
+            "data_out": {
+                "type": "reference",
+                "streams": [
+                    {
+                        "queue_name": "queue-2",
+                        "stream_id": "output-stream",
+                        "protocol": "eos-v1",
+                    }
+                ],
+            }
+        },
+    )
+    _receive_message(client)
+    publisher_channel = MagicMock(is_closed=False)
+    client.publisher_channel = publisher_channel
+    reason = ChannelClosedByBroker(406, "delivery acknowledgement timed out")
+    client._on_consumer_channel_closed(
+        client.consumer_channel,
+        reason,
+        client._consumer_channel_generation,
+    )
+
+    with pytest.raises(ReferenceStreamTransportError, match="406"):
+        client.send_message("queue-2", {"value": 2})
+    with pytest.raises(ReferenceStreamTransportError, match="406"):
+        client.close_reference_outputs(
+            action_id="action-1",
+            producer_id="run-1",
+            status="success",
+        )
+    assert client.close_reference_outputs(
+        action_id="action-1",
+        producer_id="run-1",
+        status="failed",
+    ) is True
+
+    publisher_channel.basic_publish.assert_called_once()
+    assert publisher_channel.basic_publish.call_args.kwargs[
+        "properties"
+    ].type == REFERENCE_ABORT_TYPE
+
+
+def test_delivery_deadline_nacks_channel_once_and_locks_fatal():
+    client = RabbitMQClient(
+        reference_consumer_ack_timeout_seconds=10,
+        reference_consumer_ack_safety_margin_seconds=2,
+    )
+    channel = MagicMock(is_closed=False)
+    client.connection = SimpleNamespace(
+        is_closed=False,
+        process_data_events=MagicMock(),
+    )
+    client.channel = channel
+    _configure_managed_input(client)
+    first = _receive_message(client, 1)
+    second = _receive_message(client, 2)
+    for pending in client._pending_deliveries.values():
+        pending.deadline_at = 0
+
+    with pytest.raises(ReferenceStreamTransportError, match="SDK 安全截止点") as raised:
+        client.process_data_events()
+
+    channel.basic_nack.assert_called_once_with(
+        delivery_tag=0,
+        multiple=True,
+        requeue=True,
+    )
+    assert {
+        pending.state for pending in client._pending_deliveries.values()
+    } == {"invalidated"}
+    with pytest.raises(ReferenceStreamTransportError) as repeated_ack:
+        client.ack_message(first["delivery_tag"])
+    with pytest.raises(ReferenceStreamTransportError) as repeated_nack:
+        client.nack_message(second["delivery_tag"])
+    assert repeated_ack.value is raised.value
+    assert repeated_nack.value is raised.value
+    assert channel.basic_nack.call_count == 1
+
+
+def test_ensure_connection_rebuilds_only_closed_publisher_channel():
     client = RabbitMQClient()
     replacement_channel = MagicMock(is_closed=False)
     connection = MagicMock(is_closed=False)
     connection.channel.return_value = replacement_channel
     client.connection = connection
-    client.channel = MagicMock(is_closed=True)
-    client._pending_deliveries[1] = SimpleNamespace(
-        queue_name="queue-1",
-        is_backend_owned=False,
-    )
+    consumer_channel = MagicMock(is_closed=False)
+    client.consumer_channel = consumer_channel
+    client.publisher_channel = MagicMock(is_closed=True)
 
     assert client._ensure_connection() is True
-    assert client.channel is replacement_channel
-    assert client._pending_deliveries == {}
+    assert client.consumer_channel is consumer_channel
+    assert client.publisher_channel is replacement_channel
     replacement_channel.confirm_delivery.assert_called_once_with()
 
 
@@ -225,14 +465,14 @@ def test_managed_pending_delivery_blocks_reconnect_before_send(
         client.connection = connection
         reconnect = connection.channel
 
-    with pytest.raises(ReferenceStreamTransportError, match="拒绝重建"):
+    with pytest.raises(ReferenceStreamTransportError, match="消费通道失效"):
         client.send_message("queue-1", {"value": 2})
 
     reconnect.assert_not_called()
     assert 1 in client._pending_deliveries
-    with pytest.raises(ReferenceStreamTransportError, match="ACK 失败"):
+    with pytest.raises(ReferenceStreamTransportError, match="消费通道失效"):
         client.ack_message(1)
-    with pytest.raises(ReferenceStreamTransportError, match="NACK 失败"):
+    with pytest.raises(ReferenceStreamTransportError, match="消费通道失效"):
         client.nack_message(1)
     assert 1 in client._pending_deliveries
 
@@ -265,8 +505,12 @@ def test_external_pending_delivery_allows_reconnect_before_send(
     assert client.send_message("queue-2", {"value": 2}) is True
 
     reconnect.assert_called_once()
-    assert client._pending_deliveries == {}
+    if closed_part == "connection":
+        assert client._pending_deliveries == {}
+    else:
+        assert 1 in client._pending_deliveries
     assert client.ack_message(1) is False
+    assert client._pending_deliveries == {}
     replacement_channel.basic_ack.assert_not_called()
 
 
@@ -654,12 +898,15 @@ def test_managed_ack_raises_when_channel_is_closed():
     _receive_message(client)
     client.channel.is_closed = True
 
-    with pytest.raises(ReferenceStreamTransportError, match="ACK 失败"):
+    with pytest.raises(ReferenceStreamTransportError, match="消费通道失效") as first:
         client.ack_message(1)
 
-    with pytest.raises(ReferenceStreamTransportError, match="NACK 失败"):
+    with pytest.raises(ReferenceStreamTransportError) as second:
         client.nack_message(1)
 
+    assert second.value is first.value
+    client.channel.basic_ack.assert_not_called()
+    client.channel.basic_nack.assert_not_called()
     assert 1 in client._pending_deliveries
 
 
@@ -678,8 +925,13 @@ def test_managed_nack_raises_for_amqp_failure():
     _receive_message(client)
     client.channel.basic_nack.side_effect = RuntimeError("nack failed")
 
-    with pytest.raises(ReferenceStreamTransportError, match="NACK 失败"):
+    with pytest.raises(ReferenceStreamTransportError, match="nack failed") as first:
         client.nack_message(1)
+    with pytest.raises(ReferenceStreamTransportError) as second:
+        client.ack_message(1)
+
+    assert second.value is first.value
+    client.channel.basic_ack.assert_not_called()
 
 
 def test_external_queue_nack_returns_false_for_amqp_failure():
@@ -700,7 +952,7 @@ def test_managed_ack_all_raises_for_amqp_failure():
     assert len(client.read_messages("queue-1", batch_size=2)) == 2
     client.channel.basic_ack.side_effect = [None, RuntimeError("ack failed")]
 
-    with pytest.raises(ReferenceStreamTransportError, match="批量 ACK 失败"):
+    with pytest.raises(ReferenceStreamTransportError, match="ack failed"):
         client.ack_all_message([1, 2])
 
     assert 1 not in client._pending_deliveries
@@ -961,12 +1213,14 @@ def test_first_abort_cannot_be_overwritten_by_late_eos():
         {},
     )
 
+    _track_pending_delivery(client, 1)
     with pytest.raises(ReferenceStreamAborted):
         client._handle_control(
             "queue-1",
             1,
             _properties(REFERENCE_ABORT_TYPE, "producer-1"),
         )
+    _track_pending_delivery(client, 2)
     with pytest.raises(ReferenceStreamAborted):
         client._handle_control(
             "queue-1",
@@ -1004,6 +1258,7 @@ def test_repeated_reference_terminal_keeps_first_state(control_type):
     )
 
     for delivery_tag in (1, 2):
+        _track_pending_delivery(client, delivery_tag)
         if control_type == REFERENCE_ABORT_TYPE:
             with pytest.raises(ReferenceStreamAborted):
                 client._handle_control(

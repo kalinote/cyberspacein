@@ -75,6 +75,11 @@ async def test_close_rabbitmq_when_none():
 async def test_provision_reference_queues_declares_durable_queues_once(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        rabbit_mod.settings,
+        "REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS",
+        21600,
+    )
     channel = SimpleNamespace(
         declare_queue=AsyncMock(),
         close=AsyncMock(),
@@ -94,14 +99,14 @@ async def test_provision_reference_queues_declares_durable_queues_once(
         durable=True,
         exclusive=False,
         auto_delete=False,
-        arguments={},
+        arguments={"x-consumer-timeout": 21600000},
     )
     channel.declare_queue.assert_any_await(
         "queue-2",
         durable=True,
         exclusive=False,
         auto_delete=False,
-        arguments={},
+        arguments={"x-consumer-timeout": 21600000},
     )
     channel.close.assert_awaited_once()
 
@@ -152,6 +157,11 @@ async def test_provision_reference_queues_stops_when_guard_is_closed(
 async def test_provision_reference_queues_guards_each_deduplicated_queue(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        rabbit_mod.settings,
+        "REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS",
+        21600,
+    )
     channel = SimpleNamespace(
         declare_queue=AsyncMock(),
         close=AsyncMock(),
@@ -175,14 +185,14 @@ async def test_provision_reference_queues_guards_each_deduplicated_queue(
         durable=True,
         exclusive=False,
         auto_delete=False,
-        arguments={},
+        arguments={"x-consumer-timeout": 21600000},
     )
     channel.declare_queue.assert_any_await(
         "queue-2",
         durable=True,
         exclusive=False,
         auto_delete=False,
-        arguments={},
+        arguments={"x-consumer-timeout": 21600000},
     )
     channel.close.assert_awaited_once()
 

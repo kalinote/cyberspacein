@@ -215,6 +215,16 @@ def _local_context(
         inputs=data.get("inputs") or {},
         outputs=data.get("outputs") or {},
         logger=logger,
+        reference_consumer_ack_timeout_seconds=int(
+            data.get("reference_consumer_ack_timeout_seconds")
+            or meta.get("reference_consumer_ack_timeout_seconds")
+            or 21600
+        ),
+        reference_consumer_ack_safety_margin_seconds=int(
+            data.get("reference_consumer_ack_safety_margin_seconds")
+            or meta.get("reference_consumer_ack_safety_margin_seconds")
+            or 300
+        ),
         _signal_reporter=signal_reporter,
     )
 
@@ -271,6 +281,14 @@ def run_component(args: argparse.Namespace) -> int:
                 inputs=init_data.get("inputs") or {},
                 outputs=init_data.get("outputs") or {},
                 logger=structured_logger,
+                reference_consumer_ack_timeout_seconds=int(
+                    init_data["reference_consumer_ack_timeout_seconds"]
+                ),
+                reference_consumer_ack_safety_margin_seconds=int(
+                    init_data[
+                        "reference_consumer_ack_safety_margin_seconds"
+                    ]
+                ),
                 _signal_reporter=signal_reporter,
             )
         else:

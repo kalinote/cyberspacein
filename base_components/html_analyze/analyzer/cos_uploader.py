@@ -1,7 +1,10 @@
 import os
 import logging
+import threading
+import time
 from typing import Optional
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError, NoCredentialsError
 from dotenv import load_dotenv
 
@@ -22,32 +25,55 @@ class COSUploader:
         
         self.client: Optional[boto3.client] = None
         self._initialized = False
+        self._initialize_lock = threading.Lock()
         
     def _initialize(self) -> bool:
         if self._initialized:
             return True
-            
-        if not all([self.endpoint, self.access_key, self.secret_key, self.bucket]):
-            logger.warning("COS配置不完整，媒体本地化功能将被禁用")
-            return False
-        
-        try:
-            self.client = boto3.client(
-                's3',
-                endpoint_url=self.endpoint,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                region_name=self.region
-            )
-            self._initialized = True
-            # TODO: 这里需要检查，日志发现反复初始化的情况
-            logger.info(f"COS客户端初始化成功: {self.endpoint}")
-            return True
-        except Exception as e:
-            logger.error(f"COS客户端初始化失败: {e}")
-            return False
+
+        with self._initialize_lock:
+            if self._initialized:
+                return True
+
+            if not all([self.endpoint, self.access_key, self.secret_key, self.bucket]):
+                logger.warning("COS配置不完整，媒体本地化功能将被禁用")
+                return False
+
+            try:
+                self.client = boto3.client(
+                    's3',
+                    endpoint_url=self.endpoint,
+                    aws_access_key_id=self.access_key,
+                    aws_secret_access_key=self.secret_key,
+                    region_name=self.region,
+                    config=Config(
+                        connect_timeout=max(
+                            float(os.getenv("COS_CONNECT_TIMEOUT_SECONDS", "10")),
+                            0.1,
+                        ),
+                        read_timeout=max(
+                            float(os.getenv("COS_READ_TIMEOUT_SECONDS", "30")),
+                            0.1,
+                        ),
+                        retries={
+                            "total_max_attempts": max(
+                                int(os.getenv("COS_MAX_ATTEMPTS", "2")),
+                                1,
+                            ),
+                            "mode": "standard",
+                        },
+                    ),
+                )
+                self._initialized = True
+                logger.info(f"COS客户端初始化成功: {self.endpoint}")
+                return True
+            except Exception as e:
+                logger.error(f"COS客户端初始化失败: {e}")
+                return False
     
-    def file_exists(self, file_key: str) -> bool:
+    def file_exists(self, file_key: str, deadline: float | None = None) -> bool:
+        if deadline is not None and time.monotonic() >= deadline:
+            return False
         if not self._initialize():
             return False
         
@@ -63,16 +89,27 @@ class COSUploader:
             logger.error(f"检查文件存在性异常: {e}")
             return False
     
-    def upload_file(self, file_content: bytes, file_hash: str, content_type: Optional[str] = None) -> Optional[str]:
+    def upload_file(
+        self,
+        file_content: bytes,
+        file_hash: str,
+        content_type: Optional[str] = None,
+        deadline: float | None = None,
+    ) -> Optional[str]:
+        if deadline is not None and time.monotonic() >= deadline:
+            return None
         if not self._initialize():
             return None
         
         extension = self._guess_extension(content_type, file_content)
         file_key = f"content_resource/{file_hash}{extension}"
         
-        if self.file_exists(file_key):
+        if self.file_exists(file_key, deadline=deadline):
             logger.debug(f"文件已存在，跳过上传: {file_key}")
             return self.get_file_url(file_key)
+
+        if deadline is not None and time.monotonic() >= deadline:
+            return None
         
         try:
             extra_args = {}

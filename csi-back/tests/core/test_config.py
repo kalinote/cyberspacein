@@ -32,4 +32,17 @@ def test_settings_optional_defaults_and_extra_env_ignored(monkeypatch: pytest.Mo
     monkeypatch.setenv("UNKNOWN_TEST_ENV_FOR_SETTINGS", "should_be_ignored")
     s = Settings()
     assert s.RABBITMQ_VHOST == "/"
+    assert s.REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS == 21600
+    assert s.REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS == 300
     assert s.HYBRID_TOTAL_CAP == 10000
+
+
+def test_reference_ack_safety_margin_must_be_less_than_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    apply_minimal_settings_env(monkeypatch)
+    monkeypatch.setenv("REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS", "300")
+    monkeypatch.setenv("REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS", "300")
+
+    with pytest.raises(RuntimeError, match="安全余量必须小于"):
+        Settings().validate_auth_security()

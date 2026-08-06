@@ -302,6 +302,12 @@ async def get_component_init(component_run_id: str):
             heartbeat_interval=settings.COMPONENT_HEARTBEAT_INTERVAL_SECONDS,
             lease_seconds=settings.COMPONENT_LEASE_SECONDS,
             timeout_seconds=component_run.timeout_seconds,
+            reference_consumer_ack_timeout_seconds=(
+                settings.REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS
+            ),
+            reference_consumer_ack_safety_margin_seconds=(
+                settings.REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS
+            ),
         )
     )
 

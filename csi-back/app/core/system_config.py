@@ -97,6 +97,8 @@ CONFIG_FIELDS = (
     _f("RABBITMQ_USERNAME", "RabbitMQ 用户名", "infrastructure", "readonly", "string"),
     _f("RABBITMQ_PASSWORD", "RabbitMQ 密码", "infrastructure", "readonly", "string", sensitive=True),
     _f("RABBITMQ_VHOST", "RabbitMQ VHost", "infrastructure", "readonly", "string"),
+    _f("REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS", "Reference 消费确认超时", "infrastructure", "restart", "integer", description="单位：秒；后端声明队列时转换为 RabbitMQ 的毫秒参数", constraints=POSITIVE),
+    _f("REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS", "Reference 消费确认安全余量", "infrastructure", "restart", "integer", description="单位：秒；SDK 必须在确认超时前预留的收尾时间", constraints=POSITIVE),
     # TODO(native-scheduler): 自研调度上线后删除 Crawlab 临时系统配置项。
     _f("CRAWLAB_BASE_URL", "Crawlab 地址", "integration", "runtime", "string", constraints={"format": "url"}),
     _f("CRAWLAB_TOKEN", "Crawlab Token", "integration", "runtime", "string", sensitive=True),

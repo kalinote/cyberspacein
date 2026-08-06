@@ -1,11 +1,18 @@
 import logging
 import json
+import os
 from typing import Callable, TYPE_CHECKING
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from csi_base_component_sdk import ComponentContext, ComponentFailure
+from csi_base_component_sdk import (
+    ComponentCancelled,
+    ComponentContext,
+    ComponentFailure,
+    ComponentTimedOut,
+    ReferenceStreamTransportError,
+)
 from analyzer import html_analyzer
 from analyzer.media_localizer import MediaLocalizer
 
@@ -15,12 +22,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger("html_analyze")
 
 
-def create_heartbeat_callback(rabbitmq: "RabbitMQClient | None") -> Callable[[], None] | None:
-    if rabbitmq is None:
+def create_heartbeat_callback(
+    rabbitmq: "RabbitMQClient | None",
+    cancel_check: Callable[[], None] | None = None,
+) -> Callable[[], None] | None:
+    if rabbitmq is None and cancel_check is None:
         return None
     
     def heartbeat_callback():
-        rabbitmq.process_data_events()
+        if cancel_check:
+            cancel_check()
+        if rabbitmq:
+            rabbitmq.process_data_events()
+        if cancel_check:
+            cancel_check()
     
     return heartbeat_callback
 
@@ -54,7 +69,8 @@ def _parse_size_limit(size_str: str) -> int | None:
 
 def process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content, 
                         enable_media_localization, base_url_field, download_size_limit,
-                        heartbeat_callback: Callable[[], None] | None = None):
+                        heartbeat_callback: Callable[[], None] | None = None,
+                        media_localization_timeout_seconds: float = 600):
     if process_fields not in data:
         raise ValueError(f"数据中未找到字段 '{process_fields}'")
     
@@ -83,7 +99,11 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
             cleaned_html = html_analyzer.clean_html(content)
             if enable_media_localization:
                 links = html_analyzer.extract_resource_links(content)
-                localizer = MediaLocalizer(base_url=base_url, download_size_limit=download_size_limit)
+                localizer = MediaLocalizer(
+                    base_url=base_url,
+                    download_size_limit=download_size_limit,
+                    timeout_seconds=media_localization_timeout_seconds,
+                )
                 data["safe_raw_content"] = localizer.localize(
                     cleaned_html, links, heartbeat_callback=heartbeat_callback
                 )
@@ -91,6 +111,8 @@ def process_single_data(data, process_fields, enable_clean_content, enable_safe_
             else:
                 data["safe_raw_content"] = cleaned_html
                 logger.debug("safe_raw_content 处理完成")
+        except (ComponentCancelled, ComponentTimedOut, ReferenceStreamTransportError):
+            raise
         except Exception as e:
             logger.error(f"safe_raw_content 处理失败: {e}")
             data["safe_raw_content"] = None
@@ -107,6 +129,15 @@ def run(component: ComponentContext) -> dict:
         
         download_size_limit_str = component.get_config("download_size_limit", "50M")
         download_size_limit = _parse_size_limit(download_size_limit_str)
+        media_localization_timeout_seconds = float(
+            component.get_config(
+                "media_localization_timeout_seconds",
+                os.getenv("MEDIA_LOCALIZATION_TIMEOUT_SECONDS", "600"),
+            )
+        )
+        if media_localization_timeout_seconds <= 0:
+            logger.warning("媒体本地化时间预算必须大于0秒，使用默认值600秒")
+            media_localization_timeout_seconds = 600
 
         queue_name = component.inputs.get("data_in", {}).get("value")
         if queue_name is not None and isinstance(queue_name, str):
@@ -136,7 +167,10 @@ def run(component: ComponentContext) -> dict:
                 if isinstance(output_queue_names, str):
                     output_queue_names = [output_queue_names]
                 
-                heartbeat_callback = create_heartbeat_callback(component.rabbitmq)
+                heartbeat_callback = create_heartbeat_callback(
+                    component.rabbitmq,
+                    component.raise_if_cancelled,
+                )
                 
                 for queue_name in queue_names:
                     logger.info(f"开始处理队列: {queue_name}")
@@ -152,7 +186,8 @@ def run(component: ComponentContext) -> dict:
                             try:
                                 data = process_single_data(data, process_fields, enable_clean_content, enable_safe_raw_content,
                                                           enable_media_localization, base_url_field, download_size_limit,
-                                                          heartbeat_callback=heartbeat_callback)
+                                                          heartbeat_callback=heartbeat_callback,
+                                                          media_localization_timeout_seconds=media_localization_timeout_seconds)
                             except (ValueError, TypeError) as e:
                                 logger.warning(f"{e}，跳过处理")
                                 component.rabbitmq.ack_message(message['delivery_tag'])
@@ -174,6 +209,8 @@ def run(component: ComponentContext) -> dict:
                                 component.rabbitmq.nack_message(message['delivery_tag'], requeue=True)
                                 failed_count += 1
                                 
+                        except (ComponentCancelled, ComponentTimedOut, ReferenceStreamTransportError):
+                            raise
                         except json.JSONDecodeError as e:
                             logger.error(f"消息解析失败: {e}")
                             component.rabbitmq.nack_message(message['delivery_tag'], requeue=False)
@@ -189,8 +226,15 @@ def run(component: ComponentContext) -> dict:
                 logger.info("开始处理字典输入")
                 try:
                     handled_dict = process_single_data(dict_value, process_fields, enable_clean_content, enable_safe_raw_content,
-                                                       enable_media_localization, base_url_field, download_size_limit)
+                                                       enable_media_localization, base_url_field, download_size_limit,
+                                                       heartbeat_callback=create_heartbeat_callback(
+                                                           None,
+                                                           component.raise_if_cancelled,
+                                                       ),
+                                                       media_localization_timeout_seconds=media_localization_timeout_seconds)
                     logger.info("字典处理完成")
+                except (ComponentCancelled, ComponentTimedOut, ReferenceStreamTransportError):
+                    raise
                 except Exception as e:
                     logger.error(f"字典处理失败: {e}")
                     dict_error = str(e)
@@ -225,6 +269,8 @@ def run(component: ComponentContext) -> dict:
                 raise ComponentFailure("未提供任何输入数据")
                 
         except ComponentFailure:
+            raise
+        except ReferenceStreamTransportError:
             raise
         except Exception as e:
             logger.error(f"处理过程发生错误: {e}")

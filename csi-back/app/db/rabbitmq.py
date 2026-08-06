@@ -276,7 +276,11 @@ async def provision_reference_queues(
                 durable=True,
                 exclusive=False,
                 auto_delete=False,
-                arguments={},
+                arguments={
+                    "x-consumer-timeout": (
+                        settings.REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS * 1000
+                    )
+                },
             )
             if declare_timeout_seconds is None:
                 await declaration

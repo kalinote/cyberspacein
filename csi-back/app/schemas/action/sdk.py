@@ -38,3 +38,5 @@ class SDKComponentInitResponse(BaseModel):
     heartbeat_interval: int
     lease_seconds: int
     timeout_seconds: int
+    reference_consumer_ack_timeout_seconds: int
+    reference_consumer_ack_safety_margin_seconds: int

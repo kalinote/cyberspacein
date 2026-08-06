@@ -40,8 +40,8 @@ class ReferenceStreamTransportError(RuntimeError):
     """后端托管的 REFERENCE 队列传输失败。"""
 
 
-class _CancellationSignal(BaseException):
-    """将取消检查异常穿过 RabbitMQ 的兼容错误处理层。"""
+class _CancellationSignal(Exception):
+    """将取消检查异常穿过 RabbitMQ 错误处理层。"""
 
     def __init__(self, error: Exception):
         super().__init__(str(error))
@@ -65,16 +65,31 @@ class _ReferenceOutput:
     stream_id: str
 
 
-@dataclass(frozen=True)
+@dataclass
 class _PendingDelivery:
+    logical_id: int
+    physical_tags: tuple[int, ...]
     queue_name: str
     is_backend_owned: bool
+    channel_generation: int
+    received_at: float
+    deadline_at: float
+    state: str = "pending"
+    first_transport_error: ReferenceStreamTransportError | None = None
 
 
 @dataclass(frozen=True)
 class _FragmentDeliveryToken:
     method_frame: Any
     properties: Any
+
+
+@dataclass(frozen=True)
+class _LogicalDeliveryFrame:
+    delivery_tag: int
+    exchange: str
+    routing_key: str
+    redelivered: bool
 
 
 class RabbitMQClient:
@@ -87,6 +102,8 @@ class RabbitMQClient:
         username: str = None,
         password: str = None,
         vhost: str = None,
+        reference_consumer_ack_timeout_seconds: float | None = None,
+        reference_consumer_ack_safety_margin_seconds: float | None = None,
     ):
         dotenv_path = find_dotenv(usecwd=True)
         if dotenv_path:
@@ -99,13 +116,17 @@ class RabbitMQClient:
         self.vhost = vhost or os.getenv("RABBITMQ_VHOST", "/")
 
         self.connection: Optional[pika.BlockingConnection] = None
-        self.channel: Optional[pika.channel.Channel] = None
+        self.consumer_channel: Optional[pika.channel.Channel] = None
+        self.publisher_channel: Optional[pika.channel.Channel] = None
         self._reference_inputs: dict[str, _ReferenceInputState] = {}
         self._reference_outputs: list[_ReferenceOutput] = []
         self._reference_result_queues: set[str] = set()
         self._backend_owned_reference_queues: set[str] = set()
         self._pending_deliveries: dict[int, _PendingDelivery] = {}
-        self._logical_delivery_tags: dict[int, tuple[int, ...]] = {}
+        self._next_logical_delivery_id = 1
+        self._consumer_channel_generation = 0
+        self._consumer_transport_error: ReferenceStreamTransportError | None = None
+        self._publisher_close_reason: Exception | None = None
         self._fragment_assemblers: dict[
             str,
             FragmentAssembler[_FragmentDeliveryToken],
@@ -118,6 +139,42 @@ class RabbitMQClient:
             0.01,
             float(os.getenv("CSI_REFERENCE_POLL_INTERVAL", "0.1")),
         )
+        timeout_seconds = (
+            reference_consumer_ack_timeout_seconds
+            if reference_consumer_ack_timeout_seconds is not None
+            else float(
+                os.getenv("CSI_REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS", "21600")
+            )
+        )
+        safety_margin_seconds = (
+            reference_consumer_ack_safety_margin_seconds
+            if reference_consumer_ack_safety_margin_seconds is not None
+            else float(
+                os.getenv(
+                    "CSI_REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS",
+                    "300",
+                )
+            )
+        )
+        if timeout_seconds <= 0:
+            raise ValueError("REFERENCE 消费确认超时必须大于 0 秒")
+        if not 0 <= safety_margin_seconds < timeout_seconds:
+            raise ValueError("REFERENCE ACK 安全余量必须大于等于 0 且小于确认超时")
+        self.reference_consumer_ack_timeout_seconds = float(timeout_seconds)
+        self.reference_consumer_ack_safety_margin_seconds = float(
+            safety_margin_seconds
+        )
+
+    @property
+    def channel(self) -> Optional[pika.channel.Channel]:
+        """返回消费通道，业务发布始终使用独立发布通道。"""
+        return self.consumer_channel
+
+    @channel.setter
+    def channel(self, value: Optional[pika.channel.Channel]) -> None:
+        """便于调试和测试显式注入通道。"""
+        self.consumer_channel = value
+        self.publisher_channel = value
 
     def _register_reference_queue(
         self,
@@ -139,7 +196,6 @@ class RabbitMQClient:
         self._reference_result_queues.clear()
         self._backend_owned_reference_queues.clear()
         self._fragment_assemblers.clear()
-        self._logical_delivery_tags.clear()
         self._cancel_check = cancel_check
         self._successful_result_callback = successful_result_callback
 
@@ -216,13 +272,13 @@ class RabbitMQClient:
             logger.warning("业务结果状态回调失败: %s", exc)
 
     def connect(self) -> bool:
-        """建立 RabbitMQ 连接和通道。"""
+        """建立 RabbitMQ 连接、消费通道和独立发布通道。"""
         self._raise_for_managed_pending_reconnect()
         self._pending_deliveries.clear()
         self._fragment_assemblers.clear()
-        self._logical_delivery_tags.clear()
         connection = None
-        channel = None
+        consumer_channel = None
+        publisher_channel = None
         try:
             credentials = pika.PlainCredentials(self.username, self.password)
             parameters = pika.ConnectionParameters(
@@ -233,10 +289,13 @@ class RabbitMQClient:
             )
 
             connection = pika.BlockingConnection(parameters)
-            channel = connection.channel()
-            channel.confirm_delivery()
             self.connection = connection
-            self.channel = channel
+            consumer_channel = self._open_consumer_channel()
+            publisher_channel = self._open_publisher_channel()
+            self.consumer_channel = consumer_channel
+            self.publisher_channel = publisher_channel
+            self._consumer_transport_error = None
+            self._publisher_close_reason = None
             logger.info("RabbitMQ 连接成功: %s:%s", self.host, self.port)
             return True
         except AMQPConnectionError as exc:
@@ -244,45 +303,264 @@ class RabbitMQClient:
         except Exception as exc:
             logger.error("RabbitMQ 连接异常: %s", exc)
         try:
-            if channel and not channel.is_closed:
-                channel.close()
+            if publisher_channel and not publisher_channel.is_closed:
+                publisher_channel.close()
+            if consumer_channel and not consumer_channel.is_closed:
+                consumer_channel.close()
             if connection and not connection.is_closed:
                 connection.close()
         except Exception:
             pass
         self.connection = None
-        self.channel = None
+        self.consumer_channel = None
+        self.publisher_channel = None
         return False
 
-    def _ensure_connection(self) -> bool:
-        """确保连接和发布确认通道可用，必要时重建。"""
+    def _open_consumer_channel(self) -> pika.channel.Channel:
+        """创建消费通道并绑定当前通道代次的关闭回调。"""
+        if self.connection is None:
+            raise RuntimeError("RabbitMQ 连接尚未建立")
+        channel = self.connection.channel()
+        self._consumer_channel_generation += 1
+        generation = self._consumer_channel_generation
+        channel_impl = getattr(channel, "_impl", None)
+        add_close_callback = getattr(
+            channel_impl,
+            "add_on_close_callback",
+            None,
+        )
+        if callable(add_close_callback):
+            add_close_callback(
+                lambda closed_channel, reason: self._on_consumer_channel_closed(
+                    closed_channel,
+                    reason,
+                    generation,
+                )
+            )
+        return channel
+
+    def _open_publisher_channel(self) -> pika.channel.Channel:
+        """创建带 publisher confirm 的独立发布通道。"""
+        if self.connection is None:
+            raise RuntimeError("RabbitMQ 连接尚未建立")
+        channel = self.connection.channel()
+        channel_impl = getattr(channel, "_impl", None)
+        add_close_callback = getattr(
+            channel_impl,
+            "add_on_close_callback",
+            None,
+        )
+        if callable(add_close_callback):
+            add_close_callback(self._on_publisher_channel_closed)
+        channel.confirm_delivery()
+        return channel
+
+    @staticmethod
+    def _describe_transport_reason(reason: Any) -> str:
+        """优先输出 Broker reply code 和 reply text。"""
+        reply_code = getattr(reason, "reply_code", None)
+        reply_text = getattr(reason, "reply_text", None)
+        if isinstance(reply_code, int) and isinstance(reply_text, str):
+            return f"Channel.Close ({reply_code}): {reply_text}"
+        return str(reason) if reason else "通道已关闭，Broker 未返回原因"
+
+    def _lock_consumer_transport_error(
+        self,
+        reason: Any,
+        generation: int | None = None,
+    ) -> ReferenceStreamTransportError | None:
+        """锁存消费通道的首个传输错误并使对应交付失效。"""
+        target_generation = (
+            self._consumer_channel_generation
+            if generation is None
+            else generation
+        )
+        managed_pending = next(
+            (
+                pending
+                for pending in self._pending_deliveries.values()
+                if pending.state == "pending"
+                and pending.is_backend_owned
+                and pending.channel_generation == target_generation
+            ),
+            None,
+        )
+        if managed_pending is None:
+            return None
+        if self._consumer_transport_error is None:
+            self._consumer_transport_error = ReferenceStreamTransportError(
+                "后端托管 REFERENCE 队列 "
+                f"{managed_pending.queue_name} 消费通道失效: "
+                f"{self._describe_transport_reason(reason)}"
+            )
+        for pending in self._pending_deliveries.values():
+            if (
+                pending.state == "pending"
+                and pending.is_backend_owned
+                and pending.channel_generation == target_generation
+            ):
+                pending.state = "invalidated"
+                if pending.first_transport_error is None:
+                    pending.first_transport_error = self._consumer_transport_error
+        return self._consumer_transport_error
+
+    def _on_consumer_channel_closed(
+        self,
+        channel: pika.channel.Channel,
+        reason: Any,
+        generation: int,
+    ) -> None:
+        """消费通道关闭时保留首个 Broker 根因。"""
+        consumer_impl = getattr(self.consumer_channel, "_impl", None)
+        if channel is not self.consumer_channel and channel is not consumer_impl:
+            return
+        error = self._lock_consumer_transport_error(reason, generation)
+        if error is not None:
+            logger.error("%s", error)
+
+    def _on_publisher_channel_closed(
+        self,
+        channel: pika.channel.Channel,
+        reason: Any,
+    ) -> None:
+        """记录发布通道关闭原因，后续发布可独立重建通道。"""
+        publisher_impl = getattr(self.publisher_channel, "_impl", None)
+        if (
+            channel is self.publisher_channel or channel is publisher_impl
+        ) and isinstance(reason, Exception):
+            self._publisher_close_reason = reason
+
+    def _consumer_channel_close_reason(self) -> Any:
+        """返回当前消费通道已知的关闭原因。"""
+        if self.connection is None or self.connection.is_closed:
+            return "RabbitMQ 连接已关闭"
+        channel = self.consumer_channel
+        if channel is None:
+            return "消费通道未创建"
+        reason = getattr(channel, "closing_reason", None)
+        if not isinstance(reason, Exception):
+            channel_impl = getattr(channel, "_impl", None)
+            reason = getattr(channel_impl, "_closing_reason", None)
+        return reason if isinstance(reason, Exception) else "消费通道已关闭"
+
+    def _expire_overdue_deliveries(self, now: float) -> None:
+        """安全截止点到达时主动重入队，禁止晚到确认。"""
+        overdue = [
+            pending
+            for pending in self._pending_deliveries.values()
+            if pending.state == "pending"
+            and pending.is_backend_owned
+            and now >= pending.deadline_at
+        ]
+        if not overdue:
+            return
+        if not self._is_transport_open():
+            self._lock_consumer_transport_error(
+                self._consumer_channel_close_reason()
+            )
+            return
+        if self.consumer_channel is None:
+            return
+
+        first = overdue[0]
+        deadline_error = ReferenceStreamTransportError(
+            "后端托管 REFERENCE 队列 "
+            f"{first.queue_name} 消息处理超过 SDK 安全截止点 "
+            f"({self.reference_consumer_ack_timeout_seconds:g}s - "
+            f"{self.reference_consumer_ack_safety_margin_seconds:g}s 余量)"
+        )
+        self._consumer_transport_error = deadline_error
+        try:
+            self.consumer_channel.basic_nack(
+                delivery_tag=0,
+                multiple=True,
+                requeue=True,
+            )
+        except Exception as exc:
+            self._lock_consumer_transport_error(exc)
+            logger.error(
+                "%s，主动 NACK 失败: %s",
+                deadline_error,
+                self._describe_transport_reason(exc),
+            )
+            return
+        for pending in self._pending_deliveries.values():
+            if (
+                pending.state == "pending"
+                and pending.channel_generation == self._consumer_channel_generation
+            ):
+                pending.state = "invalidated"
+                if pending.is_backend_owned:
+                    pending.first_transport_error = deadline_error
+
+    def raise_if_transport_failed(self, *, check_deadline: bool = True) -> None:
+        """显式检查托管 REFERENCE 消费传输是否已不可恢复。"""
+        if self._consumer_transport_error is not None:
+            raise self._consumer_transport_error
+        if self._first_managed_pending_delivery() is None:
+            return
+        if not self._is_transport_open():
+            self._lock_consumer_transport_error(
+                self._consumer_channel_close_reason()
+            )
+        elif check_deadline:
+            self._expire_overdue_deliveries(time.monotonic())
+        if self._consumer_transport_error is not None:
+            raise self._consumer_transport_error
+
+    def _ensure_consumer_channel(self) -> bool:
+        """确保消费连接和原通道可用。"""
+        self.raise_if_transport_failed()
         if not self.connection or self.connection.is_closed:
             return self.connect()
-        if not self.channel or self.channel.is_closed:
+        if not self.consumer_channel or self.consumer_channel.is_closed:
             self._raise_for_managed_pending_reconnect()
             self._pending_deliveries.clear()
             self._fragment_assemblers.clear()
-            self._logical_delivery_tags.clear()
             try:
-                self.channel = self.connection.channel()
-                self.channel.confirm_delivery()
+                self.consumer_channel = self._open_consumer_channel()
             except Exception as exc:
-                self.channel = None
-                logger.error("RabbitMQ 通道重建失败: %s", exc)
+                self.consumer_channel = None
+                logger.error("RabbitMQ 消费通道重建失败: %s", exc)
                 return False
         return True
+
+    def _ensure_publisher_channel(
+        self,
+        *,
+        allow_consumer_failure: bool = False,
+    ) -> bool:
+        """确保发布连接和通道可用，不切换消费通道。"""
+        if not allow_consumer_failure:
+            self.raise_if_transport_failed()
+        if not self.connection or self.connection.is_closed:
+            return self.connect()
+        if not self.publisher_channel or self.publisher_channel.is_closed:
+            try:
+                self.publisher_channel = self._open_publisher_channel()
+                self._publisher_close_reason = None
+            except Exception as exc:
+                self.publisher_channel = None
+                self._publisher_close_reason = exc
+                logger.error("RabbitMQ 发布通道重建失败: %s", exc)
+                return False
+        return True
+
+    def _ensure_connection(self) -> bool:
+        """确保发布通道可用。"""
+        return self._ensure_publisher_channel()
 
     def _is_backend_owned_reference_queue(self, queue_name: str) -> bool:
         """判断队列是否采用后端托管拓扑。"""
         return queue_name in self._backend_owned_reference_queues
 
     def _is_transport_open(self) -> bool:
-        """判断当前 RabbitMQ 连接和通道是否同时可用。"""
+        """判断当前 RabbitMQ 连接和消费通道是否同时可用。"""
         return bool(
             self.connection
             and not self.connection.is_closed
-            and self.channel
-            and not self.channel.is_closed
+            and self.consumer_channel
+            and not self.consumer_channel.is_closed
         )
 
     def _first_managed_pending_delivery(
@@ -310,6 +588,8 @@ class RabbitMQClient:
 
     def _raise_for_managed_pending_reconnect(self) -> None:
         """存在托管未确认消息时禁止切换 RabbitMQ 通道。"""
+        if self._consumer_transport_error is not None:
+            raise self._consumer_transport_error
         managed_pending = self._first_managed_pending_delivery()
         if managed_pending:
             raise ReferenceStreamTransportError(
@@ -317,8 +597,12 @@ class RabbitMQClient:
                 f"{managed_pending.queue_name} 存在未确认消息，拒绝重建连接或通道"
             )
 
-    def _declare_queue(self, queue_name: str) -> None:
-        self.channel.queue_declare(
+    def _declare_queue(
+        self,
+        queue_name: str,
+        channel: pika.channel.Channel,
+    ) -> None:
+        channel.queue_declare(
             queue=queue_name,
             durable=True,
             exclusive=False,
@@ -326,10 +610,14 @@ class RabbitMQClient:
             arguments={},
         )
 
-    def _prepare_queue(self, queue_name: str) -> None:
+    def _prepare_queue(
+        self,
+        queue_name: str,
+        channel: pika.channel.Channel,
+    ) -> None:
         """仅为未注册为 Reference 流的普通外部队列主动声明队列。"""
         if not self._is_backend_owned_reference_queue(queue_name):
-            self._declare_queue(queue_name)
+            self._declare_queue(queue_name, channel)
 
     def _publish_to_queue(
         self,
@@ -340,8 +628,10 @@ class RabbitMQClient:
         prepare: bool = True,
     ) -> Any:
         """按队列拓扑声明并发布消息。"""
+        if self.publisher_channel is None:
+            raise RuntimeError("RabbitMQ 发布通道未创建")
         if prepare:
-            self._prepare_queue(queue_name)
+            self._prepare_queue(queue_name, self.publisher_channel)
         publish_kwargs: dict[str, Any] = {
             "exchange": "",
             "routing_key": queue_name,
@@ -350,23 +640,42 @@ class RabbitMQClient:
         }
         if self._is_backend_owned_reference_queue(queue_name):
             publish_kwargs["mandatory"] = True
-        return self.channel.basic_publish(**publish_kwargs)
+        return self.publisher_channel.basic_publish(**publish_kwargs)
 
-    def _ack_delivery(self, delivery_tag: int) -> None:
-        """确认消息并移除已完成的 delivery tag 跟踪。"""
-        self.channel.basic_ack(delivery_tag=delivery_tag)
-        self._pending_deliveries.pop(delivery_tag, None)
+    def _ack_delivery(self, logical_id: int) -> None:
+        """确认逻辑消息对应的所有物理交付。"""
+        pending = self._pending_deliveries[logical_id]
+        if self.consumer_channel is None:
+            raise RuntimeError("RabbitMQ 消费通道未创建")
+        for physical_tag in pending.physical_tags:
+            self.consumer_channel.basic_ack(delivery_tag=physical_tag)
+        pending.state = "settled"
+        self._pending_deliveries.pop(logical_id, None)
 
-    def _nack_delivery(self, delivery_tag: int, requeue: bool) -> None:
-        """拒绝消息并移除已完成的 delivery tag 跟踪。"""
-        self.channel.basic_nack(delivery_tag=delivery_tag, requeue=requeue)
-        self._pending_deliveries.pop(delivery_tag, None)
+    def _nack_delivery(self, logical_id: int, requeue: bool) -> None:
+        """拒绝逻辑消息对应的所有物理交付。"""
+        pending = self._pending_deliveries[logical_id]
+        if self.consumer_channel is None:
+            raise RuntimeError("RabbitMQ 消费通道未创建")
+        for physical_tag in pending.physical_tags:
+            self.consumer_channel.basic_nack(
+                delivery_tag=physical_tag,
+                requeue=requeue,
+            )
+        pending.state = "settled"
+        self._pending_deliveries.pop(logical_id, None)
 
     def close(self) -> None:
         """关闭 RabbitMQ 连接。"""
         try:
-            if self.channel and not self.channel.is_closed:
-                self.channel.close()
+            if self.publisher_channel and not self.publisher_channel.is_closed:
+                self.publisher_channel.close()
+            if (
+                self.consumer_channel
+                and self.consumer_channel is not self.publisher_channel
+                and not self.consumer_channel.is_closed
+            ):
+                self.consumer_channel.close()
             if self.connection and not self.connection.is_closed:
                 self.connection.close()
             logger.info("RabbitMQ 连接已关闭")
@@ -375,8 +684,8 @@ class RabbitMQClient:
         finally:
             self._pending_deliveries.clear()
             self._fragment_assemblers.clear()
-            self._logical_delivery_tags.clear()
-            self.channel = None
+            self.consumer_channel = None
+            self.publisher_channel = None
             self.connection = None
 
     @staticmethod
@@ -535,12 +844,15 @@ class RabbitMQClient:
             return None
 
         while True:
+            self.raise_if_transport_failed()
             if self._cancel_check:
                 try:
                     self._cancel_check()
                 except Exception as exc:
                     raise _CancellationSignal(exc) from exc
-            method_frame, properties, body = self.channel.basic_get(
+            if self.consumer_channel is None:
+                raise RuntimeError("RabbitMQ 消费通道未创建")
+            method_frame, properties, body = self.consumer_channel.basic_get(
                 queue=queue_name,
                 auto_ack=False,
             )
@@ -556,9 +868,27 @@ class RabbitMQClient:
                 time.sleep(self._poll_interval)
                 continue
 
-            self._pending_deliveries[method_frame.delivery_tag] = _PendingDelivery(
+            logical_id = self._next_logical_delivery_id
+            self._next_logical_delivery_id += 1
+            received_at = time.monotonic()
+            logical_frame = _LogicalDeliveryFrame(
+                delivery_tag=logical_id,
+                exchange=method_frame.exchange,
+                routing_key=method_frame.routing_key,
+                redelivered=method_frame.redelivered,
+            )
+            self._pending_deliveries[logical_id] = _PendingDelivery(
+                logical_id=logical_id,
+                physical_tags=(method_frame.delivery_tag,),
                 queue_name=queue_name,
                 is_backend_owned=self._is_backend_owned_reference_queue(queue_name),
+                channel_generation=self._consumer_channel_generation,
+                received_at=received_at,
+                deadline_at=(
+                    received_at
+                    + self.reference_consumer_ack_timeout_seconds
+                    - self.reference_consumer_ack_safety_margin_seconds
+                ),
             )
 
             if state and self._control_type(properties):
@@ -572,7 +902,7 @@ class RabbitMQClient:
                         self._ack_delivery(token.method_frame.delivery_tag)
                 self._handle_control(
                     queue_name,
-                    method_frame.delivery_tag,
+                    logical_id,
                     properties,
                 )
                 if assembler and assembler.has_pending and state.completed:
@@ -584,7 +914,7 @@ class RabbitMQClient:
                 if state.completed:
                     return None
                 continue
-            return method_frame, properties, body
+            return logical_frame, properties, body
 
     def _next_business_delivery(
         self,
@@ -622,12 +952,25 @@ class RabbitMQClient:
                 continue
 
             primary = assembled.tokens[0]
-            delivery_tags = tuple(
-                token.method_frame.delivery_tag for token in assembled.tokens
+            primary_logical_id = primary.method_frame.delivery_tag
+            primary_pending = self._pending_deliveries[primary_logical_id]
+            merged_pending = [
+                self._pending_deliveries[token.method_frame.delivery_tag]
+                for token in assembled.tokens
+            ]
+            primary_pending.physical_tags = tuple(
+                physical_tag
+                for pending in merged_pending
+                for physical_tag in pending.physical_tags
             )
-            self._logical_delivery_tags[
-                primary.method_frame.delivery_tag
-            ] = delivery_tags
+            primary_pending.received_at = min(
+                pending.received_at for pending in merged_pending
+            )
+            primary_pending.deadline_at = min(
+                pending.deadline_at for pending in merged_pending
+            )
+            for pending in merged_pending[1:]:
+                self._pending_deliveries.pop(pending.logical_id, None)
             logical_properties = pika.BasicProperties(
                 content_type=getattr(primary.properties, "content_type", None),
                 content_encoding=getattr(
@@ -654,14 +997,14 @@ class RabbitMQClient:
 
     def get_message(self, queue_name: str) -> Optional[Dict[str, Any]]:
         """从队列获取单条业务消息，没有消息或流结束时返回 None。"""
-        if not self._ensure_connection():
+        if not self._ensure_consumer_channel():
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 连接不可用"
                 )
             logger.error("无法连接到 RabbitMQ")
             return None
-        if not self.channel:
+        if not self.consumer_channel:
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 通道不可用"
@@ -670,7 +1013,7 @@ class RabbitMQClient:
             return None
 
         try:
-            self._prepare_queue(queue_name)
+            self._prepare_queue(queue_name, self.consumer_channel)
             delivery = self._next_business_delivery(
                 queue_name,
                 wait_for_data=queue_name in self._reference_inputs,
@@ -685,106 +1028,114 @@ class RabbitMQClient:
             }
         except _CancellationSignal as signal:
             raise signal.error
+        except ReferenceStreamTransportError:
+            raise
         except ReferenceStreamAborted:
             raise
         except Exception as exc:
             if self._is_backend_owned_reference_queue(queue_name):
+                error = self._consumer_transport_error
+                if error is None:
+                    error = self._lock_consumer_transport_error(exc)
+                if error is not None:
+                    raise error from exc
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 读取失败: {exc}"
                 ) from exc
             logger.error("获取消息失败: %s", exc)
             return None
 
-    def _expand_delivery_tags(self, delivery_tags: List[int]) -> list[int]:
-        """将逻辑交付标签展开为去重后的物理 RabbitMQ 标签。"""
-        expanded: list[int] = []
-        for delivery_tag in delivery_tags:
-            expanded.extend(
-                self._logical_delivery_tags.get(delivery_tag, (delivery_tag,))
-            )
-        return list(dict.fromkeys(expanded))
-
     def ack_message(self, delivery_tag: int) -> bool:
         """确认消息。"""
-        physical_tags = self._expand_delivery_tags([delivery_tag])
-        pending = next(
-            (
-                self._pending_deliveries.get(tag)
-                for tag in physical_tags
-                if self._pending_deliveries.get(tag) is not None
-            ),
-            None,
-        )
+        pending = self._pending_deliveries.get(delivery_tag)
         if pending is None:
             return False
-        is_managed = pending.is_backend_owned
-        if not self._is_transport_open():
-            if is_managed:
-                raise ReferenceStreamTransportError(
-                    "后端托管 REFERENCE 队列 "
-                    f"{pending.queue_name} ACK 失败: 连接或通道不可用"
+        if pending.first_transport_error is not None:
+            raise pending.first_transport_error
+        if pending.is_backend_owned:
+            self.raise_if_transport_failed()
+        if pending.state != "pending":
+            return False
+        if pending.channel_generation != self._consumer_channel_generation:
+            if pending.is_backend_owned:
+                error = self._lock_consumer_transport_error(
+                    "消费通道代次已变更",
+                    pending.channel_generation,
                 )
-            for tag in physical_tags:
-                self._pending_deliveries.pop(tag, None)
-            self._logical_delivery_tags.pop(delivery_tag, None)
+                if error is not None:
+                    raise error
+            self._pending_deliveries.pop(delivery_tag, None)
+            return False
+        if not self._is_transport_open():
+            if pending.is_backend_owned:
+                error = self._lock_consumer_transport_error(
+                    self._consumer_channel_close_reason(),
+                    pending.channel_generation,
+                )
+                if error is not None:
+                    raise error
+            self._pending_deliveries.pop(delivery_tag, None)
             return False
         try:
-            for tag in physical_tags:
-                self._ack_delivery(tag)
-            self._logical_delivery_tags.pop(delivery_tag, None)
+            self._ack_delivery(delivery_tag)
             return True
         except Exception as exc:
-            if is_managed:
-                raise ReferenceStreamTransportError(
-                    "后端托管 REFERENCE 队列 "
-                    f"{pending.queue_name} ACK 失败: {exc}"
-                ) from exc
+            if pending.is_backend_owned:
+                error = self._lock_consumer_transport_error(
+                    exc,
+                    pending.channel_generation,
+                )
+                if error is not None:
+                    raise error from exc
             if not self._is_transport_open():
-                for tag in physical_tags:
-                    self._pending_deliveries.pop(tag, None)
-                self._logical_delivery_tags.pop(delivery_tag, None)
+                self._pending_deliveries.pop(delivery_tag, None)
             logger.error("确认消息失败: %s", exc)
             return False
 
     def nack_message(self, delivery_tag: int, requeue: bool = True) -> bool:
         """拒绝消息。"""
-        physical_tags = self._expand_delivery_tags([delivery_tag])
-        pending = next(
-            (
-                self._pending_deliveries.get(tag)
-                for tag in physical_tags
-                if self._pending_deliveries.get(tag) is not None
-            ),
-            None,
-        )
+        pending = self._pending_deliveries.get(delivery_tag)
         if pending is None:
             return False
-        is_managed = pending.is_backend_owned
-        if not self._is_transport_open():
-            if is_managed:
-                raise ReferenceStreamTransportError(
-                    "后端托管 REFERENCE 队列 "
-                    f"{pending.queue_name} NACK 失败: 连接或通道不可用"
+        if pending.first_transport_error is not None:
+            raise pending.first_transport_error
+        if pending.is_backend_owned:
+            self.raise_if_transport_failed()
+        if pending.state != "pending":
+            return False
+        if pending.channel_generation != self._consumer_channel_generation:
+            if pending.is_backend_owned:
+                error = self._lock_consumer_transport_error(
+                    "消费通道代次已变更",
+                    pending.channel_generation,
                 )
-            for tag in physical_tags:
-                self._pending_deliveries.pop(tag, None)
-            self._logical_delivery_tags.pop(delivery_tag, None)
+                if error is not None:
+                    raise error
+            self._pending_deliveries.pop(delivery_tag, None)
+            return False
+        if not self._is_transport_open():
+            if pending.is_backend_owned:
+                error = self._lock_consumer_transport_error(
+                    self._consumer_channel_close_reason(),
+                    pending.channel_generation,
+                )
+                if error is not None:
+                    raise error
+            self._pending_deliveries.pop(delivery_tag, None)
             return False
         try:
-            for tag in physical_tags:
-                self._nack_delivery(tag, requeue)
-            self._logical_delivery_tags.pop(delivery_tag, None)
+            self._nack_delivery(delivery_tag, requeue)
             return True
         except Exception as exc:
-            if is_managed:
-                raise ReferenceStreamTransportError(
-                    "后端托管 REFERENCE 队列 "
-                    f"{pending.queue_name} NACK 失败: {exc}"
-                ) from exc
+            if pending.is_backend_owned:
+                error = self._lock_consumer_transport_error(
+                    exc,
+                    pending.channel_generation,
+                )
+                if error is not None:
+                    raise error from exc
             if not self._is_transport_open():
-                for tag in physical_tags:
-                    self._pending_deliveries.pop(tag, None)
-                self._logical_delivery_tags.pop(delivery_tag, None)
+                self._pending_deliveries.pop(delivery_tag, None)
             logger.error("拒绝消息失败: %s", exc)
             return False
 
@@ -803,7 +1154,7 @@ class RabbitMQClient:
                 )
             logger.error("无法连接到 RabbitMQ")
             return False
-        if not self.channel:
+        if not self.publisher_channel:
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 通道不可用"
@@ -816,7 +1167,7 @@ class RabbitMQClient:
                 message,
                 resolved_message_id,
             )
-            self._prepare_queue(queue_name)
+            self._prepare_queue(queue_name, self.publisher_channel)
             for body, properties in publications:
                 published = self._publish_to_queue(
                     queue_name,
@@ -869,7 +1220,9 @@ class RabbitMQClient:
         identity = (control_type, queue_name, stream_id, producer_id)
         if identity in self._published_controls:
             return True
-        if not self._ensure_connection() or not self.channel:
+        if not self._ensure_publisher_channel(
+            allow_consumer_failure=control_type == REFERENCE_ABORT_TYPE,
+        ) or not self.publisher_channel:
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 连接或通道不可用"
@@ -935,6 +1288,8 @@ class RabbitMQClient:
         status: str,
     ) -> bool:
         """向当前组件的全部 EOS v1 输出流发送终止控制帧。"""
+        if status == "success":
+            self.raise_if_transport_failed()
         control_type = (
             REFERENCE_EOS_TYPE if status == "success" else REFERENCE_ABORT_TYPE
         )
@@ -957,14 +1312,14 @@ class RabbitMQClient:
         batch_size: int = 100,
     ) -> int:
         """消费当前队列的全部业务消息，EOS v1 流等待生产者结束。"""
-        if not self._ensure_connection():
+        if not self._ensure_consumer_channel():
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 连接不可用"
                 )
             logger.error("无法连接到 RabbitMQ")
             return 0
-        if not self.channel:
+        if not self.consumer_channel:
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 通道不可用"
@@ -974,7 +1329,7 @@ class RabbitMQClient:
 
         processed_count = 0
         try:
-            self._prepare_queue(queue_name)
+            self._prepare_queue(queue_name, self.consumer_channel)
             is_reference = queue_name in self._reference_inputs
             while True:
                 batch_messages = []
@@ -1027,10 +1382,17 @@ class RabbitMQClient:
             return processed_count
         except _CancellationSignal as signal:
             raise signal.error
+        except ReferenceStreamTransportError:
+            raise
         except ReferenceStreamAborted:
             raise
         except AMQPChannelError as exc:
             if self._is_backend_owned_reference_queue(queue_name):
+                error = self._consumer_transport_error
+                if error is None:
+                    error = self._lock_consumer_transport_error(exc)
+                if error is not None:
+                    raise error from exc
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 消费失败: {exc}"
                 ) from exc
@@ -1038,6 +1400,11 @@ class RabbitMQClient:
             return processed_count
         except Exception as exc:
             if self._is_backend_owned_reference_queue(queue_name):
+                error = self._consumer_transport_error
+                if error is None:
+                    error = self._lock_consumer_transport_error(exc)
+                if error is not None:
+                    raise error from exc
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 消费失败: {exc}"
                 ) from exc
@@ -1050,14 +1417,14 @@ class RabbitMQClient:
         batch_size: int = 100,
     ) -> List[Dict[str, Any]]:
         """批量读取业务消息（不自动确认），控制帧由 SDK 自动确认。"""
-        if not self._ensure_connection():
+        if not self._ensure_consumer_channel():
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 连接不可用"
                 )
             logger.error("无法连接到 RabbitMQ")
             return []
-        if not self.channel:
+        if not self.consumer_channel:
             if self._is_backend_owned_reference_queue(queue_name):
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 通道不可用"
@@ -1067,7 +1434,7 @@ class RabbitMQClient:
 
         messages = []
         try:
-            self._prepare_queue(queue_name)
+            self._prepare_queue(queue_name, self.consumer_channel)
             is_reference = queue_name in self._reference_inputs
             while len(messages) < batch_size:
                 delivery = self._next_business_delivery(
@@ -1091,10 +1458,17 @@ class RabbitMQClient:
             return messages
         except _CancellationSignal as signal:
             raise signal.error
+        except ReferenceStreamTransportError:
+            raise
         except ReferenceStreamAborted:
             raise
         except Exception as exc:
             if self._is_backend_owned_reference_queue(queue_name):
+                error = self._consumer_transport_error
+                if error is None:
+                    error = self._lock_consumer_transport_error(exc)
+                if error is not None:
+                    raise error from exc
                 raise ReferenceStreamTransportError(
                     f"后端托管 REFERENCE 队列 {queue_name} 读取失败: {exc}"
                 ) from exc
@@ -1103,42 +1477,13 @@ class RabbitMQClient:
 
     def ack_all_message(self, delivery_tags: List[int]) -> bool:
         """批量确认消息。"""
-        physical_tags = self._expand_delivery_tags(delivery_tags)
-        if any(tag not in self._pending_deliveries for tag in physical_tags):
+        logical_tags = list(dict.fromkeys(delivery_tags))
+        if any(tag not in self._pending_deliveries for tag in logical_tags):
             return False
-        managed_pending = self._first_managed_pending_delivery(physical_tags)
-        if not self._is_transport_open():
-            if managed_pending:
-                raise ReferenceStreamTransportError(
-                    "后端托管 REFERENCE 队列 "
-                    f"{managed_pending.queue_name} 批量 ACK 失败: 连接或通道不可用"
-                )
-            for tag in physical_tags:
-                self._pending_deliveries.pop(tag, None)
-            for tag in delivery_tags:
-                self._logical_delivery_tags.pop(tag, None)
-            return False
-        try:
-            for tag in physical_tags:
-                self.channel.basic_ack(delivery_tag=tag, multiple=False)
-                self._pending_deliveries.pop(tag, None)
-            for tag in delivery_tags:
-                self._logical_delivery_tags.pop(tag, None)
-            return True
-        except Exception as exc:
-            managed_pending = self._first_managed_pending_delivery(physical_tags)
-            if managed_pending:
-                raise ReferenceStreamTransportError(
-                    "后端托管 REFERENCE 队列 "
-                    f"{managed_pending.queue_name} 批量 ACK 失败: {exc}"
-                ) from exc
-            if not self._is_transport_open():
-                for tag in physical_tags:
-                    self._pending_deliveries.pop(tag, None)
-                for tag in delivery_tags:
-                    self._logical_delivery_tags.pop(tag, None)
-            logger.error("确认消息失败: %s", exc)
-            return False
+        for logical_tag in logical_tags:
+            if not self.ack_message(logical_tag):
+                return False
+        return True
 
     def publish_messages(
         self,
@@ -1175,7 +1520,7 @@ class RabbitMQClient:
                 )
             logger.error("无法连接到 RabbitMQ")
             return False
-        if not self.channel:
+        if not self.publisher_channel:
             managed_queue = next(
                 (
                     item
@@ -1195,7 +1540,7 @@ class RabbitMQClient:
         try:
             for target_queue in dict.fromkeys(queue_names):
                 active_queue = target_queue
-                self._prepare_queue(target_queue)
+                self._prepare_queue(target_queue, self.publisher_channel)
             for message, resolved_message_id in zip(
                 messages,
                 resolved_message_ids,
@@ -1253,9 +1598,16 @@ class RabbitMQClient:
             return False
 
     def process_data_events(self) -> None:
-        """处理连接事件（心跳等），需要在长时间操作期间定期调用。"""
+        """处理心跳并立即传播托管消费通道的失效根因。"""
+        self.raise_if_transport_failed()
         try:
             if self.connection and not self.connection.is_closed:
                 self.connection.process_data_events()
         except Exception as exc:
+            error = self._consumer_transport_error
+            if error is None:
+                error = self._lock_consumer_transport_error(exc)
+            if error is not None:
+                raise error from exc
             logger.warning("处理连接事件时发生错误: %s", exc)
+        self.raise_if_transport_failed()

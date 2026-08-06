@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import csi_base_component_sdk
 import csi_base_component_sdk.runner as runner
 from csi_base_component_sdk.context import (
     ComponentCancelled,
@@ -229,9 +230,10 @@ def test_component_context_marks_successful_result_once():
 def test_component_context_marks_reference_publish_automatically(monkeypatch):
     client = MagicMock()
     client.connect.return_value = True
+    client_factory = MagicMock(return_value=client)
     monkeypatch.setattr(
         "csi_base_component_sdk.context.RabbitMQClient",
-        MagicMock(return_value=client),
+        client_factory,
     )
     context = ComponentContext(
         action_id="action-1",
@@ -243,15 +245,25 @@ def test_component_context_marks_reference_publish_automatically(monkeypatch):
         inputs={},
         outputs={"data_out": {"type": "reference"}},
         logger=MagicMock(),
+        reference_consumer_ack_timeout_seconds=7200,
+        reference_consumer_ack_safety_margin_seconds=120,
     )
 
     assert context.rabbitmq is client
+    client_factory.assert_called_once_with(
+        reference_consumer_ack_timeout_seconds=7200,
+        reference_consumer_ack_safety_margin_seconds=120,
+    )
     callback = client.configure_reference_streams.call_args.kwargs[
         "successful_result_callback"
     ]
     callback()
 
     assert context.has_successful_result is True
+
+
+def test_sdk_version_is_2_7_0():
+    assert csi_base_component_sdk.__version__ == "2.7.0"
 
 
 @pytest.mark.parametrize(
@@ -540,6 +552,8 @@ def test_runner_reports_failure_when_remote_context_is_invalid(monkeypatch):
                 "component_run_id": "run-1",
                 "component_id": "component-1",
                 "attempt": 1,
+                "reference_consumer_ack_timeout_seconds": 21600,
+                "reference_consumer_ack_safety_margin_seconds": 300,
             }
 
         def submit_result(self, payload):

@@ -66,6 +66,8 @@ class ComponentContext:
     inputs: dict[str, Any]
     outputs: dict[str, Any]
     logger: StructuredLogger
+    reference_consumer_ack_timeout_seconds: int = 21600
+    reference_consumer_ack_safety_margin_seconds: int = 300
     _cancelled: threading.Event = field(default_factory=threading.Event, repr=False)
     _timed_out: threading.Event = field(default_factory=threading.Event, repr=False)
     _progress: float = field(default=0, repr=False)
@@ -177,7 +179,14 @@ class ComponentContext:
     @property
     def rabbitmq(self) -> RabbitMQClient:
         if self._rabbitmq is None:
-            client = RabbitMQClient()
+            client = RabbitMQClient(
+                reference_consumer_ack_timeout_seconds=(
+                    self.reference_consumer_ack_timeout_seconds
+                ),
+                reference_consumer_ack_safety_margin_seconds=(
+                    self.reference_consumer_ack_safety_margin_seconds
+                ),
+            )
             client.configure_reference_streams(
                 self.inputs,
                 self.outputs,
@@ -191,6 +200,8 @@ class ComponentContext:
 
     def close_reference_outputs(self, status: str) -> None:
         """由 Runner 自动关闭当前组件声明的 REFERENCE 输出流。"""
+        if status == "success" and self._rabbitmq is not None:
+            self._rabbitmq.raise_if_transport_failed()
         has_eos_output = any(
             isinstance(value, dict)
             and value.get("type") == "reference"

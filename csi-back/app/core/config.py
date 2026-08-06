@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     RABBITMQ_USERNAME: str
     RABBITMQ_PASSWORD: str
     RABBITMQ_VHOST: str = "/"
+    REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS: int = 6 * 60 * 60
+    REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS: int = 5 * 60
 
     # TODO(native-scheduler): 自研调度上线后删除 Crawlab 临时配置。
     CRAWLAB_BASE_URL: str
@@ -190,6 +192,17 @@ class Settings(BaseSettings):
             raise RuntimeError(f"认证防护配置必须大于 0: {', '.join(invalid)}")
         if self.COMPONENT_RUN_TIMEOUT_SECONDS < 0:
             raise RuntimeError("COMPONENT_RUN_TIMEOUT_SECONDS 不能小于 0")
+        if self.REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS <= 0:
+            raise RuntimeError("REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS 必须大于 0")
+        if self.REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS <= 0:
+            raise RuntimeError(
+                "REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS 必须大于 0"
+            )
+        if (
+            self.REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS
+            >= self.REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS
+        ):
+            raise RuntimeError("Reference ACK 安全余量必须小于消费确认超时")
         if self.normalized_environment == "production":
             forbidden_secrets = {
                 "please-change-auth-secret-key",

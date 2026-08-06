@@ -167,6 +167,16 @@ async def test_component_init_claim_guards_cancel_and_runtime_state(
         "_build_io",
         AsyncMock(return_value=({}, {})),
     )
+    monkeypatch.setattr(
+        sdk_endpoint,
+        "settings",
+        SimpleNamespace(
+            COMPONENT_LEASE_SECONDS=30,
+            COMPONENT_HEARTBEAT_INTERVAL_SECONDS=10,
+            REFERENCE_CONSUMER_ACK_TIMEOUT_SECONDS=21600,
+            REFERENCE_CONSUMER_ACK_SAFETY_MARGIN_SECONDS=300,
+        ),
+    )
     activate = AsyncMock()
     monkeypatch.setattr(
         sdk_endpoint.ActionInstanceService,
@@ -180,6 +190,9 @@ async def test_component_init_claim_guards_cancel_and_runtime_state(
     assert queries[1]["cancel_requested"] == {"$ne": True}
     assert updates[0]["$set"]["status"] == ComponentRunStatusEnum.RUNNING
     activate.assert_awaited_once_with(component_run.id)
+    if expected_code == 0:
+        assert response.data.reference_consumer_ack_timeout_seconds == 21600
+        assert response.data.reference_consumer_ack_safety_margin_seconds == 300
 
 
 @pytest.mark.asyncio
