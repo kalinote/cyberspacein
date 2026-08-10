@@ -24,6 +24,22 @@ test('运行控件保留主按钮、相反模式和默认模式调试入口', ()
   assert.match(source, /emit\('debug', normalizedMode\.value\)/)
 })
 
+test('行动监控与蓝图列表直接复用完整蓝图卡片', () => {
+  const card = readSource('components/action/ActionBlueprintCard.vue')
+  const list = readSource('views/action/ActionBlueprintList.vue')
+  const monitor = readSource('views/action/ActionMonitor.vue')
+
+  assert.match(list, /<ActionBlueprintCard[\s\S]*?@delete="handleDeleteBlueprint\(blueprint\)"/)
+  assert.match(monitor, /<ActionBlueprintCard[\s\S]*?@delete="handleDeleteBlueprint\(blueprint\)"/)
+  assert.match(card, /mdi:pencil-outline/)
+  assert.match(card, /mdi:tag-arrow-up-outline/)
+  assert.match(card, /mdi:package-variant-closed/)
+  assert.match(card, /mdi:history/)
+  assert.match(card, /mdi:source-branch/)
+  assert.match(card, /PERM\.operations\.action\.blueprint\.delete/)
+  assert.doesNotMatch(monitor, /show-(?:edit|publish|encapsulate|history|branch|delete)/)
+})
+
 test('模板空参数和部分完成历史状态均可操作', () => {
   const dialog = readSource('components/action/template/TemplateParamsDialog.vue')
   const history = readSource('views/action/ActionHistory.vue')

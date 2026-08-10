@@ -78,7 +78,7 @@
                     @click="canAccessActionTask ? (showActionDropdown = false) : null"
                     @click.capture="guardNav(canAccessActionTask, $event)"
                   >
-                    基础组件任务
+                    周期调度任务
                   </router-link>
                 </div>
               </transition>

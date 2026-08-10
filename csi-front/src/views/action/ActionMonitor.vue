@@ -79,96 +79,21 @@
 
         <div v-loading="loadingBlueprints" :element-loading-text="'加载中...'" class="min-h-[200px]">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-            <div 
-              v-for="(blueprint, index) in commonBlueprints" 
-              :key="index"
-              class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow flex flex-col"
-            >
-          <div class="mb-4">
-            <h3 class="text-xl font-bold text-gray-900 mb-4">{{ blueprint.title }}</h3>
-            <div class="flex items-center gap-2 flex-wrap">
-              <el-tag
-                v-if="blueprint.taskType"
-                class="border-0" 
-                :style="{ backgroundColor: blueprint.taskTypeTagColor, color: blueprint.taskTypeTagTextColor }"
-              >
-                {{ blueprint.taskType }}
-              </el-tag>
-              <el-tag 
-                v-if="blueprint.isTemplate"
-                type="warning"
-                class="border-0"
-              >
-                模板
-              </el-tag>
-            </div>
-          </div>
-
-            <div class="space-y-3 mb-6 flex-1">
-              <div class="flex items-start space-x-3">
-                <Icon icon="mdi:target" class="text-blue-500 text-lg mt-0.5 shrink-0" />
-                <div class="flex-1">
-                  <p class="text-sm text-gray-500 mb-1">任务目标</p>
-                  <p class="text-sm font-medium text-gray-900">{{ blueprint.taskGoal }}</p>
-                </div>
-              </div>
-
-              <div class="flex items-start space-x-3">
-                <Icon icon="mdi:server-network" class="text-green-500 text-lg mt-0.5 shrink-0" />
-                <div class="flex-1">
-                  <p class="text-sm text-gray-500 mb-1">资源分配</p>
-                  <p class="text-sm font-medium text-gray-900">{{ blueprint.resourceAllocation }}</p>
-                </div>
-              </div>
-
-              <div class="flex items-start space-x-3">
-                <Icon icon="mdi:format-list-numbered" class="text-purple-500 text-lg mt-0.5 shrink-0" />
-                <div class="flex-1">
-                  <p class="text-sm text-gray-500 mb-1">行动步骤</p>
-                  
-                  <div class="flex items-center flex-wrap gap-2 text-sm font-medium text-gray-900">
-                    <span>{{ blueprint.branchCount }} 个分支，共{{ blueprint.stepCount }} 个步骤</span>
-                    <div @click="viewBlueprint(blueprint)" class="text-blue-500 cursor-pointer hover:text-blue-600 transition-colors">
-                      查看
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="flex items-start space-x-3">
-                <Icon icon="mdi:calendar-clock" class="text-amber-500 text-lg mt-0.5 shrink-0" />
-                <div class="flex-1">
-                  <p class="text-sm text-gray-500 mb-1">执行期限</p>
-                  <p class="text-sm font-medium text-gray-900">{{ blueprint.executionDeadline }}</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="pt-4 border-t border-gray-200 flex flex-col gap-2 mt-auto">
-              <BlueprintRunControl
-                :disabled="actionStarting"
-                :scheduling-mode="blueprint.defaultSchedulingMode"
-                @run="createActionFromBlueprint(blueprint, false, $event)"
-                @debug="createActionFromBlueprint(blueprint, true, $event)"
-              />
-              <el-button 
-                plain 
-                class="w-full ml-0!" 
-                @click="createBranchVersion(blueprint)"
-              >
-                <template #icon><Icon icon="mdi:source-branch" /></template>
-                从此蓝图创建分支
-              </el-button>
-              <el-button 
-                plain 
-                class="w-full ml-0! text-red-500! border-red-500! " 
-                @click="removeFromCommonBlueprints(index)"
-              >
-                <template #icon><Icon icon="mdi:delete-outline" /></template>
-                删除该蓝图
-              </el-button>
-            </div>
-          </div>
+            <ActionBlueprintCard
+              v-for="blueprint in commonBlueprints"
+              :key="blueprint.id"
+              :blueprint="blueprint"
+              :disabled="actionStarting"
+              @view="viewBlueprint(blueprint)"
+              @edit="editBlueprint(blueprint)"
+              @publish="openPublishDialog(blueprint)"
+              @encapsulate="openEncapsulateDialog(blueprint)"
+              @history="openRevisionHistory(blueprint)"
+              @branch="createBranchVersion(blueprint)"
+              @run="createActionFromBlueprint(blueprint, false, $event)"
+              @debug="createActionFromBlueprint(blueprint, true, $event)"
+              @delete="handleDeleteBlueprint(blueprint)"
+            />
           </div>
 
           <div v-if="!loadingBlueprints && commonBlueprints.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
@@ -546,6 +471,37 @@
       :submitting="actionStarting"
       @submit="handleParamsSubmit"
     />
+    <BlueprintPublishDialog
+      v-model="publishDialogVisible"
+      :submitting="publishing"
+      @submit="handlePublish"
+    />
+    <BlueprintEncapsulateDialog
+      v-model="encapsulateDialogVisible"
+      :interfaces="encapsulateInterfaces"
+      :target-nodes="encapsulatedTargetNodes"
+      :submitting="encapsulating"
+      @submit="handleEncapsulate"
+    />
+    <el-dialog v-model="revisionDialogVisible" title="蓝图发布历史" width="720px">
+      <el-table v-loading="revisionsLoading" :data="revisions" size="small">
+        <el-table-column prop="revision_number" label="Revision" width="100" />
+        <el-table-column prop="version" label="蓝图版本" width="120" />
+        <el-table-column label="内容哈希" min-width="220">
+          <template #default="{ row }">
+            <span class="font-mono text-xs">{{ row.content_hash?.slice(0, 16) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="发布时间" min-width="180">
+          <template #default="{ row }">{{ formatPublishedAt(row.published_at) }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty
+        v-if="!revisionsLoading && revisions.length === 0"
+        description="尚未发布 Revision"
+        :image-size="56"
+      />
+    </el-dialog>
   </div>
 </template>
 
@@ -555,9 +511,11 @@ import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import Header from '@/components/Header.vue'
+import ActionBlueprintCard from '@/components/action/ActionBlueprintCard.vue'
 import BlueprintFlowDialog from '@/components/action/BlueprintFlowDialog.vue'
 import TemplateParamsDialog from '@/components/action/template/TemplateParamsDialog.vue'
-import BlueprintRunControl from '@/components/action/BlueprintRunControl.vue'
+import BlueprintPublishDialog from '@/components/action/BlueprintPublishDialog.vue'
+import BlueprintEncapsulateDialog from '@/components/action/BlueprintEncapsulateDialog.vue'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
 import { ACTION_STATUS, getActionStatusIcon } from '@/utils/action'
@@ -573,10 +531,23 @@ const selectedBlueprintForRun = ref(null)
 const selectedRunDebug = ref(false)
 const selectedRunSchedulingMode = ref('barrier')
 const actionStarting = ref(false)
+const selectedBlueprintForRelease = ref(null)
+const publishDialogVisible = ref(false)
+const encapsulateDialogVisible = ref(false)
+const publishing = ref(false)
+const encapsulating = ref(false)
+const encapsulateInterfaces = ref([])
+const encapsulatedTargetNodes = ref([])
+const revisionDialogVisible = ref(false)
+const revisionsLoading = ref(false)
+const revisions = ref([])
 const loadingRunningActions = ref(false)
 const loadingBlueprints = ref(false)
 const runningActions = ref([])
 const commonBlueprints = ref([])
+const formatPublishedAt = value => (
+  value ? new Date(value).toLocaleString('zh-CN') : '-'
+)
 
 async function createActionFromBlueprint(
   blueprint,
@@ -653,17 +624,126 @@ function createBranchVersion(blueprint) {
   ElMessage.info('创建分支版本功能开发中...')
 }
 
-function removeFromCommonBlueprints(index) {
-  ElMessageBox.confirm('确定要删除此蓝图吗？', '确认删除', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    commonBlueprints.value.splice(index, 1)
-    ElMessage.success('已删除')
-  }).catch(() => {
-    ElMessage.info('已取消删除')
+function editBlueprint(blueprint) {
+  if (!blueprint?.id) {
+    ElMessage.error('蓝图ID不存在')
+    return
+  }
+  router.push({
+    name: 'edit-action-blueprint',
+    params: { blueprintId: blueprint.id }
   })
+}
+
+function openPublishDialog(blueprint) {
+  selectedBlueprintForRelease.value = blueprint
+  publishDialogVisible.value = true
+}
+
+async function openRevisionHistory(blueprint) {
+  if (!blueprint?.id || revisionsLoading.value) return
+  revisionDialogVisible.value = true
+  revisionsLoading.value = true
+  revisions.value = []
+  try {
+    const response = await actionApi.getBlueprintRevisions(blueprint.id)
+    revisions.value = response.data || []
+  } catch {
+    revisions.value = []
+  } finally {
+    revisionsLoading.value = false
+  }
+}
+
+async function openEncapsulateDialog(blueprint) {
+  selectedBlueprintForRelease.value = blueprint
+  try {
+    const [detailResponse, nodesResponse, validationResponse] = await Promise.all([
+      actionApi.getBlueprint(blueprint.id),
+      actionApi.getNodes(),
+      actionApi.validateBlueprint(blueprint.id)
+    ])
+    const validation = validationResponse.data || {}
+    if (!validation.valid) {
+      ElMessage.error(validation.errors?.[0]?.message || '蓝图校验未通过')
+      return
+    }
+    const detail = detailResponse.data || {}
+    const interfaceSpec = detail.interface || validation.interface || {}
+    encapsulateInterfaces.value = [
+      ...(interfaceSpec.inputs || []),
+      ...(interfaceSpec.outputs || [])
+    ].map(item => ({
+      ...item,
+      interfaceTypeId: item.interface_type_id
+    }))
+    encapsulatedTargetNodes.value = (nodesResponse.data || []).filter(node => (
+      node.node_kind === 'encapsulated'
+      && node.source_blueprint_id === blueprint.id
+      && node.is_latest
+    ))
+    encapsulateDialogVisible.value = true
+  } catch (error) {
+    console.error('准备封装蓝图失败:', error)
+    ElMessage.error('准备封装蓝图失败')
+  }
+}
+
+async function handlePublish() {
+  const blueprint = selectedBlueprintForRelease.value
+  if (!blueprint?.id) return
+  publishing.value = true
+  try {
+    const response = await actionApi.publishBlueprint(blueprint.id)
+    ElMessage.success(`已发布 Revision ${response.data?.revision?.revision_number || ''}`)
+    publishDialogVisible.value = false
+    await fetchCommonBlueprints()
+  } catch {
+    // 请求层统一展示后端错误信息
+  } finally {
+    publishing.value = false
+  }
+}
+
+async function handleEncapsulate(form) {
+  const blueprint = selectedBlueprintForRelease.value
+  if (!blueprint?.id) return
+  encapsulating.value = true
+  try {
+    const response = await actionApi.encapsulateBlueprint(blueprint.id, form)
+    ElMessage.success(`已生成封装节点 ${response.data?.encapsulated_node?.name || ''}`)
+    encapsulateDialogVisible.value = false
+    await fetchCommonBlueprints()
+  } catch {
+    // 请求层统一展示后端错误信息
+  } finally {
+    encapsulating.value = false
+  }
+}
+
+async function handleDeleteBlueprint(blueprint) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除蓝图“${blueprint.title}”吗？其所有历史行动和运行日志也将被永久删除，此操作不可恢复。`,
+      '确认删除',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    ElMessage.info('已取消删除')
+    return
+  }
+
+  try {
+    await actionApi.deleteBlueprint(blueprint.id)
+    ElMessage.success('蓝图及历史行动已删除')
+    await fetchCommonBlueprints()
+  } catch {
+    // 请求层统一展示后端错误信息
+  }
 }
 
 function viewSteps(blueprintId) {
@@ -742,7 +822,9 @@ async function fetchCommonBlueprints() {
         branchCount: item.branches || 0,
         stepCount: item.steps || 0,
         isTemplate: item.is_template || false,
-        defaultSchedulingMode: item.default_scheduling_mode === 'streaming' ? 'streaming' : 'barrier'
+        defaultSchedulingMode: item.default_scheduling_mode === 'streaming' ? 'streaming' : 'barrier',
+        latestRevisionNumber: item.latest_revision_number,
+        encapsulatedNodeCount: item.encapsulated_node_count || 0
       }
     })
   } catch (error) {
