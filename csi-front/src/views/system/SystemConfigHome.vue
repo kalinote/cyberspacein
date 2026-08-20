@@ -36,14 +36,20 @@
         </div>
       </section>
 
-      <el-alert v-if="configData?.history_sync_status === 'conflict'" class="mb-5" type="error" :closable="false" show-icon>
-        <template #title>
-          <div class="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pr-2">
-            <span>配置文件与 MongoDB 历史存在冲突，已暂停保存、取消和还原操作，请先完成存储协调。</span>
-            <el-button type="danger" size="small" :loading="coordinationLoading" @click.stop="openCoordination">强制同步</el-button>
+      <div v-if="configData?.history_sync_status === 'conflict'" class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 shadow-sm sm:px-5">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex items-start gap-3">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+              <Icon icon="mdi:alert-circle-outline" class="text-2xl" />
+            </div>
+            <div>
+              <p class="font-semibold text-red-900">配置文件与 MongoDB 历史存在冲突</p>
+              <p class="mt-1 text-sm leading-6 text-red-700">为避免覆盖历史记录，保存、取消和还原操作已暂停，请先完成存储协调。</p>
+            </div>
           </div>
-        </template>
-      </el-alert>
+          <el-button type="danger" class="shrink-0 self-end sm:self-auto" :loading="coordinationLoading" @click.stop="openCoordination">强制同步</el-button>
+        </div>
+      </div>
       <el-alert v-else-if="configData?.history_sync_status === 'pending'" class="mb-5" title="配置已保存，MongoDB 历史正在等待同步。" type="info" :closable="false" show-icon />
       <div v-if="configData?.restart_required" class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-amber-800">
         <div class="flex gap-3"><Icon icon="mdi:restart-alert" class="text-2xl shrink-0" /><div><p class="font-semibold">{{ configData.pending_status === 'baseline_conflict' ? '部署环境已变化，待重启配置未应用' : '配置已保存，需要重启服务' }}</p><p class="text-sm mt-1">{{ configData.pending_status === 'baseline_conflict' ? '请取消当前待重启配置，并基于最新环境重新编辑和保存。' : `版本 v${configData.pending_version} 的 ${configData.pending_fields?.length || 0} 项配置将在下次服务重启后生效。` }}</p></div></div>
