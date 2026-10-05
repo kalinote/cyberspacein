@@ -814,11 +814,13 @@ async function fetchCommonBlueprints() {
     let totalPages = 1
     // 逐页取完置顶蓝图，展示数量不受接口单页上限影响。
     do {
-      const result = await actionApi.getBlueprintsBaseInfo({
+      const response = await actionApi.getBlueprintsBaseInfo({
         page,
         page_size: 100,
         is_pinned: true
       })
+      // 兼容统一响应封装和直接返回的分页数据。
+      const result = response.code === 0 ? response.data : response
       items.push(...result.items)
       totalPages = result.total_pages
       page += 1

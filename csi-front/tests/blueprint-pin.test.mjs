@@ -63,40 +63,53 @@ function findNodes(tree, name) {
   return matches.concat(Array.isArray(tree.children) ? findNodes(tree.children, name) : [])
 }
 
-for (const count of [0, 7, 205]) {
-  test(`主页完整展示 ${count} 项置顶蓝图，跨页请求始终限定置顶`, async () => {
-    const calls = []
-    const items = Array.from({ length: count }, (_, id) => ({ id, name: `蓝图${id}`, is_pinned: true }))
-    const page = loadComponent('views/action/ActionMonitor.vue', {
-      api: { getBlueprintsBaseInfo: async params => {
-        calls.push(params)
-        return { items: items.slice((params.page - 1) * 100, params.page * 100), total_pages: Math.ceil(count / 100) }
-      } }
+for (const [format, wrapped] of [['统一响应封装', true], ['直接分页响应', false]]) {
+  for (const count of [0, 1, 7, 205]) {
+    test(`${format}：主页完整展示 ${count} 项置顶蓝图，跨页请求始终限定置顶`, async () => {
+      const calls = []
+      const items = Array.from({ length: count }, (_, id) => ({ id, name: `蓝图${id}`, is_pinned: true }))
+      const page = loadComponent('views/action/ActionMonitor.vue', {
+        api: { getBlueprintsBaseInfo: async params => {
+          calls.push(params)
+          const data = {
+            items: items.slice((params.page - 1) * 100, params.page * 100),
+            total: count,
+            page: params.page,
+            page_size: params.page_size,
+            total_pages: Math.ceil(count / 100)
+          }
+          return wrapped ? { code: 0, message: 'success', data } : data
+        } }
+      })
+
+      await page.state.fetchCommonBlueprints()
+
+      assert.equal(page.state.loadingBlueprints.value, false)
+      assert.deepEqual(page.messages, [])
+      assert.deepEqual(page.state.commonBlueprints.value.map(item => item.id), items.map(item => item.id))
+      assert.ok(page.state.commonBlueprints.value.every(item => item.isPinned))
+      assert.equal(findNodes(page.render(), 'ActionBlueprintCard').length, count)
+      assert.deepEqual(calls, Array.from({ length: Math.max(1, Math.ceil(count / 100)) }, (_, index) => ({
+        page: index + 1, page_size: 100, is_pinned: true
+      })))
     })
-
-    await page.state.fetchCommonBlueprints()
-
-    assert.equal(page.state.loadingBlueprints.value, false)
-    assert.deepEqual(page.state.commonBlueprints.value.map(item => item.id), items.map(item => item.id))
-    assert.ok(page.state.commonBlueprints.value.every(item => item.isPinned))
-    assert.equal(findNodes(page.render(), 'ActionBlueprintCard').length, count)
-    assert.deepEqual(calls, Array.from({ length: Math.max(1, Math.ceil(count / 100)) }, (_, index) => ({
-      page: index + 1, page_size: 100, is_pinned: true
-    })))
-  })
+  }
 }
 
 test('后续分页失败时不展示部分结果，并结束加载状态', async () => {
+  const calls = []
   const page = loadComponent('views/action/ActionMonitor.vue', {
     api: { getBlueprintsBaseInfo: async ({ page }) => {
+      calls.push(page)
       if (page === 2) throw new Error('模拟后续分页失败')
-      return { items: [{ id: '部分结果', is_pinned: true }], total_pages: 2 }
+      return { code: 0, message: 'success', data: { items: [{ id: '部分结果', is_pinned: true }], total_pages: 2 } }
     } }
   })
   page.state.commonBlueprints.value = [{ id: '旧蓝图', isPinned: true }]
 
   await page.state.fetchCommonBlueprints()
 
+  assert.deepEqual(calls, [1, 2])
   assert.deepEqual(page.state.commonBlueprints.value, [])
   assert.equal(page.state.loadingBlueprints.value, false)
   assert.deepEqual(page.messages, ['获取行动蓝图失败'])
@@ -106,7 +119,8 @@ test('缓存主页每次激活都会刷新置顶结果', async () => {
   let requests = 0
   const page = loadComponent('views/action/ActionMonitor.vue', {
     api: { getBlueprintsBaseInfo: async () => ({
-      items: [{ id: ++requests, is_pinned: true }], total_pages: 1
+      code: 0, message: 'success',
+      data: { items: [{ id: ++requests, is_pinned: true }], total_pages: 1 }
     }) }
   })
 
