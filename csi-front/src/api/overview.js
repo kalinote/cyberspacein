@@ -9,5 +9,8 @@ export const overviewApi = {
   },
   getNewDataStatus(params) {
     return request.get('/overview/new-data-status', params)
+  },
+  getLatestIntelligence(params) {
+    return request.get('/overview/latest-intelligence', params)
   }
 }

@@ -6,6 +6,8 @@ from elasticsearch import AsyncElasticsearch
 
 from app.schemas.constants import ALL_INDEX
 from app.schemas.overview import (
+    OverviewLatestIntelligenceItemSchema,
+    OverviewLatestIntelligenceSchema,
     OverviewPlatformCountSchema,
     OverviewPlatformStatusSchema,
     OverviewSummaryStatusSchema,
@@ -179,6 +181,58 @@ async def fetch_summary_status(es: AsyncElasticsearch) -> OverviewSummaryStatusS
         today_new_count=today_new,
         latest_last_edit_at=latest,
     )
+
+
+async def fetch_latest_intelligence(
+    es: AsyncElasticsearch, limit: int
+) -> OverviewLatestIntelligenceSchema:
+    """查询按内容最后编辑时间倒序排列的最新情报。
+
+    Args:
+        es: Elasticsearch 异步客户端。
+        limit: 返回记录数量。
+
+    Returns:
+        仅包含可解析最后编辑时间的情报记录及裁剪后的正文摘要。
+    """
+    body = {
+        "size": limit,
+        "track_total_hits": False,
+        "query": {"exists": {"field": "last_edit_at"}},
+        "sort": [
+            {"last_edit_at": {"order": "desc", "unmapped_type": "date"}},
+        ],
+        "_source": [
+            "uuid", "entity_type", "title", "clean_content", "platform",
+            "section", "last_edit_at", "is_highlighted",
+        ],
+    }
+    result = await es.search(index=ALL_INDEX, body=body)
+    items: list[OverviewLatestIntelligenceItemSchema] = []
+    for hit in result.get("hits", {}).get("hits", []):
+        source = hit.get("_source") or {}
+        entity_type = str(hit.get("_index") or "")
+        if entity_type not in ALL_INDEX:
+            entity_type = str(source.get("entity_type") or "").lower()
+        if entity_type not in ALL_INDEX:
+            continue
+        last_edit_at = parse_datetime(source.get("last_edit_at"))
+        if last_edit_at is None:
+            continue
+        if last_edit_at.tzinfo is None:
+            last_edit_at = last_edit_at.replace(tzinfo=TZ_SH)
+        last_edit_at = last_edit_at.astimezone(TZ_SH)
+        items.append(OverviewLatestIntelligenceItemSchema(
+            uuid=str(source.get("uuid") or hit.get("_id") or ""),
+            entity_type=entity_type,
+            title=str(source.get("title") or ""),
+            clean_content=str(source.get("clean_content") or "")[:200],
+            platform=str(source.get("platform") or ""),
+            section=str(source.get("section") or ""),
+            last_edit_at=last_edit_at,
+            is_highlighted=source.get("is_highlighted") or False,
+        ))
+    return OverviewLatestIntelligenceSchema(items=items)
 
 
 async def fetch_time_field_stats(

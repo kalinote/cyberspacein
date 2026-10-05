@@ -6,6 +6,7 @@ routes:
 
   - {method: GET, path: "/overview/platform-status", principal: user, permission: "operation:overview:dashboard:read"}
   - {method: GET, path: "/overview/summary-status", principal: user, permission: "operation:overview:dashboard:read"}
+  - {method: GET, path: "/overview/latest-intelligence", principal: user, permission: "operation:overview:dashboard:read"}
   - {method: GET, path: "/overview/crawl-status", principal: user, permission: "operation:overview:dashboard:read"}
   - {method: GET, path: "/overview/new-data-status", principal: user, permission: "operation:overview:dashboard:read"}
 

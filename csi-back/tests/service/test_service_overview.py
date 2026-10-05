@@ -1,10 +1,12 @@
 """app.service.overview 纯函数与 ES 结果解析测试。"""
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.schemas.overview import OverviewTimeUnitEnum
+from app.schemas.constants import ALL_INDEX
 from app.service import overview as overview_svc
 
 
@@ -107,3 +109,142 @@ async def test_fetch_summary_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert out.total_doc_count == 50
     assert out.today_crawl_count == 3
     assert out.today_new_count == 4
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_intelligence_uses_last_edit_at_and_cross_index() -> None:
+    """验证最新情报仅按最后编辑时间查询跨索引真实记录。"""
+    es = AsyncMock()
+    es.search.return_value = {
+        "hits": {"hits": [
+            {
+                "_id": "article-id",
+                "_index": "article",
+                "_source": {
+                    "uuid": "article-uuid",
+                    "entity_type": "article",
+                    "title": "最新文章",
+                    "clean_content": "正文" * 150,
+                    "platform": "新闻平台",
+                    "section": "资讯",
+                    "last_edit_at": "2026-10-05T10:00:00+08:00",
+                    "update_at": "2026-10-01T10:00:00+08:00",
+                    "is_highlighted": True,
+                },
+            },
+            {
+                "_id": "forum-id",
+                "_index": "forum",
+                "_source": {
+                    "uuid": None,
+                    "entity_type": None,
+                    "title": None,
+                    "clean_content": None,
+                    "platform": None,
+                    "section": None,
+                    "last_edit_at": "2026-10-04T10:00:00",
+                    "update_at": "2026-10-06T10:00:00+08:00",
+                    "is_highlighted": None,
+                },
+            },
+        ]},
+    }
+
+    result = await overview_svc.fetch_latest_intelligence(es, 3)
+
+    request = es.search.call_args.kwargs
+    assert request["index"] == ALL_INDEX
+    assert request["body"]["size"] == 3
+    assert request["body"]["query"] == {"exists": {"field": "last_edit_at"}}
+    assert request["body"]["sort"] == [
+        {"last_edit_at": {"order": "desc", "unmapped_type": "date"}}
+    ]
+    assert set(request["body"]["_source"]) == {
+        "uuid", "entity_type", "title", "clean_content", "platform",
+        "section", "last_edit_at", "is_highlighted",
+    }
+    assert [item.uuid for item in result.items] == ["article-uuid", "forum-id"]
+    article, forum = result.items
+    assert article.last_edit_at > forum.last_edit_at
+    assert article.title == "最新文章"
+    assert article.clean_content == "正文" * 100
+    assert article.is_highlighted is True
+    assert forum.entity_type == "forum"
+    assert forum.title == forum.clean_content == forum.platform == forum.section == ""
+    assert forum.is_highlighted is False
+    assert forum.last_edit_at.utcoffset() == timedelta(hours=8)
+    assert forum.last_edit_at.isoformat() == "2026-10-04T10:00:00+08:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_time, expected", [
+    ("2026-10-04T19:31:50", "2026-10-04T19:31:50+08:00"),
+    ("2026-10-04T19:31:50+08:00", "2026-10-04T19:31:50+08:00"),
+    ("2026-10-04T19:31:50Z", "2026-10-05T03:31:50+08:00"),
+])
+async def test_fetch_latest_intelligence_preserves_source_time_semantics(source_time, expected) -> None:
+    """沿用源记录的时间语义，无时区值按北京时间处理，显式时区正常转换。"""
+    es = AsyncMock()
+    es.search.return_value = {
+        "hits": {"hits": [{
+            "_id": "article-id",
+            "_index": "article",
+            "_source": {"last_edit_at": source_time},
+        }]},
+    }
+    result = await overview_svc.fetch_latest_intelligence(es, 3)
+    assert result.items[0].last_edit_at.isoformat() == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("index, source_type, expected", [
+    ("article", "post", "article"),
+    ("forum", "article", "forum"),
+    (None, "Article", "article"),
+    ("未知索引", "Forum", "forum"),
+    ("未知索引", "post", None),
+    (None, None, None),
+])
+async def test_fetch_latest_intelligence_only_returns_supported_entity_types(index, source_type, expected) -> None:
+    """优先采用已知索引类型，并排除没有对应详情页的实体。"""
+    es = AsyncMock()
+    es.search.return_value = {
+        "hits": {"hits": [{
+            "_id": "entity-id",
+            "_index": index,
+            "_source": {"entity_type": source_type, "last_edit_at": "2026-10-04T19:31:50"},
+        }]},
+    }
+    result = await overview_svc.fetch_latest_intelligence(es, 3)
+    if expected is None:
+        assert result.items == []
+    else:
+        assert result.items[0].entity_type == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("last_edit_at", [None, "", "无效时间"])
+async def test_fetch_latest_intelligence_does_not_fallback_to_other_times(last_edit_at) -> None:
+    """无有效最后编辑时间时不得使用发布时间或入库时间替代。"""
+    es = AsyncMock()
+    es.search.return_value = {
+        "hits": {"hits": [{
+            "_id": "article-id",
+            "_index": "article",
+            "_source": {
+                "last_edit_at": last_edit_at,
+                "publish_at": "2026-10-05T10:00:00+08:00",
+                "update_at": "2026-10-05T10:00:00+08:00",
+                "crawled_at": "2026-10-05T10:00:00+08:00",
+            },
+        }]},
+    }
+    assert (await overview_svc.fetch_latest_intelligence(es, 3)).items == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_intelligence_empty() -> None:
+    """无情报时返回空列表。"""
+    es = AsyncMock()
+    es.search.return_value = {"hits": {"hits": []}}
+    assert (await overview_svc.fetch_latest_intelligence(es, 3)).items == []

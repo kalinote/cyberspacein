@@ -751,9 +751,20 @@ watch(currentPage, () => {
   }
 })
 
-watch(() => route.query.q, () => {
-  initSearchFromQuery()
-})
+watch(
+  [() => route.name, () => route.query.q, () => route.query.latest],
+  ([name, query, latest], [previousName, previousQuery, previousLatest]) => {
+    if (name !== 'search') return
+    if (query && query !== previousQuery) {
+      initSearchFromQuery()
+    } else if (!query && latest === '1' && (
+      previousName === 'home' || (previousName === 'search' && latest !== previousLatest)
+    )) {
+      // 首页每次进入都刷新最新情报，从详情返回时保留检索条件。
+      initSearchFromQuery()
+    }
+  }
+)
 function truncateContent(content, maxLength) {
       if (!content) return ''
       const tempDiv = document.createElement('div')
@@ -997,6 +1008,17 @@ function truncateContent(content, maxLength) {
     function initSearchFromQuery() {
       if (route.query.q) {
         searchQuery.value = route.query.q
+        currentPage.value = 1
+        performSearch()
+      } else if (route.query.latest === '1') {
+        searchQuery.value = ''
+        resetFilters()
+        nsfwFilter.value = 1
+        aigcFilter.value = 1
+        sortBy.value = 'time'
+        // 清除旧结果，避免重置分页时重复触发检索。
+        searchResults.value = []
+        totalResults.value = 0
         currentPage.value = 1
         performSearch()
       }

@@ -271,58 +271,67 @@
             <h2 class="text-3xl font-bold text-gray-900 mb-2">
               最新<span class="text-blue-500">情报</span>
             </h2>
-            <p class="text-gray-600">实时更新的高质量情报信息</p>
+            <p class="text-gray-600">按内容最后编辑时间排序，每分钟更新</p>
           </div>
-          <el-button type="primary" link @click="$router.push('/search')">
-            查看更多
-            <template #icon><Icon icon="mdi:arrow-right" /></template>
-          </el-button>
+          <div class="flex items-center gap-3">
+            <el-button link :loading="latestIntelligenceLoading" @click="fetchLatestIntelligence">
+              刷新
+              <template #icon><Icon icon="mdi:refresh" /></template>
+            </el-button>
+            <el-button type="primary" link @click="$router.push({ path: '/search', query: { latest: '1' } })">
+              查看更多
+              <template #icon><Icon icon="mdi:arrow-right" /></template>
+            </el-button>
+          </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <div
-            v-for="item in latestIntelligence"
-            :key="item.id"
-            class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
-          >
-            <div class="p-5">
-              <div class="flex justify-between items-start mb-3">
-                <el-tag
-                  :type="item.tagType"
-                  :class="item.tagClass"
-                  size="small"
-                >
-                  {{ item.category }}
-                </el-tag>
-                <span class="text-xs text-gray-500">{{ item.time }}</span>
-              </div>
-              <h3 class="font-bold text-gray-900 text-lg mb-2">
-                {{ item.title }}
-              </h3>
-              <p class="text-gray-600 text-sm mb-4">
-                {{ item.description }}
-              </p>
-              <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-2">
-                  <div
-                    :class="[
-                      'w-6 h-6 rounded-full flex items-center justify-center',
-                      item.sourceBgColor
-                    ]"
+        <div v-loading="latestIntelligenceLoading" class="min-h-48 mb-8" aria-live="polite">
+          <div v-if="latestIntelligenceError" class="bg-white rounded-xl border border-gray-200 p-10 text-center" role="alert">
+            <p class="text-gray-500 mb-3">最新情报加载失败，请稍后重试</p>
+            <el-button type="primary" plain @click="fetchLatestIntelligence">重试</el-button>
+          </div>
+          <el-empty v-else-if="!latestIntelligenceLoading && !latestIntelligence.length" description="暂无包含最后编辑时间的情报" />
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <router-link
+              v-for="item in latestIntelligence"
+              :key="`${item.entity_type}:${item.uuid}`"
+              :to="{ name: `${item.entity_type}-detail`, params: { uuid: item.uuid } }"
+              class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow focus-visible:outline-2 focus-visible:outline-blue-500"
+            >
+              <div class="p-5 h-full flex flex-col">
+                <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+                  <el-tag
+                    :type="item.entity_type === 'forum' ? 'success' : 'primary'"
+                    size="small"
                   >
-                    <Icon
-                      :icon="item.sourceIcon"
-                      :class="['text-xs', item.sourceIconColor]"
-                    />
-                  </div>
-                  <span class="text-xs text-gray-500">{{ item.sourceName }}</span>
+                    {{ item.entity_type === 'forum' ? '论坛' : '文章' }}
+                  </el-tag>
+                  <time :datetime="item.last_edit_at" class="text-xs text-gray-500">
+                    编辑于 {{ formatLatestEditAt(item.last_edit_at) }}
+                  </time>
                 </div>
-                <div :class="['flex items-center space-x-1', item.priorityColor]">
-                  <Icon icon="mdi:star" />
-                  <span class="text-xs font-medium">{{ item.priority }}</span>
+                <h3 class="font-bold text-gray-900 text-lg mb-2 line-clamp-2 break-words" :title="item.title || '无标题'">
+                  {{ item.title || item.clean_content?.slice(0, 40) || '无标题' }}
+                </h3>
+                <p class="text-gray-600 text-sm mb-4 line-clamp-3 break-words">
+                  {{ item.clean_content || '暂无正文摘要' }}
+                </p>
+                <div class="flex items-center justify-between gap-3 mt-auto">
+                  <div class="flex items-center space-x-2 min-w-0">
+                    <div class="w-6 h-6 shrink-0 bg-blue-100 rounded-full flex items-center justify-center">
+                      <Icon icon="mdi:source-repository" class="text-xs text-blue-600" />
+                    </div>
+                    <span class="text-xs text-gray-500 truncate" :title="[item.platform, item.section].filter(Boolean).join(' · ')">
+                      {{ item.platform || '未知平台' }}
+                    </span>
+                  </div>
+                  <div v-if="item.is_highlighted" class="flex items-center space-x-1 text-amber-500 shrink-0">
+                    <Icon icon="mdi:star" />
+                    <span class="text-xs font-medium">重点目标</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </router-link>
           </div>
         </div>
 
@@ -384,7 +393,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, markRaw } from "vue";
+import { ref, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick, markRaw } from "vue";
 import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
@@ -496,11 +505,27 @@ async function fetchSummaryStatus() {
   }
 }
 
-const latestIntelligence = ref([
-  { id: 1, category: "网络安全", tagType: "primary", tagClass: "", time: "2小时前", title: "新型钓鱼攻击模式在亚太地区活跃", description: "监测发现针对金融行业的针对性攻击，涉及新型社会工程学手段...", sourceIcon: "mdi:source-repository", sourceName: "威胁情报库", sourceBgColor: "bg-blue-100", sourceIconColor: "text-blue-600", priority: "高优先级", priorityColor: "text-amber-500" },
-  { id: 2, category: "市场动态", tagType: "success", tagClass: "", time: "5小时前", title: "科技行业并购活动Q3增长显著", description: "人工智能与数据安全领域成为投资热点，多家初创公司获得大额融资...", sourceIcon: "mdi:finance", sourceName: "商业数据源", sourceBgColor: "bg-green-100", sourceIconColor: "text-green-600", priority: "中优先级", priorityColor: "text-blue-500" },
-  { id: 3, category: "政策法规", tagType: "", tagClass: "bg-purple-50! text-purple-700!", time: "1天前", title: "多国更新数据隐私保护法规", description: "欧盟、美国及亚太地区相继出台或修订数据跨境传输相关规定...", sourceIcon: "mdi:scale-balance", sourceName: "政策数据库", sourceBgColor: "bg-purple-100", sourceIconColor: "text-purple-600", priority: "中优先级", priorityColor: "text-blue-500" }
-]);
+const latestIntelligence = ref([]);
+const latestIntelligenceLoading = ref(false);
+const latestIntelligenceError = ref(false);
+let latestIntelligenceTimer = null;
+
+/** 加载按内容最后编辑时间倒序排列的最新情报，供自动刷新和手动重试使用。 */
+async function fetchLatestIntelligence() {
+  if (latestIntelligenceLoading.value) return;
+  latestIntelligenceLoading.value = true;
+  latestIntelligenceError.value = false;
+  try {
+    const res = await overviewApi.getLatestIntelligence({ limit: 3 });
+    if (!Array.isArray(res?.data?.items)) throw new Error("最新情报响应格式错误");
+    latestIntelligence.value = res.data.items;
+  } catch {
+    latestIntelligence.value = [];
+    latestIntelligenceError.value = true;
+  } finally {
+    latestIntelligenceLoading.value = false;
+  }
+}
 
 const metrics = ref({
   report: { count: 312, percent: 78, trend: "+5.2%", color: "#3b82f6" },
@@ -868,7 +893,19 @@ onMounted(() => {
   initCharts();
 });
 
+onActivated(() => {
+  fetchLatestIntelligence();
+  latestIntelligenceTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") fetchLatestIntelligence();
+  }, 60000);
+});
+
+onDeactivated(() => {
+  window.clearInterval(latestIntelligenceTimer);
+});
+
 onBeforeUnmount(() => {
+  window.clearInterval(latestIntelligenceTimer);
   if (resizeHandler) {
     window.removeEventListener("resize", resizeHandler);
   }
