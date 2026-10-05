@@ -70,6 +70,7 @@
                 :key="blueprint.id"
                 :blueprint="blueprint"
                 :disabled="actionStarting"
+                @pin-change="blueprint.isPinned = $event"
                 @view="viewBlueprint(blueprint)"
                 @edit="editBlueprint(blueprint)"
                 @publish="openPublishDialog(blueprint)"
@@ -122,6 +123,15 @@
                 </template>
               </el-table-column>
               <el-table-column prop="executionDeadline" label="执行期限" width="150" />
+              <el-table-column
+                v-if="hasPerm(PERM.operations.action.blueprint.update)"
+                label="主页置顶"
+                width="140"
+              >
+                <template #default="{ row }">
+                  <BlueprintPinButton :blueprint="row" @change="row.isPinned = $event" />
+                </template>
+              </el-table-column>
               <el-table-column label="操作" width="420" fixed="right">
                 <template #default="{ row }">
                   <div class="flex items-center gap-2">
@@ -230,7 +240,7 @@
 
 <script setup>
 defineOptions({ name: 'ActionBlueprintList' })
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -241,6 +251,7 @@ import TemplateParamsDialog from '@/components/action/template/TemplateParamsDia
 import BlueprintPublishDialog from '@/components/action/BlueprintPublishDialog.vue'
 import BlueprintEncapsulateDialog from '@/components/action/BlueprintEncapsulateDialog.vue'
 import BlueprintRunControl from '@/components/action/BlueprintRunControl.vue'
+import BlueprintPinButton from '@/components/action/BlueprintPinButton.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
@@ -337,6 +348,7 @@ const fetchBlueprints = async () => {
         branchCount: item.branches || 0,
         stepCount: item.steps || 0,
         isTemplate: item.is_template || false,
+        isPinned: item.is_pinned || false,
         defaultSchedulingMode: item.default_scheduling_mode === 'streaming' ? 'streaming' : 'barrier',
         latestRevisionNumber: item.latest_revision_number,
         encapsulatedNodeCount: item.encapsulated_node_count || 0
@@ -584,7 +596,7 @@ const handleDeleteBlueprint = async (blueprint) => {
   }
 }
 
-onMounted(() => {
+onActivated(() => {
   fetchBlueprints()
 })
 </script>

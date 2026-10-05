@@ -24,6 +24,7 @@ from app.schemas.action.blueprint import (
     ActionBlueprintSchema,
     ActionBlueprintBaseInfoResponse,
     ActionBlueprintDetailResponseSchema,
+    ActionBlueprintPinSchema,
     ActionBlueprintUpdateResponseSchema,
     BlueprintEncapsulateRequest,
     BlueprintEncapsulateResponse,
@@ -179,6 +180,7 @@ def _blueprint_detail(
         graph=graph_model2schemas(blueprint.graph),
         created_at=blueprint.created_at,
         updated_at=blueprint.updated_at,
+        is_pinned=getattr(blueprint, "is_pinned", False),
         is_template=blueprint.is_template,
         template=TemplateSpecSchema(**blueprint.template) if blueprint.template else None,
         interface=getattr(blueprint, "interface", BlueprintInterfaceSpec()),
@@ -228,11 +230,15 @@ async def create_blueprint(data: ActionBlueprintSchema):
 
 @router.get("/list", response_model=PageResponseSchema[ActionBlueprintBaseInfoResponse], summary="获取蓝图列表")
 async def get_blueprints(
-    params: PageParamsSchema = Depends()
+    params: PageParamsSchema = Depends(),
+    is_pinned: bool | None = None,
 ):
     skip = (params.page - 1) * params.page_size
 
-    query = ActionBlueprintModel.find({"is_deleted": False})
+    filters = {"is_deleted": False}
+    if is_pinned is not None:
+        filters["is_pinned"] = True if is_pinned else {"$ne": True}
+    query = ActionBlueprintModel.find(filters)
     total = await query.count()
     blueprints = await query.sort("-created_at").skip(skip).limit(params.page_size).to_list()
 
@@ -267,6 +273,7 @@ async def get_blueprints(
             updated_at=blueprint.updated_at,
             steps=steps,
             branches=branches,
+            is_pinned=getattr(blueprint, "is_pinned", False),
             is_template=blueprint.is_template,
             latest_revision_number=(
                 latest_revision.revision_number if latest_revision else None
@@ -284,6 +291,24 @@ async def get_blueprint(blueprint_id: str):
         return ApiResponseSchema.error(code=240411, message=f"蓝图不存在，ID: {blueprint_id}")
 
     return ApiResponseSchema.success(data=_blueprint_detail(blueprint))
+
+
+@router.patch(
+    "/{blueprint_id}/pin",
+    response_model=ApiResponseSchema[ActionBlueprintPinSchema],
+    summary="设置蓝图全局置顶状态",
+)
+async def update_blueprint_pin(blueprint_id: str, data: ActionBlueprintPinSchema):
+    """只更新全局置顶字段，保留蓝图配置及更新时间。"""
+    result = await ActionBlueprintModel.find_one(
+        {"_id": blueprint_id, "is_deleted": False}
+    ).update({"$set": {"is_pinned": data.is_pinned}})
+    if result.matched_count == 0:
+        return ApiResponseSchema.error(
+            code=240411,
+            message=f"蓝图不存在，ID: {blueprint_id}",
+        )
+    return ApiResponseSchema.success(data=data)
 
 
 @router.put(

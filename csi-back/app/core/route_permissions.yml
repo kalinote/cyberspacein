@@ -86,6 +86,7 @@ routes:
   - {method: GET, path: "/action/blueprint/list", principal: user, permission: "operation:action:blueprint:read"}
   - {method: GET, path: "/action/blueprint/detail/{blueprint_id}", principal: user, permission: "operation:action:blueprint:read"}
   - {method: PUT, path: "/action/blueprint/{blueprint_id}", principal: user, permission: "operation:action:blueprint:update"}
+  - {method: PATCH, path: "/action/blueprint/{blueprint_id}/pin", principal: user, permission: "operation:action:blueprint:update"}
   - {method: POST, path: "/action/blueprint/{blueprint_id}/validate", principal: user, permission: "operation:action:blueprint:read"}
   - {method: POST, path: "/action/blueprint/{blueprint_id}/publish", principal: user, permission: "operation:action:blueprint-release:execute"}
   - {method: POST, path: "/action/blueprint/{blueprint_id}/encapsulate", principal: user, permission: "operation:action:blueprint-release:execute"}

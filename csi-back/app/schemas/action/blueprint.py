@@ -112,8 +112,14 @@ class ActionBlueprintSchema(BaseModel):
 class ActionBlueprintDetailResponseSchema(ActionBlueprintSchema):
     """行动蓝图响应"""
     id: str = Field(description="蓝图ID")
+    is_pinned: bool = Field(default=False, description="是否全局置顶到行动主页")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
+
+
+class ActionBlueprintPinSchema(BaseModel):
+    """行动蓝图全局置顶状态。"""
+    is_pinned: bool = Field(description="是否全局置顶到行动主页")
 
 
 class BlueprintScheduleImpactSchema(BaseModel):
@@ -148,6 +154,7 @@ class ActionBlueprintBaseInfoResponse(BaseModel):
     updated_at: datetime = Field(description="更新时间")
     steps: int = Field(description="总步骤数量")
     branches: int = Field(description="总分支数量")
+    is_pinned: bool = Field(default=False, description="是否全局置顶到行动主页")
     is_template: bool = Field(default=False, description="是否为模板")
     latest_revision_number: int | None = None
     encapsulated_node_count: int = 0

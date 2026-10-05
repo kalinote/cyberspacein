@@ -63,13 +63,13 @@
       </div>
     </section>
 
-    <!-- 最新行动蓝图 -->
+    <!-- 置顶行动蓝图 -->
     <section class="py-12 bg-linear-to-b from-white to-gray-50">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center mb-8">
           <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
             <Icon icon="mdi:file-document-multiple" class="text-blue-600 text-2xl" />
-            <span><span class="text-blue-500">行动</span>蓝图</span>
+            <span><span class="text-blue-500">置顶</span>行动蓝图</span>
           </h2>
           <el-button type="primary" link @click="router.push('/action/blueprints')">
             <template #icon><Icon icon="mdi:arrow-right" /></template>
@@ -77,6 +77,7 @@
           </el-button>
         </div>
 
+        <p class="text-sm text-gray-500 mb-6">展示全部已置顶蓝图，置顶设置对所有用户生效。</p>
         <div v-loading="loadingBlueprints" :element-loading-text="'加载中...'" class="min-h-[200px]">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
             <ActionBlueprintCard
@@ -84,6 +85,7 @@
               :key="blueprint.id"
               :blueprint="blueprint"
               :disabled="actionStarting"
+              @pin-change="commonBlueprints = commonBlueprints.filter(item => item.id !== blueprint.id)"
               @view="viewBlueprint(blueprint)"
               @edit="editBlueprint(blueprint)"
               @publish="openPublishDialog(blueprint)"
@@ -98,8 +100,11 @@
 
           <div v-if="!loadingBlueprints && commonBlueprints.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
             <Icon icon="mdi:file-document-outline" class="text-6xl text-gray-300 mb-4" />
-            <p class="text-gray-500 text-lg mb-2">暂无行动蓝图</p>
-            <p class="text-gray-400 text-sm">创建新蓝图后，将显示在这里</p>
+            <p class="text-gray-500 text-lg mb-2">暂无置顶蓝图</p>
+            <p class="text-gray-400 text-sm">在全部蓝图中点击置顶，即可在此处展示。</p>
+            <el-button type="primary" link class="mt-4" @click="router.push('/action/blueprints')">
+              去置顶蓝图
+            </el-button>
           </div>
         </div>
       </div>
@@ -506,7 +511,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -804,12 +809,22 @@ async function fetchRunningActions() {
 async function fetchCommonBlueprints() {
   loadingBlueprints.value = true
   try {
-    const result = await getPaginatedData(
-      actionApi.getBlueprintsBaseInfo,
-      { page: 1, page_size: 6 }
-    )
+    const items = []
+    let page = 1
+    let totalPages = 1
+    // 逐页取完置顶蓝图，展示数量不受接口单页上限影响。
+    do {
+      const result = await actionApi.getBlueprintsBaseInfo({
+        page,
+        page_size: 100,
+        is_pinned: true
+      })
+      items.push(...result.items)
+      totalPages = result.total_pages
+      page += 1
+    } while (page <= totalPages)
 
-    commonBlueprints.value = (result.items || []).map(item => {
+    commonBlueprints.value = items.map(item => {
       return {
         id: item.id,
         title: item.name || '',
@@ -822,6 +837,7 @@ async function fetchCommonBlueprints() {
         branchCount: item.branches || 0,
         stepCount: item.steps || 0,
         isTemplate: item.is_template || false,
+        isPinned: item.is_pinned || false,
         defaultSchedulingMode: item.default_scheduling_mode === 'streaming' ? 'streaming' : 'barrier',
         latestRevisionNumber: item.latest_revision_number,
         encapsulatedNodeCount: item.encapsulated_node_count || 0
@@ -940,8 +956,9 @@ async function viewBlueprint(blueprint) {
 
 onMounted(() => {
   fetchRunningActions()
-  fetchCommonBlueprints()
 })
+
+onActivated(fetchCommonBlueprints)
 </script>
 
 

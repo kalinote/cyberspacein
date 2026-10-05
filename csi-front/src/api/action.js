@@ -49,6 +49,10 @@ export const actionApi = {
   updateActionBlueprint(id, data) {
     return request.put(`/action/blueprint/${id}`, data)
   },
+  /** """设置蓝图的全局主页置顶状态。""" */
+  updateBlueprintPin(id, isPinned) {
+    return request.patch(`/action/blueprint/${id}/pin`, { is_pinned: isPinned })
+  },
   // 获取行动蓝图详情
   getBlueprint(id) {
     return request.get(`/action/blueprint/detail/${id}`)
