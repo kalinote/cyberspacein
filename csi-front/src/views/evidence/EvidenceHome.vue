@@ -1,33 +1,47 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div class="min-h-screen bg-linear-to-b from-white to-gray-50">
     <Header />
-    <section class="bg-linear-to-br from-blue-50 via-white to-indigo-50 py-12 border-b border-blue-100">
-      <div class="max-w-7xl mx-auto px-6 grid lg:grid-cols-3 gap-10 items-center">
-        <div class="lg:col-span-2">
-          <div class="flex items-center gap-2 text-blue-600 text-sm font-medium mb-4"><Icon icon="mdi:graph-outline" class="text-xl" />关联线索 · 验证判断 · 追溯变化</div>
-          <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">证据链</span>分析中心</h1>
-          <p class="text-gray-600 text-lg leading-8 max-w-2xl">将分散的实体、版本与分析线索组织成关系图谱。为每一条联系记录依据，让事件的发展与信息之间的关联清晰可查。</p>
-          <div class="flex gap-3 mt-7 flex-wrap">
-            <el-button data-evidence-tour="create" type="primary" size="large" :disabled="!canCreate" @click="openCreate('blank')"><Icon icon="mdi:plus" class="mr-2" />新建证据链</el-button>
-            <el-button data-evidence-tour="manage" size="large" @click="router.push('/evidence/chains')">管理证据链<Icon icon="mdi:arrow-right" class="ml-2" /></el-button>
-            <EvidenceUsageTour :steps="tourSteps" size="large" />
+    <section class="bg-linear-to-br from-blue-50 to-white py-12">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div class="lg:col-span-2">
+            <h1 class="text-4xl font-bold text-gray-900 mb-4"><span class="text-blue-500">证据链</span>分析中心</h1>
+            <p class="text-gray-600 text-lg mb-6">将分散的实体、版本与分析线索组织成关系图谱。为每一条联系记录依据，让事件的发展与信息之间的关联清晰可查。</p>
+            <div class="flex flex-wrap gap-4" v-loading="loading">
+              <div v-for="item in statItems" :key="item.key" class="bg-white rounded-xl p-4 shadow-sm border border-blue-100 flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center" :class="item.iconClass">
+                  <Icon :icon="item.icon" class="text-xl" />
+                </div>
+                <div>
+                  <p class="text-sm text-gray-500">{{ item.label }}</p>
+                  <p class="text-xl font-bold text-gray-900">{{ stats ? stats[item.key] : '—' }}</p>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="grid grid-cols-2 gap-4" v-loading="loading">
-          <div v-for="item in statItems" :key="item.key" class="bg-white border border-blue-100 rounded-xl p-5 shadow-sm">
-            <Icon :icon="item.icon" class="text-blue-500 text-xl mb-3" /><div class="text-3xl font-bold text-gray-900">{{ stats ? stats[item.key] : '—' }}</div><div class="text-sm text-gray-500 mt-1">{{ item.label }}</div>
+          <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">快速构建证据链</h3>
+            <div class="space-y-4">
+              <button data-evidence-tour="create" type="button" :disabled="!canCreate" class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed" @click="openCreate('blank')">
+                <Icon icon="mdi:plus" /><span>新建证据链</span>
+              </button>
+              <button data-evidence-tour="manage" type="button" class="w-full border-2 border-blue-200 text-blue-600 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2" @click="router.push('/evidence/chains')">
+                <Icon icon="mdi:graph-outline" /><span>管理证据链</span>
+              </button>
+              <div class="evidence-home-guide"><EvidenceUsageTour :steps="tourSteps" size="large" /></div>
+            </div>
           </div>
         </div>
       </div>
     </section>
-    <main class="max-w-7xl mx-auto px-6 py-10 space-y-10">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-12">
       <el-alert v-if="error" :title="error" type="error" show-icon :closable="false"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-      <section data-evidence-tour="templates"><h2 class="text-xl font-bold mb-5">从一个分析场景开始</h2><div class="grid md:grid-cols-4 gap-4">
+      <section data-evidence-tour="templates"><h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2 mb-8"><Icon icon="mdi:shape-outline" class="text-blue-600 text-2xl" /><span><span class="text-blue-500">分析</span>场景</span></h2><div class="grid md:grid-cols-4 gap-6">
         <button v-for="item in EVIDENCE_TEMPLATES" :key="item.id" :disabled="!canCreate" class="text-left bg-white border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-md transition-all disabled:opacity-50" @click="openCreate(item.id)">
           <Icon :icon="item.icon" class="text-2xl text-blue-500 mb-4" /><h3 class="font-bold mb-2">{{ item.name }}</h3><p class="text-sm text-gray-500 leading-6">{{ item.description }}</p>
         </button>
       </div></section>
-      <section data-evidence-tour="recent"><div class="flex items-center justify-between mb-5"><h2 class="text-xl font-bold">最近编辑</h2><router-link to="/evidence/chains" class="text-sm text-blue-600">查看全部 →</router-link></div>
+      <section data-evidence-tour="recent"><div class="flex items-center justify-between mb-8"><h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2"><Icon icon="mdi:history" class="text-blue-600 text-2xl" /><span><span class="text-blue-500">最近</span>编辑</span></h2><router-link to="/evidence/chains" class="text-sm text-blue-600">查看全部 →</router-link></div>
         <div v-if="stats?.recent.length" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
           <router-link v-for="chain in stats.recent" :key="chain.id" :to="`/evidence/chains/${chain.id}`" class="bg-white rounded-xl p-5 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all">
             <div class="flex items-center justify-between mb-3"><Icon icon="mdi:graph-outline" class="text-2xl text-blue-500" /><el-tag size="small" :type="chain.status === 'active' ? 'success' : 'info'">{{ CHAIN_STATUS[chain.status] }}</el-tag></div>
@@ -86,19 +100,23 @@ const tourSteps = [{
 const statItems = [{
   key: 'chains',
   label: '证据链',
-  icon: 'mdi:graph-outline'
+  icon: 'mdi:graph-outline',
+  iconClass: 'bg-blue-100 text-blue-600'
 }, {
   key: 'active',
   label: '分析中',
-  icon: 'mdi:progress-clock'
+  icon: 'mdi:progress-clock',
+  iconClass: 'bg-green-100 text-green-600'
 }, {
   key: 'nodes',
   label: '图中节点',
-  icon: 'mdi:circle-multiple-outline'
+  icon: 'mdi:circle-multiple-outline',
+  iconClass: 'bg-amber-100 text-amber-600'
 }, {
   key: 'edges',
   label: '已建立关系',
-  icon: 'mdi:vector-line'
+  icon: 'mdi:vector-line',
+  iconClass: 'bg-purple-100 text-purple-600'
 }];
 function openCreate(template) {
   selectedTemplate.value = template;
@@ -117,3 +135,20 @@ async function load() {
 }
 onMounted(load);
 </script>
+
+<style scoped>
+.evidence-home-guide :deep(.el-button) {
+  width: 100%;
+  height: auto;
+  padding: 12px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  color: #4b5563;
+}
+.evidence-home-guide :deep(.el-button:hover) {
+  background-color: #f9fafb;
+}
+</style>
