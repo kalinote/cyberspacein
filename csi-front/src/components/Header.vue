@@ -3,13 +3,16 @@
     <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-16">
         <div class="flex items-center">
-          <img
-            :src="brandLogoUrl"
-            alt="CyberSpaceIN"
-            width="208"
-            height="40"
-            class="h-10 w-52 shrink-0 object-cover"
-          />
+          <div class="flex shrink-0 items-center gap-2">
+            <img
+              :src="brandIconUrl"
+              alt=""
+              width="32"
+              height="32"
+              class="h-8 w-8 shrink-0 object-contain"
+            />
+            <span class="whitespace-nowrap text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
+          </div>
 
           <nav class="hidden md:flex ml-10 space-x-8">
             <router-link
@@ -230,7 +233,7 @@ defineOptions({ name: 'Header' })
 
 const router = useRouter()
 const route = useRoute()
-const brandLogoUrl = `${import.meta.env.BASE_URL}brand/cyberspacein-logo.png`
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/cyberspacein-icon.png`
 const showActionDropdown = ref(false)
 const showSystemDropdown = ref(false)
 const isSystemNavActive = computed(
