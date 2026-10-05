@@ -92,6 +92,7 @@
                   </div>
                 </div>
                 <div class="pt-3 border-t border-gray-200 flex items-center justify-between gap-2">
+                  <AddToEvidenceButton :entity="result" />
                   <router-link :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center text-sm font-medium">
                     <Icon icon="mdi:eye" class="mr-1" />
                     查看详情
@@ -129,6 +130,7 @@
 </template>
 
 <script setup>
+import AddToEvidenceButton from '@/components/evidence/AddToEvidenceButton.vue'
 import { ref, watch, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'

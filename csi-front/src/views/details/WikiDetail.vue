@@ -39,6 +39,7 @@
           </el-tag>
         </template>
         <template #extra>
+          <AddToEvidenceButton :entity="{ entity_type: 'wiki', uuid: wiki.id, title: wiki.title }" />
           <el-button
             v-if="wiki.revision"
             type="primary"
@@ -223,6 +224,7 @@
 </template>
 
 <script setup>
+import AddToEvidenceButton from '@/components/evidence/AddToEvidenceButton.vue'
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'

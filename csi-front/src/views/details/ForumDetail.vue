@@ -51,6 +51,7 @@
                     </el-tag>
                 </template>
                 <template #extra>
+                    <AddToEvidenceButton :entity="{ ...forumData, entity_type: 'forum' }" />
                     <el-link v-if="forumData.url" :href="forumData.url" target="_blank" type="primary" class="text-sm">
                         <template #icon>
                             <Icon icon="mdi:open-in-new" />
@@ -530,6 +531,7 @@
 </template>
 
 <script setup>
+import AddToEvidenceButton from '@/components/evidence/AddToEvidenceButton.vue'
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'

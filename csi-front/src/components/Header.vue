@@ -14,7 +14,7 @@
             <span class="whitespace-nowrap text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
           </div>
 
-          <nav class="hidden md:flex ml-10 space-x-8">
+          <nav class="hidden md:flex ml-5 lg:ml-8 gap-1 xl:gap-3 whitespace-nowrap">
             <router-link
               v-if="canViewOverview"
               :to="canAccessOverview ? '/' : route.fullPath"
@@ -102,6 +102,16 @@
               目标管理
             </router-link>
             <router-link
+              v-if="canViewEvidence"
+              :to="canAccessEvidence ? '/evidence' : route.fullPath"
+              class="font-medium px-4 py-2 rounded-md transition-colors"
+              :class="[
+                route.path.startsWith('/evidence') ? 'text-blue-600! bg-blue-50!' : '',
+                canAccessEvidence ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50' : 'text-gray-400 bg-gray-50 cursor-not-allowed'
+              ]"
+              @click="guardNav(canAccessEvidence, $event)"
+            >证据链</router-link>
+            <router-link
               v-if="canViewAgent"
               :to="canAccessAgent ? '/agent' : route.fullPath"
               class="font-medium px-4 py-2 rounded-md transition-colors"
@@ -178,8 +188,8 @@
           </nav>
         </div>
 
-        <div class="flex items-center space-x-10">
-          <div class="hidden md:block">
+        <div class="flex items-center gap-4">
+          <div class="hidden xl:block">
             <el-input
               v-if="canViewSearch"
               v-model="quickSearchQuery"
@@ -255,6 +265,8 @@ const canAccessAction = computed(() => hasPerm(PERM.pages.action.access))
 const canAccessActionTask = computed(() => hasPerm(PERM.pages.action.tasks.access))
 const canViewTarget = computed(() => hasPerm(PERM.pages.target.visible))
 const canAccessTarget = computed(() => hasPerm(PERM.pages.target.access))
+const canViewEvidence = computed(() => hasPerm(PERM.pages.evidence.visible))
+const canAccessEvidence = computed(() => hasPerm(PERM.pages.evidence.access))
 const canViewAgent = computed(() => hasPerm(PERM.pages.agent.visible))
 const canAccessAgent = computed(() => hasPerm(PERM.pages.agent.access))
 const canViewSystemConfig = computed(() => hasPerm(PERM.pages.system.config.visible))

@@ -310,6 +310,7 @@
                   <span v-else class="font-medium">{{ result.author_name }}</span>
                 </span>
                 <div class="flex items-center space-x-4">
+                  <AddToEvidenceButton :entity="result" />
                   <el-button 
                     type="primary" 
                     link
@@ -441,6 +442,7 @@
 </template>
 
 <script setup>
+import AddToEvidenceButton from '@/components/evidence/AddToEvidenceButton.vue'
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

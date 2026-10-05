@@ -42,6 +42,7 @@
                     </el-tag>
                 </template>
                 <template #extra>
+                    <AddToEvidenceButton :entity="{ ...articleData, entity_type: 'article' }" />
                     <el-link v-if="articleData.url" :href="articleData.url" target="_blank" type="primary" class="text-sm">
                         <template #icon>
                             <Icon icon="mdi:open-in-new" />
@@ -511,6 +512,7 @@
 </template>
 
 <script setup>
+import AddToEvidenceButton from '@/components/evidence/AddToEvidenceButton.vue'
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'

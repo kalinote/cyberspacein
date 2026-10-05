@@ -44,6 +44,7 @@ from app.models.auth.user import UserModel
 from app.models.auth.permission_code import PermissionCodeModel
 from app.models.auth.session import LoginSessionModel
 from app.models.wiki import WikiPageModel, WikiPageRevisionModel
+from app.models.evidence import EvidenceChainModel
 from app.models.system_config import SystemConfigVersionModel
 from app.models.runtime_event import RuntimeDomainEventModel
 from app.models.component_signal import ComponentSignalSnapshotModel
@@ -98,6 +99,7 @@ def get_all_models() -> List[Type[Document]]:
         PermissionCodeModel,
         LoginSessionModel,
         WikiPageModel,
+        EvidenceChainModel,
         WikiPageRevisionModel,
         SystemConfigVersionModel,
         RuntimeDomainEventModel,

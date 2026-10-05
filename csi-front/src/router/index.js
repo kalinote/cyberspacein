@@ -35,6 +35,21 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
+      path: '/evidence', name: 'evidence-home',
+      component: () => import('../views/evidence/EvidenceHome.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.evidence.access }
+    },
+    {
+      path: '/evidence/chains', name: 'evidence-list',
+      component: () => import('../views/evidence/EvidenceList.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.evidence.access }
+    },
+    {
+      path: '/evidence/chains/:id', name: 'evidence-editor',
+      component: () => import('../views/evidence/EvidenceEditor.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.evidence.access }
+    },
+    {
       path: '/login',
       name: 'login',
       component: Login

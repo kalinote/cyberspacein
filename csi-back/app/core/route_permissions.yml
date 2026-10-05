@@ -1,5 +1,12 @@
 version: "2026-07-30.1"
 routes:
+  - {method: GET, path: "/evidence/overview", principal: user, permission: "operation:evidence:chain:read"}
+  - {method: GET, path: "/evidence/chains", principal: user, permission: "operation:evidence:chain:read"}
+  - {method: POST, path: "/evidence/chains", principal: user, permission: "operation:evidence:chain:create"}
+  - {method: GET, path: "/evidence/chains/{chain_id}", principal: user, permission: "operation:evidence:chain:read"}
+  - {method: PUT, path: "/evidence/chains/{chain_id}", principal: user, permission: "operation:evidence:chain:update"}
+  - {method: DELETE, path: "/evidence/chains/{chain_id}", principal: user, permission: "operation:evidence:chain:delete"}
+  - {method: POST, path: "/evidence/resolve", principal: user, permission: "operation:evidence:chain:read"}
   - {method: POST, path: "/auth/login", principal: public}
   - {method: POST, path: "/auth/logout", principal: user}
   - {method: GET, path: "/auth/me", principal: user}

@@ -7,6 +7,12 @@ version: "2026-07-29.1"
 # 4. 新增或修改后端接口权限时，还要同步更新 route_permissions.yml；新增前端权限判断时，同步更新 csi-front/src/utils/permissions.js。
 # 5. 修改完成后运行后端权限/路由测试和前端测试；应用启动会将本清单幂等同步到 MongoDB，但不会重新启用已被管理员手动禁用的权限。
 permissions:
+  - {code: "page:evidence:visible", name: "证据链入口可见", module: "evidence", resource: "page", description: "证据链入口可见", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
+  - {code: "page:evidence:access", name: "证据链页面访问", module: "evidence", resource: "page", description: "证据链页面访问", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}
+  - {code: "operation:evidence:chain:read", name: "读取证据链", module: "evidence", resource: "chain", description: "读取证据链", tags: [read], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:evidence:chain:create", name: "创建证据链", module: "evidence", resource: "chain", description: "创建证据链", tags: [create], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:evidence:chain:update", name: "编辑证据链", module: "evidence", resource: "chain", description: "编辑证据链", tags: [update], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
+  - {code: "operation:evidence:chain:delete", name: "删除证据链", module: "evidence", resource: "chain", description: "删除证据链", tags: [delete], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: true}
   - {code: "*", name: "系统超级权限", module: "system", resource: "superuser", description: "仅供系统内置组使用", tags: [system, reserved], system_reserved: true, delegable: false, default_enabled: true, backend_enforced: true}
 
   - {code: "page:overview:visible", name: "总览入口可见", module: "overview", resource: "page", description: "显示总览入口", tags: [page], system_reserved: false, delegable: true, default_enabled: true, backend_enforced: false}

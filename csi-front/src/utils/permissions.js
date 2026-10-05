@@ -1,5 +1,6 @@
 export const PERM = Object.freeze({
   pages: {
+    evidence: { visible: 'page:evidence:visible', access: 'page:evidence:access' },
     overview: { visible: 'page:overview:visible', access: 'page:overview:access' },
     search: { visible: 'page:search:visible', access: 'page:search:access' },
     action: {
@@ -72,6 +73,14 @@ export const PERM = Object.freeze({
     }
   },
   operations: {
+    evidence: {
+      chain: {
+        read: 'operation:evidence:chain:read',
+        create: 'operation:evidence:chain:create',
+        update: 'operation:evidence:chain:update',
+        delete: 'operation:evidence:chain:delete'
+      }
+    },
     search: {
       entity: { execute: 'operation:search:entity:execute' },
       template: {
