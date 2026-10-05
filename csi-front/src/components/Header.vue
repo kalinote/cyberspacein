@@ -3,12 +3,13 @@
     <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-16">
         <div class="flex items-center">
-          <div class="flex items-center space-x-2">
-            <div class="w-8 h-8 bg-linear-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center">
-              <Icon icon="mdi:database-search" class="text-white text-lg" />
-            </div>
-            <span class="text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
-          </div>
+          <img
+            :src="brandLogoUrl"
+            alt="CyberSpaceIN"
+            width="208"
+            height="40"
+            class="h-10 w-52 shrink-0 object-cover"
+          />
 
           <nav class="hidden md:flex ml-10 space-x-8">
             <router-link
@@ -229,6 +230,7 @@ defineOptions({ name: 'Header' })
 
 const router = useRouter()
 const route = useRoute()
+const brandLogoUrl = `${import.meta.env.BASE_URL}brand/cyberspacein-logo.png`
 const showActionDropdown = ref(false)
 const showSystemDropdown = ref(false)
 const isSystemNavActive = computed(

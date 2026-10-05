@@ -110,154 +110,31 @@
       </div>
     </section>
 
-    <!-- 资源管理 -->
+    <!-- 正在运行的行动 -->
     <section class="py-12 bg-white">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center mb-8">
-          <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
-            <Icon icon="mdi:server-network" class="text-blue-600 text-2xl" />
-            <span><span class="text-blue-500">资源</span>管理</span>
-          </h2>
-          <el-button type="primary" link>
-            <template #icon><Icon icon="mdi:settings" /></template>
-            资源配置
-          </el-button>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="bg-linear-to-br from-blue-50 to-white rounded-2xl p-6 border border-blue-100 shadow-sm cursor-pointer">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-linear-to-br from-blue-500 to-cyan-400 rounded-xl flex items-center justify-center">
-                  <Icon icon="mdi:server" class="text-white text-2xl" />
-                </div>
-                <div>
-                  <h3 class="font-bold text-gray-900">代理网络</h3>
-                  <p class="text-sm text-gray-500">全球接入节点</p>
-                </div>
-              </div>
-              <span class="text-green-600 font-bold">87%</span>
-            </div>
-            <div class="space-y-3">
-              <div>
-                <div class="flex justify-between text-sm mb-1">
-                  <span class="text-gray-600">可用节点</span>
-                  <span class="font-medium">152/175</span>
-                </div>
-                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div class="h-full bg-green-500 rounded-full" style="width: 87%"></div>
-                </div>
-              </div>
-              <div class="grid grid-cols-2 gap-3 pt-3">
-                <div class="text-center p-3 bg-white rounded-lg">
-                  <p class="text-sm text-gray-500">响应延迟</p>
-                  <p class="text-lg font-bold text-gray-900">≤2.1s</p>
-                </div>
-                <div class="text-center p-3 bg-white rounded-lg">
-                  <p class="text-sm text-gray-500">可用地区</p>
-                  <p class="text-lg font-bold text-gray-900">24</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-linear-to-br from-amber-50 to-white rounded-2xl p-6 border border-amber-100 shadow-sm cursor-pointer">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-linear-to-br from-amber-500 to-orange-400 rounded-xl flex items-center justify-center">
-                  <Icon icon="mdi:account-key" class="text-white text-2xl" />
-                </div>
-                <div>
-                  <h3 class="font-bold text-gray-900">采集账号</h3>
-                  <p class="text-sm text-gray-500">平台身份资源</p>
-                </div>
-              </div>
-              <span class="text-amber-600 font-bold">64%</span>
-            </div>
-            <div class="space-y-3">
-              <div>
-                <div class="flex justify-between text-sm mb-1">
-                  <span class="text-gray-600">可用账号</span>
-                  <span class="font-medium">89/139</span>
-                </div>
-                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div class="h-full bg-amber-500 rounded-full" style="width: 64%"></div>
-                </div>
-              </div>
-              <div class="grid grid-cols-3 gap-2 pt-3">
-                <div class="text-center p-2 bg-white rounded-lg">
-                  <p class="text-xs text-gray-500">社交</p>
-                  <p class="text-sm font-bold text-gray-900">42</p>
-                </div>
-                <div class="text-center p-2 bg-white rounded-lg">
-                  <p class="text-xs text-gray-500">论坛</p>
-                  <p class="text-sm font-bold text-gray-900">31</p>
-                </div>
-                <div class="text-center p-2 bg-white rounded-lg">
-                  <p class="text-xs text-gray-500">新闻</p>
-                  <p class="text-sm font-bold text-gray-900">16</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-linear-to-br from-purple-50 to-white rounded-2xl p-6 border border-purple-100 shadow-sm cursor-pointer">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-linear-to-br from-purple-500 to-pink-400 rounded-xl flex items-center justify-center">
-                  <Icon icon="mdi:cube-outline" class="text-white text-2xl" />
-                </div>
-                <div>
-                  <h3 class="font-bold text-gray-900">沙盒容器</h3>
-                  <p class="text-sm text-gray-500">隔离执行环境</p>
-                </div>
-              </div>
-              <span class="text-purple-600 font-bold">92%</span>
-            </div>
-            <div class="space-y-3">
-              <div>
-                <div class="flex justify-between text-sm mb-1">
-                  <span class="text-gray-600">可用容器</span>
-                  <span class="font-medium">46/50</span>
-                </div>
-                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div class="h-full bg-purple-500 rounded-full" style="width: 92%"></div>
-                </div>
-              </div>
-              <div class="grid grid-cols-2 gap-3 pt-3">
-                <div class="text-center p-3 bg-white rounded-lg">
-                  <p class="text-sm text-gray-500">CPU负载</p>
-                  <p class="text-lg font-bold text-gray-900">34%</p>
-                </div>
-                <div class="text-center p-3 bg-white rounded-lg">
-                  <p class="text-sm text-gray-500">内存使用</p>
-                  <p class="text-lg font-bold text-gray-900">61%</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 行动执行监控 -->
-    <section class="py-12 bg-linear-to-b from-gray-50 to-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center mb-8">
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-8">
           <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
             <Icon icon="mdi:monitor-dashboard" class="text-blue-600 text-2xl" />
-            <span><span class="text-blue-500">行动</span>执行监控</span>
+            <span><span class="text-blue-500">正在运行</span>的行动</span>
           </h2>
-          <el-button type="primary" link @click="router.push('/action/history')">
-            <template #icon><Icon icon="mdi:arrow-right" /></template>
-            查看历史行动
-          </el-button>
+          <div class="flex items-center gap-4">
+            <el-button v-if="hasPerm(PERM.operations.action.instance.read)" type="primary" link :loading="loadingRunningActions" @click="fetchRunningActions">
+              <template #icon><Icon icon="mdi:refresh" /></template>
+              刷新
+            </el-button>
+            <el-button v-if="hasPerm(PERM.pages.action.history.access)" type="primary" link @click="router.push('/action/history')">
+              <template #icon><Icon icon="mdi:arrow-right" /></template>
+              查看历史行动
+            </el-button>
+          </div>
         </div>
 
         <!-- 正在执行的行动 -->
-        <div class="mb-12">
-          <div v-loading="loadingRunningActions" :element-loading-text="'加载中...'" class="min-h-[200px]">
-            <div v-if="runningActions.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
+        <div>
+          <div v-if="!hasPerm(PERM.operations.action.instance.read)" class="text-center text-gray-500 py-16">暂无权限查看运行中的行动</div>
+          <div v-else v-loading="loadingRunningActions" :element-loading-text="'加载中...'" class="min-h-[200px]">
+            <div v-if="!loadingRunningActions && runningActions.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
               <Icon icon="mdi:play-circle-outline" class="text-6xl text-gray-300 mb-4" />
               <p class="text-gray-500 text-lg mb-2">暂无正在执行的行动</p>
               <p class="text-gray-400 text-sm">创建新行动后，执行中的行动将显示在这里</p>
@@ -337,12 +214,12 @@
                 </div>
 
                 <div class="flex items-center gap-2 pt-4 border-t border-gray-200">
-                  <el-button type="primary" link size="small" class="flex-1" @click="viewActionDetail(action.id)">
+                  <el-button v-if="hasPerm(PERM.pages.action.detail.access)" type="primary" link size="small" class="flex-1" @click="viewActionDetail(action.id)">
                     <template #icon><Icon icon="mdi:eye" /></template>
                     查看详情
                   </el-button>
                   <el-button
-                    v-if="action.status === ACTION_STATUS.RUNNING"
+                    v-if="hasPerm(PERM.operations.action.instance.execute)"
                     type="warning"
                     link
                     size="small"
@@ -351,17 +228,7 @@
                     <template #icon><Icon icon="mdi:pause" /></template>
                     暂停
                   </el-button>
-                  <el-button
-                    v-else-if="action.status === ACTION_STATUS.PAUSED"
-                    type="success"
-                    link
-                    size="small"
-                    @click="resumeAction(action.id)"
-                  >
-                    <template #icon><Icon icon="mdi:play" /></template>
-                    恢复
-                  </el-button>
-                  <el-button type="danger" link size="small" @click="stopAction(action.id)">
+                  <el-button v-if="hasPerm(PERM.operations.action.instance.execute)" type="danger" link size="small" @click="stopAction(action.id)">
                     <template #icon><Icon icon="mdi:stop" /></template>
                     停止
                   </el-button>
@@ -371,96 +238,80 @@
           </div>
         </div>
 
-        <!-- 监控数据 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div class="bg-white rounded-2xl p-6 shadow-lg border border-red-100">
-            <h3 class="text-lg font-bold text-gray-900 mb-6">当前行动状态</h3>
-            <div class="space-y-4">
-              <div class="flex items-center justify-between p-4 bg-linear-to-r from-red-50 to-white rounded-xl border border-red-200">
-                <div class="flex items-center space-x-3">
-                  <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                    <Icon icon="mdi:alert-circle" class="text-red-600 text-xl" />
-                  </div>
-                  <div>
-                    <p class="font-medium text-gray-900">异常行为检测</p>
-                    <p class="text-sm text-gray-500">3个代理节点响应异常</p>
-                  </div>
-                </div>
-                <el-button type="danger" link size="small">查看详情</el-button>
-              </div>
+      </div>
+    </section>
 
-              <div class="flex items-center justify-between p-4 bg-linear-to-r from-green-50 to-white rounded-xl border border-green-200">
-                <div class="flex items-center space-x-3">
-                  <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <Icon icon="mdi:check-circle" class="text-green-600 text-xl" />
-                  </div>
-                  <div>
-                    <p class="font-medium text-gray-900">数据采集流量</p>
-                    <p class="text-sm text-gray-500">平均 2.4GB/小时，正常</p>
-                  </div>
-                </div>
-                <div class="text-green-600 text-sm font-medium">+12%</div>
-              </div>
-
-              <div class="flex items-center justify-between p-4 bg-linear-to-r from-blue-50 to-white rounded-xl border border-blue-200">
-                <div class="flex items-center space-x-3">
-                  <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Icon icon="mdi:chart-line" class="text-blue-600 text-xl" />
-                  </div>
-                  <div>
-                    <p class="font-medium text-gray-900">任务成功率</p>
-                    <p class="text-sm text-gray-500">今日成功 147/150 任务</p>
-                  </div>
-                </div>
-                <div class="text-blue-600 text-sm font-medium">98%</div>
-              </div>
-            </div>
+    <!-- 已启用的调度计划 -->
+    <section class="py-12 bg-linear-to-b from-gray-50 to-white">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-wrap justify-between items-center gap-4 mb-8">
+          <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+            <Icon icon="mdi:calendar-clock" class="text-blue-600 text-2xl" />
+            <span><span class="text-blue-500">已启用</span>的调度计划</span>
+          </h2>
+          <div class="flex items-center gap-4">
+            <el-button v-if="hasPerm(PERM.operations.action.schedule.read)" type="primary" link :loading="loadingSchedules" @click="fetchEnabledSchedules">
+              <template #icon><Icon icon="mdi:refresh" /></template>
+              刷新
+            </el-button>
+            <el-button v-if="hasPerm(PERM.pages.action.tasks.access)" type="primary" link @click="router.push('/action/component-tasks?tab=schedule')">
+              <template #icon><Icon icon="mdi:arrow-right" /></template>
+              管理调度计划
+            </el-button>
           </div>
+        </div>
 
-          <div class="bg-white rounded-2xl p-6 shadow-lg border border-red-100">
-            <h3 class="text-lg font-bold text-gray-900 mb-6">资源使用热图</h3>
-            <div class="grid grid-cols-4 gap-3">
-              <div class="col-span-4 h-6 bg-linear-to-r from-green-400 via-yellow-400 to-red-500 rounded-full mb-2"></div>
-              <div class="text-center">
-                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                  <Icon icon="mdi:server" class="text-green-600 text-2xl" />
-                </div>
-                <p class="text-xs text-gray-600">美洲节点</p>
-                <p class="text-sm font-bold text-gray-900">42%</p>
+        <div v-if="!hasPerm(PERM.operations.action.schedule.read)" class="text-center text-gray-500 py-16">暂无权限查看调度计划</div>
+        <div v-else v-loading="loadingSchedules" element-loading-text="加载中..." class="min-h-[200px] space-y-4">
+          <article v-for="schedule in enabledSchedules" :key="schedule.id" class="bg-white rounded-2xl p-6 shadow-sm border border-blue-100">
+            <div class="flex items-start gap-4">
+              <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
+                <Icon icon="mdi:calendar-check" class="text-green-600 text-2xl" />
               </div>
-              <div class="text-center">
-                <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                  <Icon icon="mdi:server" class="text-yellow-600 text-2xl" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="text-lg font-bold text-gray-900 break-words">{{ schedule.name }}</h3>
+                  <el-tag type="success" size="small" class="border-0">已启用</el-tag>
+                  <el-tag type="warning" size="small" class="border-0">优先级 {{ schedule.priority }}</el-tag>
                 </div>
-                <p class="text-xs text-gray-600">欧洲节点</p>
-                <p class="text-sm font-bold text-gray-900">68%</p>
-              </div>
-              <div class="text-center">
-                <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                  <Icon icon="mdi:server" class="text-orange-600 text-2xl" />
+                <p v-if="schedule.description" class="text-sm text-gray-500 mt-1 break-words">{{ schedule.description }}</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm mt-4">
+                  <div class="flex items-start gap-2">
+                    <Icon icon="mdi:graph-outline" class="text-blue-500 shrink-0 mt-0.5" />
+                    <span class="text-gray-500 shrink-0">行动蓝图</span>
+                    <span class="font-medium text-gray-900 break-words">{{ schedule.blueprint_name }}（{{ schedule.blueprint_version }}）</span>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <Icon icon="mdi:calendar-sync" class="text-green-500 shrink-0 mt-0.5" />
+                    <span class="font-medium text-gray-900 break-words">
+                      {{ schedule.schedule_type === 'interval'
+                        ? `每 ${formatScheduleDuration(schedule.interval_seconds)}执行`
+                        : `Cron：${schedule.cron_expression}（${cronToDescription(schedule.cron_expression) || '自定义'}）` }}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Icon icon="mdi:earth" class="text-cyan-500" />
+                    <span class="text-gray-500">时区</span>
+                    <span class="font-medium text-gray-900">{{ schedule.timezone }}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Icon icon="mdi:clock-outline" class="text-purple-500" />
+                    <span class="text-gray-500">下次执行（本地时间）</span>
+                    <span class="font-medium text-gray-900">{{ formatDateTime(schedule.next_run_at) }}</span>
+                  </div>
                 </div>
-                <p class="text-xs text-gray-600">亚洲节点</p>
-                <p class="text-sm font-bold text-gray-900">79%</p>
-              </div>
-              <div class="text-center">
-                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                  <Icon icon="mdi:server" class="text-red-600 text-2xl" />
-                </div>
-                <p class="text-xs text-gray-600">大洋洲节点</p>
-                <p class="text-sm font-bold text-gray-900">91%</p>
+                <p v-if="schedule.last_error" class="text-sm text-red-600 mt-3">{{ schedule.last_error }}</p>
               </div>
             </div>
-            <div class="mt-6 pt-6 border-t border-gray-200">
-              <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-600">建议操作</span>
-                <el-button type="primary" link size="small">优化资源分配</el-button>
-              </div>
-            </div>
+          </article>
+          <div v-if="!loadingSchedules && enabledSchedules.length === 0" class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
+            <Icon icon="mdi:calendar-blank-outline" class="text-6xl text-gray-300 mb-4" />
+            <p class="text-gray-500 text-lg mb-2">暂无已启用的调度计划</p>
+            <p class="text-gray-400 text-sm">启用调度计划后，将显示在这里</p>
           </div>
         </div>
       </div>
     </section>
-
     <!-- 蓝图流程图弹窗 -->
     <BlueprintFlowDialog
       v-model="blueprintDialogVisible"
@@ -511,7 +362,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onActivated } from 'vue'
+import { ref, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -522,9 +373,11 @@ import TemplateParamsDialog from '@/components/action/template/TemplateParamsDia
 import BlueprintPublishDialog from '@/components/action/BlueprintPublishDialog.vue'
 import BlueprintEncapsulateDialog from '@/components/action/BlueprintEncapsulateDialog.vue'
 import { actionApi } from '@/api/action'
-import { getPaginatedData } from '@/utils/request'
-import { ACTION_STATUS, getActionStatusIcon } from '@/utils/action'
+import { actionScheduleApi } from '@/api/actionSchedule'
+import { ACTION_STATUS, getActionStatusIcon, cronToDescription, formatDateTime, formatDuration as formatScheduleDuration } from '@/utils/action'
 import { buildActionRunRequest } from '@/utils/action/run'
+import { PERM } from '@/utils/permissions'
+import { hasPerm } from '@/utils/permissionKit'
 
 defineOptions({ name: 'Action' })
 
@@ -549,6 +402,8 @@ const revisions = ref([])
 const loadingRunningActions = ref(false)
 const loadingBlueprints = ref(false)
 const runningActions = ref([])
+const loadingSchedules = ref(false)
+const enabledSchedules = ref([])
 const commonBlueprints = ref([])
 const formatPublishedAt = value => (
   value ? new Date(value).toLocaleString('zh-CN') : '-'
@@ -779,30 +634,78 @@ function formatImplementationPeriod(seconds) {
 }
 
 async function fetchRunningActions() {
+  if (!hasPerm(PERM.operations.action.instance.read)) {
+    runningActions.value = []
+    return
+  }
+  if (loadingRunningActions.value) return
   loadingRunningActions.value = true
   try {
-    const result = await getPaginatedData(actionApi.getActionHistory, {
-      page: 1,
-      page_size: 100
-    })
-    runningActions.value = (result.items || [])
-      .filter(item => [ACTION_STATUS.RUNNING, ACTION_STATUS.PAUSED].includes(item.status))
-      .slice(0, 3)
-      .map(item => ({
-        ...item,
-        startTime: item.start_at || null,
-        endTime: item.finished_at || null,
-        completedSteps: item.completed_steps || 0,
-        totalSteps: item.total_steps || 0,
-        duration: item.duration ? item.duration * 1000 : 0,
-        progress: item.progress ?? 0,
-        schedulingMode: item.scheduling_mode === 'streaming' ? 'streaming' : 'barrier'
-      }))
+    const items = []
+    let page = 1
+    let totalPages = 1
+    do {
+      const response = await actionApi.getActionHistory({
+        page,
+        page_size: 100,
+        status: ACTION_STATUS.RUNNING
+      })
+      const result = response.code === 0 ? response.data : response
+      items.push(...result.items)
+      totalPages = result.total_pages
+      page += 1
+    } while (page <= totalPages)
+    runningActions.value = items.map(item => ({
+      ...item,
+      startTime: item.start_at || null,
+      endTime: item.finished_at || null,
+      completedSteps: item.completed_steps || 0,
+      totalSteps: item.total_steps || 0,
+      duration: item.duration ? item.duration * 1000 : 0,
+      progress: item.progress ?? 0,
+      schedulingMode: item.scheduling_mode === 'streaming' ? 'streaming' : 'barrier'
+    }))
   } catch (error) {
     console.error('获取行动列表失败:', error)
+    ElMessage.error('获取正在运行的行动失败')
     runningActions.value = []
   } finally {
     loadingRunningActions.value = false
+  }
+}
+
+/**
+ * 获取全部已启用的调度计划，按接口分页加载并兼容统一响应封装。
+ * @returns {Promise<void>} 完成列表更新，并在失败时清空结果和提示错误。
+ */
+async function fetchEnabledSchedules() {
+  if (!hasPerm(PERM.operations.action.schedule.read)) {
+    enabledSchedules.value = []
+    return
+  }
+  if (loadingSchedules.value) return
+  loadingSchedules.value = true
+  try {
+    const items = []
+    let page = 1
+    let totalPages = 1
+    do {
+      const response = await actionScheduleApi.getSchedules({
+        page,
+        page_size: 100,
+        enabled: true
+      })
+      const result = response.code === 0 ? response.data : response
+      items.push(...result.items)
+      totalPages = result.total_pages
+      page += 1
+    } while (page <= totalPages)
+    enabledSchedules.value = items
+  } catch (error) {
+    ElMessage.error('获取已启用的调度计划失败')
+    enabledSchedules.value = []
+  } finally {
+    loadingSchedules.value = false
   }
 }
 
@@ -904,20 +807,6 @@ async function pauseAction(actionId) {
   }
 }
 
-async function resumeAction(actionId) {
-  try {
-    const response = await actionApi.resumeAction(actionId)
-    if (response.code !== 0) {
-      ElMessage.error(response.message || '恢复行动失败')
-      return
-    }
-    ElMessage.success(response.message || '行动已恢复')
-    await fetchRunningActions()
-  } catch (error) {
-    ElMessage.error(error?.message || '恢复行动失败')
-  }
-}
-
 async function stopAction(actionId) {
   try {
     await ElMessageBox.confirm('确定要停止此行动吗？此操作不可恢复。', '确认停止', {
@@ -956,10 +845,8 @@ async function viewBlueprint(blueprint) {
   blueprintDialogVisible.value = true
 }
 
-onMounted(() => {
-  fetchRunningActions()
-})
-
+onActivated(fetchRunningActions)
+onActivated(fetchEnabledSchedules)
 onActivated(fetchCommonBlueprints)
 </script>
 

@@ -2,8 +2,14 @@
   <div class="min-h-screen bg-gray-50 flex items-center justify-center p-6">
     <el-card class="w-full max-w-md">
       <template #header>
-        <div class="flex items-center justify-between">
-          <span class="text-lg font-bold text-gray-900">系统登录</span>
+        <div class="flex flex-col items-center gap-3">
+          <img
+            :src="brandLogoUrl"
+            alt="CyberSpaceIN"
+            width="260"
+            height="50"
+            class="h-[50px] w-65 max-w-full object-cover"
+          />
         </div>
       </template>
 
@@ -34,6 +40,7 @@ defineOptions({ name: 'Login' })
 
 const router = useRouter()
 const route = useRoute()
+const brandLogoUrl = `${import.meta.env.BASE_URL}brand/cyberspacein-logo.png`
 
 const devUser = import.meta.env.VITE_DEV_LOGIN_USERNAME
 const devPass = import.meta.env.VITE_DEV_LOGIN_PASSWORD
