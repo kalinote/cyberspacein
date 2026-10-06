@@ -913,21 +913,24 @@ class AgentRunner:
     def _drop_orphan_tool_results(
         messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Drop tool results that have no matching assistant tool_call earlier in the history."""
+        """仅保留紧邻调用批次中尚未匹配的工具返回，不修改持久化历史。"""
         declared: set[str] = set()
         updated: list[dict[str, Any]] | None = None
         for idx, msg in enumerate(messages):
             role = msg.get("role")
+            if role != "tool":
+                declared = set()
             if role == "assistant":
                 for tc in msg.get("tool_calls") or []:
                     if isinstance(tc, dict) and tc.get("id"):
                         declared.add(str(tc["id"]))
             if role == "tool":
                 tid = msg.get("tool_call_id")
-                if tid and str(tid) not in declared:
+                if not tid or str(tid) not in declared:
                     if updated is None:
                         updated = [dict(m) for m in messages[:idx]]
                     continue
+                declared.remove(str(tid))
             if updated is not None:
                 updated.append(dict(msg))
 
@@ -939,25 +942,31 @@ class AgentRunner:
     def _backfill_missing_tool_results(
         messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Insert synthetic error results for orphaned tool_use blocks."""
-        declared: list[tuple[int, str, str]] = []  # (assistant_idx, call_id, name)
-        fulfilled: set[str] = set()
+        """按调用批次补齐缺失返回，避免跨回合复用 ID 时错误配对。
+
+        Args:
+            messages: 模型请求历史，工具返回应紧邻对应的调用消息。
+
+        Returns:
+            仅在缺失批次中补入结果不可用提示的新列表；不会重新执行工具。
+        """
+        missing: list[tuple[int, str, str]] = []
         for idx, msg in enumerate(messages):
-            role = msg.get("role")
-            if role == "assistant":
-                for tc in msg.get("tool_calls") or []:
-                    if isinstance(tc, dict) and tc.get("id"):
-                        name = ""
-                        func = tc.get("function")
-                        if isinstance(func, dict):
-                            name = func.get("name", "")
-                        declared.append((idx, str(tc["id"]), name))
-            elif role == "tool":
-                tid = msg.get("tool_call_id")
+            if msg.get("role") != "assistant" or not msg.get("tool_calls"):
+                continue
+            fulfilled: set[str] = set()
+            cursor = idx + 1
+            while cursor < len(messages) and messages[cursor].get("role") == "tool":
+                tid = messages[cursor].get("tool_call_id")
                 if tid:
                     fulfilled.add(str(tid))
+                cursor += 1
+            for tc in msg["tool_calls"]:
+                if isinstance(tc, dict) and tc.get("id") and str(tc["id"]) not in fulfilled:
+                    func = tc.get("function")
+                    name = func.get("name", "") if isinstance(func, dict) else ""
+                    missing.append((idx, str(tc["id"]), name))
 
-        missing = [(ai, cid, name) for ai, cid, name in declared if cid not in fulfilled]
         if not missing:
             return messages
 

@@ -146,7 +146,8 @@ class MongoSessionStore:
         update_pipeline = [
             {
                 "$set": {
-                    "metadata": session.metadata,
+                    # 整体替换检查点，避免旧字段残留或正文被当成聚合表达式。
+                    "metadata": {"$literal": session.metadata},
                     "last_consolidated_seq": session.last_consolidated,
                     "last_message_seq": {
                         "$add": [
