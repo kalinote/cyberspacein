@@ -113,6 +113,7 @@
                                 :on-events-scroll="onEventsScroll"
                                 :history-loading="historyLoading"
                                 :has-more-history="hasMoreHistory"
+                                @load-older="loadOlderEvents"
                                 scroll-class="border-t border-gray-100"
                             />
                         </div>
@@ -244,6 +245,7 @@ const {
     timelineItems,
     hasMoreHistory,
     historyLoading,
+    loadOlderEvents,
     sseConnected,
     showApprovalDialog,
     pendingApproval,

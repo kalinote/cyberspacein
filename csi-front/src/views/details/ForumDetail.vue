@@ -413,6 +413,7 @@
                                         :on-events-scroll="onEventsScroll"
                                         :history-loading="historyLoading"
                                         :has-more-history="hasMoreHistory"
+                                        @load-older="loadOlderEvents"
                                         v-model:user-prompt="userPrompt"
                                         :send-loading="sendLoading"
                                         :cancel-loading="cancelLoading"
@@ -599,6 +600,7 @@ const {
     timelineItems,
     hasMoreHistory,
     historyLoading,
+    loadOlderEvents,
     sseConnected,
     showApprovalDialog,
     pendingApproval,

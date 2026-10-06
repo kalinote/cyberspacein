@@ -24,14 +24,17 @@
                 <p class="text-sm font-medium text-gray-500 text-center">{{ emptyText }}</p>
             </div>
             <div v-else class="mx-auto w-full max-w-3xl pt-3">
-                <div v-if="historyLoading" class="text-center text-xs text-gray-400 py-2">
-                    加载更早事件...
-                </div>
-                <div
-                    v-else-if="hasMoreHistory && timelineItems.length"
-                    class="text-center text-xs text-gray-400 py-1"
-                >
-                    向上滚动加载更多
+                <div v-if="hasMoreHistory" class="text-center py-1">
+                    <button
+                        type="button"
+                        class="text-xs text-blue-500 hover:text-blue-600 disabled:text-gray-400 disabled:cursor-wait"
+                        :disabled="historyLoading"
+                        :aria-busy="historyLoading"
+                        title="点击加载更早事件，也可向上滚动加载"
+                        @click="emit('load-older')"
+                    >
+                        {{ historyLoading ? '正在加载更早事件...' : '加载更早事件' }}
+                    </button>
                 </div>
                 <AgentSseTimelineItem v-if="runDetails" :item="runDetails" class="mb-6" />
                 <div class="space-y-6 min-w-0">
@@ -87,6 +90,7 @@ const props = defineProps({
     },
 })
 
+const emit = defineEmits(['load-older'])
 const scrollEl = ref(null)
 const displayTimeline = computed(() => buildAgentTimelineDisplay(props.timelineItems))
 const activityItems = computed(() => displayTimeline.value.activityItems)

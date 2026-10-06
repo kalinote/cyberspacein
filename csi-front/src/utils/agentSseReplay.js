@@ -45,7 +45,12 @@ export function fetchReplayBatch(url, { expectedLimit, eventTypes = AGENT_SSE_RE
             idleTimer = setTimeout(finish, idleMs)
         }
 
-        scheduleIdleFinish()
+        // 建连期间只处理超时，收到响应后才用空闲间隔判断回放完成。
+        idleTimer = setTimeout(() => {
+            finished = true
+            controller.abort()
+            reject(new Error('加载历史事件超时，请重试'))
+        }, 30000)
         openAuthenticatedSse(url, {
             signal: controller.signal,
             onOpen: scheduleIdleFinish,

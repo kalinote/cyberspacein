@@ -325,10 +325,12 @@ export function useAgentSessionStream(options = {}) {
         if (!batchItems.length) return
         const el = eventsScrollEl.value
         const prevHeight = el?.scrollHeight ?? 0
+        const prevTop = el?.scrollTop ?? 0
         timelineItems.value = [...batchItems, ...timelineItems.value]
         await nextTick()
         if (el) {
-            el.scrollTop += el.scrollHeight - prevHeight
+            el.scrollTop = prevTop + el.scrollHeight - prevHeight
+            updateEventsScrollState()
         }
     }
 
@@ -363,7 +365,6 @@ export function useAgentSessionStream(options = {}) {
         clearInitialReplayTracking()
         initialReplayPending = true
         initialReplayCount = 0
-        scheduleInitialReplayFinalize()
     }
 
     function noteInitialReplayEvent() {
@@ -373,7 +374,7 @@ export function useAgentSessionStream(options = {}) {
     }
 
     async function loadOlderEvents() {
-        if (!hasMoreHistory.value || historyLoading.value) return
+        if (!replayReadyForPagination.value || !hasMoreHistory.value || historyLoading.value) return
         if (!resolvedAgentId.value || !sessionId.value) return
 
         historyLoading.value = true
@@ -438,6 +439,8 @@ export function useAgentSessionStream(options = {}) {
 
     /** @param {boolean} [force] */
     function scrollEventsToBottom(force = false) {
+        // 补载历史时由 prependTimelineBatch 保持阅读位置，避免自动跟随到底部。
+        if (historyLoading.value) return
         if (!force && !isEventsScrollAtBottom.value) return
         const el = eventsScrollEl.value
         if (!el) return
@@ -588,6 +591,8 @@ export function useAgentSessionStream(options = {}) {
                 signal: controller.signal,
                 onOpen: () => {
                     if (generation !== connectionGeneration || controller.signal.aborted) return
+                    // 连接建立后再判断回放结束，避免将建连等待误判为空历史。
+                    if (initialReplayPending) scheduleInitialReplayFinalize()
                     sseConnected.value = true
                     sseError.value = ''
                     retryCount = 0
@@ -864,8 +869,9 @@ export function useAgentSessionStream(options = {}) {
         cancelLoading,
         todos,
         timelineItems,
-        hasMoreHistory,
+        hasMoreHistory: computed(() => replayReadyForPagination.value && hasMoreHistory.value),
         historyLoading,
+        loadOlderEvents,
         showApprovalDialog,
         pendingApproval,
         approvalReason,

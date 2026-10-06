@@ -16,6 +16,7 @@
                 :on-events-scroll="onEventsScroll"
                 :history-loading="historyLoading"
                 :has-more-history="hasMoreHistory"
+                @load-older="emit('load-older')"
                 empty-text="等待事件推送"
             >
                 <template #header-extra>
@@ -132,5 +133,5 @@ defineProps({
     },
 })
 
-const emit = defineEmits(['open-fullscreen', 'update:userPrompt', 'send', 'cancel'])
+const emit = defineEmits(['open-fullscreen', 'update:userPrompt', 'send', 'cancel', 'load-older'])
 </script>
