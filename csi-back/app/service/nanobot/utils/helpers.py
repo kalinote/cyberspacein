@@ -10,8 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import tiktoken
 from loguru import logger
+
+from app.service.nanobot.utils.tokenizer import get_token_encoder
 
 
 def strip_think(text: str) -> str:
@@ -296,7 +297,6 @@ def estimate_prompt_tokens(
     reasoning_content, tool_call_id, name, plus per-message framing overhead.
     """
     try:
-        enc = tiktoken.get_encoding("cl100k_base")
         parts: list[str] = []
         for msg in messages:
             content = msg.get("content")
@@ -326,7 +326,7 @@ def estimate_prompt_tokens(
             parts.append(json.dumps(tools, ensure_ascii=False))
 
         per_message_overhead = len(messages) * 4
-        return len(enc.encode("\n".join(parts))) + per_message_overhead
+        return _count_text_tokens("\n".join(parts)) + per_message_overhead
     except Exception:
         return 0
 
@@ -363,10 +363,17 @@ def estimate_message_tokens(message: dict[str, Any]) -> int:
     if not payload:
         return 4
     try:
-        enc = tiktoken.get_encoding("cl100k_base")
-        return max(4, len(enc.encode(payload)) + 4)
+        return max(4, _count_text_tokens(payload) + 4)
     except Exception:
-        return max(4, len(payload) // 4 + 4)
+        return max(4, len(payload.encode("utf-8")) + 4)
+
+
+def _count_text_tokens(text: str) -> int:
+    """优先使用词表，加载失败时以 UTF-8 字节数保守估算。"""
+    encoder = get_token_encoder()
+    if encoder is None:
+        return len(text.encode("utf-8"))
+    return len(encoder.encode(text, disallowed_special=()))
 
 
 def estimate_prompt_tokens_chain(
@@ -387,7 +394,8 @@ def estimate_prompt_tokens_chain(
 
     estimated = estimate_prompt_tokens(messages, tools)
     if estimated > 0:
-        return int(estimated), "tiktoken"
+        source = "tiktoken" if get_token_encoder() is not None else "utf8_upper_bound"
+        return int(estimated), source
     return 0, "none"
 
 

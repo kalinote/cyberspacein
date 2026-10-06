@@ -259,7 +259,10 @@ class AgentRunner:
                 messages_for_model = self._backfill_missing_tool_results(messages_for_model)
                 messages_for_model = self._microcompact(messages_for_model)
                 messages_for_model = self._apply_tool_result_budget(spec, messages_for_model)
-                messages_for_model = self._snip_history(spec, messages_for_model)
+                # 词表初始化和大段文本编码不能占用负责 Worker 心跳的事件循环。
+                messages_for_model = await asyncio.to_thread(
+                    self._snip_history, spec, messages_for_model,
+                )
                 # Snipping may have created new orphans; clean them up.
                 messages_for_model = self._drop_orphan_tool_results(messages_for_model)
                 messages_for_model = self._backfill_missing_tool_results(messages_for_model)
