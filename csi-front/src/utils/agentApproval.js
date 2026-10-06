@@ -1,6 +1,7 @@
 export const APPROVAL_SOURCE_MODIFY_ENTITY = 'tool:modify_entity'
 export const APPROVAL_SOURCE_WIKI_CREATE = 'tool:wiki_create'
 export const APPROVAL_SOURCE_WIKI_EDIT = 'tool:wiki_edit'
+export const APPROVAL_SOURCES_EVIDENCE = ['tool:evidence_create', 'tool:evidence_save', 'tool:evidence_delete']
 
 const ENTITY_CATEGORY_LABELS = {
     person: '人物',
@@ -48,6 +49,9 @@ const SOURCE_LABELS = {
     [APPROVAL_SOURCE_MODIFY_ENTITY]: '修改实体',
     [APPROVAL_SOURCE_WIKI_CREATE]: '创建 Wiki 页面',
     [APPROVAL_SOURCE_WIKI_EDIT]: '编辑 Wiki 页面',
+    'tool:evidence_create': '创建证据链',
+    'tool:evidence_save': '保存证据链',
+    'tool:evidence_delete': '删除证据链',
 }
 
 const DETAIL_ROUTE_ENTITY_TYPES = new Set(['article', 'forum', 'platform'])

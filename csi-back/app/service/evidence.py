@@ -271,7 +271,9 @@ async def delete_chain(chain_id: str, expected_revision: int) -> None:
             raise ApiException(240409, "证据链已变化，请刷新列表后重试")
 
 
-async def list_chains(q: str, status: str | None, page: int, page_size: int) -> dict:
+async def list_chains(
+    q: str, status: str | None, page: int, page_size: int, tags: list[str] | None = None
+) -> dict:
     """搜索证据链元数据并分页。"""
     filters = {"deleted": False}
     if q.strip():
@@ -281,6 +283,8 @@ async def list_chains(q: str, status: str | None, page: int, page_size: int) -> 
         ]
     if status:
         filters["status"] = status
+    if tags:
+        filters["tags"] = {"$all": tags}
     collection = EvidenceChainModel.get_motor_collection().with_options(
         codec_options=CodecOptions(tz_aware=True)
     )

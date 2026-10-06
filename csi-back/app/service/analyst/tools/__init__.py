@@ -18,6 +18,10 @@
 """
 
 from app.service.analyst.tools.get_current_time import GetCurrentTimeTool
+from app.service.analyst.tools.evidence import (
+    EvidenceListTool, EvidenceReadTool, EvidenceResolveTool, EvidenceCreateTool,
+    EvidenceSaveTool, EvidenceValidateTool, EvidenceDeleteTool,
+)
 from app.service.analyst.tools.get_entity import GetEntityTool
 from app.service.analyst.tools.search_entities import SearchEntitiesTool
 from app.service.analyst.tools.modify_entity import ModifyEntityTool
@@ -40,6 +44,8 @@ from app.service.analyst.tools.wiki import (
 from app.service.analyst.tools.write_todos import WriteTodosTool
 
 __all__ = [
+    "EvidenceListTool", "EvidenceReadTool", "EvidenceResolveTool", "EvidenceCreateTool",
+    "EvidenceSaveTool", "EvidenceValidateTool", "EvidenceDeleteTool",
     "AnalystWebToolsRuntime",
     "WEB_RUNTIME",
     "resolve_outbound_proxy",
