@@ -1,9 +1,9 @@
 <template>
   <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-blue-100 transition-all duration-300">
     <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex justify-between items-center h-16">
-        <div class="flex items-center">
-          <div class="flex shrink-0 items-center gap-2">
+      <div class="flex flex-wrap justify-between items-center gap-x-4 lg:gap-x-6">
+        <div class="contents lg:flex lg:min-w-0 lg:flex-1 lg:items-center">
+          <div class="flex h-16 shrink-0 items-center gap-2">
             <img
               :src="brandIconUrl"
               alt=""
@@ -14,11 +14,11 @@
             <span class="whitespace-nowrap text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
           </div>
 
-          <nav class="hidden md:flex ml-5 lg:ml-8 gap-1 xl:gap-3 whitespace-nowrap">
+          <nav class="order-last hidden w-full min-w-0 items-center justify-evenly gap-1 pb-3 whitespace-nowrap md:flex lg:order-none lg:ml-6 lg:w-auto lg:flex-1 lg:pb-0">
             <router-link
               v-if="canViewOverview"
               :to="canAccessOverview ? '/' : route.fullPath"
-              class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors"
+              class="shrink-0 text-gray-600 hover:text-blue-600 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md hover:bg-blue-50 transition-colors"
               :class="!canAccessOverview ? 'text-gray-400 bg-gray-50 cursor-not-allowed' : ''"
               active-class="!text-blue-600 !bg-blue-50"
               @click="guardNav(canAccessOverview, $event)"
@@ -26,7 +26,7 @@
             <router-link
               v-if="canViewSearch"
               :to="canAccessSearch ? '/search' : route.fullPath"
-              class="font-medium px-4 py-2 rounded-md transition-colors"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/search' ? 'text-blue-600! bg-blue-50!' : '',
                 canAccessSearch
@@ -39,13 +39,13 @@
             </router-link>
             <div
               v-if="canViewAction"
-              class="relative"
+              class="relative shrink-0"
               @mouseenter="showActionDropdown = true"
               @mouseleave="showActionDropdown = false"
             >
               <router-link
                 :to="canAccessAction ? '/action' : route.fullPath"
-                class="font-medium px-4 py-2 rounded-md transition-colors flex items-center space-x-1"
+                class="font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors flex items-center space-x-1"
                 :class="[
                   route.path.startsWith('/action') ? 'text-blue-600! bg-blue-50!' : '',
                   canAccessAction
@@ -90,7 +90,7 @@
             <router-link
               v-if="canViewTarget"
               :to="canAccessTarget ? '/target' : route.fullPath"
-              class="font-medium px-4 py-2 rounded-md transition-colors"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/target' ? 'text-blue-600! bg-blue-50!' : '',
                 canAccessTarget
@@ -104,7 +104,7 @@
             <router-link
               v-if="canViewEvidence"
               :to="canAccessEvidence ? '/evidence' : route.fullPath"
-              class="font-medium px-4 py-2 rounded-md transition-colors"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path.startsWith('/evidence') ? 'text-blue-600! bg-blue-50!' : '',
                 canAccessEvidence ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50' : 'text-gray-400 bg-gray-50 cursor-not-allowed'
@@ -114,7 +114,7 @@
             <router-link
               v-if="canViewAgent"
               :to="canAccessAgent ? '/agent' : route.fullPath"
-              class="font-medium px-4 py-2 rounded-md transition-colors"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/agent' ? 'text-blue-600! bg-blue-50!' : '',
                 canAccessAgent
@@ -127,13 +127,13 @@
             </router-link>
             <div
               v-if="canViewSystemMenu"
-              class="relative"
+              class="relative shrink-0"
               @mouseenter="showSystemDropdown = true"
               @mouseleave="showSystemDropdown = false"
             >
               <router-link
                 :to="canAccessSystemMenu ? '/system' : route.fullPath"
-                class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
+                class="text-gray-600 hover:text-blue-600 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
                 :class="isSystemNavActive ? 'text-blue-600! bg-blue-50!' : ''"
                 @click="guardNav(canAccessSystemMenu, $event)"
               >
@@ -150,7 +150,7 @@
               >
                 <div
                   v-show="showSystemDropdown"
-                  class="absolute top-full left-0 mt-1 min-w-48 bg-white rounded-lg shadow-lg border border-blue-100 py-2 z-50"
+                  class="absolute top-full right-0 mt-1 min-w-48 bg-white rounded-lg shadow-lg border border-blue-100 py-2 z-50"
                 >
                   <router-link
                     v-if="canViewAlert"
@@ -188,7 +188,7 @@
           </nav>
         </div>
 
-        <div class="flex items-center gap-4">
+        <div class="flex h-16 shrink-0 items-center gap-4">
           <div class="hidden xl:block">
             <el-input
               v-if="canViewSearch"

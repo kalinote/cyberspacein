@@ -34,28 +34,117 @@
         </div>
       </div>
     </section>
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-12">
-      <el-alert v-if="error" :title="error" type="error" show-icon :closable="false"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-      <section data-evidence-tour="templates"><h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2 mb-8"><Icon icon="mdi:shape-outline" class="text-blue-600 text-2xl" /><span><span class="text-blue-500">分析</span>场景</span></h2><div class="grid md:grid-cols-4 gap-6">
-        <button v-for="item in EVIDENCE_TEMPLATES" :key="item.id" :disabled="!canCreate" class="text-left bg-white border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-md transition-all disabled:opacity-50" @click="openCreate(item.id)">
-          <Icon :icon="item.icon" class="text-2xl text-blue-500 mb-4" /><h3 class="font-bold mb-2">{{ item.name }}</h3><p class="text-sm text-gray-500 leading-6">{{ item.description }}</p>
-        </button>
-      </div></section>
-      <section data-evidence-tour="recent"><div class="flex items-center justify-between mb-8"><h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2"><Icon icon="mdi:history" class="text-blue-600 text-2xl" /><span><span class="text-blue-500">最近</span>编辑</span></h2><router-link to="/evidence/chains" class="text-sm text-blue-600">查看全部 →</router-link></div>
-        <div v-if="stats?.recent.length" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <router-link v-for="chain in stats.recent" :key="chain.id" :to="`/evidence/chains/${chain.id}`" class="bg-white rounded-xl p-5 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all">
-            <div class="flex items-center justify-between mb-3"><Icon icon="mdi:graph-outline" class="text-2xl text-blue-500" /><el-tag size="small" :type="chain.status === 'active' ? 'success' : 'info'">{{ CHAIN_STATUS[chain.status] }}</el-tag></div>
-            <h3 class="font-semibold text-gray-900 truncate">{{ chain.title }}</h3><p class="text-sm text-gray-500 mt-2 line-clamp-2 h-10">{{ chain.purpose || chain.description || '尚未填写分析目的' }}</p>
-            <div class="flex gap-4 mt-5 pt-3 border-t border-gray-100 text-xs text-gray-500"><span>{{ chain.node_count }} 个节点</span><span>{{ chain.edge_count }} 条关系</span><span>{{ chain.subchain_count }} 条子链</span></div>
-          </router-link>
-        </div>
-        <el-empty v-else-if="!loading && !error" description="还没有证据链，从一个线索开始构建" class="bg-white rounded-xl border border-dashed border-gray-200" />
-      </section>
-      <div class="grid md:grid-cols-3 gap-6 text-sm text-gray-500 pb-4">
-        <p><strong class="block text-gray-800 mb-2">实体与虚拟节点</strong>引用已有数据，也可创建事件、判断或集合来组织分析。</p>
-        <p><strong class="block text-gray-800 mb-2">持续追踪版本</strong>动态版本节点在读取时检索，自动呈现后来采集的版本。</p>
-        <p><strong class="block text-gray-800 mb-2">组合独立子链</strong>引用已有证据链，展开查看内容或进入子链继续编辑。</p>
+    <main>
+      <div v-if="error" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        <el-alert :title="error" type="error" show-icon :closable="false">
+          <el-button link type="primary" @click="load">重新加载</el-button>
+        </el-alert>
       </div>
+
+      <section class="py-12 bg-linear-to-b from-white to-gray-50" aria-labelledby="evidence-templates-title">
+        <div data-evidence-tour="templates" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="mb-8">
+            <h2 id="evidence-templates-title" class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+              <Icon icon="mdi:shape-outline" class="text-blue-600 text-2xl" />
+              <span><span class="text-blue-500">分析</span>场景</span>
+            </h2>
+            <p class="text-sm text-gray-500 mt-2">从分析目的出发，选择合适的起始结构。</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <button
+              v-for="item in EVIDENCE_TEMPLATES"
+              :key="item.id"
+              type="button"
+              :disabled="!canCreate"
+              class="flex flex-col items-start text-left bg-white rounded-2xl p-6 shadow-sm border border-blue-100 hover:border-blue-300 hover:shadow-lg transition-all focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="openCreate(item.id)"
+            >
+              <div class="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-5">
+                <Icon :icon="item.icon" class="text-2xl text-blue-600" />
+              </div>
+              <h3 class="text-lg font-bold text-gray-900 mb-2">{{ item.name }}</h3>
+              <p class="text-sm text-gray-500 leading-6">{{ item.description }}</p>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="py-12 bg-white border-y border-gray-100" aria-labelledby="evidence-recent-title">
+        <div data-evidence-tour="recent" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+            <div>
+              <h2 id="evidence-recent-title" class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+                <Icon icon="mdi:history" class="text-blue-600 text-2xl" />
+                <span><span class="text-blue-500">最近</span>编辑</span>
+              </h2>
+              <p class="text-sm text-gray-500 mt-2">继续整理已有线索，查看和完善最近编辑的证据链。</p>
+            </div>
+            <router-link to="/evidence/chains" class="inline-flex shrink-0 items-center gap-2 py-2 text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors">
+              查看全部<Icon icon="mdi:arrow-right" />
+            </router-link>
+          </div>
+          <div v-loading="loading" element-loading-text="正在加载证据链..." class="min-h-52">
+            <div v-if="stats?.recent.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <router-link
+                v-for="chain in stats.recent"
+                :key="chain.id"
+                :to="`/evidence/chains/${chain.id}`"
+                class="min-w-0 bg-white rounded-2xl p-6 shadow-sm border border-blue-100 hover:border-blue-300 hover:shadow-lg transition-all"
+              >
+                <div class="flex items-center justify-between gap-3 mb-4">
+                  <div class="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                    <Icon icon="mdi:graph-outline" class="text-2xl text-blue-600" />
+                  </div>
+                  <el-tag size="small" :type="chain.status === 'active' ? 'success' : 'info'">{{ CHAIN_STATUS[chain.status] }}</el-tag>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900 truncate">{{ chain.title }}</h3>
+                <p class="text-sm text-gray-500 mt-2 line-clamp-2 h-12 leading-6">{{ chain.purpose || chain.description || '尚未填写分析目的' }}</p>
+                <div class="flex flex-wrap gap-x-4 gap-y-2 mt-5 pt-4 border-t border-gray-100 text-xs text-gray-500">
+                  <span>{{ chain.node_count }} 个节点</span>
+                  <span>{{ chain.edge_count }} 条关系</span>
+                  <span>{{ chain.subchain_count }} 条子链</span>
+                </div>
+              </router-link>
+            </div>
+            <el-empty v-else-if="!loading && !error" description="还没有证据链，从一个线索开始构建" class="bg-gray-50 rounded-2xl border border-dashed border-gray-200" />
+          </div>
+        </div>
+      </section>
+
+      <section class="py-12 bg-linear-to-b from-gray-50 to-white" aria-labelledby="evidence-capabilities-title">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="mb-8">
+            <h2 id="evidence-capabilities-title" class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+              <Icon icon="mdi:graph-outline" class="text-blue-600 text-2xl" />
+              <span><span class="text-blue-500">图谱</span>能力</span>
+            </h2>
+            <p class="text-sm text-gray-500 mt-2">组织分析材料、追踪内容变化，复用已有的关联图谱。</p>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <article class="bg-linear-to-br from-blue-50 to-white rounded-2xl p-6 border border-blue-100 shadow-sm">
+              <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+                <Icon icon="mdi:graph-outline" class="text-2xl text-blue-600" />
+              </div>
+              <h3 class="font-bold text-gray-900 mb-2">实体与虚拟节点</h3>
+              <p class="text-sm text-gray-500 leading-6">引用已有数据，也可创建事件、判断或集合来组织分析。</p>
+            </article>
+            <article class="bg-linear-to-br from-purple-50 to-white rounded-2xl p-6 border border-purple-100 shadow-sm">
+              <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
+                <Icon icon="mdi:history" class="text-2xl text-purple-600" />
+              </div>
+              <h3 class="font-bold text-gray-900 mb-2">持续追踪版本</h3>
+              <p class="text-sm text-gray-500 leading-6">动态版本节点在读取时检索，自动呈现后来采集的版本。</p>
+            </article>
+            <article class="bg-linear-to-br from-cyan-50 to-white rounded-2xl p-6 border border-cyan-100 shadow-sm">
+              <div class="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center mb-4">
+                <Icon icon="mdi:source-branch" class="text-2xl text-cyan-600" />
+              </div>
+              <h3 class="font-bold text-gray-900 mb-2">组合独立子链</h3>
+              <p class="text-sm text-gray-500 leading-6">引用已有证据链，展开查看内容或进入子链继续编辑。</p>
+            </article>
+          </div>
+        </div>
+      </section>
     </main>
     <EvidenceCreateDialog v-model="createVisible" :initial-template="selectedTemplate" />
   </div>
