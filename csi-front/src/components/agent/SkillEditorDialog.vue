@@ -1,17 +1,37 @@
 <template>
-  <el-dialog
+  <component
+    :is="isMobile ? ElDrawer : ElDialog"
     v-model="visible"
     :title="dialogTitle"
     width="96%"
     top="4vh"
     class="skill-editor-dialog"
+    :class="{ 'agent-config-mobile-panel': isMobile }"
+    :modal-class="isMobile ? 'agent-config-mobile-overlay' : undefined"
+    :size="isMobile ? '100%' : undefined"
+    :append-to-body="isMobile"
     destroy-on-close
     :close-on-click-modal="false"
     :before-close="handleBeforeClose"
     @open="onOpen"
     @closed="onClosed"
   >
-    <div v-loading="detailLoading" element-loading-text="加载中..." class="skill-editor-body flex gap-4">
+    <template v-if="isMobile" #header><div class="agent-config-panel-heading"><el-button :disabled="saveLoading" @click="handleClose">返回</el-button><h2>{{ dialogTitle }}</h2></div></template>
+    <div v-if="isMobile" class="skill-mobile-editor">
+      <p v-if="detailLoading" role="status">正在加载技能文件…</p>
+      <div v-if="loadError" role="alert" class="skill-mobile-error"><p>{{ loadError }}</p><el-button @click="currentPath ? loadFileContent(currentPath) : onOpen()">重新加载</el-button></div>
+      <template v-if="mobileFilesVisible">
+        <p class="text-sm text-gray-500 mb-4">选择一个文件进行查看或编辑</p>
+        <el-tree v-if="treeData.length" :data="treeData" node-key="id" :props="{ label: 'label', children: 'children' }" default-expand-all @node-click="handleTreeNodeClick"><template #default="{ data }"><span class="skill-mobile-file"><Icon :icon="data.isFile ? 'mdi:file-document-outline' : 'mdi:folder-outline'" />{{ data.label }}</span></template></el-tree>
+        <p v-else-if="!detailLoading && !loadError" class="text-gray-500">暂无文件</p>
+      </template>
+      <template v-else>
+        <div class="skill-mobile-current"><el-button :disabled="saveLoading" @click="mobileFilesVisible = true">切换文件</el-button><span>{{ currentPath }}</span><span v-if="isDirty">未保存</span></div>
+        <p v-if="contentLoading" role="status">正在读取文件…</p>
+        <AgentConfigTextField v-if="currentPath && !contentLoading && !loadError" v-model="editorContent" :language="editorLanguage" />
+      </template>
+    </div>
+    <div v-else v-loading="detailLoading" element-loading-text="加载中..." class="skill-editor-body flex gap-4">
       <div class="skill-editor-tree w-70 shrink-0 rounded-lg border border-gray-200 p-2 overflow-y-auto">
         <el-tree
           v-if="treeData.length"
@@ -82,19 +102,24 @@
       <el-button
         type="primary"
         :loading="saveLoading"
-        :disabled="!currentPath || !isDirty"
+        :disabled="!currentPath || !isDirty || contentLoading || Boolean(loadError) || (isMobile && (!hasPerm(PERM.operations.agent.skill.read) || !hasPerm(PERM.operations.agent.skill.update)))"
         @click="handleSave"
       >
         保存
       </el-button>
     </template>
-  </el-dialog>
+  </component>
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElDialog, ElDrawer, ElMessage, ElMessageBox } from 'element-plus'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import AgentConfigTextField from '@/components/agent/AgentConfigTextField.vue'
+import { hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import MarkdownViewer from '@/components/common/MarkdownViewer.vue'
 import { agentApi } from '@/api/agent'
@@ -123,6 +148,11 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'saved'])
 
 const visible = ref(props.modelValue)
+const { isMobile } = useMobileViewport()
+const mobileFilesVisible = ref(true)
+const loadError = ref('')
+let fileGeneration = 0
+let sessionGeneration = 0
 const detailLoading = ref(false)
 const contentLoading = ref(false)
 const saveLoading = ref(false)
@@ -167,6 +197,7 @@ watch(showPreviewToggle, (canPreview) => {
 })
 
 async function confirmDiscardIfDirty() {
+  if (saveLoading.value) return false
   if (!isDirty.value) return true
   try {
     await ElMessageBox.confirm('当前文件有未保存的修改，是否放弃？', '未保存的修改', {
@@ -182,10 +213,15 @@ async function confirmDiscardIfDirty() {
 
 async function loadFileContent(path) {
   if (!props.skillId || !path) return
-
+  if (isMobile.value && !hasPerm(PERM.operations.agent.skill.read)) { loadError.value = '没有读取技能文件的权限'; return }
+  const generation = ++fileGeneration
+  loadError.value = ''
   contentLoading.value = true
   try {
     const res = await agentApi.getSkillFileContent(props.skillId, path)
+    if (generation !== fileGeneration || !visible.value) return
+    if (isMobile.value && !hasPerm(PERM.operations.agent.skill.read)) { loadError.value = '读取权限已变更'; return }
+    if (typeof res?.data?.content !== 'string') throw new Error('文件内容无效，请重试')
     const content = res?.data?.content ?? ''
     editorContent.value = content
     originalContent.value = content
@@ -193,17 +229,18 @@ async function loadFileContent(path) {
       viewMode.value = 'edit'
     }
   } catch (e) {
-    editorContent.value = ''
-    originalContent.value = ''
+    if (generation !== fileGeneration) return
+    loadError.value = '加载技能文件失败，请重试'
     console.error('加载技能文件失败:', e)
   } finally {
-    contentLoading.value = false
+    if (generation === fileGeneration) contentLoading.value = false
   }
 }
 
 async function selectFile(path) {
   if (!path) return
   currentPath.value = path
+  mobileFilesVisible.value = false
   await loadFileContent(path)
   await nextTick()
   treeRef.value?.setCurrentKey(path)
@@ -211,7 +248,7 @@ async function selectFile(path) {
 
 async function handleTreeNodeClick(data) {
   if (!data?.isFile || !data.path) return
-  if (data.path === currentPath.value) return
+  if (data.path === currentPath.value) { mobileFilesVisible.value = false; return }
 
   const ok = await confirmDiscardIfDirty()
   if (!ok) {
@@ -225,7 +262,12 @@ async function handleTreeNodeClick(data) {
 
 async function onOpen() {
   if (!props.skillId) return
+  if (isMobile.value && !hasPerm(PERM.operations.agent.skill.read)) { loadError.value = '没有读取技能文件的权限'; return }
 
+  const generation = ++sessionGeneration
+  fileGeneration += 1
+  loadError.value = ''
+  mobileFilesVisible.value = true
   detailLoading.value = true
   treeData.value = []
   currentPath.value = ''
@@ -235,23 +277,30 @@ async function onOpen() {
 
   try {
     const res = await agentApi.getSkillDetail(props.skillId)
+    if (generation !== sessionGeneration || !visible.value) return
+    if (isMobile.value && !hasPerm(PERM.operations.agent.skill.read)) { loadError.value = '读取权限已变更'; return }
     const files = Array.isArray(res?.data?.files) ? res.data.files : []
     treeData.value = buildFileTreeFromPaths(files)
 
     const defaultPath = findDefaultFilePath(treeData.value)
-    if (defaultPath) {
+    if (defaultPath && !isMobile.value) {
       await nextTick()
       await selectFile(defaultPath)
     }
   } catch (e) {
+    if (generation !== sessionGeneration) return
+    loadError.value = '加载技能文件目录失败，请重试'
     ElMessage.error('加载技能详情失败')
     console.error('加载技能详情失败:', e)
   } finally {
-    detailLoading.value = false
+    if (generation === sessionGeneration) detailLoading.value = false
   }
 }
 
 function onClosed() {
+  sessionGeneration += 1
+  fileGeneration += 1
+  loadError.value = ''
   treeData.value = []
   currentPath.value = ''
   editorContent.value = ''
@@ -260,20 +309,26 @@ function onClosed() {
 }
 
 async function handleSave() {
-  if (!props.skillId || !currentPath.value) return
+  if (!props.skillId || !currentPath.value || saveLoading.value || contentLoading.value || loadError.value) return
+  if (isMobile.value && (!hasPerm(PERM.operations.agent.skill.read) || !hasPerm(PERM.operations.agent.skill.update))) return
+  const generation = sessionGeneration
+  const path = currentPath.value
+  const content = editorContent.value
 
   saveLoading.value = true
   try {
-    await agentApi.updateSkillFileContent(props.skillId, currentPath.value, editorContent.value)
-    originalContent.value = editorContent.value
+    await agentApi.updateSkillFileContent(props.skillId, path, content)
+    if (generation !== sessionGeneration || !visible.value) return
+    if (isMobile.value && (!hasPerm(PERM.operations.agent.skill.read) || !hasPerm(PERM.operations.agent.skill.update))) return
+    originalContent.value = content
     ElMessage.success('保存成功')
-    if (currentPath.value === 'SKILL.md') {
+    if (path === 'SKILL.md') {
       emit('saved')
     }
   } catch (e) {
     console.error('保存技能文件失败:', e)
   } finally {
-    saveLoading.value = false
+    if (generation === sessionGeneration) saveLoading.value = false
   }
 }
 
@@ -287,9 +342,13 @@ async function handleBeforeClose(done) {
   const ok = await confirmDiscardIfDirty()
   if (ok) done()
 }
+onBeforeRouteLeave(() => !isMobile.value || !visible.value ? true : confirmDiscardIfDirty())
+onDeactivated(() => { visible.value = false; sessionGeneration += 1; fileGeneration += 1; saveLoading.value = false })
+onBeforeUnmount(() => { sessionGeneration += 1; fileGeneration += 1 })
 </script>
 
 <style scoped>
+.skill-mobile-editor{min-width:0}.skill-mobile-editor :deep(.el-tree-node__content){height:auto;min-height:48px}.skill-mobile-file{display:flex;gap:8px;align-items:center;white-space:normal;overflow-wrap:anywhere;font-size:14px;padding:8px 0}.skill-mobile-file svg{flex-shrink:0}.skill-mobile-current{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.skill-mobile-current>span{font-size:13px;color:#64748b;overflow-wrap:anywhere}.skill-mobile-error{border:1px solid #fed7aa;background:#fff7ed;border-radius:10px;padding:12px;margin-bottom:12px}
 .skill-editor-dialog :deep(.el-dialog) {
   max-width: 1680px;
   margin-bottom: 2vh;

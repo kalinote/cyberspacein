@@ -28,7 +28,11 @@
       </div>
     </template>
     <template #toolbar>
-      <div class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+      <div v-if="isMobile" class="mobile-config-toolbar">
+        <el-input v-model="searchKeyword" :placeholder="activeTab === 'encapsulatedNodes' ? '搜索封装节点' : '筛选当前资源'" aria-label="筛选行动资源" clearable><template #prefix><Icon icon="mdi:magnify" /></template></el-input>
+        <div class="mobile-config-toolbar-actions"><el-button @click="mobileResources?.load()"><Icon icon="mdi:refresh" />刷新</el-button><el-button v-if="canCreateActiveTab" type="primary" @click="mobileResources?.openEditor()"><Icon icon="mdi:plus" />新增{{ currentTabLabel }}</el-button></div>
+      </div>
+      <div v-else class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <Icon :icon="currentTabIcon" class="text-2xl text-blue-600" />
           <h2 class="text-xl font-bold text-gray-900">{{ currentTabLabel }}</h2>
@@ -53,6 +57,8 @@
         </div>
       </div>
     </template>
+          <MobileActionResources v-if="isMobile || mobileResourceOverlayOpen" v-show="isMobile" ref="mobileResources" :active-tab="activeTab" :keyword="searchKeyword" :label="currentTabLabel" @overlay-change="mobileResourceOverlayOpen = $event" @changed="mobileResourceRevision++; hasPerm(PERM.operations.action.config.read) && fetchStatistics()" />
+          <template v-if="!isMobile">
           <!-- 节点列表 -->
           <div v-if="activeTab === 'nodes'" class="space-y-4">
             <div v-loading="loading" :element-loading-text="'加载中...'" class="min-h-50">
@@ -159,6 +165,7 @@
           </div>
 
           <EncapsulatedNodeManager
+            :key="mobileResourceRevision"
             v-else-if="activeTab === 'encapsulatedNodes'"
             :keyword="searchKeyword"
           />
@@ -430,6 +437,7 @@
             <p class="text-gray-500 text-lg mb-2">功能开发中</p>
             <p class="text-gray-400 text-sm">{{ currentTabLabel }}管理功能即将上线</p>
           </div>
+          </template>
   </ConfigCenterLayout>
 
     <!-- 新增行动节点弹窗 -->
@@ -1100,6 +1108,13 @@ import UnsupportedNativeNode from '@/components/action/nodes/UnsupportedNativeNo
 import { resolveNativeNodeRenderer } from '@/components/action/nodes/nativeNodeRendererRegistry'
 import { PERM } from '@/utils/permissions'
 import { hasPerm } from '@/utils/permissionKit'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileActionResources from '@/components/action/mobile/resources/MobileActionResources.vue'
+
+const { isMobile } = useMobileViewport()
+const mobileResources = ref(null)
+const mobileResourceOverlayOpen = ref(false)
+const mobileResourceRevision = ref(0)
 
 const activeTab = ref('nodes')
 const searchKeyword = ref('')
@@ -1114,6 +1129,7 @@ const statistics = ref({
   account_count: 0,
   corpus_count: 0
 })
+const statisticsReady = ref(false)
 
 const dialogVisible = ref(false)
 const nodeDialogMode = ref('create')
@@ -1396,6 +1412,7 @@ const getResourceCount = (tabKey) => {
     'accounts': statistics.value.account_count,
     'corpus': statistics.value.corpus_count
   }
+  if (isMobile.value && (!statisticsReady.value || !Number.isFinite(countMap[tabKey]) || countMap[tabKey] < 0)) return -1
   return countMap[tabKey] || 0
 }
 
@@ -2117,10 +2134,12 @@ const handleDeleteHandle = (handle) => {
 }
 
 const fetchStatistics = async () => {
+  statisticsReady.value = false
   try {
     const response = await actionApi.getStatistics()
-    if (response.code === 0) {
+    if (response.code === 0 && response.data && typeof response.data === 'object') {
       statistics.value = response.data
+      statisticsReady.value = true
     } else {
       ElMessage.error(`获取统计数据失败: ${response.message}`)
     }
@@ -2333,9 +2352,12 @@ function handleAccountPageSizeChange(pageSize) {
   fetchAccountList()
 }
 
-watch(activeTab, (newTab) => {
+watch([activeTab, isMobile, mobileResourceRevision], ([newTab, mobile]) => {
+  if (mobile) return
   if (!hasPerm(actionTabPermissions[newTab]?.access)) return
-  if (newTab === 'nodeHandles') {
+  if (newTab === 'nodes') {
+    fetchNodeList()
+  } else if (newTab === 'nodeHandles') {
     fetchHandleList()
   } else if (newTab === 'baseComponents') {
     fetchComponentList()
@@ -2353,6 +2375,7 @@ watch(resourceTabs, (tabs) => {
 
 onMounted(() => {
   if (hasPerm(PERM.operations.action.config.read)) fetchStatistics()
+  if (isMobile.value) return
   if (activeTab.value === 'nodes' && hasPerm(actionTabPermissions.nodes.access)) fetchNodeList()
   if (activeTab.value === 'baseComponents') {
     fetchComponentList()

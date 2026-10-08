@@ -1,7 +1,35 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <Header />
-    
+
+    <main v-if="isMobile" class="platform-mobile">
+      <div class="platform-mobile-heading"><div><h1>平台</h1><p>发现来源，查看采集与关联情报</p></div><el-button :disabled="!hasPerm(PERM.operations.content.platform.create)" type="primary" @click="handleAddPlatform">新增</el-button></div>
+      <form class="platform-mobile-search" @submit.prevent="handleSearch">
+        <el-input v-model="searchKeyword" aria-label="搜索平台名称或描述" placeholder="平台名称或描述" clearable @clear="handleSearch" />
+        <el-button native-type="submit" :disabled="loading">搜索</el-button>
+        <el-button aria-label="筛选平台" @click="filterVisible = true"><Icon icon="mdi:filter-variant" /></el-button>
+      </form>
+      <div class="platform-mobile-summary"><span>{{ pagination.total }} 个平台</span><span>{{ [selectedStatus, selectedType === 'forum' ? '论坛' : selectedType === 'article' ? '文章' : ''].filter(Boolean).join(' · ') || '全部状态与类型' }}</span></div>
+      <div v-if="!hasPerm(PERM.operations.content.platform.read)" class="platform-mobile-state">暂无平台读取权限</div>
+      <div v-else-if="listError" class="platform-mobile-state" role="alert"><p>{{ listError }}</p><el-button @click="fetchPlatformList">重新加载</el-button></div>
+      <div v-else v-loading="loading" class="platform-mobile-results" aria-live="polite">
+        <el-empty v-if="!loading && !platformList.length" description="没有匹配的平台" :image-size="64" />
+        <article v-for="platform in platformList" :key="platform.id" class="platform-mobile-card">
+          <button class="platform-mobile-card-link" @click="handleViewDetail(platform.id)">
+            <div class="platform-mobile-card-title"><img v-if="platform.logo" :src="getLogoUrl(platform.logo)" alt="" /><Icon v-else icon="mdi:web" class="platform-mobile-logo" /><div><h2>{{ platform.name }}</h2><p>{{ [platform.category, platform.sub_category, platform.net_type].filter(Boolean).join(' · ') }}</p></div><Icon icon="mdi:chevron-right" /></div>
+            <div class="platform-mobile-tags"><el-tag :type="getStatusType(platform.status)" size="small">{{ platform.status || '状态未设置' }}</el-tag><el-tag type="info" size="small">{{ platform.type === 'forum' ? '论坛' : platform.type === 'article' ? '文章' : platform.type }}</el-tag></div>
+            <p class="platform-mobile-description">{{ platform.description || '暂无描述' }}</p>
+            <div v-if="platform.tags?.length" class="platform-mobile-tags"><el-tag v-for="tag in platform.tags.slice(0, 3)" :key="tag" size="small" effect="plain" :type="isSensitiveLabel(tag) ? 'danger' : 'info'">{{ tag }}</el-tag><span v-if="platform.tags.length > 3">+{{ platform.tags.length - 3 }}</span></div>
+          </button>
+        </article>
+      </div>
+      <div v-if="!listError && pagination.total > pagination.pageSize" class="platform-mobile-pagination"><el-pagination :current-page="pagination.page" :page-size="pagination.pageSize" :total="pagination.total" :pager-count="5" layout="prev, pager, next" @current-change="handlePageChange" /></div>
+      <MobileSheet v-model="filterVisible" title="筛选平台">
+        <el-form label-position="top"><el-form-item label="平台状态"><el-select v-model="draftStatus"><el-option label="全部状态" value="" /><el-option v-for="status in ['活跃', '非活跃', '离线']" :key="status" :label="status" :value="status" /></el-select></el-form-item><el-form-item label="内容类型"><el-radio-group v-model="draftType"><el-radio-button value="">全部</el-radio-button><el-radio-button value="forum">论坛</el-radio-button><el-radio-button value="article">文章</el-radio-button></el-radio-group></el-form-item></el-form>
+        <template #footer><div class="platform-mobile-footer"><el-button @click="draftStatus = ''; draftType = ''">重置</el-button><el-button type="primary" @click="selectedStatus = draftStatus; selectedType = draftType; filterVisible = false; handleSearch()">应用筛选</el-button></div></template>
+      </MobileSheet>
+    </main>
+    <template v-else>
     <FunctionalPageHeader
       title-prefix="平台"
       title-suffix="列表"
@@ -197,22 +225,28 @@
       </div>
     </div>
 
-    <!-- 新增平台对话框 -->
-    <el-dialog
+    </template>
+    <!-- 手机分步填写，复用桌面的字段和提交合同。 -->
+    <component
+      :is="isMobile ? MobileSheet : 'el-dialog'"
       v-model="dialogVisible"
-      title="新增平台"
+      :title="isMobile ? `新增平台 · ${mobileCreateStep + 1}/3` : '新增平台'"
       width="800px"
       :close-on-click-modal="false"
+      :close-on-press-escape="!submitLoading"
+      :show-close="!submitLoading"
       @close="handleDialogClose"
     >
+      <p v-if="isMobile" class="platform-mobile-step">{{ ['先填写名称、网址和分类', '补充平台资料与采集信息', '核对资料后创建平台'][mobileCreateStep] }}</p>
       <el-form
         ref="formRef"
         :model="formData"
         :rules="formRules"
-        label-width="120px"
-        class="max-h-[70vh] overflow-y-auto pr-2"
+        :label-position="isMobile ? 'top' : 'right'"
+        :label-width="isMobile ? undefined : '120px'"
+        :class="isMobile ? 'platform-mobile-form' : 'max-h-[70vh] overflow-y-auto pr-2'"
       >
-        <el-form-item label="平台名称" prop="name">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 0" label="平台名称" prop="name">
           <el-input
             v-model="formData.name"
             placeholder="请输入平台名称"
@@ -222,7 +256,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="平台描述" prop="description">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="平台描述" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
@@ -232,7 +266,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="平台类型" prop="type">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 0" label="平台类型" prop="type">
           <el-select
             v-model="formData.type"
             placeholder="请选择平台类型"
@@ -243,7 +277,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="网络类型" prop="net_type">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="网络类型" prop="net_type">
           <el-select
             v-model="formData.net_type"
             placeholder="请选择网络类型"
@@ -254,7 +288,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="平台状态" prop="status">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="平台状态" prop="status">
           <el-select
             v-model="formData.status"
             placeholder="请选择平台状态"
@@ -266,7 +300,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="平台URL" prop="url">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 0" label="平台URL" prop="url">
           <el-input
             v-model="formData.url"
             placeholder="请输入平台URL"
@@ -274,7 +308,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="平台Logo" prop="logo">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="平台Logo" prop="logo">
           <el-input
             v-model="formData.logo"
             placeholder="请输入平台Logo URL"
@@ -282,7 +316,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="平台分类" prop="category">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 0" label="平台分类" prop="category">
           <el-select
             v-model="formData.category"
             placeholder="请选择平台分类"
@@ -298,7 +332,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="平台子分类" prop="sub_category">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 0" label="平台子分类" prop="sub_category">
           <el-select
             v-model="formData.sub_category"
             placeholder="请选择或输入平台子分类"
@@ -318,7 +352,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="信任度" prop="confidence">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="信任度" prop="confidence">
           <div class="flex items-center gap-4 w-full">
             <el-slider
               v-model="formData.confidence"
@@ -339,21 +373,21 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="平台标签" prop="tags">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="平台标签" prop="tags">
           <TagInput
             v-model="formData.tags"
             placeholder="输入标签后按回车或点击添加"
           />
         </el-form-item>
 
-        <el-form-item label="平台板块" prop="sections">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="平台板块" prop="sections">
           <TagInput
             v-model="formData.sections"
             placeholder="输入板块名称后按回车或点击添加"
           />
         </el-form-item>
 
-        <el-form-item label="爬虫名称" prop="spider_name">
+        <el-form-item v-show="!isMobile || mobileCreateStep === 1" label="爬虫名称" prop="spider_name">
           <el-input
             v-model="formData.spider_name"
             placeholder="请输入爬虫名称（可选）"
@@ -361,21 +395,23 @@
           />
         </el-form-item>
       </el-form>
+      <dl v-if="isMobile && mobileCreateStep === 2" class="platform-mobile-review"><template v-for="[label, value] in [['名称', formData.name], ['网址', formData.url], ['分类', `${formData.category} / ${formData.sub_category}`], ['类型', formData.type], ['状态与网络', `${formData.status} · ${formData.net_type}`], ['描述', formData.description], ['Logo', formData.logo], ['信任度', formData.confidence], ['标签', formData.tags.join('、')], ['板块', formData.sections.join('、')], ['爬虫', formData.spider_name]]" :key="label"><dt>{{ label }}</dt><dd>{{ value === '' ? '未填写' : value }}</dd></template></dl>
 
       <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="handleDialogClose">取消</el-button>
-          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
-            确定
+        <div :class="isMobile ? 'platform-mobile-footer' : 'dialog-footer'">
+          <el-button :disabled="submitLoading" @click="isMobile && mobileCreateStep > 0 ? mobileCreateStep-- : handleDialogClose()">{{ isMobile && mobileCreateStep > 0 ? '上一步' : '取消' }}</el-button>
+          <el-button v-if="isMobile && mobileCreateStep < 2" type="primary" @click="nextCreateStep">下一步</el-button>
+          <el-button v-else type="primary" :loading="submitLoading" :disabled="isMobile && !hasPerm(PERM.operations.content.platform.create)" @click="handleSubmit">
+            {{ isMobile ? '确认创建' : '确定' }}
           </el-button>
         </div>
       </template>
-    </el-dialog>
+    </component>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onActivated, onDeactivated, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -386,10 +422,23 @@ import { getPaginatedData } from '@/utils/request'
 import { getCosUrl } from '@/utils/cos'
 import { formatDate } from '@/utils/action'
 import TagInput from '@/components/action/nodes/components/TagInput.vue'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import { PERM } from '@/utils/permissions'
+import { hasPerm } from '@/utils/permissionKit'
 
 defineOptions({ name: 'PlatformList' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const filterVisible = ref(false)
+const draftStatus = ref('')
+const draftType = ref('')
+const mobileCreateStep = ref(0)
+const listError = ref('')
+let listGeneration = 0
+let pageActive = true
+let reloadOnActivate = false
 const loading = ref(false)
 const searchKeyword = ref('')
 const selectedStatus = ref('')
@@ -402,27 +451,34 @@ const pagination = ref({
 })
 
 const fetchPlatformList = async () => {
+  if (!pageActive || (isMobile.value && !hasPerm(PERM.operations.content.platform.read))) return
+  const generation = ++listGeneration
+  listError.value = ''
   loading.value = true
   try {
     const result = await getPaginatedData(
       platformApi.getPlatformList,
       {
         page: pagination.value.page,
-        page_size: pagination.value.pageSize
+        page_size: pagination.value.pageSize,
+        ...(isMobile.value ? { search: searchKeyword.value.trim() || undefined, status: selectedStatus.value || undefined, type: selectedType.value || undefined } : {})
       }
     )
 
+    if (generation !== listGeneration || !pageActive) return
     platformList.value = result.items
     pagination.value = {
       ...pagination.value,
       ...result.pagination
     }
   } catch (error) {
+    if (generation !== listGeneration || !pageActive) return
     console.error('获取平台列表失败:', error)
     ElMessage.error('获取平台列表失败')
     platformList.value = []
+    listError.value = '平台列表加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === listGeneration) loading.value = false
   }
 }
 
@@ -438,7 +494,24 @@ const handlePageSizeChange = (pageSize) => {
 }
 
 const handleSearch = () => {
+  if (isMobile.value) {
+    pagination.value.page = 1
+    fetchPlatformList()
+    return
+  }
   ElMessage.info('搜索功能暂未实现')
+}
+
+watch(filterVisible, visible => {
+  if (visible) { draftStatus.value = selectedStatus.value; draftType.value = selectedType.value }
+})
+
+/** """校验当前步骤后进入平台创建的下一步。""" */
+const nextCreateStep = async () => {
+  if (mobileCreateStep.value === 0) {
+    try { await formRef.value?.validateField(['name', 'url', 'type', 'category', 'sub_category']) } catch { return }
+  }
+  mobileCreateStep.value += 1
 }
 
 const dialogVisible = ref(false)
@@ -500,6 +573,9 @@ const fetchSubCategoryOptions = async () => {
 }
 
 const handleAddPlatform = async () => {
+  if (submitLoading.value) return
+  if (isMobile.value && !hasPerm(PERM.operations.content.platform.create)) return
+  mobileCreateStep.value = 0
   dialogVisible.value = true
   await fetchSubCategoryOptions()
 }
@@ -527,10 +603,11 @@ const handleDialogClose = () => {
 }
 
 const handleSubmit = async () => {
-  if (!formRef.value) return
+  if (!formRef.value || submitLoading.value || (isMobile.value && !hasPerm(PERM.operations.content.platform.create))) return
 
   try {
     await formRef.value.validate()
+    if (!pageActive || submitLoading.value || (isMobile.value && !hasPerm(PERM.operations.content.platform.create))) return
     submitLoading.value = true
 
     const submitData = {
@@ -549,7 +626,8 @@ const handleSubmit = async () => {
       spider_name: formData.value.spider_name || null
     }
 
-    await platformApi.createPlatform(submitData)
+    const response = await platformApi.createPlatform(submitData)
+    if (response?.code !== 0) throw new Error(response?.message || '创建平台失败')
     ElMessage.success('平台创建成功')
     handleDialogClose()
     fetchPlatformList()
@@ -563,6 +641,7 @@ const handleSubmit = async () => {
 }
 
 const handleViewDetail = (id) => {
+  if (isMobile.value && !hasPerm(PERM.operations.content.platform.read)) return
   router.push(`/details/platform/${id}`)
 }
 
@@ -602,9 +681,48 @@ const getLogoUrl = (logo) => {
 onMounted(() => {
   fetchPlatformList()
 })
+onActivated(() => { pageActive = true; if (reloadOnActivate) { reloadOnActivate = false; fetchPlatformList() } })
+onDeactivated(() => {
+  pageActive = false
+  reloadOnActivate = loading.value || submitLoading.value
+  listGeneration++
+  loading.value = false
+  filterVisible.value = false
+  dialogVisible.value = false
+})
+onBeforeUnmount(() => { pageActive = false; listGeneration++ })
 </script>
 
 <style scoped>
+.platform-mobile { padding: 16px 12px 24px; color: #0f172a; }
+.platform-mobile-heading, .platform-mobile-summary, .platform-mobile-card-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.platform-mobile-heading h1 { margin: 0; font-size: 23px; font-weight: 750; }
+.platform-mobile-heading p, .platform-mobile-card-title p { color: #64748b; font-size: 12px; margin: 5px 0 0; }
+.platform-mobile-search { display: flex; gap: 6px; margin: 18px 0 12px; }
+.platform-mobile-search :deep(.el-input) { min-width: 0; flex: 1; }
+.platform-mobile :deep(.el-button), .platform-mobile-form :deep(.el-input__wrapper), .platform-mobile-form :deep(.el-select__wrapper) { min-height: 44px; }
+.platform-mobile :deep(.el-button + .el-button) { margin-left: 0; }
+.platform-mobile-summary { font-size: 12px; color: #64748b; margin-bottom: 12px; }
+.platform-mobile-results { min-height: 150px; }
+.platform-mobile-card { border: 1px solid #e2e8f0; background: white; border-radius: 16px; margin-bottom: 12px; overflow: hidden; }
+.platform-mobile-card-link { display: block; padding: 16px; width: 100%; background: transparent; border: 0; text-align: left; color: inherit; }
+.platform-mobile-card-title > div { flex: 1; min-width: 0; }
+.platform-mobile-card-title h2 { margin: 0; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.platform-mobile-card-title img, .platform-mobile-logo { width: 38px; height: 38px; object-fit: contain; flex-shrink: 0; color: #2563eb; }
+.platform-mobile-description { margin: 12px 0; color: #475569; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.platform-mobile-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; min-width: 0; }
+.platform-mobile-tags :deep(.el-tag) { max-width: 100%; }
+.platform-mobile-tags :deep(.el-tag__content) { overflow: hidden; text-overflow: ellipsis; }
+.platform-mobile-state { padding: 24px; text-align: center; background: #fff; border-radius: 16px; color: #64748b; }
+.platform-mobile-state p { margin-bottom: 12px; }
+.platform-mobile-pagination { display: flex; justify-content: center; margin-top: 20px; }
+.platform-mobile-footer { display: flex; gap: 10px; }
+.platform-mobile-footer .el-button { flex: 1; min-width: 0; margin: 0; }
+.platform-mobile-step { margin-bottom: 18px; color: #64748b; font-size: 14px; }
+.platform-mobile-review { display: grid; grid-template-columns: 65px minmax(0, 1fr); gap: 14px 10px; font-size: 14px; }
+.platform-mobile-review dt { color: #64748b; }
+.platform-mobile-review dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.platform-mobile-form :deep(.el-select) { width: 100%; }
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

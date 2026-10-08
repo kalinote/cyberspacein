@@ -1,7 +1,9 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <Header />
-    
+    <MobileBlueprintList v-if="isMobile" :blueprints="blueprints" :pagination="pagination" :loading="loading" :error="listError" :pinned="mobilePinned" :starting="actionStarting" :preparing="preparingEncapsulation" :can-encapsulate="canEncapsulate"
+      @retry="fetchBlueprints" @create="handleCreateBlueprint" @page-change="handlePageChange" @filter="mobilePinned = $event; handleSearch()" @pin-change="handleMobilePinChange" @view="viewBlueprint" @edit="editBlueprint" @history="openRevisionHistory" @publish="openPublishDialog" @encapsulate="openEncapsulateDialog" @delete="handleDeleteBlueprint" @run="createActionFromBlueprint" />
+    <template v-else>
     <FunctionalPageHeader
       title-prefix="行动蓝图"
       title-suffix="列表"
@@ -189,6 +191,7 @@
       </div>
     </div>
 
+    </template>
     <!-- 蓝图流程图弹窗 -->
     <BlueprintFlowDialog
       v-model="blueprintDialogVisible"
@@ -216,8 +219,9 @@
       :submitting="encapsulating"
       @submit="handleEncapsulate"
     />
-    <el-dialog v-model="revisionDialogVisible" title="蓝图发布历史" width="720px">
-      <el-table v-loading="revisionsLoading" :data="revisions" size="small">
+    <component :is="isMobile ? MobileSheet : 'el-dialog'" v-model="revisionDialogVisible" title="蓝图发布历史" width="720px">
+      <div v-if="isMobile" class="mobile-revision-history" v-loading="revisionsLoading"><p class="mobile-revision-title">{{ revisionBlueprint?.title }}</p><div v-if="revisionError" class="mobile-revision-error" role="alert"><p>{{ revisionError }}</p><el-button @click="openRevisionHistory(revisionBlueprint)">重新加载</el-button></div><article v-else v-for="revision in revisions" :key="revision.id" class="mobile-revision-card"><div><strong>Revision {{ revision.revision_number }}</strong><el-tag size="small">{{ revision.version }}</el-tag></div><p>{{ formatPublishedAt(revision.published_at) }}</p><details><summary>版本标识与公开接口</summary><dl><dt>版本 ID</dt><dd>{{ revision.id }}</dd><dt>内容哈希</dt><dd>{{ revision.content_hash }}</dd><dt>发布人</dt><dd>{{ revision.published_by || '未记录' }}</dd></dl><div v-for="direction in ['inputs', 'outputs']" :key="direction"><h3>{{ direction === 'inputs' ? '输入' : '输出' }}</h3><p v-for="port in revision.interface_snapshot?.[direction] || []" :key="port.id">{{ port.label || port.name }} · {{ port.interface_type_id }}</p><p v-if="!revision.interface_snapshot?.[direction]?.length">暂无</p></div></details></article></div>
+      <el-table v-else v-loading="revisionsLoading" :data="revisions" size="small">
         <el-table-column prop="revision_number" label="Revision" width="100" />
         <el-table-column prop="version" label="蓝图版本" width="120" />
         <el-table-column label="内容哈希" min-width="220">
@@ -230,17 +234,17 @@
         </el-table-column>
       </el-table>
       <el-empty
-        v-if="!revisionsLoading && revisions.length === 0"
+        v-if="!revisionsLoading && !revisionError && revisions.length === 0"
         description="尚未发布 Revision"
         :image-size="56"
       />
-    </el-dialog>
+    </component>
   </div>
 </template>
 
 <script setup>
 defineOptions({ name: 'ActionBlueprintList' })
-import { ref, computed, onActivated } from 'vue'
+import { ref, computed, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -258,8 +262,22 @@ import { getPaginatedData } from '@/utils/request'
 import { buildActionRunRequest } from '@/utils/action/run'
 import { PERM } from '@/utils/permissions'
 import { hasAll, hasPerm } from '@/utils/permissionKit'
+import MobileBlueprintList from '@/components/action/MobileBlueprintList.vue'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const mobilePinned = ref('')
+const listError = ref('')
+const revisionError = ref('')
+const revisionBlueprint = ref(null)
+const preparingEncapsulation = ref(false)
+let listGeneration = 0
+let revisionGeneration = 0
+let encapsulationGeneration = 0
+let pageActive = true
+const canExecute = computed(() => hasAll([PERM.operations.action.blueprint.read, PERM.operations.action.instance.execute]))
 
 const loading = ref(false)
 const viewMode = ref('grid')
@@ -280,6 +298,7 @@ const selectedRunDebug = ref(false)
 const selectedRunSchedulingMode = ref('barrier')
 const actionStarting = ref(false)
 const selectedBlueprintForRelease = ref(null)
+const selectedBlueprintForEncapsulation = ref(null)
 const publishDialogVisible = ref(false)
 const encapsulateDialogVisible = ref(false)
 const publishing = ref(false)
@@ -292,7 +311,8 @@ const revisions = ref([])
 const canEncapsulate = computed(() => hasAll([
   PERM.operations.action.blueprint.read,
   PERM.operations.action.blueprint.publish,
-  PERM.operations.action.node.create
+  PERM.operations.action.node.create,
+  ...(isMobile.value ? [PERM.operations.action.node.read] : [])
 ]))
 const formatPublishedAt = value => (
   value ? new Date(value).toLocaleString('zh-CN') : '-'
@@ -322,6 +342,9 @@ const formatImplementationPeriod = (seconds) => {
 }
 
 const fetchBlueprints = async () => {
+  if (!pageActive || (isMobile.value && !hasPerm(PERM.operations.action.blueprint.read))) return
+  const generation = ++listGeneration
+  listError.value = ''
   loading.value = true
   try {
     const params = {
@@ -332,13 +355,16 @@ const fetchBlueprints = async () => {
     if (searchKeyword.value) {
       params.keyword = searchKeyword.value
     }
+    if (isMobile.value && mobilePinned.value !== '') params.is_pinned = mobilePinned.value === 'true'
     
     const result = await getPaginatedData(actionApi.getBlueprintsBaseInfo, params)
+    if (!pageActive || generation !== listGeneration) return
     
     blueprints.value = (result.items || []).map(item => {
       return {
         id: item.id,
         title: item.name || '',
+        description: item.description || '',
         taskType: item.default_scheduling_mode === 'streaming' ? '异步执行' : '',
         taskTypeTagColor: item.type_tag_color || '#dbeafe',
         taskTypeTagTextColor: item.type_text_color || '#1e40af',
@@ -359,11 +385,13 @@ const fetchBlueprints = async () => {
     pagination.value.page = result.pagination.page
     pagination.value.pageSize = result.pagination.pageSize
   } catch (error) {
+    if (!pageActive || generation !== listGeneration) return
     console.error('获取行动蓝图失败:', error)
     ElMessage.error('获取行动蓝图失败')
     blueprints.value = []
+    listError.value = '蓝图列表加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === listGeneration) loading.value = false
   }
 }
 
@@ -384,6 +412,7 @@ const handlePageSizeChange = (pageSize) => {
 }
 
 const viewBlueprint = (blueprint) => {
+  if (isMobile.value && !hasPerm(PERM.operations.action.blueprint.read)) return
   if (!blueprint || !blueprint.id) {
     ElMessage.error('蓝图ID不存在')
     return
@@ -397,6 +426,7 @@ const createActionFromBlueprint = async (
   debug = false,
   schedulingMode = blueprint?.defaultSchedulingMode || 'barrier'
 ) => {
+  if (!pageActive || actionStarting.value || (isMobile.value && !canExecute.value)) return
   if (!blueprint || !blueprint.id) {
     ElMessage.error('蓝图ID不存在')
     return
@@ -418,6 +448,7 @@ const createActionFromBlueprint = async (
     }
   }
 
+  if (!pageActive || (isMobile.value && !canExecute.value)) return
   selectedRunDebug.value = debug
   selectedRunSchedulingMode.value = schedulingMode === 'streaming' ? 'streaming' : 'barrier'
   if (blueprint.isTemplate) {
@@ -429,7 +460,7 @@ const createActionFromBlueprint = async (
 }
 
 const runBlueprint = async (blueprintId, params, debug = false, schedulingMode = 'barrier') => {
-  if (actionStarting.value) return false
+  if (!pageActive || actionStarting.value || (isMobile.value && !canExecute.value)) return false
   actionStarting.value = true
   try {
     const data = buildActionRunRequest(blueprintId, params, debug, schedulingMode)
@@ -438,7 +469,7 @@ const runBlueprint = async (blueprintId, params, debug = false, schedulingMode =
 
     if (response.code === 0 && response.data && response.data.action_id) {
       ElMessage.success('行动已创建并开始执行')
-      router.push(`/action/${response.data.action_id}`)
+      if (pageActive && (!isMobile.value || hasPerm(PERM.pages.action.detail.access))) router.push(`/action/${response.data.action_id}`)
       return true
     } else {
       ElMessage.error(response.message || '创建行动失败')
@@ -454,6 +485,7 @@ const runBlueprint = async (blueprintId, params, debug = false, schedulingMode =
 }
 
 const handleParamsSubmit = async (params) => {
+  if (!selectedBlueprintForRun.value?.id) return
   const started = await runBlueprint(
     selectedBlueprintForRun.value.id,
     params,
@@ -468,6 +500,7 @@ const createBranchVersion = (blueprint) => {
 }
 
 const editBlueprint = (blueprint) => {
+  if (isMobile.value && !hasAll([PERM.operations.action.blueprint.update, PERM.pages.action.create.access])) return
   if (!blueprint?.id) {
     ElMessage.error('蓝图ID不存在')
     return
@@ -479,33 +512,44 @@ const editBlueprint = (blueprint) => {
 }
 
 const openPublishDialog = (blueprint) => {
+  if (publishing.value || (isMobile.value && !hasPerm(PERM.operations.action.blueprint.publish))) return
   selectedBlueprintForRelease.value = blueprint
   publishDialogVisible.value = true
 }
 
 const openRevisionHistory = async (blueprint) => {
-  if (!blueprint?.id || revisionsLoading.value) return
+  if (!blueprint?.id || (isMobile.value && !hasPerm(PERM.operations.action.blueprint.read))) return
+  const generation = ++revisionGeneration
+  revisionBlueprint.value = blueprint
+  revisionError.value = ''
   revisionDialogVisible.value = true
   revisionsLoading.value = true
   revisions.value = []
   try {
     const response = await actionApi.getBlueprintRevisions(blueprint.id)
+    if (!pageActive || generation !== revisionGeneration) return
     revisions.value = response.data || []
   } catch {
+    if (!pageActive || generation !== revisionGeneration) return
     revisions.value = []
+    revisionError.value = '发布历史加载失败，请重试'
   } finally {
-    revisionsLoading.value = false
+    if (generation === revisionGeneration) revisionsLoading.value = false
   }
 }
 
 const openEncapsulateDialog = async (blueprint) => {
-  selectedBlueprintForRelease.value = blueprint
+  if (!blueprint?.id || preparingEncapsulation.value || encapsulating.value || (isMobile.value && !canEncapsulate.value)) return
+  const generation = ++encapsulationGeneration
+  preparingEncapsulation.value = true
+  selectedBlueprintForEncapsulation.value = blueprint
   try {
     const [detailResponse, nodesResponse, validationResponse] = await Promise.all([
       actionApi.getBlueprint(blueprint.id),
       actionApi.getNodes(),
       actionApi.validateBlueprint(blueprint.id)
     ])
+    if (!pageActive || generation !== encapsulationGeneration || (isMobile.value && !canEncapsulate.value)) return
     const validation = validationResponse.data || {}
     if (!validation.valid) {
       ElMessage.error(validation.errors?.[0]?.message || '蓝图校验未通过')
@@ -527,14 +571,17 @@ const openEncapsulateDialog = async (blueprint) => {
     ))
     encapsulateDialogVisible.value = true
   } catch (error) {
+    if (!pageActive || generation !== encapsulationGeneration) return
     console.error('准备封装蓝图失败:', error)
     ElMessage.error('准备封装蓝图失败')
+  } finally {
+    if (generation === encapsulationGeneration) preparingEncapsulation.value = false
   }
 }
 
 const handlePublish = async () => {
   const blueprint = selectedBlueprintForRelease.value
-  if (!blueprint?.id) return
+  if (!pageActive || !blueprint?.id || publishing.value || (isMobile.value && !hasPerm(PERM.operations.action.blueprint.publish))) return
   publishing.value = true
   try {
     const response = await actionApi.publishBlueprint(blueprint.id)
@@ -549,8 +596,8 @@ const handlePublish = async () => {
 }
 
 const handleEncapsulate = async (form) => {
-  const blueprint = selectedBlueprintForRelease.value
-  if (!blueprint?.id) return
+  const blueprint = selectedBlueprintForEncapsulation.value
+  if (!pageActive || !blueprint?.id || encapsulating.value || (isMobile.value && !canEncapsulate.value)) return
   encapsulating.value = true
   try {
     const response = await actionApi.encapsulateBlueprint(blueprint.id, form)
@@ -565,10 +612,12 @@ const handleEncapsulate = async (form) => {
 }
 
 const handleCreateBlueprint = () => {
+  if (isMobile.value && !hasAll([PERM.operations.action.blueprint.create, PERM.pages.action.create.access])) return
   router.push('/action/new')
 }
 
 const handleDeleteBlueprint = async (blueprint) => {
+  if (!blueprint?.id || (isMobile.value && !hasPerm(PERM.operations.action.blueprint.delete))) return
   try {
     await ElMessageBox.confirm(
       `确定要删除蓝图“${blueprint.title}”吗？其所有历史行动和运行日志也将被永久删除，此操作不可恢复。`,
@@ -585,6 +634,7 @@ const handleDeleteBlueprint = async (blueprint) => {
   }
 
   try {
+    if (!pageActive || (isMobile.value && !hasPerm(PERM.operations.action.blueprint.delete))) return
     await actionApi.deleteBlueprint(blueprint.id)
     ElMessage.success('蓝图及历史行动已删除')
     if (blueprints.value.length === 1 && pagination.value.page > 1) {
@@ -596,8 +646,27 @@ const handleDeleteBlueprint = async (blueprint) => {
   }
 }
 
+/** """同步手机详情的置顶状态，当前筛选不再匹配时重新加载。""" */
+const handleMobilePinChange = (id, pinned) => {
+  const blueprint = blueprints.value.find(item => item.id === id)
+  if (blueprint) blueprint.isPinned = pinned
+  if (mobilePinned.value !== '' && String(pinned) !== mobilePinned.value) fetchBlueprints()
+}
+
 onActivated(() => {
+  pageActive = true
   fetchBlueprints()
 })
+onDeactivated(() => {
+  pageActive = false
+  listGeneration++; revisionGeneration++; encapsulationGeneration++
+  loading.value = false; revisionsLoading.value = false; preparingEncapsulation.value = false
+  blueprintDialogVisible.value = false; templateParamsDialogVisible.value = false; publishDialogVisible.value = false; encapsulateDialogVisible.value = false; revisionDialogVisible.value = false
+})
+onBeforeUnmount(() => { pageActive = false; listGeneration++; revisionGeneration++; encapsulationGeneration++ })
 </script>
+
+<style scoped>
+.mobile-revision-history { min-height: 100px; overflow-wrap: anywhere; }.mobile-revision-title { font-size: 14px; color: #64748b; margin-bottom: 12px; }.mobile-revision-error { text-align: center; padding: 18px 0; }.mobile-revision-error p { margin-bottom: 12px; }.mobile-revision-card { padding: 16px; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 12px; }.mobile-revision-card > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }.mobile-revision-card > p { color: #64748b; font-size: 12px; margin: 10px 0; }.mobile-revision-card summary { cursor: pointer; padding: 12px 0; font-size: 14px; color: #2563eb; }.mobile-revision-card dl { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; font-size: 12px; }.mobile-revision-card dt { color: #64748b; }.mobile-revision-card dd { margin: 0; }.mobile-revision-card h3 { margin: 14px 0 6px; font-size: 13px; font-weight: 700; }.mobile-revision-card details p { font-size: 12px; color: #475569; }
+</style>
 

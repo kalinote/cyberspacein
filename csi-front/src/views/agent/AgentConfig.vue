@@ -27,7 +27,12 @@
       </div>
     </template>
     <template #toolbar>
-      <div class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+      <form v-if="isMobile" class="mobile-config-toolbar" @submit.prevent="handleCurrentTabSearch">
+        <el-input v-model="searchKeyword" clearable :placeholder="'搜索' + currentTabLabel" :aria-label="'搜索' + currentTabLabel" />
+        <p v-if="activeTab === 'sandboxes'" class="text-xs text-gray-500">在当前页沙盒中筛选，翻页可查看其他容器。</p>
+        <div class="mobile-config-toolbar-actions"><el-button native-type="submit">搜索</el-button><el-button v-if="canCreateCurrentTab" type="primary" @click="handleAdd">{{ activeTab === 'skills' ? '上传技能' : '新增' + currentTabLabel }}</el-button></div>
+      </form>
+      <div v-else class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <Icon :icon="currentTabIcon" class="text-2xl text-blue-600" />
           <h2 class="text-xl font-bold text-gray-900">{{ currentTabLabel }}</h2>
@@ -68,6 +73,9 @@
         </div>
       </div>
     </template>
+    <AgentConfigMobileList v-if="isMobile" :kind="activeTab" :label="currentTabLabel" :items="mobileConfigItems" :loading="mobileConfigLoading" :error="configListErrors[activeTab]" :keyword="searchKeyword" :pagination="mobileConfigPagination" :can-read="mobileConfigPermissions.read" :can-edit="mobileConfigPermissions.update" :can-delete="mobileConfigPermissions.delete" @retry="refreshCurrentConfig" @page="changeMobileConfigPage" @action="handleMobileConfigAction" />
+    <template v-else>
+      <el-alert v-if="configListErrors[activeTab]" :title="configListErrors[activeTab]" type="warning" :closable="false" class="mb-4" />
           <div v-if="activeTab === 'analysisEngines'" class="space-y-4">
             <div v-loading="agentListLoading" element-loading-text="加载中..." class="min-h-50">
               <div
@@ -655,10 +663,19 @@
               </div>
             </div>
           </div>
+    </template>
   </ConfigCenterLayout>
 
-    <el-dialog
+  <AgentConfigPanel v-model="mobileToolVisible" :title="mobileTool?.name || '工具详情'">
+    <p class="text-sm text-gray-600 whitespace-pre-line mb-4">{{ mobileTool?.description || '暂无工具描述' }}</p>
+    <section v-for="parameter in mobileTool?.parameters || []" :key="parameter.name" class="agent-config-tool-parameter"><h3>{{ parameter.name }}<el-tag v-if="parameter.required" size="small" type="danger">必填</el-tag></h3><p>{{ parameter.description || '暂无参数说明' }}</p><dl><dt>类型</dt><dd>{{ parameter.type || '—' }}</dd><dt>默认值</dt><dd>{{ parameter.default == null ? '无' : JSON.stringify(parameter.default) }}</dd></dl></section>
+    <p v-if="!mobileTool?.parameters?.length" class="text-sm text-gray-500">此工具没有参数。</p>
+  </AgentConfigPanel>
+
+    <AgentConfigPanel
       v-model="modelDialogVisible"
+      :draft="modelFormData"
+      :busy="modelSubmitLoading"
       :title="editingModelId ? '编辑模型资源' : '新增模型资源'"
       width="560px"
       :close-on-click-modal="false"
@@ -668,8 +685,11 @@
         ref="modelFormRef"
         :model="modelFormData"
         :rules="modelFormRules"
+        :disabled="modelSubmitLoading"
+        @validate="revealMobileFormError"
         label-width="100px"
       >
+        <AgentConfigFormGroup title="基础信息" hint="资源名称与用途" initial-open>
         <el-form-item label="名称" prop="name">
           <el-input v-model="modelFormData.name" placeholder="请输入名称" clearable />
         </el-form-item>
@@ -682,23 +702,26 @@
             clearable
           />
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="连接配置" hint="服务地址、凭据与模型名称">
         <el-form-item label="API 地址" prop="base_url">
           <el-input v-model="modelFormData.base_url" placeholder="请输入 base_url" clearable />
         </el-form-item>
         <el-form-item label="API Key" prop="api_key">
-          <el-input v-model="modelFormData.api_key" type="password" placeholder="请输入 api_key" clearable show-password />
+          <el-input v-model="modelFormData.api_key" type="password" :placeholder="isMobile && editingModelId ? '留空保留现有 API Key' : '请输入 api_key'" clearable show-password />
         </el-form-item>
         <el-form-item label="模型" prop="model">
           <el-input v-model="modelFormData.model" placeholder="请输入模型名称" clearable />
         </el-form-item>
+      </AgentConfigFormGroup>
       </el-form>
-      <template #footer>
-        <el-button @click="handleModelDialogClose">取消</el-button>
-        <el-button v-if="hasPerm(editingModelId ? PERM.operations.agent.modelConfig.update : PERM.operations.agent.modelConfig.create)" type="primary" :loading="modelSubmitLoading" @click="handleModelSubmit">确定</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">取消</el-button>
+        <el-button v-if="hasPerm(editingModelId ? PERM.operations.agent.modelConfig.update : PERM.operations.agent.modelConfig.create)" type="primary" :loading="modelSubmitLoading" :disabled="isMobile && !hasConfigPermission('modelResources', editingModelId ? 'update' : 'create')" @click="handleModelSubmit">确定</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="modelDetailVisible"
       title="模型资源详情"
       width="720px"
@@ -706,7 +729,7 @@
     >
       <div v-loading="modelDetailLoading" element-loading-text="加载中..." class="min-h-30">
         <template v-if="modelDetail">
-          <el-descriptions :column="1" border>
+          <el-descriptions :column="1" :direction="isMobile ? 'vertical' : 'horizontal'" border>
             <el-descriptions-item label="配置ID">{{ modelDetail.id }}</el-descriptions-item>
             <el-descriptions-item label="名称">{{ modelDetail.name }}</el-descriptions-item>
             <el-descriptions-item label="描述">
@@ -724,13 +747,15 @@
           </el-descriptions>
         </template>
       </div>
-      <template #footer>
-        <el-button @click="modelDetailVisible = false">关闭</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">关闭</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="promptTemplateDialogVisible"
+      :draft="promptTemplateFormData"
+      :busy="promptTemplateSubmitLoading"
       :title="editingPromptTemplateId ? '编辑提示词模板' : '新增提示词模板'"
       width="96%"
       top="2vh"
@@ -743,8 +768,11 @@
         ref="promptTemplateFormRef"
         :model="promptTemplateFormData"
         :rules="promptTemplateFormRules"
+        :disabled="promptTemplateSubmitLoading"
+        @validate="revealMobileFormError"
         label-width="100px"
       >
+        <AgentConfigFormGroup title="基础信息" hint="模板名称与用途" initial-open>
         <el-form-item label="标题" prop="name">
           <el-input v-model="promptTemplateFormData.name" placeholder="请输入提示词标题" clearable />
         </el-form-item>
@@ -757,10 +785,12 @@
             clearable
           />
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="提示词内容" hint="分别维护系统和用户提示词">
         <el-tabs v-model="promptTemplateActiveTab" class="prompt-template-tabs">
           <el-tab-pane label="系统提示词" name="system_prompt">
             <el-form-item label="系统提示词" prop="system_prompt" class="prompt-template-editor-item">
-              <MarkdownPromptField
+              <AgentConfigTextField prompt
                 v-model="promptTemplateFormData.system_prompt"
                 layout="toggle"
                 :min-height="640"
@@ -769,7 +799,7 @@
           </el-tab-pane>
           <el-tab-pane label="用户提示词" name="user_prompt">
             <el-form-item label="用户提示词" prop="user_prompt" class="prompt-template-editor-item">
-              <MarkdownPromptField
+              <AgentConfigTextField prompt
                 v-model="promptTemplateFormData.user_prompt"
                 layout="toggle"
                 :min-height="640"
@@ -777,14 +807,15 @@
             </el-form-item>
           </el-tab-pane>
         </el-tabs>
+      </AgentConfigFormGroup>
       </el-form>
-      <template #footer>
-        <el-button @click="handlePromptTemplateDialogClose">取消</el-button>
-        <el-button v-if="hasPerm(editingPromptTemplateId ? PERM.operations.agent.promptTemplate.update : PERM.operations.agent.promptTemplate.create)" type="primary" :loading="promptTemplateSubmitLoading" @click="handlePromptTemplateSubmit">确定</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">取消</el-button>
+        <el-button v-if="hasPerm(editingPromptTemplateId ? PERM.operations.agent.promptTemplate.update : PERM.operations.agent.promptTemplate.create)" type="primary" :loading="promptTemplateSubmitLoading" :disabled="isMobile && !hasConfigPermission('promptTemplates', editingPromptTemplateId ? 'update' : 'create')" @click="handlePromptTemplateSubmit">确定</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="promptTemplateDetailVisible"
       title="提示词模板详情"
       width="960px"
@@ -808,7 +839,7 @@
             <el-tabs v-model="promptTemplateDetailActiveTab">
               <el-tab-pane label="系统提示词" name="system_prompt">
                 <div class="text-sm text-gray-500 mb-1">系统提示词</div>
-                <MonacoEditor
+                <AgentConfigTextField
                   :model-value="promptTemplateDetail.system_prompt || ''"
                   language="markdown"
                   :read-only="true"
@@ -817,7 +848,7 @@
               </el-tab-pane>
               <el-tab-pane label="用户提示词" name="user_prompt">
                 <div class="text-sm text-gray-500 mb-1">用户提示词</div>
-                <MonacoEditor
+                <AgentConfigTextField
                   :model-value="promptTemplateDetail.user_prompt || ''"
                   language="markdown"
                   :read-only="true"
@@ -828,13 +859,15 @@
           </div>
         </template>
       </div>
-      <template #footer>
-        <el-button @click="promptTemplateDetailVisible = false">关闭</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">关闭</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="systemPromptDialogVisible"
+      :draft="systemPromptFormData"
+      :busy="systemPromptSubmitLoading"
       :title="editingSystemPromptId ? '编辑系统指令' : '新增系统指令'"
       width="960px"
       :close-on-click-modal="false"
@@ -845,8 +878,11 @@
         ref="systemPromptFormRef"
         :model="systemPromptFormData"
         :rules="systemPromptFormRules"
+        :disabled="systemPromptSubmitLoading"
+        @validate="revealMobileFormError"
         label-width="100px"
       >
+        <AgentConfigFormGroup title="归属与说明" hint="工作区、类型和名称" initial-open>
         <el-form-item label="工作区" prop="workspace_id">
           <el-select
             v-model="systemPromptFormData.workspace_id"
@@ -886,22 +922,25 @@
             clearable
           />
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="指令内容" hint="编辑原文或阅读预览">
         <el-form-item label="模板内容" prop="content">
-          <MonacoEditor
+          <AgentConfigTextField
             v-model="systemPromptFormData.content"
             language="markdown"
             :read-only="false"
             :min-height="560"
           />
         </el-form-item>
+      </AgentConfigFormGroup>
       </el-form>
-      <template #footer>
-        <el-button @click="handleSystemPromptDialogClose">取消</el-button>
-        <el-button v-if="hasPerm(editingSystemPromptId ? PERM.operations.agent.systemPrompt.update : PERM.operations.agent.systemPrompt.create)" type="primary" :loading="systemPromptSubmitLoading" @click="handleSystemPromptSubmit">确定</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">取消</el-button>
+        <el-button v-if="hasPerm(editingSystemPromptId ? PERM.operations.agent.systemPrompt.update : PERM.operations.agent.systemPrompt.create)" type="primary" :loading="systemPromptSubmitLoading" :disabled="isMobile && !hasConfigPermission('systemPrompts', editingSystemPromptId ? 'update' : 'create')" @click="handleSystemPromptSubmit">确定</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="systemPromptDetailVisible"
       title="系统指令详情"
       width="960px"
@@ -910,7 +949,7 @@
       <div v-loading="systemPromptDetailLoading" element-loading-text="加载中..." class="min-h-50">
         <template v-if="systemPromptDetail">
           <div class="space-y-4">
-            <el-descriptions :column="1" border>
+            <el-descriptions :column="1" :direction="isMobile ? 'vertical' : 'horizontal'" border>
               <el-descriptions-item label="系统指令ID">{{ systemPromptDetail.id }}</el-descriptions-item>
               <el-descriptions-item label="工作区ID">{{ systemPromptDetail.workspace_id || '-' }}</el-descriptions-item>
               <el-descriptions-item label="模板名称">{{ systemPromptDetail.name || '-' }}</el-descriptions-item>
@@ -924,7 +963,7 @@
             </el-descriptions>
             <div>
               <div class="text-sm text-gray-500 mb-1">模板内容</div>
-              <MonacoEditor
+              <AgentConfigTextField
                 :model-value="systemPromptDetail.content || ''"
                 language="markdown"
                 :read-only="true"
@@ -934,13 +973,15 @@
           </div>
         </template>
       </div>
-      <template #footer>
-        <el-button @click="systemPromptDetailVisible = false">关闭</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">关闭</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="agentDialogVisible"
+      :draft="{ form: agentFormData, jsonValid: agentJsonValid }"
+      :busy="agentSubmitLoading"
       :title="editingAgentId ? '编辑分析引擎' : '新增分析引擎'"
       width="640px"
       :close-on-click-modal="false"
@@ -951,8 +992,11 @@
         ref="agentFormRef"
         :model="agentFormData"
         :rules="agentFormRules"
+        :disabled="agentSubmitLoading"
+        @validate="revealMobileFormError"
         label-width="120px"
       >
+        <AgentConfigFormGroup title="基础信息" hint="所属工作区与名称" initial-open>
         <el-form-item label="工作区" prop="workspace_id">
           <el-select
             v-model="agentFormData.workspace_id"
@@ -984,6 +1028,8 @@
             clearable
           />
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="提示词" hint="内置提示词顺序与模板">
         <el-form-item label="内置提示词" prop="agent_builtin_prompt_ids">
           <div class="w-full space-y-2">
             <el-select
@@ -1062,6 +1108,8 @@
             />
           </el-select>
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="模型与推理" hint="模型资源、思考强度和额外参数">
         <el-form-item label="模型" prop="model_config_id">
           <el-select
             v-model="agentFormData.model_config_id"
@@ -1122,8 +1170,10 @@
               </el-tooltip>
             </span>
           </template>
-          <KeyValueEditor v-model="agentFormData.llm_config" typed-values />
+          <AgentConfigJsonField v-if="isMobile" v-model="agentFormData.llm_config" @validity-change="agentJsonValid = $event" /><KeyValueEditor v-else v-model="agentFormData.llm_config" typed-values />
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="工具与技能" hint="从当前工作区白名单选择">
         <el-form-item label="工具" prop="tools">
           <el-select
             v-model="agentFormData.tools"
@@ -1167,14 +1217,15 @@
             </el-option>
           </el-select>
         </el-form-item>
+      </AgentConfigFormGroup>
       </el-form>
-      <template #footer>
-        <el-button @click="handleAgentDialogClose">取消</el-button>
-        <el-button v-if="hasPerm(editingAgentId ? PERM.operations.agent.agent.update : PERM.operations.agent.agent.create)" type="primary" :loading="agentSubmitLoading" @click="handleAgentSubmit">确定</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">取消</el-button>
+        <el-button v-if="hasPerm(editingAgentId ? PERM.operations.agent.agent.update : PERM.operations.agent.agent.create)" type="primary" :loading="agentSubmitLoading" :disabled="isMobile && (!agentJsonValid || !hasConfigPermission('analysisEngines', editingAgentId ? 'update' : 'create'))" @click="handleAgentSubmit">确定</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="agentDetailVisible"
       title="分析引擎详情"
       width="720px"
@@ -1182,7 +1233,7 @@
     >
       <div v-loading="agentDetailLoading" element-loading-text="加载中..." class="min-h-30">
         <template v-if="agentDetail">
-          <el-descriptions :column="1" border>
+          <el-descriptions :column="1" :direction="isMobile ? 'vertical' : 'horizontal'" border>
             <el-descriptions-item label="分析引擎ID">{{ agentDetail.id }}</el-descriptions-item>
             <el-descriptions-item label="工作区ID">{{ agentDetail.workspace_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="名称">{{ agentDetail.name }}</el-descriptions-item>
@@ -1214,13 +1265,15 @@
           </el-descriptions>
         </template>
       </div>
-      <template #footer>
-        <el-button @click="agentDetailVisible = false">关闭</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">关闭</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="workspaceDialogVisible"
+      :draft="workspaceFormData"
+      :busy="workspaceSubmitLoading"
       :title="editingWorkspaceId ? '编辑工作区' : '新增工作区'"
       width="640px"
       :close-on-click-modal="false"
@@ -1231,8 +1284,11 @@
         ref="workspaceFormRef"
         :model="workspaceFormData"
         :rules="workspaceFormRules"
+        :disabled="workspaceSubmitLoading"
+        @validate="revealMobileFormError"
         label-width="120px"
       >
+        <AgentConfigFormGroup title="基础信息" hint="工作区名称与用途" initial-open>
         <el-form-item label="名称" prop="name">
           <el-input v-model="workspaceFormData.name" placeholder="请输入工作区名称" clearable maxlength="64" show-word-limit />
         </el-form-item>
@@ -1245,6 +1301,8 @@
             clearable
           />
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="模型与模板" hint="允许使用的模型和提示词">
         <el-form-item label="模型白名单" prop="model_config_ids">
           <el-select
             v-model="workspaceFormData.model_config_ids"
@@ -1281,6 +1339,8 @@
             />
           </el-select>
         </el-form-item>
+        </AgentConfigFormGroup>
+        <AgentConfigFormGroup title="工具与技能" hint="允许引擎使用的能力">
         <el-form-item label="工具白名单" prop="enabled_tools">
           <el-select
             v-model="workspaceFormData.enabled_tools"
@@ -1328,12 +1388,13 @@
             </el-option>
           </el-select>
         </el-form-item>
+      </AgentConfigFormGroup>
       </el-form>
-      <template #footer>
-        <el-button @click="handleWorkspaceDialogClose">取消</el-button>
-        <el-button v-if="hasPerm(editingWorkspaceId ? PERM.operations.agent.workspace.update : PERM.operations.agent.workspace.create)" type="primary" :loading="workspaceSubmitLoading" @click="handleWorkspaceSubmit">确定</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">取消</el-button>
+        <el-button v-if="hasPerm(editingWorkspaceId ? PERM.operations.agent.workspace.update : PERM.operations.agent.workspace.create)" type="primary" :loading="workspaceSubmitLoading" :disabled="isMobile && !hasConfigPermission('workspaces', editingWorkspaceId ? 'update' : 'create')" @click="handleWorkspaceSubmit">确定</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
     <SkillEditorDialog
       v-model="skillEditorVisible"
@@ -1342,7 +1403,7 @@
       @saved="onSkillEditorSaved"
     />
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="skillDetailVisible"
       title="技能详情"
       width="720px"
@@ -1350,7 +1411,7 @@
     >
       <div v-loading="skillDetailLoading" element-loading-text="加载中..." class="min-h-30">
         <template v-if="skillDetail">
-          <el-descriptions :column="1" border>
+          <el-descriptions :column="1" :direction="isMobile ? 'vertical' : 'horizontal'" border>
             <el-descriptions-item label="技能 ID">
               <span class="font-mono text-xs">{{ skillDetail.id }}</span>
             </el-descriptions-item>
@@ -1373,7 +1434,8 @@
           </el-descriptions>
           <div class="mt-4">
             <div class="text-sm font-medium text-gray-700 mb-2">文件清单（{{ skillDetailFiles.length }}）</div>
-            <el-table v-if="skillDetailFiles.length" :data="skillDetailFiles" size="small" border max-height="280">
+            <div v-if="isMobile && skillDetailFiles.length" class="agent-config-skill-files"><div v-for="file in skillDetailFiles" :key="file.path"><strong>{{ file.path }}</strong><span>{{ getSkillFileTypeLabel(file.file_type) }}</span></div></div>
+            <el-table v-else-if="skillDetailFiles.length" :data="skillDetailFiles" size="small" border max-height="280">
               <el-table-column prop="path" label="路径" min-width="200">
                 <template #default="{ row }">
                   <span class="font-mono text-xs">{{ row.path }}</span>
@@ -1389,16 +1451,18 @@
           </div>
         </template>
       </div>
-      <template #footer>
-        <el-button @click="skillDetailVisible = false">关闭</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">关闭</el-button>
         <el-button v-if="hasPerm(PERM.operations.agent.skill.update)" type="primary" :disabled="!skillDetail?.id" @click="openSkillEditorFromDetail">
           编辑
         </el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="skillUploadDialogVisible"
+      :draft="skillUploadFile"
+      :busy="skillUploadLoading"
       title="上传技能"
       width="520px"
       :close-on-click-modal="false"
@@ -1418,15 +1482,15 @@
         <Icon icon="mdi:cloud-upload" class="text-5xl text-gray-400 mb-2" />
         <div class="el-upload__text">将 zip 文件拖到此处，或<em>点击选择</em></div>
       </el-upload>
-      <template #footer>
-        <el-button @click="handleSkillUploadDialogClose">取消</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">取消</el-button>
         <el-button v-if="hasPerm(PERM.operations.agent.skill.create)" type="primary" :loading="skillUploadLoading" :disabled="!skillUploadFile" @click="handleSkillUploadSubmit">
           确认上传
         </el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="workspaceDetailVisible"
       title="工作区详情"
       width="720px"
@@ -1434,7 +1498,7 @@
     >
       <div v-loading="workspaceDetailLoading" element-loading-text="加载中..." class="min-h-30">
         <template v-if="workspaceDetail">
-          <el-descriptions :column="1" border>
+          <el-descriptions :column="1" :direction="isMobile ? 'vertical' : 'horizontal'" border>
             <el-descriptions-item label="工作区ID">{{ workspaceDetail.id }}</el-descriptions-item>
             <el-descriptions-item label="名称">{{ workspaceDetail.name }}</el-descriptions-item>
             <el-descriptions-item label="描述">
@@ -1457,13 +1521,15 @@
           </el-descriptions>
         </template>
       </div>
-      <template #footer>
-        <el-button @click="workspaceDetailVisible = false">关闭</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">关闭</el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="createSandboxDialogVisible"
+      :draft="{ name: createSandboxName, type: createSandboxImageType }"
+      :busy="creatingSandbox"
       title="创建沙盒"
       width="420px"
       @open="onCreateSandboxDialogOpen"
@@ -1486,15 +1552,15 @@
           </el-select>
         </el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="createSandboxDialogVisible = false">取消</el-button>
+      <template #footer="{ close }">
+        <el-button @click="close">取消</el-button>
         <el-button v-if="hasPerm(PERM.operations.agent.sandbox.create)" type="primary" :loading="creatingSandbox" @click="handleCreateSandboxSubmit">
           确定
         </el-button>
       </template>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="sandboxDetailDialogVisible"
       title="沙盒容器详情"
       width="640px"
@@ -1502,7 +1568,7 @@
     >
       <div v-loading="sandboxDetailLoading" class="min-h-50">
         <template v-if="sandboxDetailData">
-          <el-descriptions :column="1" border>
+          <el-descriptions :column="1" :direction="isMobile ? 'vertical' : 'horizontal'" border>
             <el-descriptions-item label="沙盒ID">{{ sandboxDetailData.sandbox_id }}</el-descriptions-item>
             <el-descriptions-item label="显示名称">{{ sandboxDetailData.display_name ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="容器名称">{{ sandboxDetailData.name }}</el-descriptions-item>
@@ -1528,9 +1594,9 @@
           </pre>
         </template>
       </div>
-    </el-dialog>
+    </AgentConfigPanel>
 
-    <el-dialog
+    <AgentConfigPanel
       v-model="sandboxBrowserDialogVisible"
       :title="sandboxBrowserTitle || '沙盒浏览器'"
       class="sandbox-browser-dialog"
@@ -1566,17 +1632,21 @@
           当前没有可用的连接地址。
         </div>
       </div>
-    </el-dialog>
+    </AgentConfigPanel>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick } from 'vue'
 import { Icon } from '@iconify/vue'
 import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
 import SkillEditorDialog from '@/components/agent/SkillEditorDialog.vue'
 import { findNavItemByKey } from '@/utils/configCenterNav'
-import MonacoEditor from '@/components/MonacoEditor.vue'
-import MarkdownPromptField from '@/components/agent/MarkdownPromptField.vue'
+import AgentConfigPanel from '@/components/agent/AgentConfigPanel.vue'
+import AgentConfigFormGroup from '@/components/agent/AgentConfigFormGroup.vue'
+import AgentConfigTextField from '@/components/agent/AgentConfigTextField.vue'
+import AgentConfigJsonField from '@/components/agent/AgentConfigJsonField.vue'
+import AgentConfigMobileList from '@/components/agent/AgentConfigMobileList.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 import KeyValueEditor from '@/components/action/nodes/components/KeyValueEditor.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { agentApi } from '@/api/agent'
@@ -1594,6 +1664,16 @@ import {
 
 const SANDBOX_HOST = import.meta.env.VITE_SANDBOX_HOST || '127.0.0.1'
 
+defineOptions({ name: 'AgentConfig' })
+const { isMobile } = useMobileViewport()
+const configListErrors = ref({})
+const mobileResourceCounts = ref({})
+const configListGenerations = {}
+let configPageActive = true
+let configInteractionGeneration = 0
+const agentJsonValid = ref(true)
+const mobileToolVisible = ref(false)
+const mobileTool = ref(null)
 const activeTab = ref('analysisEngines')
 const searchKeyword = ref('')
 
@@ -1697,21 +1777,7 @@ const modelPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
 const modelLoadedOnce = ref(false)
 
 const fetchModelList = async () => {
-  modelListLoading.value = true
-  try {
-    const result = await getPaginatedData(agentApi.getModelList, {
-      search: searchKeyword.value.trim() || undefined,
-      page: modelPagination.value.page,
-      page_size: modelPagination.value.pageSize
-    })
-    modelList.value = result.items
-    modelPagination.value = { ...modelPagination.value, ...result.pagination }
-    modelLoadedOnce.value = true
-  } catch (e) {
-    modelList.value = []
-  } finally {
-    modelListLoading.value = false
-  }
+  await loadConfigResource('modelResources', agentApi.getModelList, modelList, modelListLoading, modelPagination, modelLoadedOnce)
 }
 
 const promptTemplateList = ref([])
@@ -1720,21 +1786,7 @@ const promptTemplatePagination = ref({ page: 1, pageSize: 10, total: 0, totalPag
 const promptTemplateLoadedOnce = ref(false)
 
 const fetchPromptTemplateList = async () => {
-  promptTemplateListLoading.value = true
-  try {
-    const result = await getPaginatedData(agentApi.getPromptTemplateList, {
-      search: searchKeyword.value.trim() || undefined,
-      page: promptTemplatePagination.value.page,
-      page_size: promptTemplatePagination.value.pageSize
-    })
-    promptTemplateList.value = result.items
-    promptTemplatePagination.value = { ...promptTemplatePagination.value, ...result.pagination }
-    promptTemplateLoadedOnce.value = true
-  } catch (e) {
-    promptTemplateList.value = []
-  } finally {
-    promptTemplateListLoading.value = false
-  }
+  await loadConfigResource('promptTemplates', agentApi.getPromptTemplateList, promptTemplateList, promptTemplateListLoading, promptTemplatePagination, promptTemplateLoadedOnce)
 }
 
 const systemPromptList = ref([])
@@ -1743,21 +1795,7 @@ const systemPromptPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages
 const systemPromptLoadedOnce = ref(false)
 
 const fetchSystemPromptList = async () => {
-  systemPromptListLoading.value = true
-  try {
-    const result = await getPaginatedData(agentApi.getSystemPromptList, {
-      search: searchKeyword.value.trim() || undefined,
-      page: systemPromptPagination.value.page,
-      page_size: systemPromptPagination.value.pageSize
-    })
-    systemPromptList.value = result.items
-    systemPromptPagination.value = { ...systemPromptPagination.value, ...result.pagination }
-    systemPromptLoadedOnce.value = true
-  } catch (e) {
-    systemPromptList.value = []
-  } finally {
-    systemPromptListLoading.value = false
-  }
+  await loadConfigResource('systemPrompts', agentApi.getSystemPromptList, systemPromptList, systemPromptListLoading, systemPromptPagination, systemPromptLoadedOnce)
 }
 
 const skillList = ref([])
@@ -1768,21 +1806,7 @@ const skillLoadedOnce = ref(false)
 const SKILL_ZIP_MAX_BYTES = 5 * 1024 * 1024
 
 const fetchSkillList = async () => {
-  skillListLoading.value = true
-  try {
-    const result = await getPaginatedData(agentApi.getSkillList, {
-      search: searchKeyword.value.trim() || undefined,
-      page: skillPagination.value.page,
-      page_size: skillPagination.value.pageSize
-    })
-    skillList.value = result.items
-    skillPagination.value = { ...skillPagination.value, ...result.pagination }
-    skillLoadedOnce.value = true
-  } catch (e) {
-    skillList.value = []
-  } finally {
-    skillListLoading.value = false
-  }
+  await loadConfigResource('skills', agentApi.getSkillList, skillList, skillListLoading, skillPagination, skillLoadedOnce)
 }
 
 const toolsList = ref([])
@@ -1790,16 +1814,7 @@ const toolsListLoading = ref(false)
 const toolsLoadedOnce = ref(false)
 
 const fetchToolsList = async () => {
-  toolsListLoading.value = true
-  try {
-    const res = await agentApi.getToolsList()
-    toolsList.value = Array.isArray(res?.data) ? res.data : []
-    toolsLoadedOnce.value = true
-  } catch (e) {
-    toolsList.value = []
-  } finally {
-    toolsListLoading.value = false
-  }
+  await loadConfigResource('tools', agentApi.getToolsList, toolsList, toolsListLoading, null, toolsLoadedOnce)
 }
 
 const agentList = ref([])
@@ -1808,21 +1823,7 @@ const agentPagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
 const agentLoadedOnce = ref(false)
 
 const fetchAgentList = async () => {
-  agentListLoading.value = true
-  try {
-    const result = await getPaginatedData(agentApi.getAgentList, {
-      search: searchKeyword.value.trim() || undefined,
-      page: agentPagination.value.page,
-      page_size: agentPagination.value.pageSize
-    })
-    agentList.value = result.items
-    agentPagination.value = { ...agentPagination.value, ...result.pagination }
-    agentLoadedOnce.value = true
-  } catch (e) {
-    agentList.value = []
-  } finally {
-    agentListLoading.value = false
-  }
+  await loadConfigResource('analysisEngines', agentApi.getAgentList, agentList, agentListLoading, agentPagination, agentLoadedOnce)
 }
 
 const workspaceList = ref([])
@@ -1831,21 +1832,7 @@ const workspacePagination = ref({ page: 1, pageSize: 10, total: 0, totalPages: 0
 const workspaceLoadedOnce = ref(false)
 
 const fetchWorkspaceList = async () => {
-  workspaceListLoading.value = true
-  try {
-    const result = await getPaginatedData(agentApi.getWorkspaceList, {
-      search: searchKeyword.value.trim() || undefined,
-      page: workspacePagination.value.page,
-      page_size: workspacePagination.value.pageSize
-    })
-    workspaceList.value = result.items
-    workspacePagination.value = { ...workspacePagination.value, ...result.pagination }
-    workspaceLoadedOnce.value = true
-  } catch (e) {
-    workspaceList.value = []
-  } finally {
-    workspaceListLoading.value = false
-  }
+  await loadConfigResource('workspaces', agentApi.getWorkspaceList, workspaceList, workspaceListLoading, workspacePagination, workspaceLoadedOnce)
 }
 
 const sandboxList = ref([])
@@ -1886,26 +1873,7 @@ const getSandboxStatusTagType = (sandboxStatus) => {
 }
 
 const fetchSandboxList = async () => {
-  sandboxListLoading.value = true
-  try {
-    const result = await getPaginatedData(agentApi.getSandboxList, {
-      page: sandboxPagination.value.page,
-      page_size: sandboxPagination.value.pageSize
-    })
-    sandboxList.value = result.items || []
-    sandboxPagination.value = {
-      ...sandboxPagination.value,
-      total: result.pagination.total ?? 0,
-      page: result.pagination.page ?? 1,
-      pageSize: result.pagination.pageSize ?? sandboxPagination.value.pageSize,
-      totalPages: result.pagination.totalPages ?? 0
-    }
-    sandboxLoadedOnce.value = true
-  } catch {
-    sandboxList.value = []
-  } finally {
-    sandboxListLoading.value = false
-  }
+  await loadConfigResource('sandboxes', agentApi.getSandboxList, sandboxList, sandboxListLoading, sandboxPagination, sandboxLoadedOnce)
 }
 
 const handleSandboxPageChange = (page) => {
@@ -1939,6 +1907,8 @@ const handleCreateSandbox = () => {
 }
 
 const handleCreateSandboxSubmit = async () => {
+  if (creatingSandbox.value || (isMobile.value && !hasPerm(PERM.operations.agent.sandbox.create))) return
+  const interaction = ++configInteractionGeneration
   creatingSandbox.value = true
   try {
     const payload = {
@@ -1948,6 +1918,7 @@ const handleCreateSandboxSubmit = async () => {
       payload.name = createSandboxName.value.trim()
     }
     const res = await agentApi.createSandbox(payload)
+    if (!configPageActive || interaction !== configInteractionGeneration || (isMobile.value && !hasConfigPermission('sandboxes', 'create'))) return
     if (res.code === 0) {
       ElMessage.success('创建沙盒容器成功')
       createSandboxDialogVisible.value = false
@@ -1958,7 +1929,7 @@ const handleCreateSandboxSubmit = async () => {
   } catch (error) {
     ElMessage.error(error?.message || '创建沙盒容器失败')
   } finally {
-    creatingSandbox.value = false
+    if (interaction === configInteractionGeneration) creatingSandbox.value = false
   }
 }
 
@@ -1970,12 +1941,16 @@ const sandboxBrowserUrl = ref('')
 const sandboxBrowserTitle = ref('')
 
 const handleViewSandbox = async (sandbox) => {
+  if (isMobile.value && !hasConfigPermission('sandboxes', 'read')) return
+  const interaction = ++configInteractionGeneration
   if (!sandbox?.sandbox_id) return
   sandboxDetailDialogVisible.value = true
   sandboxDetailData.value = null
   sandboxDetailLoading.value = true
   try {
     const res = await agentApi.getSandboxDetail(sandbox.sandbox_id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('sandboxes', 'read')) { sandboxDetailDialogVisible.value = false; return }
     if (res.code === 0 && res.data) {
       sandboxDetailData.value = res.data
     } else {
@@ -1983,10 +1958,12 @@ const handleViewSandbox = async (sandbox) => {
       sandboxDetailDialogVisible.value = false
     }
   } catch (error) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('sandboxes', 'read')) { sandboxDetailDialogVisible.value = false; return }
     ElMessage.error(error?.message || '获取沙盒详情失败')
     sandboxDetailDialogVisible.value = false
   } finally {
-    sandboxDetailLoading.value = false
+    if (interaction === configInteractionGeneration) sandboxDetailLoading.value = false
   }
 }
 
@@ -2015,6 +1992,7 @@ const handleOpenCodeServer = (sandbox) => {
 }
 
 const handleDestroySandbox = (sandbox) => {
+  if (isMobile.value && !hasPerm(PERM.operations.agent.sandbox.delete)) return
   if (!sandbox?.sandbox_id) return
   const name = sandbox.display_name || sandbox.name || sandbox.sandbox_id
   ElMessageBox.confirm(
@@ -2027,8 +2005,10 @@ const handleDestroySandbox = (sandbox) => {
     }
   )
     .then(async () => {
+      if (!configPageActive || (isMobile.value && !hasPerm(PERM.operations.agent.sandbox.delete))) return
       try {
         const res = await agentApi.destroySandbox(sandbox.sandbox_id)
+      if (!configPageActive || (isMobile.value && !hasConfigPermission('sandboxes', 'delete'))) return
         if (res.code === 0) {
           ElMessage.success('沙盒已销毁')
           await fetchSandboxList()
@@ -2084,7 +2064,13 @@ const statistics = computed(() => ({
   sandboxes: sandboxPagination.value.total ?? 0
 }))
 
-const getResourceCount = (tabKey) => statistics.value[tabKey] ?? 0
+/** """手机目录仅展示已成功读取的未筛选总数，未知或无权限时显示占位。""" */
+const getResourceCount = (tabKey) => {
+  if (!isMobile.value) return statistics.value[tabKey] ?? 0
+  const permission = agentTabReadPermissions[tabKey]
+  if (!permission || !hasPerm(permission) || configListErrors.value[tabKey]) return -1
+  return mobileResourceCounts.value[tabKey] ?? -1
+}
 
 const getPromptTemplatePreview = (item) => {
   if (item.description) return item.description
@@ -2225,12 +2211,12 @@ const modelFormData = ref({
   api_key: '',
   model: ''
 })
-const modelFormRules = {
+const modelFormRules = computed(() => ({
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   base_url: [{ required: true, message: '请输入 API 地址', trigger: 'blur' }],
-  api_key: [{ required: true, message: '请输入 API Key', trigger: 'blur' }],
+  api_key: [{ required: !isMobile.value || !editingModelId.value, message: '请输入 API Key', trigger: 'blur' }],
   model: [{ required: true, message: '请输入模型', trigger: 'blur' }]
-}
+}))
 
 const modelDetailVisible = ref(false)
 const modelDetail = ref(null)
@@ -2601,6 +2587,7 @@ const handleAgentWorkspaceChange = async () => {
 }
 
 const resetAgentForm = () => {
+  agentJsonValid.value = true
   agentFormData.value = {
     workspace_id: '',
     name: '',
@@ -2636,9 +2623,14 @@ const afterAgentDialogClosed = () => {
 }
 
 const handleAgentSubmit = async () => {
+  if (isMobile.value && !agentJsonValid.value) return
+  if (agentSubmitLoading.value || (isMobile.value && !hasConfigPermission('analysisEngines', editingAgentId.value ? 'update' : 'create'))) return
   if (!agentFormRef.value) return
+  const interaction = ++configInteractionGeneration
   try {
     await agentFormRef.value.validate()
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('analysisEngines', editingAgentId.value ? 'update' : 'create')) return
     agentSubmitLoading.value = true
     const payload = {
       name: agentFormData.value.name,
@@ -2655,12 +2647,16 @@ const handleAgentSubmit = async () => {
 
     if (editingAgentId.value) {
       await agentApi.updateAgent(editingAgentId.value, payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('analysisEngines', editingAgentId.value ? 'update' : 'create')) return
       ElMessage.success('修改成功')
     } else {
       await agentApi.createAgent({
         ...payload,
         workspace_id: agentFormData.value.workspace_id
       })
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('analysisEngines', editingAgentId.value ? 'update' : 'create')) return
       ElMessage.success('新增成功')
     }
     handleAgentDialogClose()
@@ -2680,6 +2676,8 @@ const openAgentDialog = () => {
 }
 
 const openAgentDetail = async (item) => {
+  if (isMobile.value && !hasConfigPermission('analysisEngines', 'read')) return
+  const interaction = ++configInteractionGeneration
   const id = item?.id
   if (!id) return
   agentDetailVisible.value = true
@@ -2690,23 +2688,33 @@ const openAgentDetail = async (item) => {
     if (globalSkillsById.value.size === 0) {
       try {
         const res = await agentApi.getSkillsList()
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('analysisEngines', 'read')) { agentDetailVisible.value = false; return }
         const list = Array.isArray(res?.data) ? res.data : []
         globalSkillsById.value = new Map(list.filter((s) => s?.id).map((s) => [s.id, s]))
       } catch {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('analysisEngines', 'read')) { agentDetailVisible.value = false; return }
         /* 详情展示回退为 ID */
       }
     }
     const res = await agentApi.getAgentDetail(id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('analysisEngines', 'read')) { agentDetailVisible.value = false; return }
     agentDetail.value = res?.data ?? null
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('analysisEngines', 'read')) { agentDetailVisible.value = false; return }
     ElMessage.error('获取分析引擎详情失败')
     agentDetailVisible.value = false
   } finally {
-    agentDetailLoading.value = false
+    if (interaction === configInteractionGeneration) agentDetailLoading.value = false
   }
 }
 
 const openAgentEdit = async (item) => {
+  if (isMobile.value && !hasConfigPermission('analysisEngines', 'update')) return
+  const interaction = ++configInteractionGeneration
   const id = item?.id
   if (!id) return
   editingAgentId.value = id
@@ -2716,6 +2724,8 @@ const openAgentEdit = async (item) => {
   try {
     await loadAgentDialogOptions()
     const res = await agentApi.getAgentDetail(id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('analysisEngines', 'update')) { agentDialogVisible.value = false; return }
     const d = res?.data
     if (!d) throw new Error('empty agent detail')
 
@@ -2737,6 +2747,10 @@ const openAgentEdit = async (item) => {
     if (agentFormData.value.workspace_id) {
       await loadAgentWorkspaceDetail(agentFormData.value.workspace_id)
       await loadAgentSkillsOptions(agentFormData.value.workspace_id)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('analysisEngines', 'update')) { agentDialogVisible.value = false; return }
+      // 手机保留服务器已有选择，选项读取失败不能清空已保存的关联。
+      if (!isMobile.value) {
       const allowedTools = allowedToolNameSet.value
       agentFormData.value.tools = (agentFormData.value.tools || []).filter((t) => allowedTools.has(t))
       const allowedSkills = new Set(agentSkillsListOptions.value.map((s) => s.id))
@@ -2747,17 +2761,21 @@ const openAgentEdit = async (item) => {
       if (agentFormData.value.model_config_id && !allowedModelConfigIdSet.value.has(agentFormData.value.model_config_id)) {
         agentFormData.value.model_config_id = ''
       }
+      }
     }
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('analysisEngines', 'update')) { agentDialogVisible.value = false; return }
     ElMessage.error('获取分析引擎详情失败')
     agentDialogVisible.value = false
     editingAgentId.value = null
   } finally {
-    agentSubmitLoading.value = false
+    if (interaction === configInteractionGeneration) agentSubmitLoading.value = false
   }
 }
 
 const handleDeleteAgent = (item) => {
+  if (isMobile.value && !hasPerm(PERM.operations.agent.agent.delete)) return
   const id = item?.id
   const name = item?.name || id
   if (!id) return
@@ -2771,7 +2789,9 @@ const handleDeleteAgent = (item) => {
     }
   )
     .then(async () => {
+      if (!configPageActive || (isMobile.value && !hasPerm(PERM.operations.agent.agent.delete))) return
       await agentApi.deleteAgent(id)
+      if (!configPageActive || (isMobile.value && !hasConfigPermission('analysisEngines', 'delete'))) return
       ElMessage.success('删除成功')
       if (agentList.value.length === 1 && agentPagination.value.page > 1) {
         agentPagination.value.page -= 1
@@ -2789,6 +2809,8 @@ const openWorkspaceCreate = () => {
 }
 
 const openWorkspaceDetail = async (item) => {
+  if (isMobile.value && !hasConfigPermission('workspaces', 'read')) return
+  const interaction = ++configInteractionGeneration
   const id = item?.id
   if (!id) return
   workspaceDetailVisible.value = true
@@ -2801,20 +2823,28 @@ const openWorkspaceDetail = async (item) => {
         const list = Array.isArray(skillsRes?.data) ? skillsRes.data : []
         globalSkillsById.value = new Map(list.filter((s) => s?.id).map((s) => [s.id, s]))
       } catch {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('workspaces', 'read')) { workspaceDetailVisible.value = false; return }
         /* 详情展示回退为 ID */
       }
     }
     const res = await agentApi.getWorkspaceDetail(id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('workspaces', 'read')) { workspaceDetailVisible.value = false; return }
     workspaceDetail.value = res?.data ?? null
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('workspaces', 'read')) { workspaceDetailVisible.value = false; return }
     ElMessage.error('获取工作区详情失败')
     workspaceDetailVisible.value = false
   } finally {
-    workspaceDetailLoading.value = false
+    if (interaction === configInteractionGeneration) workspaceDetailLoading.value = false
   }
 }
 
 const openWorkspaceEdit = async (item) => {
+  if (isMobile.value && !hasConfigPermission('workspaces', 'update')) return
+  const interaction = ++configInteractionGeneration
   const id = item?.id
   if (!id) return
   editingWorkspaceId.value = id
@@ -2824,7 +2854,10 @@ const openWorkspaceEdit = async (item) => {
   try {
     await loadWorkspaceDialogOptions()
     const res = await agentApi.getWorkspaceDetail(id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('workspaces', 'update')) { workspaceDialogVisible.value = false; return }
     const d = res?.data
+    if (!d) throw new Error('配置详情为空，请重新加载')
     if (d) {
       workspaceFormData.value = {
         name: d.name ?? '',
@@ -2836,18 +2869,24 @@ const openWorkspaceEdit = async (item) => {
       }
     }
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('workspaces', 'update')) { workspaceDialogVisible.value = false; return }
     ElMessage.error('获取工作区详情失败')
     workspaceDialogVisible.value = false
     editingWorkspaceId.value = null
   } finally {
-    workspaceSubmitLoading.value = false
+    if (interaction === configInteractionGeneration) workspaceSubmitLoading.value = false
   }
 }
 
 const handleWorkspaceSubmit = async () => {
+  if (workspaceSubmitLoading.value || (isMobile.value && !hasConfigPermission('workspaces', editingWorkspaceId.value ? 'update' : 'create'))) return
   if (!workspaceFormRef.value) return
+  const interaction = ++configInteractionGeneration
   try {
     await workspaceFormRef.value.validate()
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('workspaces', editingWorkspaceId.value ? 'update' : 'create')) return
     workspaceSubmitLoading.value = true
     const payload = {
       name: (workspaceFormData.value.name || '').trim(),
@@ -2859,9 +2898,13 @@ const handleWorkspaceSubmit = async () => {
     }
     if (editingWorkspaceId.value) {
       await agentApi.updateWorkspace(editingWorkspaceId.value, payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('workspaces', editingWorkspaceId.value ? 'update' : 'create')) return
       ElMessage.success('修改成功')
     } else {
       await agentApi.createWorkspace(payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('workspaces', editingWorkspaceId.value ? 'update' : 'create')) return
       ElMessage.success('新增成功')
     }
     handleWorkspaceDialogClose()
@@ -2875,6 +2918,7 @@ const handleWorkspaceSubmit = async () => {
 }
 
 const handleDeleteWorkspace = (item) => {
+  if (isMobile.value && !hasPerm(PERM.operations.agent.workspace.delete)) return
   const id = item?.id
   const name = item?.name || id
   if (!id) return
@@ -2889,7 +2933,9 @@ const handleDeleteWorkspace = (item) => {
     }
   )
     .then(async () => {
+      if (!configPageActive || (isMobile.value && !hasPerm(PERM.operations.agent.workspace.delete))) return
       await agentApi.deleteWorkspace(id)
+      if (!configPageActive || (isMobile.value && !hasConfigPermission('workspaces', 'delete'))) return
       ElMessage.success('删除成功')
       if (workspaceList.value.length === 1 && workspacePagination.value.page > 1) {
         workspacePagination.value.page -= 1
@@ -2900,6 +2946,7 @@ const handleDeleteWorkspace = (item) => {
 }
 
 const handleAdd = () => {
+  if (isMobile.value && !canCreateCurrentTab.value) return
   if (activeTab.value === 'analysisEngines') {
     openAgentDialog()
   } else if (activeTab.value === 'modelResources') {
@@ -2952,6 +2999,8 @@ const skillDetailFiles = computed(() => {
 })
 
 const openSkillDetail = async (item) => {
+  if (isMobile.value && !hasConfigPermission('skills', 'read')) return
+  const interaction = ++configInteractionGeneration
   const id = item?.id
   if (!id) return
   skillDetailVisible.value = true
@@ -2959,12 +3008,16 @@ const openSkillDetail = async (item) => {
   skillDetailLoading.value = true
   try {
     const res = await agentApi.getSkillDetail(id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('skills', 'read')) { skillDetailVisible.value = false; return }
     skillDetail.value = res?.data ?? null
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('skills', 'read')) { skillDetailVisible.value = false; return }
     ElMessage.error('获取技能详情失败')
     skillDetailVisible.value = false
   } finally {
-    skillDetailLoading.value = false
+    if (interaction === configInteractionGeneration) skillDetailLoading.value = false
   }
 }
 
@@ -2973,6 +3026,7 @@ const skillEditorId = ref('')
 const skillEditorName = ref('')
 
 const openSkillEditor = (item) => {
+  if (isMobile.value && !hasConfigPermission('skills', 'update')) return
   const id = item?.id
   if (!id) return
   skillEditorId.value = id
@@ -3041,6 +3095,7 @@ const handleSkillUploadDialogClose = () => {
 }
 
 const handleSkillUploadSubmit = async () => {
+  if (skillUploadLoading.value || (isMobile.value && !hasPerm(PERM.operations.agent.skill.create))) return
   const file = skillUploadFile.value
   if (!file) {
     ElMessage.warning('请选择 zip 文件')
@@ -3048,9 +3103,11 @@ const handleSkillUploadSubmit = async () => {
   }
   if (!validateSkillZipFile(file)) return
 
+  const interaction = ++configInteractionGeneration
   skillUploadLoading.value = true
   try {
     const res = await agentApi.uploadSkill(file)
+    if (!configPageActive || interaction !== configInteractionGeneration || (isMobile.value && !hasConfigPermission('skills', 'create'))) return
     const data = res?.data
     const total = data?.total ?? 0
     const names = Array.isArray(data?.skills)
@@ -3064,11 +3121,12 @@ const handleSkillUploadSubmit = async () => {
   } catch (e) {
     if (e !== false) console.error('上传技能失败:', e)
   } finally {
-    skillUploadLoading.value = false
+    if (interaction === configInteractionGeneration) skillUploadLoading.value = false
   }
 }
 
 const handleDeleteSkill = (item) => {
+  if (isMobile.value && !hasPerm(PERM.operations.agent.skill.delete)) return
   const id = item?.id
   const name = item?.name || id
   if (!id) return
@@ -3083,7 +3141,9 @@ const handleDeleteSkill = (item) => {
     }
   )
     .then(async () => {
+      if (!configPageActive || (isMobile.value && !hasPerm(PERM.operations.agent.skill.delete))) return
       await agentApi.deleteSkill(id)
+      if (!configPageActive || (isMobile.value && !hasConfigPermission('skills', 'delete'))) return
       ElMessage.success('删除成功')
       if (skillList.value.length === 1 && skillPagination.value.page > 1) {
         skillPagination.value.page -= 1
@@ -3101,9 +3161,13 @@ const handleModelDialogClose = () => {
 }
 
 const handleModelSubmit = async () => {
+  if (modelSubmitLoading.value || (isMobile.value && !hasConfigPermission('modelResources', editingModelId.value ? 'update' : 'create'))) return
   if (!modelFormRef.value) return
+  const interaction = ++configInteractionGeneration
   try {
     await modelFormRef.value.validate()
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('modelResources', editingModelId.value ? 'update' : 'create')) return
     modelSubmitLoading.value = true
     const payload = {
       name: modelFormData.value.name,
@@ -3114,9 +3178,13 @@ const handleModelSubmit = async () => {
     }
     if (editingModelId.value) {
       await agentApi.updateModel(editingModelId.value, payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('modelResources', editingModelId.value ? 'update' : 'create')) return
       ElMessage.success('修改成功')
     } else {
       await agentApi.createModel(payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('modelResources', editingModelId.value ? 'update' : 'create')) return
       ElMessage.success('新增成功')
     }
     handleModelDialogClose()
@@ -3131,6 +3199,8 @@ const handleModelSubmit = async () => {
 }
 
 const openModelDetail = async (item) => {
+  if (isMobile.value && !hasConfigPermission('modelResources', 'read')) return
+  const interaction = ++configInteractionGeneration
   const id = item?.id
   if (!id) return
   modelDetailVisible.value = true
@@ -3138,16 +3208,22 @@ const openModelDetail = async (item) => {
   modelDetail.value = null
   try {
     const res = await agentApi.getModelDetail(id)
-    modelDetail.value = res?.data ?? null
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('modelResources', 'read')) { modelDetailVisible.value = false; return }
+    modelDetail.value = res?.data ? { ...res.data, ...(isMobile.value && !hasPerm(PERM.operations.agent.modelConfig.secretRead) ? { api_key: null } : {}) } : null
   } catch {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('modelResources', 'read')) { modelDetailVisible.value = false; return }
     ElMessage.error('获取模型资源详情失败')
     modelDetailVisible.value = false
   } finally {
-    modelDetailLoading.value = false
+    if (interaction === configInteractionGeneration) modelDetailLoading.value = false
   }
 }
 
 const openModelEdit = async (item) => {
+  if (isMobile.value && !hasConfigPermission('modelResources', 'update')) return
+  const interaction = ++configInteractionGeneration
   const id = item?.id
   if (!id) return
   editingModelId.value = id
@@ -3156,25 +3232,30 @@ const openModelEdit = async (item) => {
   modelFormRef.value?.resetFields()
   try {
     const res = await agentApi.getModelDetail(id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('modelResources', 'update')) { modelDialogVisible.value = false; return }
     const d = res?.data
     if (!d) throw new Error('empty model detail')
     modelFormData.value = {
       name: d.name ?? '',
       description: d.description ?? '',
       base_url: d.base_url ?? '',
-      api_key: d.api_key ?? '',
+      api_key: isMobile.value && !hasPerm(PERM.operations.agent.modelConfig.secretRead) ? '' : (d.api_key ?? ''),
       model: d.model ?? ''
     }
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('modelResources', 'update')) { modelDialogVisible.value = false; return }
     ElMessage.error('获取模型资源详情失败')
     modelDialogVisible.value = false
     editingModelId.value = null
   } finally {
-    modelSubmitLoading.value = false
+    if (interaction === configInteractionGeneration) modelSubmitLoading.value = false
   }
 }
 
 const handleDeleteModel = (item) => {
+  if (isMobile.value && !hasPerm(PERM.operations.agent.modelConfig.delete)) return
   const id = item?.id
   const name = item?.name || id
   if (!id) return
@@ -3189,7 +3270,9 @@ const handleDeleteModel = (item) => {
     }
   )
     .then(async () => {
+      if (!configPageActive || (isMobile.value && !hasPerm(PERM.operations.agent.modelConfig.delete))) return
       await agentApi.deleteModel(id)
+      if (!configPageActive || (isMobile.value && !hasConfigPermission('modelResources', 'delete'))) return
       ElMessage.success('删除成功')
       if (modelList.value.length === 1 && modelPagination.value.page > 1) {
         modelPagination.value.page -= 1
@@ -3252,22 +3335,30 @@ const openSystemPromptCreate = () => {
 }
 
 const openSystemPromptDetail = async (item) => {
+  if (isMobile.value && !hasConfigPermission('systemPrompts', 'read')) return
+  const interaction = ++configInteractionGeneration
   if (!item?.id) return
   systemPromptDetailVisible.value = true
   systemPromptDetail.value = null
   systemPromptDetailLoading.value = true
   try {
     const res = await agentApi.getSystemPromptDetail(item.id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('systemPrompts', 'read')) { systemPromptDetailVisible.value = false; return }
     systemPromptDetail.value = res?.data ?? null
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('systemPrompts', 'read')) { systemPromptDetailVisible.value = false; return }
     ElMessage.error('获取系统指令详情失败')
     systemPromptDetailVisible.value = false
   } finally {
-    systemPromptDetailLoading.value = false
+    if (interaction === configInteractionGeneration) systemPromptDetailLoading.value = false
   }
 }
 
 const openSystemPromptEdit = async (item) => {
+  if (isMobile.value && !hasConfigPermission('systemPrompts', 'update')) return
+  const interaction = ++configInteractionGeneration
   if (!item?.id) return
   editingSystemPromptId.value = item.id
   systemPromptDialogVisible.value = true
@@ -3276,6 +3367,8 @@ const openSystemPromptEdit = async (item) => {
   try {
     await loadSystemPromptDialogOptions()
     const res = await agentApi.getSystemPromptDetail(item.id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('systemPrompts', 'update')) { systemPromptDialogVisible.value = false; return }
     const d = res?.data
     if (!d) throw new Error('empty system prompt detail')
     systemPromptFormData.value = {
@@ -3286,11 +3379,13 @@ const openSystemPromptEdit = async (item) => {
       content: d.content ?? ''
     }
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('systemPrompts', 'update')) { systemPromptDialogVisible.value = false; return }
     ElMessage.error('获取系统指令详情失败')
     systemPromptDialogVisible.value = false
     editingSystemPromptId.value = null
   } finally {
-    systemPromptSubmitLoading.value = false
+    if (interaction === configInteractionGeneration) systemPromptSubmitLoading.value = false
   }
 }
 
@@ -3301,9 +3396,13 @@ const handleSystemPromptDialogClose = () => {
 }
 
 const handleSystemPromptSubmit = async () => {
+  if (systemPromptSubmitLoading.value || (isMobile.value && !hasConfigPermission('systemPrompts', editingSystemPromptId.value ? 'update' : 'create'))) return
   if (!systemPromptFormRef.value) return
+  const interaction = ++configInteractionGeneration
   try {
     await systemPromptFormRef.value.validate()
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('systemPrompts', editingSystemPromptId.value ? 'update' : 'create')) return
     systemPromptSubmitLoading.value = true
     const descTrim = (systemPromptFormData.value.description || '').trim()
     const payload = {
@@ -3316,9 +3415,13 @@ const handleSystemPromptSubmit = async () => {
 
     if (editingSystemPromptId.value) {
       await agentApi.updateSystemPrompt(editingSystemPromptId.value, payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('systemPrompts', editingSystemPromptId.value ? 'update' : 'create')) return
       ElMessage.success('修改成功')
     } else {
       await agentApi.createSystemPrompt(payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('systemPrompts', editingSystemPromptId.value ? 'update' : 'create')) return
       ElMessage.success('新增成功')
     }
     handleSystemPromptDialogClose()
@@ -3333,6 +3436,7 @@ const handleSystemPromptSubmit = async () => {
 }
 
 const handleDeletePromptTemplate = (item) => {
+  if (isMobile.value && !hasPerm(PERM.operations.agent.promptTemplate.delete)) return
   const id = item?.id
   const displayName = item?.name?.trim() || id
   if (!id) return
@@ -3347,7 +3451,9 @@ const handleDeletePromptTemplate = (item) => {
     }
   )
     .then(async () => {
+      if (!configPageActive || (isMobile.value && !hasPerm(PERM.operations.agent.promptTemplate.delete))) return
       await agentApi.deletePromptTemplate(id)
+      if (!configPageActive || (isMobile.value && !hasConfigPermission('promptTemplates', 'delete'))) return
       ElMessage.success('删除成功')
       if (promptTemplateList.value.length === 1 && promptTemplatePagination.value.page > 1) {
         promptTemplatePagination.value.page -= 1
@@ -3359,6 +3465,7 @@ const handleDeletePromptTemplate = (item) => {
 }
 
 const handleDeleteSystemPrompt = (item) => {
+  if (isMobile.value && !hasPerm(PERM.operations.agent.systemPrompt.delete)) return
   const id = item?.id
   const displayName = item?.name?.trim() || `${getSystemPromptTypeLabel(item?.type)} / ${item?.workspace_id || id}`
   if (!id) return
@@ -3373,7 +3480,9 @@ const handleDeleteSystemPrompt = (item) => {
     }
   )
     .then(async () => {
+      if (!configPageActive || (isMobile.value && !hasPerm(PERM.operations.agent.systemPrompt.delete))) return
       await agentApi.deleteSystemPrompt(id)
+      if (!configPageActive || (isMobile.value && !hasConfigPermission('systemPrompts', 'delete'))) return
       ElMessage.success('删除成功')
       if (systemPromptList.value.length === 1 && systemPromptPagination.value.page > 1) {
         systemPromptPagination.value.page -= 1
@@ -3452,6 +3561,8 @@ const promptTemplateDetailLoading = ref(false)
 const promptTemplateDetailActiveTab = ref('system_prompt')
 
 const openPromptTemplateDetail = async (item) => {
+  if (isMobile.value && !hasConfigPermission('promptTemplates', 'read')) return
+  const interaction = ++configInteractionGeneration
   if (!item?.id) return
   promptTemplateDetailVisible.value = true
   promptTemplateDetail.value = null
@@ -3459,15 +3570,21 @@ const openPromptTemplateDetail = async (item) => {
   promptTemplateDetailLoading.value = true
   try {
     const res = await agentApi.getPromptTemplateDetail(item.id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('promptTemplates', 'read')) { promptTemplateDetailVisible.value = false; return }
     promptTemplateDetail.value = res?.data ?? null
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('promptTemplates', 'read')) { promptTemplateDetailVisible.value = false; return }
     ElMessage.error('获取详情失败')
   } finally {
-    promptTemplateDetailLoading.value = false
+    if (interaction === configInteractionGeneration) promptTemplateDetailLoading.value = false
   }
 }
 
 const openPromptTemplateEdit = async (item) => {
+  if (isMobile.value && !hasConfigPermission('promptTemplates', 'update')) return
+  const interaction = ++configInteractionGeneration
   if (!item?.id) return
   editingPromptTemplateId.value = item.id
   promptTemplateDialogVisible.value = true
@@ -3476,7 +3593,10 @@ const openPromptTemplateEdit = async (item) => {
   promptTemplateSubmitLoading.value = true
   try {
     const res = await agentApi.getPromptTemplateDetail(item.id)
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('promptTemplates', 'update')) { promptTemplateDialogVisible.value = false; return }
     const d = res?.data
+    if (!d) throw new Error('配置详情为空，请重新加载')
     if (d) {
       promptTemplateFormData.value = {
         name: d.name ?? '',
@@ -3486,11 +3606,13 @@ const openPromptTemplateEdit = async (item) => {
       }
     }
   } catch (e) {
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('promptTemplates', 'update')) { promptTemplateDialogVisible.value = false; return }
     ElMessage.error('获取模板详情失败')
     promptTemplateDialogVisible.value = false
     editingPromptTemplateId.value = null
   } finally {
-    promptTemplateSubmitLoading.value = false
+    if (interaction === configInteractionGeneration) promptTemplateSubmitLoading.value = false
   }
 }
 
@@ -3503,9 +3625,13 @@ const handlePromptTemplateDialogClose = () => {
 }
 
 const handlePromptTemplateSubmit = async () => {
+  if (promptTemplateSubmitLoading.value || (isMobile.value && !hasConfigPermission('promptTemplates', editingPromptTemplateId.value ? 'update' : 'create'))) return
   if (!promptTemplateFormRef.value) return
+  const interaction = ++configInteractionGeneration
   try {
     await promptTemplateFormRef.value.validate()
+    if (!configPageActive || interaction !== configInteractionGeneration) return
+    if (isMobile.value && !hasConfigPermission('promptTemplates', editingPromptTemplateId.value ? 'update' : 'create')) return
     promptTemplateSubmitLoading.value = true
     const payload = {
       name: promptTemplateFormData.value.name,
@@ -3515,9 +3641,13 @@ const handlePromptTemplateSubmit = async () => {
     }
     if (editingPromptTemplateId.value) {
       await agentApi.updatePromptTemplate(editingPromptTemplateId.value, payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('promptTemplates', editingPromptTemplateId.value ? 'update' : 'create')) return
       ElMessage.success('修改成功')
     } else {
       await agentApi.createPromptTemplate(payload)
+      if (!configPageActive || interaction !== configInteractionGeneration) return
+      if (isMobile.value && !hasConfigPermission('promptTemplates', editingPromptTemplateId.value ? 'update' : 'create')) return
       ElMessage.success('新增成功')
     }
     handlePromptTemplateDialogClose()
@@ -3536,9 +3666,153 @@ const handlePromptTemplateSubmit = async () => {
   }
 }
 
+const mobileResourcePermissions = {
+  analysisEngines: PERM.operations.agent.agent,
+  modelResources: { ...PERM.operations.agent.modelConfig, read: PERM.operations.agent.modelConfig.detailRead },
+  promptTemplates: PERM.operations.agent.promptTemplate,
+  systemPrompts: PERM.operations.agent.systemPrompt,
+  workspaces: PERM.operations.agent.workspace,
+  skills: PERM.operations.agent.skill,
+  tools: PERM.operations.agent.tool,
+  sandboxes: PERM.operations.agent.sandbox,
+}
+const mobileConfigPermissions = computed(() => {
+  return { read: hasConfigPermission(activeTab.value, 'read'), update: hasConfigPermission(activeTab.value, 'update'), delete: hasConfigPermission(activeTab.value, 'delete') }
+})
+
+/**
+ * 按真实资源权限检查手机操作，编辑必须能读取原配置以避免空表单覆盖。
+ * @param {string} key 配置模块
+ * @param {string} operation 读取、新增、编辑或删除操作
+ * @returns {boolean} 当前权限是否允许操作
+ */
+function hasConfigPermission(key, operation) {
+  const permissions = mobileResourcePermissions[key] || {}
+  const code = permissions[operation]
+  return typeof code === 'string' && hasPerm(code)
+    && (operation !== 'update' || (typeof permissions.read === 'string' && hasPerm(permissions.read)))
+}
+const configResources = {
+  analysisEngines: { items: agentList, loading: agentListLoading, pagination: agentPagination, fetch: fetchAgentList },
+  modelResources: { items: modelList, loading: modelListLoading, pagination: modelPagination, fetch: fetchModelList },
+  promptTemplates: { items: promptTemplateList, loading: promptTemplateListLoading, pagination: promptTemplatePagination, fetch: fetchPromptTemplateList },
+  systemPrompts: { items: systemPromptList, loading: systemPromptListLoading, pagination: systemPromptPagination, fetch: fetchSystemPromptList },
+  workspaces: { items: workspaceList, loading: workspaceListLoading, pagination: workspacePagination, fetch: fetchWorkspaceList },
+  skills: { items: skillList, loading: skillListLoading, pagination: skillPagination, fetch: fetchSkillList },
+  tools: { items: toolsList, loading: toolsListLoading, pagination: null, fetch: fetchToolsList },
+  sandboxes: { items: sandboxList, loading: sandboxListLoading, pagination: sandboxPagination, fetch: fetchSandboxList },
+}
+const mobileConfigItems = computed(() => {
+  const items = configResources[activeTab.value]?.items.value || []
+  return ['tools', 'sandboxes'].includes(activeTab.value) ? filterByKeyword(items, ['name', 'description', 'display_name', 'sandbox_id', 'status', 'sandbox_status', 'image'], searchKeyword.value) : items
+})
+const mobileConfigLoading = computed(() => configResources[activeTab.value]?.loading.value || false)
+const mobileConfigPagination = computed(() => configResources[activeTab.value]?.pagination?.value || null)
+
+/**
+ * 读取配置列表并区分失败与空结果，拒绝缓存离页及旧筛选请求的迟到响应。
+ * @param {string} key 配置模块
+ * @param {Function} request 原有列表接口
+ * @param {object} items 列表状态
+ * @param {object} loading 加载状态
+ * @param {object|null} pagination 分页状态
+ * @param {object} loaded 已加载标志
+ */
+async function loadConfigResource(key, request, items, loading, pagination, loaded) {
+  if (!configPageActive) return
+  const generation = (configListGenerations[key] || 0) + 1
+  configListGenerations[key] = generation
+  loading.value = true
+  configListErrors.value = { ...configListErrors.value, [key]: '' }
+  try {
+    if (!hasPerm(agentTabReadPermissions[key])) throw new Error('没有读取此配置的权限')
+    const params = pagination ? { page: pagination.value.page, page_size: pagination.value.pageSize, ...(key !== 'sandboxes' ? { search: searchKeyword.value.trim() || undefined } : {}) } : undefined
+    const response = await request(params)
+    if (!configPageActive || configListGenerations[key] !== generation) return
+    if (!hasPerm(agentTabReadPermissions[key])) throw new Error('读取权限已变更，请重新选择配置模块')
+    if (response?.code != null && response.code !== 0) throw new Error(response.message || '配置加载失败')
+    const data = response?.data ?? response
+    const rows = key === 'tools' ? data : data?.items
+    if (!Array.isArray(rows)) throw new Error('配置数据无效，请重新加载')
+    items.value = rows
+    if (pagination) pagination.value = { ...pagination.value, total: Number(data.total || 0), page: Number(data.page || 1), pageSize: Number(data.page_size || data.pageSize || pagination.value.pageSize), totalPages: Number(data.total_pages || data.totalPages || 0) }
+    if (!params?.search) {
+      const total = key === 'tools' ? rows.length : data.total
+      mobileResourceCounts.value = { ...mobileResourceCounts.value, [key]: Number.isSafeInteger(total) && total >= 0 ? total : -1 }
+    }
+    loaded.value = true
+  } catch (error) {
+    if (!configPageActive || configListGenerations[key] !== generation) return
+    configListErrors.value = { ...configListErrors.value, [key]: error?.message || '配置加载失败，请重试' }
+    loaded.value = false
+  } finally { if (configListGenerations[key] === generation) loading.value = false }
+}
+
+/** """刷新当前配置模块并保留分页。""" */
+function refreshCurrentConfig() {
+  const resource = configResources[activeTab.value]
+  if (resource) resource.fetch()
+}
+
+/** """手机分页沿用各资源原有接口和每页数量。""" */
+function changeMobileConfigPage(page) {
+  const resource = configResources[activeTab.value]
+  if (!resource?.pagination) return
+  resource.pagination.value.page = page
+  resource.fetch()
+}
+
+/** """验证当前操作权限后复用桌面已有详情、编辑或删除流程。""" */
+function handleMobileConfigAction(action, item) {
+  const operation = action === 'view' || action === 'browser' || action === 'code' ? 'read' : action === 'edit' ? 'update' : 'delete'
+  if (!mobileConfigPermissions.value[operation]) return
+  const actions = {
+    analysisEngines: { view: openAgentDetail, edit: openAgentEdit, delete: handleDeleteAgent },
+    modelResources: { view: openModelDetail, edit: openModelEdit, delete: handleDeleteModel },
+    promptTemplates: { view: openPromptTemplateDetail, edit: openPromptTemplateEdit, delete: handleDeletePromptTemplate },
+    systemPrompts: { view: openSystemPromptDetail, edit: openSystemPromptEdit, delete: handleDeleteSystemPrompt },
+    workspaces: { view: openWorkspaceDetail, edit: openWorkspaceEdit, delete: handleDeleteWorkspace },
+    skills: { view: openSkillDetail, edit: openSkillEditor, delete: handleDeleteSkill },
+    sandboxes: { view: handleViewSandbox, delete: handleDestroySandbox, browser: handleConnectSandbox, code: handleOpenCodeServer },
+  }
+  if (activeTab.value === 'tools' && action === 'view') { mobileTool.value = item; mobileToolVisible.value = true; return }
+  actions[activeTab.value]?.[action]?.(item)
+}
+
+/** """展开手机表单内校验失败的分组，让必填提示可见。""" */
+async function revealMobileFormError(_field, valid) {
+  if (!isMobile.value || valid) return
+  await nextTick()
+  for (const field of document.querySelectorAll('.agent-config-mobile-panel .el-form-item.is-error')) {
+    const group = field.closest('details')
+    if (group) group.open = true
+  }
+  document.querySelector('.agent-config-mobile-panel .el-form-item.is-error')?.scrollIntoView({ block: 'nearest' })
+}
+
+const configPanels = [modelDialogVisible, modelDetailVisible, promptTemplateDialogVisible, promptTemplateDetailVisible, systemPromptDialogVisible, systemPromptDetailVisible, agentDialogVisible, agentDetailVisible, workspaceDialogVisible, workspaceDetailVisible, skillDetailVisible, skillEditorVisible, skillUploadDialogVisible, createSandboxDialogVisible, sandboxDetailDialogVisible, sandboxBrowserDialogVisible, mobileToolVisible]
+const configPanelLoading = new Map([[modelDialogVisible, modelSubmitLoading], [modelDetailVisible, modelDetailLoading], [promptTemplateDialogVisible, promptTemplateSubmitLoading], [promptTemplateDetailVisible, promptTemplateDetailLoading], [systemPromptDialogVisible, systemPromptSubmitLoading], [systemPromptDetailVisible, systemPromptDetailLoading], [agentDialogVisible, agentSubmitLoading], [agentDetailVisible, agentDetailLoading], [workspaceDialogVisible, workspaceSubmitLoading], [workspaceDetailVisible, workspaceDetailLoading], [skillDetailVisible, skillDetailLoading], [skillUploadDialogVisible, skillUploadLoading], [createSandboxDialogVisible, creatingSandbox], [sandboxDetailDialogVisible, sandboxDetailLoading]])
+onDeactivated(() => {
+  configInteractionGeneration += 1
+  configPageActive = false
+  for (const key of Object.keys(configListGenerations)) configListGenerations[key] += 1
+  for (const resource of Object.values(configResources)) resource.loading.value = false
+  configPanels.forEach(panel => { panel.value = false })
+})
+onActivated(() => { if (!configPageActive) { configPageActive = true; refreshCurrentConfig() } })
+onBeforeUnmount(() => { configPageActive = false; configInteractionGeneration += 1 })
+watch(configPanels, (values, previous) => {
+  values.forEach((value, index) => {
+    if (value || !previous[index]) return
+    configInteractionGeneration += 1
+    const loading = configPanelLoading.get(configPanels[index])
+    if (loading) loading.value = false
+  })
+}, { flush: 'sync' })
 </script>
 
 <style>
+.agent-config-tool-parameter{border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:12px;overflow-wrap:anywhere}.agent-config-tool-parameter h3{display:flex;gap:8px;align-items:center;font-size:16px;font-weight:650;margin:0 0 10px}.agent-config-tool-parameter p{font-size:14px;color:#64748b;line-height:1.7}.agent-config-tool-parameter dl{font-size:13px;display:grid;grid-template-columns:65px minmax(0,1fr);gap:8px;margin-top:12px}.agent-config-tool-parameter dt{color:#64748b}.agent-config-skill-files{display:grid;gap:10px}.agent-config-skill-files>div{border:1px solid #e2e8f0;padding:12px;border-radius:10px;display:grid;gap:6px;overflow-wrap:anywhere}.agent-config-skill-files strong{font-size:14px;font-weight:500}.agent-config-skill-files span{font-size:12px;color:#64748b}
 .sandbox-browser-dialog.el-dialog {
   --el-dialog-width: 96vw;
   max-width: 1600px;
