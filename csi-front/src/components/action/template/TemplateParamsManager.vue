@@ -2,8 +2,14 @@
     <div
         class="template-params-manager relative group flex flex-col"
         :class="embedded ? '' : 'border-t border-gray-200 mt-4'"
-        :style="resizable ? { height: height + 'px' } : undefined"
+        :style="resizable && !isMobile ? { height: height + 'px' } : undefined"
     >
+        <section v-if="isMobile" class="mobile-template-manager">
+            <header><div><h3>模板参数</h3><p>{{ params.length }} 项参数 · 在节点字段中选择参数注入</p></div><el-button type="primary" :disabled="disabled" @click="showAddDialog = true">添加</el-button></header>
+            <p v-if="!params.length" class="mobile-param-empty">先定义参数，再将节点字段绑定到对应参数。</p>
+            <article v-for="param in params" :key="param.id" class="mobile-param-card"><h4>{{ param.label || param.name }}</h4><p class="param-code">{{ param.name }} · {{ param.type }}</p><p v-if="param.description">{{ param.description }}</p><div class="mobile-param-meta"><span>{{ param.required ? '必填' : '选填' }}</span><span>{{ getParamRefCount(param.name) }} 处引用</span></div><footer><el-button :disabled="disabled" @click="editParam(param)">编辑</el-button><el-button :disabled="disabled" type="danger" plain @click="confirmDeleteParam(param)">删除</el-button></footer></article>
+        </section>
+        <template v-else>
         <div
             v-if="resizable"
             class="absolute left-0 right-0 -top-1 h-2 cursor-row-resize z-10 flex justify-center hover:bg-blue-100/50 transition-colors"
@@ -98,19 +104,25 @@
             </div>
         </div>
 
-        <el-dialog
+        </template>
+        <component :is="isMobile ? MobileSheet : 'el-dialog'"
             v-model="showAddDialog"
             :title="editingParam ? '编辑参数' : '添加参数'"
             width="500px"
             :close-on-click-modal="false"
+            class="template-param-edit"
+            @close="cancelParamDialog"
         >
+            <nav v-if="isMobile" class="mobile-param-steps" aria-label="模板参数分组"><button type="button" :class="{ active: mobileStep === 0 }" @click="mobileStep = 0">名称与类型</button><button type="button" :class="{ active: mobileStep === 1 }" @click="mobileStep = 1">描述与要求</button></nav>
             <el-form
                 ref="paramFormRef"
                 :model="paramForm"
                 :rules="paramFormRules"
                 label-width="80px"
-                label-position="left"
+                :label-position="isMobile ? 'top' : 'left'"
+                :disabled="disabled || saving"
             >
+                <div v-show="!isMobile || mobileStep === 0">
                 <el-form-item label="参数名" prop="name">
                     <el-input
                         v-model="paramForm.name"
@@ -152,6 +164,7 @@
                     </el-select>
                 </el-form-item>
 
+                </div><div v-show="!isMobile || mobileStep === 1">
                 <el-form-item label="描述" prop="description">
                     <el-input
                         v-model="paramForm.description"
@@ -164,20 +177,21 @@
                 <el-form-item label="必填" prop="required">
                     <el-switch v-model="paramForm.required" />
                 </el-form-item>
+                </div>
             </el-form>
 
             <template #footer>
                 <el-button @click="cancelParamDialog">取消</el-button>
-                <el-button type="primary" @click="saveParam">
+                <el-button type="primary" :disabled="disabled" :loading="saving" @click="saveParam">
                     {{ editingParam ? '保存' : '添加' }}
                 </el-button>
             </template>
-        </el-dialog>
+        </component>
     </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, inject, watch, onBeforeUnmount, onDeactivated, onActivated } from 'vue'
 import { Icon } from '@iconify/vue'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -191,8 +205,14 @@ import {
     updateParamBindingsName
 } from '@/utils/action/template'
 import { useVerticalResize } from '@/utils/action/useVerticalResize'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+const { isMobile } = useMobileViewport()
+const mobileStep = ref(0), saving = ref(false)
+let active = true, dialogGeneration = 0, confirming = false
 
 const props = defineProps({
+    disabled: { type: Boolean, default: false },
     params: {
         type: Array,
         default: () => []
@@ -276,6 +296,7 @@ const getParamRefCount = (paramName) => {
 }
 
 const editParam = (param) => {
+    if (props.disabled || !active) return
     editingParam.value = param
     paramForm.value = {
         name: param.name,
@@ -288,6 +309,9 @@ const editParam = (param) => {
 }
 
 const confirmDeleteParam = (param) => {
+    if (props.disabled || !active || confirming) return
+    const generation = dialogGeneration
+    confirming = true
     const refCount = getParamRefCount(param.name)
     
     const message = refCount > 0
@@ -299,15 +323,17 @@ const confirmDeleteParam = (param) => {
         confirmButtonText: '确定',
         cancelButtonText: '取消'
     }).then(() => {
+        if (!active || props.disabled || generation !== dialogGeneration) return
         deleteParam(param)
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => { if (generation === dialogGeneration) confirming = false })
 }
 
 const deleteParam = (param) => {
+    if (props.disabled || !active) return
     const newParams = props.params.filter(p => p.id !== param.id)
     emit('update:params', newParams)
     
-    const newBindings = { ...props.bindings }
+    const newBindings = Object.fromEntries(Object.entries(props.bindings).map(([id, bindings]) => [id, { ...bindings }]))
     removeParamBindings(param.name, newBindings)
     emit('update:bindings', newBindings)
     
@@ -315,10 +341,14 @@ const deleteParam = (param) => {
 }
 
 const saveParam = async () => {
-    if (!paramFormRef.value) return
+    if (!paramFormRef.value || saving.value || props.disabled || !active || !showAddDialog.value) return
+    const generation = dialogGeneration
+    saving.value = true
     
     try {
-        await paramFormRef.value.validate()
+        const valid = await paramFormRef.value.validate()
+        if (valid === false) { mobileStep.value = 0; return }
+        if (!active || props.disabled || generation !== dialogGeneration || !showAddDialog.value) return
         
         if (editingParam.value) {
             const index = props.params.findIndex(p => p.id === editingParam.value.id)
@@ -334,7 +364,7 @@ const saveParam = async () => {
                 emit('update:params', newParams)
                 
                 if (oldName !== paramForm.value.name) {
-                    const newBindings = { ...props.bindings }
+                    const newBindings = Object.fromEntries(Object.entries(props.bindings).map(([id, bindings]) => [id, { ...bindings }]))
                     updateParamBindingsName(oldName, paramForm.value.name, newBindings)
                     emit('update:bindings', newBindings)
                 }
@@ -353,11 +383,17 @@ const saveParam = async () => {
         
         cancelParamDialog()
     } catch (error) {
+        if (!active || generation !== dialogGeneration) return
+        mobileStep.value = 0
         console.error('表单验证失败:', error)
+    } finally {
+        if (generation === dialogGeneration) saving.value = false
     }
 }
 
 const cancelParamDialog = () => {
+    dialogGeneration++
+    saving.value = false
     showAddDialog.value = false
     editingParam.value = null
     paramForm.value = {
@@ -371,12 +407,26 @@ const cancelParamDialog = () => {
         paramFormRef.value.resetFields()
     }
 }
+const localDrafts = inject('blueprintLocalDrafts', null), draftKeyId = Symbol('模板参数草稿'), initialDraft = ref('')
+const draftSignature = computed(() => JSON.stringify(paramForm.value))
+watch(showAddDialog, visible => { if (visible) { dialogGeneration++; mobileStep.value = 0; initialDraft.value = draftSignature.value } }, { flush: 'sync' })
+watch([showAddDialog, draftSignature, isMobile], () => {
+    if (isMobile.value && showAddDialog.value && draftSignature.value !== initialDraft.value) localDrafts?.set(draftKeyId, draftSignature.value)
+    else localDrafts?.delete(draftKeyId)
+}, { flush: 'sync' })
+watch(() => props.disabled, value => { if (value) { if (confirming) ElMessageBox.close(); confirming = false; cancelParamDialog() } })
+onActivated(() => { active = true })
+onDeactivated(() => { active = false; if (confirming) ElMessageBox.close(); confirming = false; cancelParamDialog() })
+onBeforeUnmount(() => { active = false; if (confirming) ElMessageBox.close(); confirming = false; dialogGeneration++; localDrafts?.delete(draftKeyId) })
 </script>
 
 <style scoped>
 .template-params-manager {
     width: 100%;
 }
+.mobile-template-manager { display: grid; gap: 12px; }.mobile-template-manager header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }.mobile-template-manager h3 { font-weight: 650; font-size: 16px; }.mobile-template-manager p { font-size: 12px; color: #64748b; line-height: 1.75; overflow-wrap: anywhere; }.mobile-param-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; }.mobile-param-card h4 { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }.mobile-param-card .param-code { font-family: monospace; }.mobile-param-meta { display: flex; gap: 12px; color: #64748b; font-size: 12px; margin-top: 10px; }.mobile-param-card footer { display: flex; gap: 8px; margin-top: 12px; }.mobile-param-card footer .el-button { flex: 1; margin: 0; }.mobile-template-manager :deep(.el-button) { min-height: 44px; }.mobile-param-empty { padding: 24px 0; text-align: center; }
+.mobile-param-steps { display: flex; gap: 8px; margin-bottom: 18px; }.mobile-param-steps button { flex: 1; min-height: 44px; border-radius: 9px; background: #f1f5f9; color: #64748b; }.mobile-param-steps button.active { background: #eff6ff; color: #2563eb; }
+@media (max-width: 767px) { :deep(.template-param-edit .el-input__wrapper), :deep(.template-param-edit .el-select__wrapper) { min-height: 44px; } }
 
 .params-content {
     overflow-y: auto;

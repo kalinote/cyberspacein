@@ -4,7 +4,7 @@
     <div v-else-if="loadError" class="p-12"><el-result icon="error" title="证据链加载失败" :sub-title="loadError"><template #extra><el-button @click="load">重试</el-button><el-button @click="router.push('/evidence/chains')">返回列表</el-button></template></el-result></div>
     <template v-else-if="graph">
       <MobileEvidenceEditor v-if="isMobile" ref="mobileEditor" :graph="graph" :rendered="rendered" :display-edges="displayEdges" :selection="selection" :editable="editable" :dirty="dirty" :saving="saving" :save-error="saveError" :refreshing="refreshing" :can-undo="history.length > 1 || history.at(-1) !== serialized" :can-redo="Boolean(future.length)" :resolving="resolving" :expanded="expanded" :resolve-errors="resolveErrors" :flow-id="flowId" :node-types="nodeTypes"
-        @save="save" @undo="undo" @redo="redo" @refresh="refreshReferences" @export="exportGraph" @reload="reloadFromServer" @select-node="selectNodeById" @select-edge="onEdgeClick({ edge: $event })" @resolve="resolveSelection" @expand="toggleExpand" @remove-node="removeNode" @remove-edge="removeEdge" @add-nodes="addNodes" @edit-node="commitMobileNode" @edit-edge="commitMobileEdge" @edit-meta="commitMobileMeta" @fit="fitView({ padding: 0.15, duration: 250 })" />
+        @save="save" @undo="undo" @redo="redo" @refresh="refreshReferences" @export="exportGraph" @reload="reloadFromServer" @select-node="selectNodeById" @select-edge="onEdgeClick({ edge: $event })" @resolve="resolveSelection" @expand="toggleExpand" @remove-node="removeNode" @remove-edge="removeEdge" @add-nodes="addNodes" @edit-node="commitMobileNode" @edit-edge="commitMobileEdge" @edit-meta="commitMobileMeta" @move-nodes="commitMobileMove" @remove-nodes="removeMobileNodes" @fit="fitView({ padding: 0.15, duration: 250 })" />
       <template v-else>
       <div class="editor-heading">
         <el-button link @click="router.push('/evidence/chains')"><Icon icon="mdi:arrow-left" class="mr-1" />证据链</el-button><div class="h-8 border-l border-gray-200 mx-2"></div>
@@ -102,7 +102,7 @@
 </template>
 
 <script setup>
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, markRaw, nextTick, onBeforeUnmount, onDeactivated, onActivated, onMounted, ref, watch } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -121,6 +121,7 @@ import EvidenceGraphNode from '@/components/evidence/EvidenceGraphNode.vue';
 import EvidenceUsageTour from '@/components/evidence/EvidenceUsageTour.vue';
 import MobileEvidenceEditor from '@/components/evidence/mobile/MobileEvidenceEditor.vue';
 import { commitEvidenceRelation } from '@/components/evidence/mobile/mobileEvidence';
+import { evidenceRemovalImpact, moveEvidenceNodes, removeEvidenceNodes } from '@/components/evidence/mobile/mobileEvidenceGraph';
 import { useMobileViewport } from '@/composables/useMobileViewport';
 import { rememberRecentVisit } from '@/stores/recentVisits';
 import { evidenceApi } from '@/api/evidence';
@@ -208,6 +209,7 @@ let historyTimer,
   tracking = true,
   loadSequence = 0;
 const resolveSequence = new Map();
+let pageActive = true;
 const editable = computed(() => hasPerm(PERM.operations.evidence.chain.update));
 const serialized = computed(() => graph.value ? JSON.stringify(graphPayload(graph.value)) : '');
 const dirty = computed(() => serialized.value !== savedState.value);
@@ -233,6 +235,7 @@ const selectedResolved = computed(() => selectedEntry.value?.data.resolved);
 const selectedEdgeEntry = computed(() => selection.value?.type === 'edge' ? rendered.value.edges.find(edge => edge.id === selection.value.id) : null);
 const selectedEdge = computed(() => selectedEdgeEntry.value?.data.edge);
 async function load() {
+  if (!pageActive) return;
   const sequence = ++loadSequence;
   loading.value = true;
   loadError.value = '';
@@ -241,7 +244,8 @@ async function load() {
   tracking = false;
   try {
     const response = await evidenceApi.get(String(route.params.id));
-    if (sequence !== loadSequence) return;
+    if (sequence !== loadSequence || !pageActive) return;
+    if (isMobile.value && !hasPerm(PERM.operations.evidence.chain.read)) throw new Error('当前账号没有读取证据链的权限');
     graph.value = response.data;
     rememberRecentVisit(route, graph.value.title);
     savedState.value = serialized.value;
@@ -264,7 +268,7 @@ async function load() {
   }
 }
 async function save() {
-  if (!editable.value || saving.value) return false;
+  if (!pageActive || !editable.value || saving.value) return false;
   if (!graph.value.title.trim() || graph.value.nodes.some(node => !node.label.trim())) {
     ElMessage.warning('证据链和节点名称不能为空');
     return false;
@@ -281,6 +285,7 @@ async function save() {
     });
     // 离开或重载后的迟到响应不能写入另一条证据链。
     if (graph.value !== submittedGraph || generation !== loadSequence) return false;
+    if (!editable.value) { saveError.value = '编辑权限已变更，请重新加载确认服务器状态；本地草稿已保留'; return false; }
     graph.value.revision = response.data.revision;
     savedState.value = submitted;
     rememberRecentVisit(route, graph.value.title);
@@ -348,6 +353,7 @@ async function restoreSnapshot(snapshot) {
   tracking = true;
 }
 async function undo() {
+  if (isMobile.value && (!pageActive || !editable.value || saving.value)) return;
   flushHistory();
   if (history.value.length > 1) {
     future.value.push(history.value.pop());
@@ -355,6 +361,7 @@ async function undo() {
   }
 }
 async function redo() {
+  if (isMobile.value && (!pageActive || !editable.value || saving.value)) return;
   if (future.value.length) {
     const snapshot = future.value.pop();
     history.value.push(snapshot);
@@ -428,6 +435,38 @@ function commitMobileMeta(draft) {
   flushHistory();
   for (const key of ['title', 'purpose', 'description', 'status', 'tags', 'relation_types']) graph.value[key] = draft[key];
   flushHistory();
+}
+/**
+ * 以用户明确移动的增量更新本链坐标，局部投影坐标不会写入原图。
+ * @param {object} change 节点标识与移动增量。
+ */
+function commitMobileMove({ ids, delta }) {
+  if (!pageActive || !editable.value || saving.value || !graph.value) return;
+  flushHistory();
+  if (moveEvidenceNodes(graph.value, ids, delta)) flushHistory();
+}
+/**
+ * 批量移出前展示本链连带关系数，确认期间图或权限变化则取消操作。
+ * @param {Array<string>} ids 从手机目录选择的本链节点。
+ */
+async function removeMobileNodes(ids) {
+  if (!pageActive || !editable.value || saving.value || !graph.value) return;
+  const currentGraph = graph.value, snapshot = serialized.value;
+  const impact = evidenceRemovalImpact(currentGraph, ids);
+  if (!impact.nodeIds.length) return;
+  try {
+    await ElMessageBox.confirm(`移出选中的 ${impact.nodeIds.length} 个节点，并删除本链关联的 ${impact.edgeIds.length} 条关系及其依据记录？原始材料和引用子链会保留，可通过撤销恢复。`, '批量移出本链', { type: 'warning', confirmButtonText: '确认移出', cancelButtonText: '取消' });
+    if (!pageActive || !editable.value || saving.value || graph.value !== currentGraph) return;
+    if (serialized.value !== snapshot) { ElMessage.warning('证据链内容已变化，请重新确认移出范围'); return; }
+    flushHistory();
+    removeEvidenceNodes(graph.value, impact.nodeIds);
+    const removed = path => impact.nodeIds.some(id => path === id || path.startsWith(`${id}/`));
+    for (const path of Object.keys(resolved.value)) if (removed(path)) delete resolved.value[path];
+    for (const path of expanded.value) if (removed(path)) expanded.value.delete(path);
+    for (const path of resolveSequence.keys()) if (removed(path)) resolveSequence.delete(path);
+    if (selection.value && (removed(selection.value.id) || impact.edgeIds.includes(selection.value.id))) selection.value = null;
+    flushHistory();
+  } catch { /* 取消时保留全部节点和关系。 */ }
 }
 function addNote() {
   addNodes([makeEvidenceNode('note', {
@@ -524,18 +563,18 @@ function onNodeClick({
   };
   if (node.data.node.kind !== 'note') resolveEntry(node);
 }
-function selectNodeById(id) {
+function selectNodeById(id, readMaterial = true) {
   const node = rendered.value.nodes.find(item => item.id === id);
   if (!node) return;
-  onNodeClick({
-    node
-  });
+  if (readMaterial) onNodeClick({ node });
+  else selection.value = { type: 'node', id };
   if (!isMobile.value) setCenter(node.position.x + 124, node.position.y + 60, {
     zoom: 1,
     duration: 250
   });
 }
 async function resolveEntry(entry, page = 1) {
+  if (!pageActive || !entry) return;
   const path = entry.id,
     sequence = (resolveSequence.get(path) || 0) + 1,
     generation = loadSequence;
@@ -549,7 +588,7 @@ async function resolveEntry(entry, page = 1) {
       id: entry.data.node.id.includes('/') ? 'member-preview' : entry.data.node.id
     };
     const response = await evidenceApi.resolve(node, typeof page === 'number' ? page : 1);
-    if (generation === loadSequence && resolveSequence.get(path) === sequence) resolved.value[path] = response.data;
+    if (pageActive && generation === loadSequence && resolveSequence.get(path) === sequence && (!isMobile.value || hasPerm(PERM.operations.evidence.chain.read))) resolved.value[path] = response.data;
   } catch (e) {
     if (generation === loadSequence && resolveSequence.get(path) === sequence) {
       resolveErrors.value[path] = e.message;
@@ -564,12 +603,13 @@ async function resolveSelection(page = 1) {
 }
 async function toggleExpand() {
   const entry = selectedEntry.value;
+  if (!entry) return;
   if (expanded.value.has(entry.id)) {
     expanded.value.delete(entry.id);
     return;
   }
   await resolveEntry(entry);
-  if (resolved.value[entry.id]) {
+  if (pageActive && rendered.value.nodes.some(node => node.id === entry.id) && resolved.value[entry.id]) {
     expanded.value.add(entry.id);
     await nextTick();
     fitView({
@@ -749,7 +789,10 @@ onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload);
   window.addEventListener('keydown', handleEditorKeydown);
 });
+onDeactivated(() => { pageActive = false; ++loadSequence; resolveSequence.clear(); resolving.value = new Set(); });
+onActivated(() => { pageActive = true; });
 onBeforeUnmount(() => {
+  pageActive = false;
   ++loadSequence;
   clearTimeout(historyTimer);
   window.removeEventListener('beforeunload', beforeUnload);

@@ -5,6 +5,8 @@ import * as Vue from 'vue'
 import { parse, compileScript, babelParse } from 'vue/compiler-sfc'
 import * as evidence from '../src/utils/evidence.js'
 import * as mobileEvidence from '../src/components/evidence/mobile/mobileEvidence.js'
+import * as mobileEvidenceGraph from '../src/components/evidence/mobile/mobileEvidenceGraph.js'
+import { PERM } from '../src/utils/permissions.js'
 
 /**
  * 执行真实组件脚本，以依赖替身隔离网络、弹层和生命周期。
@@ -16,15 +18,17 @@ function componentState(file, { props = {}, imports = {}, emit = () => {} } = {}
   const events = [], hooks = {}, timers = new Map(), scope = Vue.effectScope()
   let timer = 0
   const dependencies = {
-    vue: { ...Vue, onMounted: callback => { hooks.mounted = callback }, onBeforeUnmount: callback => { hooks.unmount = callback } },
+    vue: { ...Vue, useModel: (props, name) => Vue.computed({ get: () => props[name], set: value => { props[name] = value } }), onMounted: callback => { hooks.mounted = callback }, onBeforeUnmount: callback => { hooks.unmount = callback }, onDeactivated: callback => { hooks.deactivate = callback }, onActivated: callback => { hooks.activate = callback } },
     'vue-router': { useRoute: () => ({ params: { id: 'parent' } }), useRouter: () => ({ push() {} }), onBeforeRouteLeave: callback => { hooks.leave = callback }, onBeforeRouteUpdate: callback => { hooks.update = callback } },
     'element-plus': { ElMessage: { success() {}, warning() {}, info() {} }, ElMessageBox: { confirm: async () => {} } },
     '@vue-flow/core': { useVueFlow: () => ({ fitView() {}, setCenter() {} }) },
     '@/utils/evidence': evidence,
     '@/components/evidence/mobile/mobileEvidence': mobileEvidence,
     './mobileEvidence': mobileEvidence,
-    '@/utils/permissionKit': { hasPerm: () => true },
-    '@/utils/permissions': { PERM: { operations: { evidence: { chain: { update: 'update' } } } } },
+    './mobileEvidenceGraph': mobileEvidenceGraph,
+    '@/components/evidence/mobile/mobileEvidenceGraph': mobileEvidenceGraph,
+    '@/utils/permissionKit': { hasPerm: code => typeof code === 'string' },
+    '@/utils/permissions': { PERM },
     '@/composables/useMobileViewport': { useMobileViewport: () => ({ isMobile: Vue.ref(true) }) },
     '@/stores/recentVisits': { rememberRecentVisit() {} },
     ...imports
@@ -160,9 +164,9 @@ test('全屏图返回详情保留既有选择，节点编辑取消不修改集�
 })
 
 /** """装载父编辑器并使真实保存、撤销和权限逻辑可独立验证。""" */
-async function editorState(api = {}) {
+async function editorState(api = {}, imports = {}) {
   const graph = sampleGraph()
-  const page = componentState('../src/views/evidence/EvidenceEditor.vue', { imports: { '@/api/evidence': { evidenceApi: { get: async () => ({ data: structuredClone(graph) }), ...api } } } })
+  const page = componentState('../src/views/evidence/EvidenceEditor.vue', { imports: { '@/api/evidence': { evidenceApi: { get: async () => ({ data: structuredClone(graph) }), ...api } }, ...imports } })
   await page.state.load()
   return page
 }
@@ -217,5 +221,112 @@ test('保存途中继续编辑不会被响应覆盖，重载后旧保存也不�
     assert.equal(await outdated, false)
     assert.equal(page.state.graph.value.revision, 7)
     assert.equal(page.state.dirty.value, false)
+  } finally { page.close() }
+})
+
+test('手机移动写回增量、批量移出与撤销恢复完整关系依据', async () => {
+  const confirmations = []
+  const page = await editorState({}, { 'element-plus': { ElMessage: { success() {}, warning() {} }, ElMessageBox: { confirm: async message => { confirmations.push(message) } } } })
+  try {
+    const position = { ...page.state.graph.value.nodes[0].position }
+    page.state.commitMobileMove({ ids: ['judgment', 'group/@article:one'], delta: { x: 40, y: -20 } })
+    assert.deepEqual(page.state.graph.value.nodes[0].position, { x: position.x + 40, y: position.y - 20 })
+    assert.equal(page.state.dirty.value, true)
+    await page.state.undo()
+    assert.deepEqual(page.state.graph.value.nodes[0].position, position)
+    assert.equal(page.state.dirty.value, false)
+    await page.state.redo()
+    await page.state.removeMobileNodes(['group', 'group/@article:one'])
+    assert.match(confirmations[0], /1 个节点.*1 条关系/)
+    assert.equal(page.state.graph.value.nodes.length, 1)
+    assert.equal(page.state.graph.value.edges.length, 0)
+    await page.state.undo()
+    assert.equal(page.state.graph.value.edges[0].source, 'group/@article:one')
+    assert.equal(page.state.graph.value.edges[0].anchors[0].entity.uuid, 'one')
+  } finally { page.close() }
+})
+
+test('撤权和离页阻止移动、迟到删除确认与保存响应，保留本地草稿', async () => {
+  const permissions = Vue.reactive(new Set([PERM.operations.evidence.chain.read, PERM.operations.evidence.chain.update]))
+  let finishDelete, finishSave
+  const page = await editorState({ save: () => new Promise(resolve => { finishSave = resolve }) }, { '@/utils/permissionKit': { hasPerm: code => permissions.has(code) }, 'element-plus': { ElMessage: { success() {}, warning() {} }, ElMessageBox: { confirm: () => new Promise(resolve => { finishDelete = resolve }) } } })
+  try {
+    const deleting = page.state.removeMobileNodes(['group'])
+    permissions.delete(PERM.operations.evidence.chain.update)
+    finishDelete()
+    await deleting
+    assert.equal(page.state.graph.value.nodes.length, 2)
+    const snapshot = page.state.serialized.value
+    page.state.commitMobileMove({ ids: ['group'], delta: { x: 40, y: 0 } })
+    assert.equal(page.state.serialized.value, snapshot)
+    permissions.add(PERM.operations.evidence.chain.update)
+    page.state.graph.value.title = '权限变化时保留的草稿'
+    const saving = page.state.save()
+    permissions.delete(PERM.operations.evidence.chain.update)
+    finishSave({ data: { revision: 8 } })
+    assert.equal(await saving, false)
+    assert.equal(page.state.graph.value.revision, 7)
+    assert.equal(page.state.dirty.value, true)
+    assert.match(page.state.saveError.value, /权限已变更/)
+    permissions.add(PERM.operations.evidence.chain.update)
+    const leaving = page.state.removeMobileNodes(['group'])
+    page.hooks.deactivate()
+    finishDelete()
+    await leaving
+    assert.equal(page.state.graph.value.nodes.length, 2)
+  } finally { page.close() }
+})
+
+test('真实图组件两次点选只创建端点草稿，拖动仅发出增量并拒绝引用内节点', async () => {
+  const props = mobileProps()
+  props.modelValue = true
+  const page = componentState('../src/components/evidence/mobile/MobileEvidenceGraph.vue', { props, emit: (name, id) => { if (name === 'select-node') props.selection = { type: 'node', id } } })
+  try {
+    const snapshot = JSON.stringify(props.graph)
+    page.state.mode.value = 'relation'
+    await Vue.nextTick()
+    page.state.onNodeTap('judgment')
+    page.state.onNodeTap('group')
+    assert.deepEqual(page.events.find(event => event[0] === 'relation'), ['relation', { source: 'judgment', target: 'group' }])
+    assert.equal(JSON.stringify(props.graph), snapshot)
+    page.state.mode.value = 'move'
+    await Vue.nextTick()
+    const node = page.state.canvasNodes.value.find(node => node.id === 'group')
+    page.state.beginDrag({ node })
+    page.state.finishDrag({ node: { ...node, position: { x: node.position.x + 35, y: node.position.y - 10 } } })
+    assert.deepEqual(page.events.find(event => event[0] === 'move-nodes'), ['move-nodes', { ids: ['group'], delta: { x: 35, y: -10 } }])
+    page.state.moveBy(['group/@article:one'], { x: 20, y: 0 })
+    assert.equal(page.events.filter(event => event[0] === 'move-nodes').length, 1)
+    props.editable = false
+    page.state.moveBy(['group'], { x: 20, y: 0 })
+    assert.equal(page.events.filter(event => event[0] === 'move-nodes').length, 1)
+    page.state.directoryVisible.value = true
+    page.hooks.deactivate()
+    assert.equal(props.modelValue, false)
+    assert.equal(page.state.directoryVisible.value, false)
+  } finally { page.close() }
+})
+
+test('图谱关系进入既有依据表单，关闭回到图谱，离页关闭全部弹层', async () => {
+  const props = mobileProps(), page = componentState('../src/components/evidence/mobile/MobileEvidenceEditor.vue', { props })
+  try {
+    page.state.graphVisible.value = true
+    page.state.startGraphRelation({ source: 'judgment', target: 'group' })
+    assert.equal(page.state.graphVisible.value, false)
+    assert.equal(page.state.sheet.value, 'relation')
+    assert.equal(page.state.relationStep.value, 1)
+    assert.equal(page.state.relationDraft.value.target, 'group')
+    assert.equal(props.graph.edges.length, 1)
+    await Vue.nextTick()
+    page.state.sheet.value = ''
+    await Vue.nextTick()
+    assert.equal(page.state.graphVisible.value, true)
+    page.state.entityPicker.value = true
+    page.state.chainPicker.value = true
+    page.hooks.deactivate()
+    await Vue.nextTick()
+    assert.equal(page.state.graphVisible.value, false)
+    assert.equal(page.state.entityPicker.value, false)
+    assert.equal(page.state.chainPicker.value, false)
   } finally { page.close() }
 })

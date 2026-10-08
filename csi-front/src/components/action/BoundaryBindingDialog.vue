@@ -1,5 +1,5 @@
 <template>
-  <el-dialog
+  <component :is="isMobile ? MobileSheet : 'el-dialog'"
     v-model="visible"
     :title="dialogTitle"
     width="560px"
@@ -14,7 +14,16 @@
         <el-input v-model="form.interfaceName" placeholder="请输入封装节点 Handle 名称" />
       </el-form-item>
       <el-form-item :label="targetPortLabel" required>
+        <div v-if="isMobile" class="mobile-binding-ports">
+          <p>{{ targetPortPlaceholder }}</p>
+          <div v-for="handle in handles" :key="handle.port_id || handle.id" class="mobile-binding-port"><el-checkbox :model-value="form.targetPortIds.includes(handle.port_id || handle.id)" @change="togglePort(handle.port_id || handle.id, $event)"><strong>{{ handle.relabel || handle.label || handle.handle_name || handle.port_id || handle.id }}</strong><small>{{ handle.description || handle.port_id || handle.id }}</small></el-checkbox></div>
+          <p v-if="!handles.length" role="status">此节点暂无可绑定端口。</p>
+          <el-alert v-if="missingPortIds.length" title="原绑定包含已不可用的端口，请移除后重新选择。" type="warning" :closable="false" />
+          <el-button v-for="id in missingPortIds" :key="id" plain type="danger" @click="togglePort(id, false)">移除失效端口 {{ id }}</el-button>
+          <span>已选 {{ form.targetPortIds.length }} 个端口</span>
+        </div>
         <el-select
+          v-else
           v-model="form.targetPortIds"
           class="w-full"
           multiple
@@ -40,11 +49,14 @@
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :disabled="!canSubmit" @click="submit">确认绑定</el-button>
     </template>
-  </el-dialog>
+  </component>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+const { isMobile } = useMobileViewport()
 import {
   getBindableHandles,
   getBoundaryDirection,
@@ -91,7 +103,8 @@ const bindingDescription = computed(() => (
     ? '封装运行时目标节点不会执行，父流程输入将替代所选端口原本产生的数据；独立运行时目标节点仍正常执行。'
     : '封装运行时目标节点不会执行，流入所选端口的数据将直接返回父流程；独立运行时目标节点仍正常执行。'
 ))
-const canSubmit = computed(() => form.interfaceName.trim() && form.targetPortIds.length > 0)
+const missingPortIds = computed(() => form.targetPortIds.filter(id => !handles.value.some(handle => (handle.port_id || handle.id) === id)))
+const canSubmit = computed(() => Boolean(form.interfaceName.trim() && form.targetPortIds.length > 0 && !missingPortIds.value.length))
 
 watch(
   () => [props.boundaryNode?.id, props.targetNode?.id, props.modelValue],
@@ -106,10 +119,17 @@ watch(
     form.targetPortIds = binding?.bound_node_id === props.targetNode?.id
       ? (binding.port_mappings || []).map(mapping => mapping.target_port_id)
       : []
-  }
+  }, { immediate: true }
 )
 
+/** """按项选择端口，保留原来的端口 ID 与选择顺序。""" */
+function togglePort(id, selected) {
+  if (selected && !form.targetPortIds.includes(id)) form.targetPortIds = [...form.targetPortIds, id]
+  else if (!selected) form.targetPortIds = form.targetPortIds.filter(value => value !== id)
+}
+
 const submit = () => {
+  if (!props.modelValue || !canSubmit.value || confirmed.value) return
   confirmed.value = true
   emit('confirm', {
     interfaceName: form.interfaceName.trim(),
@@ -125,3 +145,9 @@ const handleClosed = () => {
   confirmed.value = false
 }
 </script>
+
+<style scoped>
+.mobile-binding-ports { display: grid; gap: 10px; width: 100%; }.mobile-binding-ports > p, .mobile-binding-ports > span { font-size: 12px; color: #64748b; line-height: 1.75; overflow-wrap: anywhere; }
+.mobile-binding-port { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; }.mobile-binding-port :deep(.el-checkbox) { min-height: 44px; height: auto; width: 100%; margin: 0; white-space: normal; }.mobile-binding-port :deep(.el-checkbox__label) { min-width: 0; white-space: normal; overflow-wrap: anywhere; }.mobile-binding-port strong, .mobile-binding-port small { display: block; }.mobile-binding-port small { font-size: 11px; color: #94a3b8; margin-top: 5px; }
+@media (max-width: 767px) { :deep(.el-input__wrapper) { min-height: 44px; }.mobile-binding-ports .el-button { min-height: 44px; height: auto; white-space: normal; overflow-wrap: anywhere; margin: 0; } }
+</style>

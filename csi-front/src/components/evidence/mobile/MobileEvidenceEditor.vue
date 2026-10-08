@@ -6,7 +6,7 @@
     </header>
     <p v-if="graph.purpose" class="evidence-purpose">{{ graph.purpose }}</p>
     <div class="evidence-tools">
-      <el-button @click="graphVisible = true">查看图谱</el-button><el-button @click="openMeta">设置</el-button>
+      <el-button type="primary" plain @click="graphVisible = true">图谱 · 浏览与编辑</el-button><el-button @click="openMeta">设置</el-button>
       <el-button :loading="refreshing" @click="$emit('refresh')">刷新引用</el-button>
       <el-button :disabled="!editable || !canUndo" @click="$emit('undo')">撤销</el-button><el-button :disabled="!editable || !canRedo" @click="$emit('redo')">重做</el-button>
     </div>
@@ -136,29 +136,22 @@
           <template v-else-if="sheet === 'relation'"><el-button @click="relationStep ? relationStep-- : sheet = ''">{{ relationStep ? '上一步' : '取消' }}</el-button><el-button v-if="relationStep < 2" type="primary" :disabled="!editable || !relationDraft.source || !relationDraft.target || !relationDraft.label?.trim()" @click="relationStep++">下一步</el-button><el-button v-else type="primary" :disabled="!editable" @click="confirmRelation">确认关系</el-button></template>
           <template v-else-if="sheet === 'node-edit'"><el-button @click="sheet = 'node'">取消</el-button><el-button type="primary" :disabled="!editable || !nodeDraft.label.trim()" @click="confirmNodeEdit">应用修改</el-button></template>
           <template v-else-if="sheet === 'meta'"><el-button @click="$emit('export')">导出图定义</el-button><el-button v-if="editable" type="primary" :disabled="!metaDraft.title.trim()" @click="confirmMeta">应用设置</el-button><el-button v-else @click="sheet = ''">关闭</el-button></template>
-          <el-button v-else class="w-full" @click="sheet = ''">返回阅读列表</el-button>
+          <el-button v-else class="w-full" @click="sheet = ''">{{ returnToGraph ? '返回图谱' : '返回阅读列表' }}</el-button>
         </div>
       </template>
     </MobileSheet>
 
     <EvidenceEntityPicker v-model="entityPicker" :allow-dynamic="pickerPurpose === 'new'" @add="acceptMaterials" />
     <EvidenceChainPicker v-model="chainPicker" :exclude-id="graph.id" @select="acceptChain" />
-    <el-drawer v-model="graphVisible" title="证据图谱" size="100%" direction="btt" append-to-body class="mobile-evidence-graph" modal-class="mobile-evidence-graph-overlay" destroy-on-close @opened="$emit('fit')">
-      <div class="evidence-graph-tools"><el-button @click="$emit('fit')">适应画布</el-button><el-button :disabled="!selection" @click="openGraphSelection">查看已选{{ selection?.type === 'edge' ? '关系' : '节点' }}</el-button></div>
-      <p class="evidence-caption">双指缩放、拖动画布，点选节点或关系查看详情。</p>
-      <VueFlow :id="flowId" :nodes="rendered.nodes.map(node => ({ ...node, selected: selection?.type === 'node' && selection.id === node.id }))" :edges="displayEdges" :node-types="nodeTypes" :nodes-connectable="false" :nodes-draggable="false" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2.5" fit-view-on-init class="evidence-mobile-flow" @node-click="$emit('select-node', $event.node.id)" @edge-click="!$event.edge.data?.containment && $emit('select-edge', $event.edge)"><Background :gap="22" /><Controls :show-interactive="false" /></VueFlow>
-      <template #footer><el-button type="primary" class="w-full" @click="graphVisible = false">返回阅读列表</el-button></template>
-    </el-drawer>
+    <MobileEvidenceGraph v-model="graphVisible" :graph="graph" :rendered="rendered" :selection="selection" :editable="editable" :dirty="dirty" :saving="saving" :save-error="saveError" :can-undo="canUndo" :can-redo="canRedo" :flow-id="flowId" :node-types="nodeTypes" @save="$emit('save')" @undo="$emit('undo')" @redo="$emit('redo')" @select-node="$emit('select-node', $event, false)" @select-edge="$emit('select-edge', $event)" @open-selection="openGraphSelection" @relation="startGraphRelation" @move-nodes="$emit('move-nodes', $event)" @remove-nodes="$emit('remove-nodes', $event)" @add-node="returnToGraph = true; graphVisible = false; startNode()" />
   </main>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessageBox } from 'element-plus'
-import { VueFlow } from '@vue-flow/core'
-import { Background } from '@vue-flow/background'
-import { Controls } from '@vue-flow/controls'
+import MobileEvidenceGraph from './MobileEvidenceGraph.vue'
 import MobileActionBar from '@/components/mobile/MobileActionBar.vue'
 import MobileSheet from '@/components/mobile/MobileSheet.vue'
 import EvidenceEntityPicker from '@/components/evidence/EvidenceEntityPicker.vue'
@@ -167,8 +160,8 @@ import { CHAIN_STATUS, RELATION_STATUS, NODE_KINDS, makeEvidenceNode, plainEntit
 import { evidenceReadingSections, evidenceEndpointLabel, createEvidenceRelationDraft, evidenceMaterialRefs, commitEvidenceRelation } from './mobileEvidence'
 
 const props = defineProps({ graph: { type: Object, required: true }, rendered: { type: Object, required: true }, displayEdges: Array, selection: Object, editable: Boolean, dirty: Boolean, saving: Boolean, saveError: String, refreshing: Boolean, canUndo: Boolean, canRedo: Boolean, resolving: { type: Set, required: true }, expanded: { type: Set, required: true }, resolveErrors: Object, flowId: String, nodeTypes: Object })
-const emit = defineEmits(['save', 'undo', 'redo', 'refresh', 'export', 'reload', 'select-node', 'select-edge', 'resolve', 'expand', 'remove-node', 'remove-edge', 'add-nodes', 'edit-node', 'edit-edge', 'edit-meta', 'fit'])
-const query = ref(''), sheet = ref(''), graphVisible = ref(false), formError = ref('')
+const emit = defineEmits(['save', 'undo', 'redo', 'refresh', 'export', 'reload', 'select-node', 'select-edge', 'resolve', 'expand', 'remove-node', 'remove-edge', 'add-nodes', 'edit-node', 'edit-edge', 'edit-meta', 'fit', 'move-nodes', 'remove-nodes'])
+const query = ref(''), sheet = ref(''), graphVisible = ref(false), formError = ref(''), returnToGraph = ref(false)
 const entityPicker = ref(false), chainPicker = ref(false), pickerPurpose = ref('new')
 const nodeStep = ref(0), nodeKind = ref('note'), pendingNodes = ref([]), nodeDraft = ref(null), attributeName = ref('')
 const relationStep = ref(0), relationDraft = ref(null), relationBaseline = ref(''), metaDraft = ref(null)
@@ -265,10 +258,36 @@ function openMeta() { metaDraft.value = JSON.parse(JSON.stringify(Object.fromEnt
 /** """确认基础设置后回到阅读列表。""" */
 function confirmMeta() { if (!props.editable || !metaDraft.value.title.trim()) return; emit('edit-meta', JSON.parse(JSON.stringify(metaDraft.value))); sheet.value = '' }
 /** """退出全屏图时保留选择并打开相应详情。""" */
-function openGraphSelection() { graphVisible.value = false; sheet.value = props.selection?.type === 'edge' ? 'edge' : 'node' }
-watch(sheet, () => { formError.value = '' })
+function openGraphSelection() { returnToGraph.value = true; graphVisible.value = false; if (props.selection?.type === 'node') emit('select-node', props.selection.id); sheet.value = props.selection?.type === 'edge' ? 'edge' : 'node' }
+watch(sheet, value => { formError.value = ''; if (!value && returnToGraph.value) { graphVisible.value = true; returnToGraph.value = false } })
 watch(() => props.selection, value => { if (!value && ['node', 'edge', 'node-edit'].includes(sheet.value)) sheet.value = '' })
-watch(() => props.graph.id, () => { sheet.value = ''; graphVisible.value = false; entityPicker.value = false; chainPicker.value = false })
+watch(() => props.graph.id, closeMobileOverlays)
+onDeactivated(closeMobileOverlays)
+onBeforeUnmount(closeMobileOverlays)
+
+/**
+ * 接收手机图上的两个真实端点，继续使用既有依据表单，确认前不连线。
+ * @param {object} endpoints 点选的起点和终点路径。
+ */
+function startGraphRelation({ source, target }) {
+  if (!props.editable || ![source, target].every(id => props.rendered.nodes.some(node => node.id === id))) return
+  relationDraft.value = createEvidenceRelationDraft(null, props.graph, source)
+  relationDraft.value.target = target
+  relationBaseline.value = JSON.stringify(relationDraft.value)
+  relationStep.value = 1
+  returnToGraph.value = true
+  graphVisible.value = false
+  sheet.value = 'relation'
+}
+
+/** """离开或切换证据链时关闭挂载到页面外部的所有弹层。""" */
+function closeMobileOverlays() {
+  returnToGraph.value = false
+  sheet.value = ''
+  graphVisible.value = false
+  entityPicker.value = false
+  chainPicker.value = false
+}
 </script>
 
 <style scoped>
