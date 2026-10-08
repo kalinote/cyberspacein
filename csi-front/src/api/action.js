@@ -86,8 +86,8 @@ export const actionApi = {
     return request.delete(`/action/blueprint/${id}`)
   },
   // 获取行动历史列表
-  getActionHistory(params = {page: 1, page_size: 10}) {
-    return request.get('/action/list', params)
+  getActionHistory(params = {page: 1, page_size: 10}, config = {}) {
+    return request.get('/action/list', params, config)
   },
   // 获取行动历史全量状态统计
   getActionHistorySummary(config = {}) {

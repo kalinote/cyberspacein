@@ -2,7 +2,7 @@
     <div
         data-article-detail-workbench
         class="article-detail-workbench w-full overflow-hidden"
-        :class="constrainHeight ? 'h-full max-h-full min-h-0' : 'min-h-120'"
+        :class="constrainHeight ? 'h-full max-h-full min-h-0' : isMobile ? 'mobile-reading-workbench' : 'min-h-120'"
     >
         <Splitpanes
             v-if="isLgUp"
@@ -51,6 +51,34 @@
             </Pane>
         </Splitpanes>
 
+        <div v-else-if="isMobile" class="mobile-reading-layout">
+            <div class="relative marking-container min-w-0">
+                <slot name="center-top" />
+            </div>
+            <nav class="mobile-reading-tools" aria-label="材料补充信息">
+                <button type="button" aria-haspopup="dialog" :aria-expanded="mobilePanel === 'analysis'" @click="emit('update:mobilePanel', 'analysis')"><Icon icon="mdi:brain" /> 分析与研判</button>
+                <button type="button" aria-haspopup="dialog" :aria-expanded="mobilePanel === 'markings'" @click="emit('update:mobilePanel', 'markings')"><Icon icon="mdi:comment-text-outline" /> 批注 {{ sortedMarkings.length }}</button>
+                <button type="button" aria-haspopup="dialog" :aria-expanded="mobilePanel === 'versions'" @click="emit('update:mobilePanel', 'versions')"><Icon icon="mdi:history" /> 版本与附件</button>
+            </nav>
+            <MobileSheet :model-value="mobilePanel === 'analysis'" title="分析与研判" @update:model-value="!$event && emit('update:mobilePanel', '')">
+                <div class="mobile-analysis-sheet"><slot name="right" /></div>
+            </MobileSheet>
+            <MobileSheet :model-value="mobilePanel === 'markings'" title="正文批注" @update:model-value="!$event && emit('update:mobilePanel', '')">
+                <div data-marking-sidebar>
+                    <MarkingSidebar
+                        :sorted-markings="sortedMarkings"
+                        :active-marking-id="activeMarkingId"
+                        @update="(id, content) => emit('marking-update', id, content)"
+                        @delete="(id) => emit('marking-delete', id)"
+                        @hover="(id, hovering) => emit('marking-hover', id, hovering)"
+                    />
+                </div>
+            </MobileSheet>
+            <MobileSheet :model-value="mobilePanel === 'versions'" title="版本与补充资料" @update:model-value="!$event && emit('update:mobilePanel', '')">
+                <div class="mobile-version-sheet"><slot name="center-bottom" /></div>
+            </MobileSheet>
+        </div>
+
         <div v-else class="grid grid-cols-1 gap-4">
             <div data-marking-sidebar class="min-w-0">
                 <MarkingSidebar
@@ -75,10 +103,13 @@
 
 <script setup>
 import { ref, onUnmounted } from 'vue'
+import { Icon } from '@iconify/vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
 import MarkingSidebar from '@/components/marking/MarkingSidebar.vue'
 import { useMinLg } from '@/composables/useMinLg'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
 import {
     ARTICLE_DETAIL_PANE_DEFAULTS,
     ARTICLE_DETAIL_PANE_STORAGE_KEY,
@@ -88,6 +119,7 @@ import {
 } from '@/utils/useSplitpanesPersistence'
 
 const props = defineProps({
+    mobilePanel: { type: String, default: '' },
     sortedMarkings: {
         type: Array,
         default: () => [],
@@ -116,9 +148,11 @@ const emit = defineEmits([
     'marking-delete',
     'marking-hover',
     'pane-resized',
+    'update:mobilePanel',
 ])
 
 const { isLgUp } = useMinLg()
+const { isMobile } = useMobileViewport()
 const sizes = ref(loadPaneSizes(props.paneStorageKey, props.paneDefaults))
 
 let saveTimer = null
@@ -154,6 +188,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.mobile-reading-layout { display: flex; flex-direction: column; }
+.mobile-reading-tools { order: -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 16px 12px; background: #fff; }
+.mobile-reading-tools button { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; border: 1px solid #e2e8f0; border-radius: 10px; color: #475569; font-size: 12px; }
+.mobile-analysis-sheet { height: min(70dvh, 700px); min-height: 280px; }
+.mobile-version-sheet { min-width: 0; overflow-x: hidden; }
+.mobile-version-sheet :deep(.p-6) { padding: 16px; }
+.mobile-version-sheet :deep(.space-x-4) { flex-wrap: wrap; gap: 12px; }
+@media (max-width: 767px) {
+    .mobile-analysis-sheet :deep(.detail-right-panels) { flex-direction: column-reverse; gap: 12px; }
+    .mobile-analysis-sheet :deep(.detail-right-panel-content) { border: 0; border-radius: 0; }
+}
+
 .article-detail-workbench :deep(.splitpanes) {
     height: 100%;
     max-height: 100%;

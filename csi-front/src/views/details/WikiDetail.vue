@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-gray-50 flex flex-col">
+  <div class="min-h-screen bg-gray-50 flex flex-col" :class="{ 'wiki-mobile-detail': isMobile }">
     <Header />
 
     <div v-if="loading" class="flex items-center justify-center h-96">
@@ -15,11 +15,13 @@
         <h2 class="text-xl font-bold text-gray-900 mb-2">加载失败</h2>
         <p class="text-gray-600 mb-4">{{ error }}</p>
         <el-button type="primary" @click="router.back()">返回</el-button>
+        <el-button @click="loadWiki">重试</el-button>
       </div>
     </div>
 
     <template v-else-if="wiki">
       <DetailPageHeader
+        v-if="!isMobile"
         :title="wiki.title"
         :subtitle="wikiSubtitle"
         container-max-width="max-w-screen-2xl"
@@ -55,9 +57,15 @@
         </template>
       </DetailPageHeader>
 
-      <section class="py-6 sm:py-8">
+      <header v-if="isMobile" class="wiki-mobile-heading">
+        <div class="wiki-mobile-heading-tags"><el-tag v-if="wiki.status" :type="wikiStatusTagType" size="small">{{ wikiStatusLabel }}</el-tag><span>专题资料 · 修订 {{ wiki.revision }}</span></div>
+        <h1>{{ wiki.title }}</h1><p v-if="wiki.sourceNote">{{ wiki.sourceNote }}</p>
+        <div class="wiki-mobile-heading-meta"><span v-if="wiki.lastModified">{{ formattedLastModified }}</span><el-button link type="primary" @click="revisionHistoryVisible = true">版本记录</el-button></div>
+      </header>
+
+      <section class="py-6 sm:py-8 wiki-reading-section">
         <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div class="lg:hidden mb-6">
+          <div v-if="!isMobile" class="lg:hidden mb-6">
             <WikiSidebarCard>
               <template #title>
                 页面<span class="text-blue-500">目录</span>
@@ -86,8 +94,9 @@
               class="min-w-0"
               @click="onArticleClick"
             >
-              <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8">
+              <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 wiki-reading-body">
                 <WikiPageMeta
+                  v-if="!isMobile"
                   v-model:edit-mode="editMode"
                   :source-note="wiki.sourceNote"
                 />
@@ -95,7 +104,7 @@
                 <div v-if="wiki.contentTree" class="space-y-8">
                   <WikiSectionBlock :node="wiki.contentTree" />
 
-                  <WikiFootnotes :footnotes="wiki.footnotes">
+                  <WikiFootnotes v-if="!isMobile" :footnotes="wiki.footnotes">
                     <template v-if="editMode" #actions>
                       <div class="flex items-center gap-0.5 shrink-0">
                         <button
@@ -110,7 +119,7 @@
                     </template>
                   </WikiFootnotes>
 
-                  <WikiReferences :references="wiki.references">
+                  <WikiReferences v-if="!isMobile" :references="wiki.references">
                     <template v-if="editMode" #actions>
                       <div class="flex items-center gap-0.5 shrink-0">
                         <button
@@ -172,6 +181,17 @@
         </div>
       </section>
 
+      <MobileActionBar v-if="isMobile" aria-label="专题阅读操作">
+        <el-button @click="mobilePanel = 'toc'; mobilePanelOpen = true">目录</el-button>
+        <el-button @click="mobilePanel = 'sources'; mobilePanelOpen = true">引用 {{ (wiki.references?.length || 0) + (wiki.footnotes?.length || 0) }}</el-button>
+        <AddToEvidenceButton :entity="{ entity_type: 'wiki', uuid: wiki.id, title: wiki.title }" />
+        <el-button type="primary" :disabled="!canMobileEdit" @click="openMobileEditor">编辑</el-button>
+      </MobileActionBar>
+      <MobileSheet v-if="isMobile" v-model="mobilePanelOpen" :title="mobilePanel === 'toc' ? '专题目录' : '引用与注释'" destroy-on-close @opened="revealCitation">
+        <WikiToc v-if="mobilePanel === 'toc'" :items="numberedToc" :active-id="activeSectionId" @navigate="scrollToSection" />
+        <div v-else class="wiki-mobile-sources"><WikiReferences :references="wiki.references" /><WikiFootnotes :footnotes="wiki.footnotes" /></div>
+      </MobileSheet>
+
       <WikiTocEditorDialog
         v-model="tocEditorVisible"
         :children="wiki.contentTree?.children ?? []"
@@ -217,6 +237,7 @@
         :wiki-id="wiki.id"
         :revision="revisionPreviewTarget"
         :current-revision="wiki.revision"
+        :allow-restore="!isMobile || canMobileRestore"
         @restore="handleRestoreRevision"
       />
     </template>
@@ -269,6 +290,13 @@ import {
 
 import { WIKI_EDITOR_KEY } from '@/components/wiki/wikiEditorKey.js'
 import { formatDateTime } from '@/utils/action'
+import MobileActionBar from '@/components/mobile/MobileActionBar.vue'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import { hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
+import { scrollToWikiCitationTarget } from '@/utils/wikiContent.js'
+import { rememberRecentVisit } from '@/stores/recentVisits'
 
 defineOptions({ name: 'WikiDetail' })
 
@@ -276,6 +304,13 @@ defineOptions({ name: 'WikiDetail' })
 
 const route = useRoute()
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const canMobileEdit = computed(() => hasPerm(PERM.operations.target.wiki.read) && hasPerm(PERM.operations.target.wiki.update))
+const canMobileRestore = computed(() => hasPerm(PERM.operations.target.wiki.read) && hasPerm(PERM.operations.target.wiki.execute))
+const mobilePanelOpen = ref(false)
+const mobilePanel = ref('toc')
+let pendingCitation = ''
+let loadGeneration = 0
 
 /** @type {import('vue').Ref<WikiEntry|null>} */
 const wiki = ref(null)
@@ -556,6 +591,7 @@ function openRevisionDiff(payload) {
  * @param {number} targetRevision
  */
 async function handleRestoreRevision(targetRevision) {
+  if (isMobile.value && !canMobileRestore.value) return
   if (!wiki.value) return
   try {
     await runWrite(() => persistWikiRestoreRevision(wiki.value, targetRevision))
@@ -595,11 +631,43 @@ watch(editMode, (enabled) => {
   }
 })
 
+/** """手机先展开引用面板，再定位正文引用对应的来源。""" */
 function onArticleClick(event) {
+  const link = event.target instanceof Element ? event.target.closest('.wiki-cite-link') : null
+  if (isMobile.value && link?.dataset.wikiTarget) {
+    event.preventDefault()
+    const rawTarget = link.dataset.wikiTarget
+    const citationId = rawTarget.replace(/^(note|ref)-/, '')
+    pendingCitation = wiki.value.footnotes?.some(note => note.id === citationId) ? `note-${citationId}` : rawTarget
+    mobilePanel.value = 'sources'
+    mobilePanelOpen.value = true
+    nextTick(revealCitation)
+    return
+  }
   handleWikiCitationClick(event)
 }
 
-function scrollToSection(id) {
+/** """面板完成进入后高亮目标，避免抽屉延迟挂载导致定位丢失。""" */
+function revealCitation() {
+  if (pendingCitation && document.getElementById(pendingCitation)) {
+    scrollToWikiCitationTarget(pendingCitation)
+    pendingCitation = ''
+  }
+}
+
+/** """关闭目录后定位正文，参考资料与注释在面板中读取。""" */
+async function scrollToSection(id) {
+  if (isMobile.value) {
+    if (id === 'notes' || id === 'references') {
+      mobilePanel.value = 'sources'
+      pendingCitation = id
+      await nextTick()
+      revealCitation()
+      return
+    }
+    mobilePanelOpen.value = false
+    await nextTick()
+  }
   const el = document.getElementById(id)
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -633,6 +701,8 @@ function setupSectionObserver() {
 }
 
 async function loadWiki() {
+  const generation = ++loadGeneration
+  const id = wikiRouteId.value
   loading.value = true
   error.value = ''
   clearContentEdit()
@@ -643,15 +713,25 @@ async function loadWiki() {
   revisionHistoryVisible.value = false
   revisionDiffVisible.value = false
   revisionPreviewVisible.value = false
+  mobilePanelOpen.value = false
+  pendingCitation = ''
   try {
-    wiki.value = await wikiApi.getPageById(wikiRouteId.value)
+    if (isMobile.value && !hasPerm(PERM.operations.target.wiki.read)) throw new Error('没有读取专题的权限')
+    const detail = await wikiApi.getPageById(id)
+    if (generation !== loadGeneration) return
+    if (!detail.id || detail.id !== id) throw new Error('专题数据无效，请重试')
+    wiki.value = detail
+    rememberRecentVisit(route, detail.title)
+    loading.value = false
     await nextTick()
+    if (generation !== loadGeneration) return
     setupSectionObserver()
   } catch (e) {
+    if (generation !== loadGeneration) return
     wiki.value = null
     error.value = e?.message || '加载维基条目失败'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
@@ -664,7 +744,24 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  loadGeneration += 1
   teardownSectionObserver()
 })
+
+/** """验证权限后进入独立专题编辑页面。""" */
+function openMobileEditor() {
+  if (!canMobileEdit.value || !wiki.value) return
+  router.push({ name: 'wiki-editor', params: { id: wiki.value.id } })
+}
+
+watch(isMobile, (mobile) => {
+  mobilePanelOpen.value = false
+  if (mobile) editMode.value = false
+  refreshSectionObserver()
+})
 </script>
+
+<style scoped>
+.wiki-mobile-heading{padding:22px 20px 16px;background:white;border-bottom:1px solid #e2e8f0}.wiki-mobile-heading-tags{display:flex;gap:8px;align-items:center;color:#64748b;font-size:12px}.wiki-mobile-heading h1{font-size:26px;line-height:1.4;font-weight:700;margin:14px 0;overflow-wrap:anywhere}.wiki-mobile-heading>p{font-size:14px;line-height:1.7;color:#64748b;margin:0 0 12px;overflow-wrap:anywhere}.wiki-mobile-heading-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:#64748b}.wiki-mobile-heading-meta :deep(.el-button){min-height:40px}.wiki-mobile-sources{display:grid;gap:28px;overflow-wrap:anywhere}.wiki-mobile-sources :deep(.wiki-ref-go){min-width:36px;min-height:36px}.wiki-mobile-detail .wiki-reading-section{padding:16px 0}.wiki-mobile-detail .wiki-reading-section>div{padding:0 12px}.wiki-mobile-detail .wiki-reading-body{padding:20px 16px;border-radius:12px}.wiki-mobile-detail :deep(.wiki-markdown){font-size:16px;line-height:1.85;overflow-wrap:anywhere;min-width:0}.wiki-mobile-detail :deep(.wiki-markdown pre){max-width:100%;overflow-x:auto}.wiki-mobile-detail :deep(.wiki-markdown table){display:block;max-width:100%;overflow-x:auto}.wiki-mobile-detail :deep(.wiki-cite-link){display:inline-block;min-width:24px;line-height:24px;text-align:center}.wiki-mobile-detail :deep(.mobile-action-bar .el-button){font-size:13px;padding:10px 8px;min-width:0;margin:0}
+</style>
 

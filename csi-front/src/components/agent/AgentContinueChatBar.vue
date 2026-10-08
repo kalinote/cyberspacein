@@ -1,5 +1,5 @@
 <template>
-    <div class="shrink-0 border-t border-gray-100 p-3 space-y-2 bg-white">
+    <div class="agent-chat-bar shrink-0 border-t border-gray-100 p-3 space-y-2 bg-white">
         <div v-if="showStatus" class="flex flex-wrap items-center gap-1.5 text-xs">
             <el-tag v-if="sseConnected" type="success" size="small">已连接</el-tag>
             <el-tag v-else-if="hasSession" type="warning" size="small">未连接</el-tag>
@@ -10,10 +10,11 @@
             type="textarea"
             :autosize="{ minRows: compact ? 2 : 3, maxRows: compact ? 4 : 8 }"
             :placeholder="placeholder"
-            :disabled="!hasSession"
+            :disabled="!hasSession || !canOperate"
+            aria-label="续聊消息"
             resize="none"
             @update:model-value="emit('update:userPrompt', $event)"
-            @keydown.ctrl.enter.prevent="emit('send')"
+            @keydown.ctrl.enter.prevent="canOperate && canSendMessage && emit('send')"
         />
         <div class="flex gap-2">
             <el-button
@@ -21,8 +22,8 @@
                 size="small"
                 class="flex-1"
                 :loading="sendLoading"
-                :disabled="!canSendMessage"
-                @click="emit('send')"
+                :disabled="!canSendMessage || !canOperate"
+                @click="canOperate && canSendMessage && emit('send')"
             >
                 发送
             </el-button>
@@ -30,16 +31,23 @@
                 type="warning"
                 size="small"
                 :loading="cancelLoading"
-                :disabled="!canCancel"
-                @click="emit('cancel')"
+                :disabled="!canCancel || !canOperate"
+                @click="canOperate && canCancel && emit('cancel')"
             >
-                取消
+                {{ isMobile ? '停止任务' : '取消' }}
             </el-button>
         </div>
     </div>
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import { hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
+
+const { isMobile } = useMobileViewport()
+const canOperate = computed(() => !isMobile.value || hasPerm(PERM.operations.agent.agent.execute))
 defineProps({
     userPrompt: {
         type: String,
@@ -93,3 +101,10 @@ defineProps({
 
 const emit = defineEmits(['update:userPrompt', 'send', 'cancel'])
 </script>
+
+<style scoped>
+@media (max-width: 767px) {
+    .agent-chat-bar :deep(button) { min-height: 44px; }
+    .agent-chat-bar :deep(textarea) { font-size: 16px; max-height: 26dvh; }
+}
+</style>

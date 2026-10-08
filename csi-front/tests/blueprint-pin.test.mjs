@@ -19,12 +19,13 @@ function loadComponent(path, { api = {}, scheduleApi = {}, props = {}, canUpdate
   const { descriptor } = parse(source)
   const script = compileScript(descriptor, { id: path })
   const activated = []
+  const deactivated = []
   const mounted = []
   const events = []
   const messages = []
   const routes = []
   const imports = {
-    vue: { ...Vue, onActivated: callback => activated.push(callback), onMounted: callback => mounted.push(callback) },
+    vue: { ...Vue, onActivated: callback => activated.push(callback), onDeactivated: callback => deactivated.push(callback), onMounted: callback => mounted.push(callback) },
     'vue-router': { useRouter: () => ({ push: route => routes.push(route) }) },
     'element-plus': {
       ElMessage: { success: message => messages.push(message), error: message => messages.push(message) },
@@ -44,6 +45,8 @@ function loadComponent(path, { api = {}, scheduleApi = {}, props = {}, canUpdate
       cronToDescription: expression => cronstrue.toString(expression, { locale: 'zh_CN' })
     },
     '@/utils/permissions': { PERM },
+    '@/composables/useMobileViewport': { useMobileViewport: () => ({ isMobile: Vue.ref(false) }) },
+    '@/components/action/mobile/actionOperations': { useMobileActionOperations: () => ({ busyId: Vue.ref(''), operateAction() {} }) },
     '@/utils/permissionKit': {
       hasPerm: permission => canUpdate && !deniedPermissions.includes(permission),
       hasAll: permissions => canUpdate && permissions.every(permission => !deniedPermissions.includes(permission))
@@ -73,8 +76,16 @@ function loadComponent(path, { api = {}, scheduleApi = {}, props = {}, canUpdate
   const render = new Function('Vue', template.code)({
     ...Vue, resolveComponent: name => ({ name }), resolveDirective: () => ({}), withDirectives: node => node
   })
-  return { state, activated, mounted, events, messages, routes, render: () => render({}, [], props, Vue.proxyRefs(state)) }
+  return { state, activated, deactivated, mounted, events, messages, routes, render: () => render({}, [], props, Vue.proxyRefs(state)) }
 }
+
+test('行动主页进入缓存时关闭所有弹窗，避免遮挡下一页并锁定滚动', () => {
+  const page = loadComponent('views/action/ActionMonitor.vue')
+  const names = ['blueprintDialogVisible', 'templateParamsDialogVisible', 'publishDialogVisible', 'encapsulateDialogVisible', 'revisionDialogVisible']
+  for (const name of names) page.state[name].value = true
+  page.deactivated.forEach(callback => callback())
+  for (const name of names) assert.equal(page.state[name].value, false)
+})
 
 /** 查找组件渲染树中的目标节点，供事件和展示数量断言复用。 */
 function findNodes(tree, name) {

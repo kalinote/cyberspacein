@@ -1,22 +1,22 @@
 <template>
-  <el-dialog :model-value="modelValue" title="添加实体与版本" width="900px" destroy-on-close @update:model-value="$emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" title="添加实体与版本" width="900px" class="evidence-entity-picker" :append-to-body="isMobile" destroy-on-close @update:model-value="$emit('update:modelValue', $event)">
     <template v-if="!versionNode">
-      <div class="flex gap-3 flex-wrap mb-4">
-        <el-select v-model="source" style="width: 160px" aria-label="实体来源" @change="page = 1; selected = {}; load()"><el-option label="全部实体" value="all" /><el-option label="重点实体库" value="highlights" /><el-option label="专题事件" value="wiki" /></el-select>
-        <el-input v-model="query" placeholder="输入关键词检索" class="flex-1" clearable aria-label="实体关键词" @keyup.enter="page = 1; load()" />
+      <div class="evidence-entity-search flex gap-3 flex-wrap mb-4">
+        <el-select v-model="source" style="width: 160px" class="evidence-entity-source" aria-label="实体来源" @change="page = 1; selected = {}; load()"><el-option label="全部实体" value="all" /><el-option label="重点实体库" value="highlights" /><el-option label="专题事件" value="wiki" /></el-select>
+        <el-input v-model="query" placeholder="输入关键词检索" class="evidence-entity-query flex-1" clearable aria-label="实体关键词" @keyup.enter="page = 1; load()" />
         <el-button type="primary" @click="page = 1; load()">检索</el-button>
       </div>
-      <div v-if="source !== 'wiki'" class="flex gap-3 items-center mb-3 text-xs text-gray-500"><span>实体类型</span><el-radio-group v-model="entityType" size="small" @change="page = 1; load()"><el-radio-button value="">全部</el-radio-button><el-radio-button value="article">文章</el-radio-button><el-radio-button value="forum">帖子 / 评论</el-radio-button></el-radio-group></div>
+      <div v-if="source !== 'wiki'" class="evidence-entity-types flex gap-3 items-center mb-3 text-xs text-gray-500"><span>实体类型</span><el-radio-group v-model="entityType" size="small" @change="page = 1; load()"><el-radio-button value="">全部</el-radio-button><el-radio-button value="article">文章</el-radio-button><el-radio-button value="forum">帖子 / 评论</el-radio-button></el-radio-group></div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb-3" />
       <div v-loading="loading" class="min-h-60 max-h-100 overflow-auto border border-gray-200 rounded-lg">
-        <div v-for="item in items" :key="keyOf(item)" class="flex gap-3 p-4 border-b border-gray-100 items-start">
+        <div v-for="item in items" :key="keyOf(item)" class="evidence-entity-row flex gap-3 p-4 border-b border-gray-100 items-start">
           <el-checkbox :model-value="Boolean(selected[keyOf(item)])" :aria-label="`选择${plainEntityTitle(item.title)}`" @change="toggleSelected(item, $event)" />
           <div class="min-w-0 flex-1"><p class="font-medium text-gray-800">{{ plainEntityTitle(item.title) }}</p><p class="text-xs text-gray-400 mt-1">{{ item.entity_type }} · {{ item.platform || '专题事件' }} · {{ item.last_edit_at || item.update_at || '时间未提供' }}</p><p class="text-xs text-gray-500 line-clamp-2 mt-2">{{ plainEntityTitle(item.clean_content || item.sourceNote || '暂无摘要') }}</p></div>
-          <el-button v-if="item.entity_type !== 'wiki'" link type="primary" @click="openVersions(item)">选择版本</el-button>
+          <el-button v-if="item.entity_type !== 'wiki'" class="evidence-version-button" link type="primary" @click="openVersions(item)">选择版本</el-button>
         </div>
         <el-empty v-if="!items.length && !loading && !error" description="暂无结果，请调整关键词或来源" :image-size="60" />
       </div>
-      <div class="mt-4 flex items-center justify-between gap-3"><span class="text-sm text-gray-500">已选择 {{ Object.keys(selected).length }} 个实体</span><el-pagination v-model:current-page="page" :page-size="10" :total="total" layout="prev, pager, next" @current-change="load" /></div>
+      <div class="evidence-entity-pagination mt-4 flex items-center justify-between gap-3"><span class="text-sm text-gray-500">已选择 {{ Object.keys(selected).length }} 个实体</span><el-pagination v-model:current-page="page" :page-size="10" :total="total" :pager-count="isMobile ? 5 : 7" layout="prev, pager, next" @current-change="load" /></div>
     </template>
     <template v-else>
       <el-button link type="primary" @click="versionNode = null">← 返回实体选择</el-button>
@@ -31,7 +31,7 @@
         </div>
         <el-empty v-if="!versions.length && !loading" description="当前未检索到版本" :image-size="50" />
       </div>
-      <div class="mt-3 flex justify-between text-xs text-gray-500"><span>共 {{ versionTotal }} 个版本 · 已选 {{ Object.keys(versionSelection).length }} 个</span><el-pagination v-model:current-page="versionPage" :page-size="20" :total="versionTotal" layout="prev, pager, next" @current-change="loadVersions" /></div>
+      <div class="evidence-entity-pagination mt-3 flex justify-between text-xs text-gray-500"><span>共 {{ versionTotal }} 个版本 · 已选 {{ Object.keys(versionSelection).length }} 个</span><el-pagination v-model:current-page="versionPage" :page-size="20" :total="versionTotal" :pager-count="isMobile ? 5 : 7" layout="prev, pager, next" @current-change="loadVersions" /></div>
     </template>
     <template #footer>
       <el-button @click="$emit('update:modelValue', false)">取消</el-button>
@@ -48,6 +48,8 @@ import { searchApi } from '@/api/search';
 import { wikiApi } from '@/api/wiki';
 import { evidenceApi } from '@/api/evidence';
 import { makeEvidenceNode, plainEntityTitle } from '@/utils/evidence';
+import { useMobileViewport } from '@/composables/useMobileViewport';
+const { isMobile } = useMobileViewport();
 const props = defineProps({
   modelValue: Boolean,
   allowDynamic: {
@@ -215,3 +217,26 @@ watch(() => props.modelValue, async value => {
   } else await load();
 });
 </script>
+
+<style>
+@media (max-width: 767px) {
+  .evidence-entity-picker .el-dialog__body { overflow-wrap: anywhere; }
+  .evidence-entity-picker .evidence-entity-source { width: 100% !important; }
+  .evidence-entity-picker .evidence-entity-query { min-width: 0; }
+  .evidence-entity-picker .evidence-entity-types { flex-wrap: wrap; }
+  .evidence-entity-picker .evidence-entity-row { flex-wrap: wrap; padding: 12px; }
+  .evidence-entity-picker .evidence-version-button { width: calc(100% - 26px); margin-left: 26px; justify-content: flex-start; }
+  .evidence-entity-picker .evidence-entity-pagination { flex-direction: column; align-items: center; gap: 8px; }
+  .evidence-entity-picker .el-radio-group { gap: 0; }
+  .evidence-entity-picker .el-radio { height: auto; min-height: 44px; margin-right: 12px; }
+  .evidence-entity-picker .el-radio-button__inner { min-height: 40px; display: flex; align-items: center; }
+  .evidence-entity-picker .el-checkbox { min-height: 44px; }
+  .evidence-entity-picker .el-dialog__footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .evidence-entity-picker .el-dialog__footer .el-button { flex: 1 1 120px; min-height: 44px; margin-left: 0; }
+}
+</style>

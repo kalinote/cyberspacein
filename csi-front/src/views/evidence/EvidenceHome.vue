@@ -1,6 +1,24 @@
 <template>
   <div class="min-h-screen bg-linear-to-b from-white to-gray-50">
     <Header />
+    <main v-if="isMobile" class="mobile-evidence-home">
+      <header><div><h1>证据链</h1><p>查看判断、关系与原始依据</p></div><el-button circle aria-label="刷新证据概览" :loading="loading" :disabled="!canRead" @click="load"><Icon icon="mdi:refresh" /></el-button></header>
+      <MobileKnowledgeNav />
+      <router-link to="/evidence/chains" class="mobile-chain-search"><Icon icon="mdi:magnify" /><span>查找证据链</span><Icon icon="mdi:chevron-right" /></router-link>
+      <div v-if="canRead && stats" class="mobile-chain-summary"><span><strong>{{ stats.chains }}</strong> 条证据链</span><span><strong>{{ stats.active }}</strong> 条分析中</span></div>
+      <section aria-labelledby="mobile-evidence-recent">
+        <div class="mobile-section-heading"><h2 id="mobile-evidence-recent">最近编辑</h2><router-link to="/evidence/chains">全部证据链<Icon icon="mdi:arrow-right" /></router-link></div>
+        <p v-if="!canRead" class="mobile-home-empty">当前账号没有读取证据链的权限。</p>
+        <el-alert v-else-if="error" :title="error" type="error" :closable="false" show-icon><el-button link @click="load">重试</el-button><span v-if="stats">下方保留上次加载的结果。</span></el-alert>
+        <el-skeleton v-if="canRead && loading && !stats" :rows="6" animated />
+        <div v-if="canRead && stats" class="mobile-recent-chains" :aria-busy="loading">
+          <router-link v-for="chain in stats.recent" :key="chain.id" :to="`/evidence/chains/${chain.id}`"><div><h3>{{ chain.title }}</h3><el-tag size="small" :type="chain.status === 'active' ? 'success' : 'info'">{{ CHAIN_STATUS[chain.status] || chain.status }}</el-tag></div><p>{{ chain.purpose || chain.description || '尚未填写分析目的' }}</p><footer><span>{{ chain.node_count || 0 }} 个节点 · {{ chain.edge_count || 0 }} 条关系</span><span>查看依据<Icon icon="mdi:chevron-right" /></span></footer></router-link>
+          <div v-if="!loading && !error && !stats.recent.length" class="mobile-home-empty"><Icon icon="mdi:graph-outline" /><h3>从一个问题开始</h3><p>新建证据链，逐步补充判断、关系和材料。</p></div>
+        </div>
+      </section>
+      <MobileActionBar aria-label="证据链操作"><el-button type="primary" :disabled="!canCreate" @click="openCreate('blank')"><Icon icon="mdi:plus" />新建证据链</el-button></MobileActionBar>
+    </main>
+    <template v-else>
     <section class="bg-linear-to-br from-blue-50 to-white py-12">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -146,12 +164,13 @@
         </div>
       </section>
     </main>
+    </template>
     <EvidenceCreateDialog v-model="createVisible" :initial-template="selectedTemplate" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import Header from '@/components/Header.vue';
@@ -160,14 +179,21 @@ import EvidenceUsageTour from '@/components/evidence/EvidenceUsageTour.vue';
 import { evidenceApi } from '@/api/evidence';
 import { EVIDENCE_TEMPLATES, CHAIN_STATUS } from '@/utils/evidence';
 import { PERM } from '@/utils/permissions';
-import { hasPerm } from '@/utils/permissionKit';
+import { hasPerm, guardPermission } from '@/utils/permissionKit';
+import { useMobileViewport } from '@/composables/useMobileViewport';
+import MobileKnowledgeNav from '@/components/mobile/MobileKnowledgeNav.vue';
+import MobileActionBar from '@/components/mobile/MobileActionBar.vue';
 const router = useRouter();
+const { isMobile } = useMobileViewport();
 const stats = ref(null);
 const loading = ref(false);
 const error = ref('');
 const createVisible = ref(false);
 const selectedTemplate = ref('blank');
 const canCreate = computed(() => hasPerm(PERM.operations.evidence.chain.create));
+const canRead = computed(() => hasPerm(PERM.operations.evidence.chain.read));
+let requestId = 0;
+let active = true;
 const tourSteps = [{
   title: '1. 创建一条证据链',
   target: '[data-evidence-tour="create"]',
@@ -208,24 +234,54 @@ const statItems = [{
   iconClass: 'bg-purple-100 text-purple-600'
 }];
 function openCreate(template) {
+  if (!guardPermission(PERM.operations.evidence.chain.create)) return;
   selectedTemplate.value = template;
   createVisible.value = true;
 }
 async function load() {
+  if (!active || !canRead.value) return;
+  const id = ++requestId;
   loading.value = true;
   error.value = '';
   try {
-    stats.value = (await evidenceApi.overview()).data;
+    const data = (await evidenceApi.overview()).data;
+    if (!Array.isArray(data?.recent)) throw new Error('证据链概览数据格式异常，请重试');
+    if (id === requestId && active) stats.value = data;
   } catch (e) {
-    error.value = e.message || '证据链概览加载失败';
+    if (id === requestId) error.value = e.message || '证据链概览加载失败';
   } finally {
-    loading.value = false;
+    if (id === requestId) loading.value = false;
   }
 }
+watch(canRead, value => { requestId += 1; stats.value = null; loading.value = false; if (value) void load(); });
 onMounted(load);
+onBeforeUnmount(() => { active = false; requestId += 1; createVisible.value = false; });
 </script>
 
 <style scoped>
+.mobile-evidence-home { padding: 18px 16px 24px; color: #1e293b; }
+.mobile-evidence-home > header, .mobile-section-heading, .mobile-chain-search, .mobile-recent-chains a > div, .mobile-recent-chains footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mobile-evidence-home h1 { font-size: 23px; font-weight: 700; margin-bottom: 6px; }
+.mobile-evidence-home header p { font-size: 13px; color: #64748b; }
+.mobile-evidence-home > header { margin-bottom: 18px; }
+.mobile-evidence-home header .el-button { width: 44px; height: 44px; flex-shrink: 0; }
+.mobile-chain-search { min-height: 48px; padding: 0 14px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; color: #64748b; }
+.mobile-chain-search span { flex: 1; }
+.mobile-chain-summary { display: flex; flex-wrap: wrap; gap: 24px; font-size: 12px; color: #64748b; margin: 18px 0; }
+.mobile-chain-summary strong { font-size: 20px; color: #1d4ed8; margin-right: 4px; }
+.mobile-section-heading { margin: 20px 0 12px; }
+.mobile-section-heading h2 { font-size: 16px; font-weight: 650; }
+.mobile-section-heading a { display: inline-flex; align-items: center; min-height: 44px; gap: 4px; font-size: 12px; color: #2563eb; }
+.mobile-recent-chains { display: grid; gap: 12px; }
+.mobile-recent-chains > a { padding: 16px; border: 1px solid #e2e8f0; border-radius: 14px; background: white; }
+.mobile-recent-chains a > div { align-items: flex-start; }
+.mobile-recent-chains h3 { font-size: 16px; font-weight: 650; line-height: 1.6; overflow-wrap: anywhere; }
+.mobile-recent-chains :deep(.el-tag) { flex-shrink: 0; margin-top: 3px; }
+.mobile-recent-chains p { font-size: 13px; color: #64748b; line-height: 1.8; margin: 8px 0 12px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mobile-recent-chains footer { font-size: 12px; color: #64748b; }
+.mobile-recent-chains footer span:last-child { display: flex; align-items: center; color: #2563eb; }
+.mobile-home-empty { padding: 32px 12px; text-align: center; color: #64748b; font-size: 13px; line-height: 1.8; }
+.mobile-home-empty > svg { font-size: 40px; margin: 0 auto 12px; color: #93c5fd; }
 .evidence-home-guide :deep(.el-button) {
   width: 100%;
   height: auto;

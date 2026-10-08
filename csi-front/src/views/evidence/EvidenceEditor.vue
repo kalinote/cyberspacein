@@ -1,8 +1,11 @@
 <template>
-  <div class="evidence-editor bg-gray-50"><Header />
+  <div class="evidence-editor bg-gray-50" :class="{ 'evidence-editor-mobile': isMobile }"><Header />
     <div v-if="loading" class="flex-1 flex items-center justify-center text-gray-500">正在加载证据链…</div>
     <div v-else-if="loadError" class="p-12"><el-result icon="error" title="证据链加载失败" :sub-title="loadError"><template #extra><el-button @click="load">重试</el-button><el-button @click="router.push('/evidence/chains')">返回列表</el-button></template></el-result></div>
     <template v-else-if="graph">
+      <MobileEvidenceEditor v-if="isMobile" ref="mobileEditor" :graph="graph" :rendered="rendered" :display-edges="displayEdges" :selection="selection" :editable="editable" :dirty="dirty" :saving="saving" :save-error="saveError" :refreshing="refreshing" :can-undo="history.length > 1 || history.at(-1) !== serialized" :can-redo="Boolean(future.length)" :resolving="resolving" :expanded="expanded" :resolve-errors="resolveErrors" :flow-id="flowId" :node-types="nodeTypes"
+        @save="save" @undo="undo" @redo="redo" @refresh="refreshReferences" @export="exportGraph" @reload="reloadFromServer" @select-node="selectNodeById" @select-edge="onEdgeClick({ edge: $event })" @resolve="resolveSelection" @expand="toggleExpand" @remove-node="removeNode" @remove-edge="removeEdge" @add-nodes="addNodes" @edit-node="commitMobileNode" @edit-edge="commitMobileEdge" @edit-meta="commitMobileMeta" @fit="fitView({ padding: 0.15, duration: 250 })" />
+      <template v-else>
       <div class="editor-heading">
         <el-button link @click="router.push('/evidence/chains')"><Icon icon="mdi:arrow-left" class="mr-1" />证据链</el-button><div class="h-8 border-l border-gray-200 mx-2"></div>
         <div class="min-w-0 flex-1"><h1 class="font-bold text-lg truncate">{{ graph.title }}</h1><p class="text-xs text-gray-400">修订 {{ graph.revision }} · {{ dirty ? '有未保存的更改' : '所有更改已保存' }}<span v-if="!editable"> · 只读</span></p></div>
@@ -28,7 +31,7 @@
         </aside>
         <section class="graph-region">
           <div class="graph-toolbar"><el-button-group><el-button size="small" :disabled="!editable || history.length < 2" @click="undo">撤销</el-button><el-button size="small" :disabled="!editable || !future.length" @click="redo">重做</el-button></el-button-group><el-button size="small" :disabled="!editable" @click="arrange('grid')">网格排列</el-button><el-button size="small" :disabled="!editable" @click="arrange('tree')">层级排列</el-button><el-button size="small" @click="fitView({ padding: 0.15, duration: 250 })">适应画布</el-button><span class="ml-auto text-xs text-gray-400">{{ graph.nodes.length }} 节点 · {{ graph.edges.length }} 关系</span></div>
-          <VueFlow :id="flowId" :nodes="rendered.nodes" :edges="rendered.edges" :node-types="nodeTypes" :nodes-connectable="editable" :nodes-draggable="editable" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2.5" fit-view-on-init class="evidence-flow" @node-click="onNodeClick" @edge-click="onEdgeClick" @pane-click="selection = null; panelTab = 'meta'" @node-drag-stop="onDragStop" @connect="connect">
+          <VueFlow :id="flowId" :nodes="rendered.nodes" :edges="displayEdges" :node-types="nodeTypes" :nodes-connectable="editable" :nodes-draggable="editable" :delete-key-code="null" :min-zoom="0.15" :max-zoom="2.5" fit-view-on-init class="evidence-flow" @node-click="onNodeClick" @edge-click="onEdgeClick" @pane-click="selection = null; panelTab = 'meta'" @node-drag-stop="onDragStop" @connect="connect">
             <Background :gap="22" pattern-color="#d7e0ee" /><Controls :show-interactive="false" /><MiniMap :node-color="node => NODE_KINDS[node.data?.node?.kind]?.color || '#94a3b8'" pannable zoomable />
           </VueFlow>
           <div v-if="!graph.nodes.length" class="graph-empty"><Icon icon="mdi:graph-outline" class="text-5xl text-blue-200 mb-4" /><h2 class="font-semibold text-gray-700">从一个实体或问题开始</h2><p class="text-sm text-gray-400 mt-2 mb-4">添加节点，再建立有依据的联系。</p><el-button type="primary" :disabled="!editable" @click="openPicker('nodes')">添加第一个实体</el-button></div>
@@ -90,6 +93,7 @@
           </template>
         </aside>
       </div>
+      </template>
     </template>
     <EvidenceEntityPicker v-model="entityPicker" :allow-dynamic="pickerMode === 'nodes'" @add="acceptEntities" />
     <EvidenceChainPicker v-model="chainPicker" :exclude-id="String(route.params.id)" @select="addChain" />
@@ -115,12 +119,18 @@ import EvidenceEntityPicker from '@/components/evidence/EvidenceEntityPicker.vue
 import EvidenceChainPicker from '@/components/evidence/EvidenceChainPicker.vue';
 import EvidenceGraphNode from '@/components/evidence/EvidenceGraphNode.vue';
 import EvidenceUsageTour from '@/components/evidence/EvidenceUsageTour.vue';
+import MobileEvidenceEditor from '@/components/evidence/mobile/MobileEvidenceEditor.vue';
+import { commitEvidenceRelation } from '@/components/evidence/mobile/mobileEvidence';
+import { useMobileViewport } from '@/composables/useMobileViewport';
+import { rememberRecentVisit } from '@/stores/recentVisits';
 import { evidenceApi } from '@/api/evidence';
 import { CHAIN_STATUS, RELATION_STATUS, NODE_KINDS, evidenceId, makeEvidenceNode, graphPayload, projectEvidenceGraph, entityDetailPath } from '@/utils/evidence';
 import { hasPerm } from '@/utils/permissionKit';
 import { PERM } from '@/utils/permissions';
 const router = useRouter(),
   route = useRoute();
+const { isMobile } = useMobileViewport();
+const mobileEditor = ref(null);
 const flowId = 'evidence-editor';
 const {
   fitView,
@@ -205,6 +215,17 @@ const rendered = computed(() => graph.value ? projectEvidenceGraph(graph.value, 
   nodes: [],
   edges: []
 });
+const displayEdges = computed(() => {
+  const nodeId = selection.value?.type === 'node' ? selection.value.id : null;
+  return rendered.value.edges.map(edge => {
+    const active = nodeId !== null && (edge.source === nodeId || edge.target === nodeId);
+    return {
+      ...edge,
+      animated: active,
+      style: active ? { ...edge.style, strokeWidth: 2.8, strokeDasharray: '6 4' } : edge.style
+    };
+  });
+});
 const filteredNodes = computed(() => graph.value?.nodes.filter(node => node.label.toLowerCase().includes(nodeQuery.value.toLowerCase())) || []);
 const selectedEntry = computed(() => selection.value?.type === 'node' ? rendered.value.nodes.find(node => node.id === selection.value.id) : null);
 const selectedNode = computed(() => selectedEntry.value?.data.node);
@@ -222,6 +243,7 @@ async function load() {
     const response = await evidenceApi.get(String(route.params.id));
     if (sequence !== loadSequence) return;
     graph.value = response.data;
+    rememberRecentVisit(route, graph.value.title);
     savedState.value = serialized.value;
     resolved.value = {};
     resolveErrors.value = {};
@@ -248,6 +270,8 @@ async function save() {
     return false;
   }
   const submitted = serialized.value;
+  const submittedGraph = graph.value;
+  const generation = loadSequence;
   saving.value = true;
   saveError.value = '';
   try {
@@ -255,18 +279,26 @@ async function save() {
       ...JSON.parse(submitted),
       expected_revision: graph.value.revision
     });
+    // 离开或重载后的迟到响应不能写入另一条证据链。
+    if (graph.value !== submittedGraph || generation !== loadSequence) return false;
     graph.value.revision = response.data.revision;
     savedState.value = submitted;
+    rememberRecentVisit(route, graph.value.title);
     ElMessage.success('证据链已保存');
     return true;
   } catch (e) {
-    saveError.value = e.message || '保存失败，当前编辑已保留';
+    if (graph.value === submittedGraph && generation === loadSequence) saveError.value = e.message || '保存失败，当前编辑已保留';
     return false;
   } finally {
     saving.value = false;
   }
 }
 async function canLeave() {
+  if (mobileEditor.value?.hasDraft) {
+    try {
+      await ElMessageBox.confirm('分步编辑尚未确认。离开会放弃表单草稿，已应用到证据链的更改仍可保存。', '尚有表单草稿', { confirmButtonText: '放弃草稿并继续', cancelButtonText: '继续编辑', type: 'warning' });
+    } catch { return false; }
+  }
   if (!dirty.value || !graph.value) return true;
   try {
     await ElMessageBox.confirm('当前证据链有未保存的更改。保存后继续？', '离开编辑页', {
@@ -336,6 +368,8 @@ watch(serialized, () => {
   historyTimer = setTimeout(flushHistory, 500);
 });
 function addNodes(nodes) {
+  if (!editable.value || !nodes.length) return;
+  if (isMobile.value) flushHistory();
   const bottom = graph.value.nodes.length ? Math.max(...graph.value.nodes.map(node => node.position.y)) + 190 : 100;
   graph.value.nodes.push(...nodes.map((node, index) => ({
     ...node,
@@ -344,16 +378,56 @@ function addNodes(nodes) {
       y: bottom + Math.floor(index / 3) * 170
     }
   })));
+  if (isMobile.value) flushHistory();
   nextTick(() => {
     selection.value = {
       type: 'node',
       id: nodes[0].id
     };
-    fitView({
+    if (!isMobile.value) fitView({
       padding: 0.2,
       duration: 250
     });
   });
+}
+/**
+ * 提交本链节点的移动表单，保留引用身份并复用撤销历史。
+ * @param {object} draft 已确认的节点草稿。
+ */
+function commitMobileNode(draft) {
+  if (!editable.value || !draft.label?.trim()) return;
+  const node = graph.value.nodes.find(item => item.id === draft.id);
+  if (!node) return;
+  flushHistory();
+  Object.assign(node, { label: draft.label.trim(), description: draft.description, attributes: draft.attributes });
+  if (node.kind === 'collection' && draft.members?.length) {
+    node.members = draft.members;
+    delete resolved.value[node.id];
+    resolveSelection();
+  }
+  flushHistory();
+}
+/**
+ * 提交真实关系端点及依据，不把投影的折叠端点写入图定义。
+ * @param {object} draft 已确认的关系草稿。
+ */
+function commitMobileEdge(draft) {
+  if (!editable.value) return;
+  flushHistory();
+  const error = commitEvidenceRelation(graph.value, draft, rendered.value.nodes, editable.value);
+  if (error) { ElMessage.warning(error); return; }
+  selection.value = { type: 'edge', id: draft.id };
+  flushHistory();
+}
+/**
+ * 将移动设置表单应用到现有图定义，并保留一次完整的撤销记录。
+ * @param {object} draft 基础设置表单。
+ */
+function commitMobileMeta(draft) {
+  if (!editable.value || !draft.title?.trim()) return;
+  flushHistory();
+  for (const key of ['title', 'purpose', 'description', 'status', 'tags', 'relation_types']) graph.value[key] = draft[key];
+  flushHistory();
 }
 function addNote() {
   addNodes([makeEvidenceNode('note', {
@@ -456,7 +530,7 @@ function selectNodeById(id) {
   onNodeClick({
     node
   });
-  setCenter(node.position.x + 124, node.position.y + 60, {
+  if (!isMobile.value) setCenter(node.position.x + 124, node.position.y + 60, {
     zoom: 1,
     duration: 250
   });
@@ -534,7 +608,9 @@ async function addAttribute() {
   } catch {/* 取消时保留节点。 */}
 }
 async function removeNode() {
+  if (!editable.value || !selectedNode.value || selectedEntry.value?.data.inherited) return;
   const node = selectedNode.value;
+  const currentGraph = graph.value;
   const connected = graph.value.edges.filter(edge => [edge.source, edge.target].some(endpoint => endpoint === node.id || endpoint.startsWith(`${node.id}/`)));
   try {
     await ElMessageBox.confirm(`移出「${node.label}」并删除本链中与它相连的 ${connected.length} 条关系？原始实体和子链会保留。`, '移出节点', {
@@ -542,16 +618,22 @@ async function removeNode() {
       confirmButtonText: '移出',
       cancelButtonText: '取消'
     });
+    if (!editable.value || graph.value !== currentGraph) return;
+    flushHistory();
     graph.value.nodes = graph.value.nodes.filter(item => item.id !== node.id);
     graph.value.edges = graph.value.edges.filter(edge => !connected.includes(edge));
     selection.value = null;
     delete resolved.value[node.id];
     expanded.value.delete(node.id);
+    flushHistory();
   } catch {/* 取消时保留节点。 */}
 }
 function removeEdge() {
+  if (!editable.value || !selectedEdge.value || selectedEdgeEntry.value?.data.inherited) return;
+  flushHistory();
   graph.value.edges = graph.value.edges.filter(edge => edge.id !== selection.value.id);
   selection.value = null;
+  flushHistory();
 }
 function removeMember(item) {
   selectedNode.value.members = selectedNode.value.members.filter(ref => ref.uuid !== item.uuid || ref.entity_type !== item.entity_type);
@@ -627,6 +709,36 @@ function beforeUnload(event) {
     event.returnValue = '';
   }
 }
+/**
+ * 处理图谱快捷键，保留输入控件的原生编辑，并避免穿透弹窗。
+ * @param {KeyboardEvent} event 当前键盘事件。
+ */
+function handleEditorKeydown(event) {
+  if (event.defaultPrevented || event.isComposing || event.altKey) return;
+  const key = event.key.toLowerCase();
+  const modifier = event.ctrlKey || event.metaKey;
+  const saveShortcut = modifier && key === 's' && !event.shiftKey;
+  const undoShortcut = modifier && key === 'z' && !event.shiftKey;
+  const redoShortcut = modifier && ((key === 'y' && !event.shiftKey) || (key === 'z' && event.shiftKey));
+  const deleteShortcut = key === 'delete' && !modifier && !event.shiftKey;
+  if (!saveShortcut && !undoShortcut && !redoShortcut && !deleteShortcut) return;
+  if (!saveShortcut && (event.target?.isContentEditable || event.target?.closest?.('input, textarea, select, [role="textbox"]'))) return;
+  event.preventDefault();
+  if (event.repeat || loading.value || loadError.value || !graph.value || !editable.value || !tracking) return;
+  if (entityPicker.value || chainPicker.value || relationVisible.value ||
+    [...document.querySelectorAll('[aria-modal="true"], .el-tour__content')].some(element => element.getClientRects().length)) return;
+  if (saveShortcut) {
+    if (dirty.value) save();
+  } else if (undoShortcut) {
+    undo();
+  } else if (redoShortcut) {
+    redo();
+  } else if (selectedNode.value && !selectedEntry.value.data.inherited) {
+    removeNode();
+  } else if (selectedEdge.value && !selectedEdgeEntry.value.data.inherited) {
+    removeEdge();
+  }
+}
 onBeforeRouteLeave(canLeave);
 onBeforeRouteUpdate(async to => {
   if (to.params.id !== route.params.id) return await canLeave();
@@ -635,14 +747,19 @@ watch(() => route.params.id, load);
 onMounted(() => {
   load();
   window.addEventListener('beforeunload', beforeUnload);
+  window.addEventListener('keydown', handleEditorKeydown);
 });
 onBeforeUnmount(() => {
   ++loadSequence;
   clearTimeout(historyTimer);
   window.removeEventListener('beforeunload', beforeUnload);
+  window.removeEventListener('keydown', handleEditorKeydown);
 });
 </script>
 
 <style scoped>
+.evidence-editor.evidence-editor-mobile { height: auto; min-height: calc(100dvh - var(--mobile-header-height) - var(--mobile-nav-height)); overflow: visible; }
+:deep(.vue-flow__edge.animated .vue-flow__edge-path){animation-duration:.8s}
+@media(prefers-reduced-motion:reduce){:deep(.vue-flow__edge.animated .vue-flow__edge-path){animation:none}}
 .evidence-editor{height:100vh;display:flex;flex-direction:column;overflow:hidden}.editor-heading{display:flex;align-items:center;gap:12px;min-height:78px;padding:12px 24px;background:#fff;border-bottom:1px solid #e2e8f0;flex-shrink:0}.editor-body{display:flex;flex:1;min-height:0}.editor-palette{width:216px;flex-shrink:0;background:#fff;border-right:1px solid #e2e8f0;display:flex;flex-direction:column}.palette-button{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:12px 8px;border-radius:8px;font-size:13px}.palette-button:hover{background:#eff6ff}.palette-button:disabled{opacity:.45;cursor:not-allowed}.palette-button>svg{font-size:22px}.palette-button small{display:block;font-size:10px;color:#94a3b8;margin-top:4px}.graph-region{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:#f8fafc}.graph-toolbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#ffffffed;border-bottom:1px solid #e2e8f0;z-index:5;flex-wrap:wrap}.evidence-flow{flex:1;height:0;min-height:200px}.graph-empty{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;text-align:center;width:300px}.editor-inspector{width:330px;flex-shrink:0;border-left:1px solid #e2e8f0;background:white;overflow-y:auto}.inspector-title{display:flex;align-items:center;gap:8px;padding:18px 20px;font-size:14px;font-weight:600;border-bottom:1px solid #f1f5f9;position:sticky;top:0;background:#fff;z-index:4}.inspector-content{padding:20px}.entity-preview{padding:12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:10px;overflow-wrap:anywhere}:deep(.vue-flow__edge-text){font-size:11px}:deep(.vue-flow__minimap){width:140px;height:95px}:deep(.vue-flow__edge.selected path){stroke:#2563eb;stroke-width:3}@media(max-width:1200px){.editor-palette{width:180px}.editor-inspector{width:290px}.editor-heading{padding:10px 16px}}@media(max-width:900px){.editor-palette{display:none}.editor-inspector{width:260px}.editor-heading{flex-wrap:wrap}.editor-heading h1{max-width:220px}}@media(max-width:640px){.editor-body{overflow:auto;flex-direction:column}.graph-region{flex:none;height:55vh}.editor-inspector{width:100%;overflow:visible}.editor-heading{gap:6px}.editor-heading>.el-tag{display:none}}
 </style>

@@ -5,12 +5,14 @@
         v-if="visible"
         ref="toolbarRef"
         class="marking-toolbar fixed z-[1100] bg-white rounded-md shadow-lg border border-gray-200 px-1.5 py-1 flex items-center gap-0.5"
-        :style="{
+        :class="{ 'marking-toolbar--mobile': mobile }"
+        :style="mobile ? {} : {
           top: `${position.top}px`,
           left: `${position.left}px`,
           transform: 'translateX(-50%)'
         }"
         @mousedown.stop
+        @pointerdown="mobile && $event.preventDefault()"
       >
       <button
         v-for="style in availableStyles"
@@ -42,6 +44,7 @@ import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 
 const props = defineProps({
+  mobile: { type: Boolean, default: false },
   visible: {
     type: Boolean,
     default: false
@@ -78,6 +81,17 @@ defineExpose({
 </script>
 
 <style scoped>
+.marking-toolbar--mobile {
+  bottom: calc(var(--mobile-nav-height, 64px) + 74px);
+  left: 12px;
+  right: 12px;
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  padding: 6px;
+}
+.marking-toolbar--mobile button { min-height: 44px; min-width: 36px; flex-shrink: 0; }
+.marking-toolbar--mobile button:last-child { flex: 1; }
+
 .toolbar-fade-enter-active,
 .toolbar-fade-leave-active {
   transition: opacity 0.2s, transform 0.2s;

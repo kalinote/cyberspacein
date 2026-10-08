@@ -1,7 +1,8 @@
 <template>
   <div>
     <Header />
-
+    <MobileWorkbench v-if="isMobile" :active="homeActive" />
+    <template v-else>
     <!-- 英雄区域 -->
     <section
       class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-16"
@@ -389,17 +390,22 @@
         </div>
       </div>
     </section>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick, markRaw } from "vue";
+import { ref, computed, watch, onActivated, onDeactivated, onBeforeUnmount, nextTick, markRaw } from "vue";
 import { Icon } from "@iconify/vue";
 import * as echarts from "echarts";
 import Header from "@/components/Header.vue";
 import { overviewApi } from "@/api/overview";
+import MobileWorkbench from '@/components/mobile/MobileWorkbench.vue';
+import { useMobileViewport } from '@/composables/useMobileViewport';
 
 defineOptions({ name: "Home" });
+const { isMobile } = useMobileViewport();
+const homeActive = ref(false);
 
 const RANGE_CONFIG = {
   trend30d: { n: 30, unit: "day" },
@@ -860,6 +866,7 @@ let resizeHandler = null;
 
 function initCharts() {
   nextTick(() => {
+    if (!homeActive.value || isMobile.value || trendChart.value) return;
     const trendEl = document.getElementById("trend-chart");
     const sourceEl = document.getElementById("source-chart");
     if (trendEl) trendChart.value = markRaw(echarts.init(trendEl));
@@ -888,31 +895,43 @@ function initCharts() {
   });
 }
 
-onMounted(() => {
+/** """进入桌面概览时恢复图表与最新情报刷新。""" */
+function startDesktopOverview() {
+  if (!homeActive.value || isMobile.value) return;
   fetchSummaryStatus();
   initCharts();
-});
-
-onActivated(() => {
   fetchLatestIntelligence();
+  window.clearInterval(latestIntelligenceTimer);
   latestIntelligenceTimer = window.setInterval(() => {
     if (document.visibilityState === "visible") fetchLatestIntelligence();
   }, 60000);
-});
+}
 
-onDeactivated(() => {
+/** """释放桌面图表，避免手机分支或缓存页面继续轮询。""" */
+function stopDesktopOverview() {
   window.clearInterval(latestIntelligenceTimer);
-});
-
-onBeforeUnmount(() => {
-  window.clearInterval(latestIntelligenceTimer);
-  if (resizeHandler) {
-    window.removeEventListener("resize", resizeHandler);
+  if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+  resizeHandler = null;
+  for (const chart of [trendChart, sourceChart, reportChart, securityChart, speedChart]) {
+    chart.value?.dispose();
+    chart.value = null;
   }
-  trendChart.value?.dispose();
-  sourceChart.value?.dispose();
-  reportChart.value?.dispose();
-  securityChart.value?.dispose();
-  speedChart.value?.dispose();
+}
+
+watch(isMobile, () => {
+  stopDesktopOverview();
+  startDesktopOverview();
+});
+onActivated(() => {
+  homeActive.value = true;
+  startDesktopOverview();
+});
+onDeactivated(() => {
+  homeActive.value = false;
+  stopDesktopOverview();
+});
+onBeforeUnmount(() => {
+  homeActive.value = false;
+  stopDesktopOverview();
 });
 </script>

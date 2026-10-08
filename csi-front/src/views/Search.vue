@@ -2,6 +2,171 @@
   <div>
     <Header />
 
+    <main v-if="isMobile" class="mobile-search">
+      <MobileKnowledgeNav />
+      <section class="mobile-search-toolbar" aria-label="情报检索">
+        <form class="mobile-search-input" role="search" @submit.prevent="handleSearchFromResults">
+          <el-input v-model="searchQuery" aria-label="检索关键词" placeholder="搜索关键词、标题或作者" clearable>
+            <template #prefix><Icon icon="mdi:magnify" /></template>
+          </el-input>
+          <el-button type="primary" native-type="submit" :loading="loading" :disabled="!canSearch">搜索</el-button>
+        </form>
+        <div class="mobile-search-controls">
+          <el-button :type="mobileFilterCount ? 'primary' : 'default'" plain
+            @click="mobileFilterDraft = getCurrentRules(); mobileFiltersVisible = true">
+            <Icon icon="mdi:filter-variant" />筛选<span v-if="mobileFilterCount"> · {{ mobileFilterCount }}</span>
+          </el-button>
+          <el-select v-model="sortBy" aria-label="结果排序" :disabled="!canSearch" @change="handleSearchFromResults">
+            <el-option v-for="option in sortOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+          <el-button v-if="canViewTemplateList" @click="mobileTemplatesVisible = true">
+            <Icon icon="mdi:bookmark-outline" />模板
+          </el-button>
+        </div>
+        <p v-if="mobileFilterCount" class="mobile-filter-summary">{{ mobileFilterSummary }}</p>
+      </section>
+
+      <section id="mobile-search-results" class="mobile-search-results" :aria-busy="loading" aria-label="检索结果">
+        <div v-if="hasSearched" class="mobile-results-heading" aria-live="polite">
+          <h1>检索结果</h1>
+          <span>{{ loading ? '正在检索…' : `共 ${totalResults} 条` }}</span>
+        </div>
+        <div v-if="loading && !searchResults.length" class="mobile-search-placeholder">
+          <el-skeleton :rows="6" animated />
+        </div>
+        <div v-else-if="searchError" class="mobile-search-placeholder" role="alert">
+          <Icon icon="mdi:cloud-alert-outline" />
+          <h2>暂时无法获取检索结果</h2>
+          <p>请检查网络连接后重试。</p>
+          <el-button type="primary" :disabled="!canSearch" @click="performSearch">重新检索</el-button>
+        </div>
+        <div v-else-if="!hasSearched" class="mobile-search-placeholder">
+          <Icon icon="mdi:text-box-search-outline" />
+          <h1>查找需要的情报</h1>
+          <p>输入关键词，或直接浏览最新材料。</p>
+          <el-button type="primary" :disabled="!canSearch" @click="sortBy = 'time'; handleSearchFromResults()">浏览最新情报</el-button>
+          <el-button v-if="canViewTemplateList" @click="mobileTemplatesVisible = true">从模板开始</el-button>
+        </div>
+        <div v-else-if="!searchResults.length" class="mobile-search-placeholder">
+          <Icon icon="mdi:magnify-close" />
+          <h2>没有找到相关情报</h2>
+          <p>试试其他关键词，或减少筛选条件。</p>
+          <el-button @click="mobileFilterDraft = getCurrentRules(); mobileFiltersVisible = true">调整筛选</el-button>
+        </div>
+        <div v-else class="mobile-results-list" v-loading="loading">
+          <article v-for="result in searchResults" :key="result.uuid" class="mobile-result-card">
+            <div class="mobile-result-tags">
+              <el-tag size="small" effect="plain">{{ result.entity_type === 'forum' ? '论坛' : '文章' }}</el-tag>
+              <el-tag :type="getConfidenceInfo(result.confidence).type" size="small">{{ getConfidenceInfo(result.confidence).text }}置信度</el-tag>
+              <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
+              <el-tag v-if="result.is_highlighted" type="warning" size="small">重点</el-tag>
+            </div>
+            <router-link v-if="hasPerm(result.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(result.entity_type, result.uuid)" class="mobile-result-body">
+              <h2 class="search-highlight" v-html="sanitizeHtml(result.title || '无标题')"></h2>
+              <p class="search-highlight" v-html="sanitizeHtml(truncateContent(result.clean_content, 140)) || '暂无正文摘要'"></p>
+            </router-link>
+            <div v-else class="mobile-result-body">
+              <h2 class="search-highlight" v-html="sanitizeHtml(result.title || '无标题')"></h2>
+              <p class="search-highlight" v-html="sanitizeHtml(truncateContent(result.clean_content, 140)) || '暂无正文摘要'"></p>
+            </div>
+            <div class="mobile-result-meta">
+              <span>{{ result.platform || '未知来源' }}<template v-if="result.author_name"> · {{ result.author_name }}</template></span>
+              <time>{{ formatDateTime(result.update_at) }}</time>
+            </div>
+            <div class="mobile-result-footer">
+              <span v-if="result.keywords?.length" class="mobile-result-keywords">{{ result.keywords.slice(0, 3).join(' · ') }}</span>
+              <span v-else class="mobile-result-keywords">{{ result.section }}</span>
+              <el-button text aria-label="打开情报操作" @click="mobileSelectedResult = result; mobileResultActionsVisible = true">
+                <Icon icon="mdi:dots-horizontal" />
+              </el-button>
+            </div>
+          </article>
+          <div class="mobile-search-pagination">
+            <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :total="totalResults"
+              layout="prev, pager, next" :pager-count="5" :disabled="!canSearch" background />
+            <p>第 {{ currentPage }} / {{ Math.max(1, Math.ceil(totalResults / pageSize)) }} 页</p>
+          </div>
+        </div>
+      </section>
+
+      <MobileSheet v-model="mobileFiltersVisible" title="筛选情报">
+        <div class="mobile-search-filters">
+          <fieldset>
+            <legend>时间范围</legend>
+            <el-radio-group v-model="mobileFilterDraft.timeRange">
+              <el-radio-button v-for="option in filterOptions.timeRange.filter(item => item.value !== 'custom')"
+                :key="option.value" :value="option.value">{{ option.label }}</el-radio-button>
+            </el-radio-group>
+          </fieldset>
+          <fieldset>
+            <legend>实体类型</legend>
+            <el-checkbox-group v-model="mobileFilterDraft.entityType">
+              <el-checkbox-button value="article">文章</el-checkbox-button>
+              <el-checkbox-button value="forum">论坛</el-checkbox-button>
+            </el-checkbox-group>
+          </fieldset>
+          <fieldset>
+            <legend>NSFW 内容</legend>
+            <el-radio-group v-model="mobileFilterDraft.nsfw">
+              <el-radio-button :value="0">排除</el-radio-button>
+              <el-radio-button :value="1">全部</el-radio-button>
+              <el-radio-button :value="2">仅 NSFW</el-radio-button>
+            </el-radio-group>
+          </fieldset>
+          <fieldset>
+            <legend>AI 生成内容</legend>
+            <el-radio-group v-model="mobileFilterDraft.aigc">
+              <el-radio-button :value="0">排除</el-radio-button>
+              <el-radio-button :value="1">全部</el-radio-button>
+              <el-radio-button :value="2">仅 AI 生成</el-radio-button>
+            </el-radio-group>
+          </fieldset>
+        </div>
+        <template #footer>
+          <el-button @click="mobileFilterDraft = { ...mobileFilterDraft, timeRange: 'all', entityType: [], nsfw: 1, aigc: 1 }">重置</el-button>
+          <el-button type="primary" :loading="loading" :disabled="!canSearch" @click="applyFilters">应用筛选</el-button>
+        </template>
+      </MobileSheet>
+
+      <MobileSheet v-if="canViewTemplateList" v-model="mobileTemplatesVisible" title="检索模板">
+        <div v-loading="templateLoading" class="mobile-template-list">
+          <p class="mobile-sheet-description">使用已保存的关键词和筛选条件快速检索。</p>
+          <article v-for="template in searchTemplates" :key="template.id" class="mobile-template-card">
+            <button type="button" :disabled="!canUseApplyTemplate || !canSearch" class="mobile-template-apply" @click="applyTemplateFilters(template)">
+              <strong>{{ template.title }}</strong>
+              <span>{{ template.description || template.search_query }}</span>
+              <span class="mobile-template-query">{{ template.search_query || template.searchQuery }}</span>
+            </button>
+            <div v-if="canViewEditTemplate || canViewDeleteTemplate" class="mobile-template-actions">
+              <el-button v-if="canViewEditTemplate" text :disabled="!canUseEditTemplate" @click="handleEditTemplate(template)">编辑</el-button>
+              <el-button v-if="canViewDeleteTemplate" text type="danger" :disabled="!canUseDeleteTemplate" @click="handleDeleteTemplate(template)">删除</el-button>
+            </div>
+          </article>
+          <el-empty v-if="!templateLoading && !searchTemplates.length" description="暂无检索模板，可保存当前条件" :image-size="72" />
+        </div>
+        <template #footer>
+          <el-button v-if="canViewOverwriteTemplate" :disabled="!canUseOverwriteTemplate" @click="openOverwriteTemplateDialog">覆盖模板</el-button>
+          <el-button v-if="canViewAddTemplate" type="primary" :disabled="!canUseAddTemplate" @click="openSaveTemplateDialog">保存当前条件</el-button>
+        </template>
+      </MobileSheet>
+
+      <MobileSheet v-model="mobileResultActionsVisible" title="情报操作">
+        <div v-if="mobileSelectedResult" class="mobile-result-actions">
+          <AddToEvidenceButton :entity="mobileSelectedResult" />
+          <el-button text :disabled="!hasPerm(PERM_HIGHLIGHT?.update)" :loading="mobileSelectedResult._highlightLoading"
+            @click="toggleHighlight(mobileSelectedResult)">
+            <Icon :icon="mobileSelectedResult.is_highlighted ? 'mdi:star' : 'mdi:star-outline'" />
+            {{ mobileSelectedResult.is_highlighted ? '取消重点目标' : '设置重点目标' }}
+          </el-button>
+          <router-link v-if="hasPerm(mobileSelectedResult.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid)"
+            @click="mobileResultActionsVisible = false">查看详情<Icon icon="mdi:arrow-right" /></router-link>
+          <router-link v-if="mobileSelectedResult.platform_id" :to="`/details/platform/${mobileSelectedResult.platform_id}`"
+            @click="mobileResultActionsVisible = false">查看来源平台</router-link>
+        </div>
+      </MobileSheet>
+    </main>
+
+    <template v-else>
     <section class="relative overflow-hidden bg-linear-to-br from-white to-blue-50 pt-12 pb-16">
       <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center">
@@ -382,7 +547,9 @@
       </div>
     </section>
 
-    <el-dialog v-model="saveDialogVisible" title="保存到模板" width="480px" :close-on-click-modal="false" @closed="resetSaveForm">
+    </template>
+
+    <el-dialog v-model="saveDialogVisible" title="保存到模板" :width="isMobile ? 'calc(100% - 24px)' : '480px'" :close-on-click-modal="false" @closed="resetSaveForm">
       <el-form :model="saveForm" label-width="80px" label-position="top">
         <el-form-item label="模板标题" required>
           <el-input v-model="saveForm.title" placeholder="输入模板标题" maxlength="100" show-word-limit />
@@ -400,7 +567,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="overwriteDialogVisible" title="覆盖模板" width="440px" :close-on-click-modal="false" @closed="overwriteSelectedId = null">
+    <el-dialog v-model="overwriteDialogVisible" title="覆盖模板" :width="isMobile ? 'calc(100% - 24px)' : '440px'" :close-on-click-modal="false" @closed="overwriteSelectedId = null">
       <p class="text-gray-600 text-sm mb-4">将当前检索条件和筛选规则覆盖到所选模板，模板名称与描述保持不变。</p>
       <el-select v-model="overwriteSelectedId" placeholder="请选择要覆盖的模板" filterable class="w-full">
         <el-option
@@ -416,7 +583,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="editDialogVisible" title="编辑模板" width="480px" :close-on-click-modal="false" @closed="editingTemplate = null">
+    <el-dialog v-model="editDialogVisible" title="编辑模板" :width="isMobile ? 'calc(100% - 24px)' : '480px'" :close-on-click-modal="false" @closed="editingTemplate = null">
       <template v-if="editingTemplate">
         <el-form :model="editForm" label-width="80px" label-position="top">
           <el-form-item label="模板标题" required>
@@ -444,19 +611,24 @@
 <script setup>
 import AddToEvidenceButton from '@/components/evidence/AddToEvidenceButton.vue'
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import MobileKnowledgeNav from '@/components/mobile/MobileKnowledgeNav.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 import { searchApi } from '@/api/search'
 import { highlightApi } from '@/api/highlight'
 import { PERM } from '@/utils/permissions'
 import { hasPerm, hasAny, noPerm, guardPermission } from '@/utils/permissionKit'
 import { formatDateTime } from '@/utils/action'
+import { sanitizeHtml } from '@/utils/markdown'
 
 defineOptions({ name: 'Search' })
 
 const route = useRoute()
+const { isMobile } = useMobileViewport()
 const searchQuery = ref('')
 const nsfwFilter = ref(1)
 const aigcFilter = ref(1)
@@ -470,6 +642,25 @@ const pageSize = ref(5)
 const totalResults = ref(0)
 const loading = ref(false)
 const showAdvancedFilters = ref(false)
+const mobileFiltersVisible = ref(false)
+const mobileTemplatesVisible = ref(false)
+const mobileResultActionsVisible = ref(false)
+const mobileSelectedResult = ref(null)
+const mobileFilterDraft = ref({})
+const hasSearched = ref(false)
+const searchError = ref(false)
+let initializedRouteQuery = null
+let searchRequestId = 0
+let resettingPage = false
+
+const mobileFilterCount = computed(() => Number(timeRange.value !== 'all') + categories.value.length
+  + Number(nsfwFilter.value !== 1) + Number(aigcFilter.value !== 1))
+const mobileFilterSummary = computed(() => [
+  timeRange.value !== 'all' ? filterOptions.timeRange.find(option => option.value === timeRange.value)?.label : '',
+  ...categories.value.map(category => category === 'forum' ? '论坛' : '文章'),
+  nsfwFilter.value !== 1 ? formatNsfwTooltip(nsfwFilter.value) : '',
+  aigcFilter.value !== 1 ? formatAigcTooltip(aigcFilter.value) : ''
+].filter(Boolean).join(' · '))
 
 const filterOptions = {
   timeRange: [
@@ -499,6 +690,7 @@ const searchTemplates = ref([])
 const templateLoading = ref(false)
 
 const PERM_SEARCH = PERM.operations?.search
+const canSearch = computed(() => hasPerm(PERM.pages.search.access) && hasPerm(PERM_SEARCH.entity.execute))
 const PERM_SEARCH_TEMPLATES = PERM_SEARCH?.template
 const PERM_HIGHLIGHT = PERM.operations?.target?.highlight
 
@@ -748,16 +940,18 @@ const nsfwFilterText = computed(() => formatNsfwTooltip(nsfwFilter.value))
 const aigcFilterText = computed(() => formatAigcTooltip(aigcFilter.value))
 
 watch(currentPage, () => {
-  if (searchResults.value.length > 0) {
+  if (searchResults.value.length > 0 && !resettingPage) {
     performSearch()
   }
-})
+}, { flush: 'sync' })
 
 watch(
   [() => route.name, () => route.query.q, () => route.query.latest],
-  ([name, query, latest], [previousName, previousQuery, previousLatest]) => {
+  ([name, query, latest], [previousName, , previousLatest]) => {
     if (name !== 'search') return
-    if (query && query !== previousQuery) {
+    const isHistoryReturn = Boolean(window.history.state?.forward)
+    // 历史返回沿用缓存；从其他页面主动提交相同关键词仍发起新检索。
+    if (query && (query !== initializedRouteQuery || (previousName !== 'search' && !isHistoryReturn))) {
       initSearchFromQuery()
     } else if (!query && latest === '1' && (
       previousName === 'home' || (previousName === 'search' && latest !== previousLatest)
@@ -767,6 +961,12 @@ watch(
     }
   }
 )
+
+onBeforeRouteLeave(() => {
+  mobileFiltersVisible.value = false
+  mobileTemplatesVisible.value = false
+  mobileResultActionsVisible.value = false
+})
 function truncateContent(content, maxLength) {
       if (!content) return ''
       const tempDiv = document.createElement('div')
@@ -935,7 +1135,16 @@ function truncateContent(content, maxLength) {
       }
     }
 
-    async function performSearch() {
+    async function performSearch(options = {}) {
+      if (!guardPermission(PERM_SEARCH.entity.execute)) return
+      if (options.resetPage) {
+        resettingPage = true
+        currentPage.value = 1
+        resettingPage = false
+      }
+      const requestId = ++searchRequestId
+      hasSearched.value = true
+      searchError.value = false
       try {
         loading.value = true
         const { start_at, end_at } = getTimeRangeBounds()
@@ -968,11 +1177,13 @@ function truncateContent(content, maxLength) {
         }
 
         const response = await searchApi.searchEntity(params)
+        // 快速切换条件时，只接收最后一次检索，避免旧响应覆盖当前结果。
+        if (requestId !== searchRequestId) return
 
         if (response.code === 0 && response.data) {
           searchResults.value = response.data.items || []
           totalResults.value = response.data.total || 0
-          if (searchResults.value.length === 0) {
+          if (searchResults.value.length === 0 && !isMobile.value) {
             ElMessage({
               message: '没有找到相关内容',
               type: 'error',
@@ -980,6 +1191,11 @@ function truncateContent(content, maxLength) {
             })
           }
           nextTick(() => {
+            if (route.name !== 'search') return
+            if (isMobile.value) {
+              window.scrollTo({ top: 0, behavior: 'instant' })
+              return
+            }
             const resultsSection = document.getElementById('search-results')
             if (resultsSection) {
               const header = document.querySelector('header')
@@ -992,26 +1208,31 @@ function truncateContent(content, maxLength) {
               })
             }
           })
+        } else {
+          searchError.value = true
+          searchResults.value = []
+          totalResults.value = 0
         }
       } catch (error) {
+        if (requestId !== searchRequestId) return
         ElMessage.error('搜索失败，请稍后重试')
+        searchError.value = true
         searchResults.value = []
         totalResults.value = 0
       } finally {
-        loading.value = false
+        if (requestId === searchRequestId) loading.value = false
       }
     }
 
     function handleSearchFromResults() {
-      currentPage.value = 1
-      performSearch()
+      performSearch({ resetPage: true })
     }
 
     function initSearchFromQuery() {
+      initializedRouteQuery = route.query.q || null
       if (route.query.q) {
         searchQuery.value = route.query.q
-        currentPage.value = 1
-        performSearch()
+        handleSearchFromResults()
       } else if (route.query.latest === '1') {
         searchQuery.value = ''
         resetFilters()
@@ -1035,6 +1256,16 @@ function truncateContent(content, maxLength) {
 
     function applyFilters() {
       showAdvancedFilters.value = false
+      if (isMobile.value) {
+        const draft = mobileFilterDraft.value
+        timeRange.value = draft.timeRange
+        categories.value = [...draft.entityType]
+        nsfwFilter.value = draft.nsfw
+        aigcFilter.value = draft.aigc
+        mobileFiltersVisible.value = false
+        handleSearchFromResults()
+        return
+      }
       performSearch()
     }
 
@@ -1084,8 +1315,8 @@ function truncateContent(content, maxLength) {
         if (sortVal) sortBy.value = sortVal
       }
 
-      currentPage.value = 1
-      performSearch()
+      mobileTemplatesVisible.value = false
+      handleSearchFromResults()
       ElMessage.success('已应用模板并开始检索')
     }
 
@@ -1123,7 +1354,7 @@ function truncateContent(content, maxLength) {
 
 onMounted(() => {
   initSearchFromQuery()
-  loadSearchTemplates()
+  if (canViewTemplateList.value) loadSearchTemplates()
 })
 </script>
 
@@ -1133,4 +1364,63 @@ onMounted(() => {
   color: #dc2626;
   font-weight: 700;
 }
+
+.mobile-search { min-height: calc(100dvh - var(--mobile-header-height) - var(--mobile-nav-height)); background: #f5f7fb; }
+.mobile-search-toolbar {
+  position: sticky;
+  top: var(--mobile-header-height, 56px);
+  z-index: 20;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+.mobile-search-input { display: flex; align-items: center; gap: 8px; }
+.mobile-search-input :deep(.el-input) { min-width: 0; flex: 1; }
+.mobile-search-input :deep(.el-input__wrapper) { min-height: 44px; border-radius: 12px; }
+.mobile-search-input :deep(.el-input__inner) { font-size: 16px; }
+.mobile-search-input :deep(.el-button) { min-width: 64px; min-height: 44px; margin: 0; border-radius: 12px; }
+.mobile-search-controls { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.mobile-search-controls :deep(.el-button) { min-height: 44px; margin: 0; padding: 10px 12px; gap: 4px; border-radius: 10px; }
+.mobile-search-controls :deep(.el-select) { width: 112px; min-width: 0; flex: 1; }
+.mobile-search-controls :deep(.el-select__wrapper) { min-height: 44px; border-radius: 10px; }
+.mobile-filter-summary { overflow-wrap: anywhere; margin: 10px 0 0; color: #475569; font-size: 12px; line-height: 1.6; }
+.mobile-search-results { padding: 16px; }
+.mobile-results-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mobile-results-heading h1 { margin: 0; font-size: 17px; font-weight: 700; color: #0f172a; }
+.mobile-results-heading span { font-size: 13px; color: #64748b; }
+.mobile-search-placeholder { padding: 32px 8px; text-align: center; color: #64748b; }
+.mobile-search-placeholder > svg { width: 48px; height: 48px; margin: 0 auto 16px; color: #3b82f6; }
+.mobile-search-placeholder h1, .mobile-search-placeholder h2 { margin: 0 0 8px; color: #0f172a; font-size: 19px; font-weight: 700; }
+.mobile-search-placeholder p { margin: 0 0 20px; font-size: 14px; line-height: 1.7; }
+.mobile-search-placeholder :deep(.el-button) { min-height: 44px; margin: 4px; }
+.mobile-results-list { display: flex; flex-direction: column; gap: 12px; }
+.mobile-result-card { min-width: 0; padding: 16px; background: white; border: 1px solid #e2e8f0; border-radius: 16px; }
+.mobile-result-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.mobile-result-body { display: block; color: inherit; text-decoration: none; }
+.mobile-result-body h2 { margin: 0 0 8px; overflow-wrap: anywhere; font-size: 17px; line-height: 1.55; color: #0f172a; font-weight: 700; }
+.mobile-result-body p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; color: #475569; font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.mobile-result-meta { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; font-size: 12px; color: #64748b; overflow-wrap: anywhere; }
+.mobile-result-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 4px; border-top: 1px solid #f1f5f9; }
+.mobile-result-keywords { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #64748b; font-size: 12px; }
+.mobile-result-footer :deep(.el-button) { flex-shrink: 0; min-height: 44px; min-width: 44px; margin-right: -10px; font-size: 22px; }
+.mobile-search-pagination { display: flex; flex-direction: column; align-items: center; padding: 12px 0 20px; }
+.mobile-search-pagination :deep(.el-pagination) { max-width: 100%; gap: 3px; }
+.mobile-search-pagination :deep(.el-pagination button), .mobile-search-pagination :deep(.el-pager li) { min-width: 34px; height: 44px; margin: 0 2px; }
+.mobile-search-pagination p { margin: 10px 0 0; font-size: 12px; color: #64748b; }
+.mobile-search-filters { display: flex; flex-direction: column; gap: 24px; }
+.mobile-search-filters fieldset { min-width: 0; border: 0; margin: 0; padding: 0; }
+.mobile-search-filters legend { margin-bottom: 12px; color: #0f172a; font-size: 14px; font-weight: 600; }
+.mobile-search-filters :deep(.el-radio-group), .mobile-search-filters :deep(.el-checkbox-group) { display: flex; flex-wrap: wrap; gap: 8px; }
+.mobile-search-filters :deep(.el-radio-button__inner), .mobile-search-filters :deep(.el-checkbox-button__inner) { display: flex; align-items: center; min-height: 44px; border: 1px solid #dcdfe6; border-radius: 10px !important; box-shadow: none !important; }
+.mobile-sheet-description { margin: 0 0 16px; color: #64748b; font-size: 14px; line-height: 1.7; }
+.mobile-template-list { min-height: 100px; }
+.mobile-template-card { margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
+.mobile-template-apply { display: flex; flex-direction: column; width: 100%; gap: 6px; padding: 16px; border: 0; text-align: left; background: #fff; color: #475569; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; cursor: pointer; }
+.mobile-template-apply:disabled { opacity: .5; cursor: not-allowed; }
+.mobile-template-apply strong { color: #0f172a; font-size: 16px; }
+.mobile-template-query { font-size: 12px; color: #2563eb; }
+.mobile-template-actions { display: flex; justify-content: flex-end; padding: 0 8px 6px; }
+.mobile-template-actions :deep(.el-button) { min-width: 44px; min-height: 44px; }
+.mobile-result-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.mobile-result-actions :deep(.el-button), .mobile-result-actions > a { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; margin: 0; color: #2563eb; font-size: 15px; text-decoration: none; }
 </style>

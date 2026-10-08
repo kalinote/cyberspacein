@@ -2,13 +2,38 @@
   <div class="min-h-screen bg-gray-50">
     <Header />
 
+    <section v-if="isMobile" class="wiki-mobile-list">
+      <MobileKnowledgeNav />
+      <header class="wiki-mobile-list-heading"><div><h1>专题资料</h1><p>沿目录阅读，随时维护专题</p></div><el-button type="primary" :disabled="!canCreate" @click="openMobileCreate">新建</el-button></header>
+      <form class="wiki-mobile-search" @submit.prevent="applySearch"><el-input v-model="filters.q" clearable placeholder="搜索专题标题" aria-label="搜索专题标题" /><el-button native-type="submit" type="primary">搜索</el-button></form>
+      <div class="wiki-mobile-list-toolbar"><span>{{ pagination.total }} 个专题<span v-if="filters.status"> · {{ statusLabel(filters.status) }}</span></span><el-button @click="mobileFiltersOpen = true">筛选与排序</el-button></div>
+      <div v-if="listError" class="wiki-mobile-error" role="alert"><p>{{ listError }}</p><p v-if="items.length">下方保留上次成功加载的资料。</p><el-button :loading="loading" @click="fetchList">重试</el-button></div>
+      <p v-if="loading" class="wiki-mobile-empty" role="status">正在加载专题…</p>
+      <p v-else-if="!listError && !items.length" class="wiki-mobile-empty">{{ filters.q || filters.status || filters.category ? '没有符合条件的专题，请调整筛选。' : '暂无专题资料' }}</p>
+      <div class="wiki-mobile-cards" :aria-busy="loading">
+        <article v-for="item in items" :key="item.id" class="wiki-mobile-card">
+          <router-link :to="{ name: 'wiki-detail', params: { id: item.id } }" class="wiki-mobile-card-title">{{ item.title }}</router-link>
+          <p v-if="item.sourceNote" class="wiki-mobile-card-note">{{ item.sourceNote }}</p>
+          <div class="wiki-mobile-card-tags"><el-tag size="small" :type="statusTagType(item.status)">{{ statusLabel(item.status) }}</el-tag><el-tag v-for="category in item.categories.slice(0, 3)" :key="category" size="small" type="info">{{ category }}</el-tag></div>
+          <p class="wiki-mobile-card-date">修订 {{ item.revision }} · {{ item.lastModified ? formatDateTime(item.lastModified) : '暂无更新时间' }}</p>
+          <div class="wiki-mobile-card-actions"><el-button :disabled="!canUpdate" @click="openMobileEdit(item)">维护专题</el-button><el-button type="danger" plain :disabled="!canDelete" @click="handleDelete(item)">删除</el-button></div>
+        </article>
+      </div>
+      <div v-if="pagination.total > 0" class="wiki-mobile-pagination"><el-pagination v-model:current-page="pagination.page" :page-size="pagination.pageSize" :total="pagination.total" :pager-count="5" layout="prev, pager, next" :disabled="loading" @current-change="fetchList" /></div>
+      <MobileSheet v-model="mobileFiltersOpen" title="筛选专题">
+        <el-form label-position="top"><el-form-item label="状态"><el-select v-model="filters.status" aria-label="专题状态筛选"><el-option label="全部" value="" /><el-option label="草稿" value="draft" /><el-option label="构建中" value="building" /><el-option label="已发布" value="published" /></el-select></el-form-item><el-form-item label="分类"><el-input v-model="filters.category" clearable placeholder="分类名称" aria-label="专题分类筛选" /></el-form-item><el-form-item label="排序字段"><el-select v-model="filters.sortBy" aria-label="专题排序字段"><el-option label="更新时间" value="updated_at" /><el-option label="创建时间" value="created_at" /><el-option label="标题" value="title" /></el-select></el-form-item><el-form-item label="顺序"><el-select v-model="filters.sortOrder" aria-label="专题排序顺序"><el-option label="降序" value="desc" /><el-option label="升序" value="asc" /></el-select></el-form-item></el-form>
+        <template #footer><el-button @click="filters.status = ''; filters.category = ''; filters.sortBy = 'updated_at'; filters.sortOrder = 'desc'">重置筛选</el-button><el-button type="primary" @click="mobileFiltersOpen = false; applySearch()">应用筛选</el-button></template>
+      </MobileSheet>
+    </section>
+
     <FunctionalPageHeader
+      v-if="!isMobile"
       title-prefix="专题事件"
       title-suffix="管理"
       subtitle="管理 Wiki 专题页面：搜索、新建与删除；正文请在详情页编辑。"
     />
 
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div v-if="!isMobile" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
           <div class="lg:col-span-2">
@@ -143,8 +168,9 @@
       </div>
     </div>
 
-    <WikiCreateDialog v-model="createDialogVisible" @created="fetchList" />
+    <WikiCreateDialog v-if="!isMobile" v-model="createDialogVisible" @created="fetchList" />
     <WikiEditMetaDialog
+      v-if="!isMobile"
       v-model="editDialogVisible"
       :row="editRow"
       @updated="fetchList"
@@ -153,7 +179,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -162,10 +188,24 @@ import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.
 import WikiCreateDialog from '@/components/wiki/WikiCreateDialog.vue'
 import WikiEditMetaDialog from '@/components/wiki/WikiEditMetaDialog.vue'
 import { wikiApi, normalizeWikiListResponse } from '@/api/wiki.js'
+import MobileKnowledgeNav from '@/components/mobile/MobileKnowledgeNav.vue'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import { hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
+import { formatDateTime } from '@/utils/action'
 
 defineOptions({ name: 'WikiPageList' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const canCreate = computed(() => hasPerm(PERM.operations.target.wiki.create))
+const canUpdate = computed(() => hasPerm(PERM.operations.target.wiki.update) && hasPerm(PERM.operations.target.wiki.read))
+const canDelete = computed(() => hasPerm(PERM.operations.target.wiki.delete))
+const mobileFiltersOpen = ref(false)
+const listError = ref('')
+let listGeneration = 0
+let wasDeactivated = false
 const loading = ref(false)
 const createDialogVisible = ref(false)
 const editDialogVisible = ref(false)
@@ -176,6 +216,7 @@ const items = ref([])
 const filters = ref({
   q: '',
   status: '',
+  category: '',
   sortBy: 'updated_at',
   sortOrder: 'desc',
 })
@@ -211,23 +252,31 @@ function statusTagType(status) {
 }
 
 async function fetchList() {
+  const generation = ++listGeneration
   loading.value = true
+  listError.value = ''
   try {
+    if (isMobile.value && !hasPerm(PERM.operations.target.wiki.read)) throw new Error('没有读取专题的权限')
     const res = await wikiApi.listPages({
       q: filters.value.q.trim() || undefined,
       status: filters.value.status || undefined,
+      category: filters.value.category.trim() || undefined,
       sortBy: filters.value.sortBy,
       sortOrder: filters.value.sortOrder,
       page: pagination.value.page,
       pageSize: pagination.value.pageSize,
     })
+    if (generation !== listGeneration) return
+    if (!Array.isArray((res?.data || res)?.items)) throw new Error('专题列表数据无效，请重试')
     const { items: list, pagination: p } = normalizeWikiListResponse(res)
     items.value = list
     pagination.value = { ...pagination.value, ...p }
-  } catch {
-    items.value = []
+  } catch (error) {
+    if (generation !== listGeneration) return
+    listError.value = error?.message || '专题加载失败，请重试'
+    if (!isMobile.value) items.value = []
   } finally {
-    loading.value = false
+    if (generation === listGeneration) loading.value = false
   }
 }
 
@@ -253,6 +302,7 @@ function openEditMeta(row) {
  * @param {{ id: string, title: string }} row
  */
 async function handleDelete(row) {
+  if (isMobile.value && !canDelete.value) return
   try {
     await ElMessageBox.confirm(
       `确定删除「${row.title}」？此操作不可恢复。`,
@@ -268,6 +318,7 @@ async function handleDelete(row) {
   }
 
   try {
+    if (isMobile.value && !canDelete.value) return
     await wikiApi.deletePage(row.id)
     ElMessage.success('已删除')
     if (items.value.length === 1 && pagination.value.page > 1) {
@@ -282,4 +333,32 @@ async function handleDelete(row) {
 onMounted(() => {
   fetchList()
 })
+
+/** """验证维护权限后进入独立专题编辑页。""" */
+function openMobileEdit(row) {
+  if (!canUpdate.value) return
+  router.push({ name: 'wiki-editor', params: { id: row.id } })
+}
+
+/** """验证创建权限后进入独立专题创建页。""" */
+function openMobileCreate() {
+  if (!canCreate.value) return
+  router.push({ name: 'wiki-create' })
+}
+
+onDeactivated(() => {
+  wasDeactivated = true
+  listGeneration += 1
+  loading.value = false
+  mobileFiltersOpen.value = false
+  createDialogVisible.value = false
+  editDialogVisible.value = false
+})
+onActivated(() => { if (wasDeactivated) { wasDeactivated = false; fetchList() } })
+onBeforeUnmount(() => { listGeneration += 1 })
+watch(isMobile, () => { mobileFiltersOpen.value = false; createDialogVisible.value = false; editDialogVisible.value = false })
 </script>
+
+<style scoped>
+.wiki-mobile-list{padding:16px;max-width:767px;margin:auto}.wiki-mobile-list-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:20px 0}.wiki-mobile-list-heading h1{font-size:24px;font-weight:700;margin:0}.wiki-mobile-list-heading p{font-size:13px;color:#64748b;margin:6px 0 0}.wiki-mobile-search{display:flex;gap:8px}.wiki-mobile-list :deep(.el-button){min-height:44px;margin:0}.wiki-mobile-list :deep(.el-input__wrapper){min-height:44px}.wiki-mobile-list :deep(.el-input__inner){font-size:16px}.wiki-mobile-list-toolbar{display:flex;justify-content:space-between;align-items:center;margin:12px 0;color:#64748b;font-size:13px;gap:8px}.wiki-mobile-cards{display:grid;gap:12px}.wiki-mobile-card{border:1px solid #e2e8f0;border-radius:14px;padding:16px;background:white;min-width:0}.wiki-mobile-card-title{display:block;font-size:18px;font-weight:650;line-height:1.55;overflow-wrap:anywhere;color:#0f172a;padding-bottom:8px}.wiki-mobile-card-note{font-size:14px;line-height:1.6;color:#64748b;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:0 0 12px}.wiki-mobile-card-tags{display:flex;flex-wrap:wrap;gap:6px}.wiki-mobile-card-date{font-size:12px;color:#64748b;overflow-wrap:anywhere;margin:12px 0}.wiki-mobile-card-actions{display:flex;justify-content:space-between;gap:8px}.wiki-mobile-error{padding:14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;font-size:14px;margin-bottom:12px}.wiki-mobile-empty{text-align:center;padding:40px 12px;color:#64748b;font-size:14px}.wiki-mobile-pagination{display:flex;justify-content:center;padding:24px 0}
+</style>

@@ -10,3 +10,42 @@ body {
   box-sizing: border-box;
 }
 
+:root {
+  --mobile-header-height: calc(56px + env(safe-area-inset-top));
+  --mobile-nav-height: calc(64px + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 767px) {
+  .mobile-app {
+    min-height: 100dvh;
+    padding-bottom: var(--mobile-nav-height);
+    background: #f8fafc;
+  }
+
+  .mobile-app.mobile-keyboard-open { padding-bottom: 0; }
+  .mobile-app input, .mobile-app textarea, .mobile-sheet input, .mobile-sheet textarea,
+  .el-dialog input, .el-dialog textarea, .el-message-box input, .el-message-box textarea { font-size: 16px; }
+
+  /* 传送到页面根部的弹窗也遵循可见视口，正文单独滚动。 */
+  .el-overlay-dialog {
+    top: var(--mobile-viewport-top, 0px);
+    bottom: auto;
+    height: var(--mobile-viewport-height, 100dvh);
+  }
+
+  .el-dialog {
+    max-width: calc(100vw - 24px);
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - 24px);
+    margin-top: 12px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .el-dialog__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .el-dialog__header, .el-dialog__footer { flex-shrink: 0; }
+  .el-dialog__footer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .el-dialog__headerbtn { width: 44px; height: 44px; }
+  .el-message-box { max-width: calc(100vw - 24px); max-height: calc(var(--mobile-viewport-height, 100dvh) - 24px); overflow-y: auto; }
+}
+

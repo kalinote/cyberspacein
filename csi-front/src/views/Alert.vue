@@ -3,6 +3,7 @@
     <Header />
 
     <FunctionalPageHeader
+      v-if="!isMobile"
       title-prefix="告警"
       title-suffix="中心"
       subtitle="模块统一接入、规则检测与异常生命周期管理"
@@ -26,8 +27,14 @@
       </template>
     </FunctionalPageHeader>
 
-    <main class="mx-auto max-w-[1920px] px-4 py-7 sm:px-6 lg:px-8">
-      <section class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section v-else class="mobile-alert-heading">
+      <div><p>异常跟进</p><h1>告警中心</h1></div>
+      <button type="button" :disabled="loading" aria-label="刷新告警" @click="refreshAll"><Icon icon="mdi:refresh" :class="{ 'animate-spin': loading }" /></button>
+      <div class="mobile-alert-connection"><span :class="streamDotClass" />{{ streamStatusText }}<span :class="workerStatus.online ? 'bg-emerald-400' : 'bg-slate-400'" />检测服务{{ workerStatus.online ? '在线' : '离线' }}</div>
+    </section>
+
+    <main class="alert-main mx-auto max-w-[1920px] px-4 py-7 sm:px-6 lg:px-8">
+      <section class="alert-summary mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div
           v-for="card in summaryCards"
           :key="card.label"
@@ -50,7 +57,11 @@
               <span class="flex items-center gap-2"><Icon icon="mdi:alert-box-outline" />告警事件</span>
             </template>
 
-            <div class="mb-4 flex flex-wrap items-center gap-3">
+            <div v-if="isMobile" class="mobile-alert-search">
+              <el-input v-model="instanceFilters.keyword" clearable placeholder="搜索告警或关联资源" aria-label="搜索告警" @keyup.enter="searchInstances" @clear="searchInstances"><template #prefix><Icon icon="mdi:magnify" /></template></el-input>
+              <button type="button" aria-label="筛选告警" @click="Object.assign(instanceFilterDraft, instanceFilters); filterPanel = 'instances'"><Icon icon="mdi:filter-variant" /><span>筛选{{ instanceFilterCount ? ` · ${instanceFilterCount}` : '' }}</span></button>
+            </div>
+            <div v-else class="mb-4 flex flex-wrap items-center gap-3">
               <el-input
                 v-model="instanceFilters.keyword"
                 clearable
@@ -74,7 +85,19 @@
               </el-select>
             </div>
 
-            <el-table v-loading="instanceLoading" :data="instances" stripe row-key="id" empty-text="暂无符合条件的告警">
+            <div v-if="isMobile" v-loading="instanceLoading" class="mobile-alert-list" aria-live="polite">
+              <div v-if="instanceError" class="mobile-alert-load-error" role="status"><p>告警加载失败{{ instances.length ? '，下方保留上次成功加载的结果' : '' }}。</p><el-button :loading="instanceLoading" @click="loadInstances().catch(() => {})">重新加载</el-button></div>
+              <article v-for="row in instances" :key="row.id" class="mobile-alert-card" :class="`severity-${row.current_severity}`">
+                <div class="mobile-alert-card-tags"><el-tag :type="severityTag(row.current_severity)" :effect="row.current_severity === 'critical' ? 'dark' : 'light'">{{ severityText(row.current_severity) }}</el-tag><el-tag :type="statusTag(row.status)">{{ statusText(row.status) }}</el-tag><span>{{ sourceName(row.source_key) }}</span></div>
+                <button type="button" class="mobile-alert-card-title" @click="openAlertDetail(row)">{{ row.title }}</button>
+                <p class="mobile-alert-reason">{{ row.detail || '暂无异常说明' }}</p>
+                <button type="button" class="mobile-alert-resource" :disabled="!row.resource_url?.startsWith('/') || row.resource_url.startsWith('//')" @click="openResource(row)"><Icon icon="mdi:link-variant" /><span>{{ row.resource_name || row.resource_id || '未关联资源' }}</span><Icon v-if="row.resource_url" icon="mdi:chevron-right" /></button>
+                <dl class="mobile-alert-card-meta"><div><dt>当前值</dt><dd>{{ displayValue(row.latest_value) }}</dd></div><div><dt>更新时间</dt><dd>{{ formatTime(row.updated_at) }}</dd></div></dl>
+                <div class="mobile-alert-card-actions"><el-button @click="openAlertDetail(row)">事件详情</el-button><el-button v-if="row.status === 'firing' && canAcknowledge" type="warning" plain :disabled="operationLoading" @click="acknowledgeAlert(row)">确认</el-button><el-button v-if="row.status !== 'resolved' && canResolve" type="success" plain :disabled="operationLoading" @click="openResolveDialog(row)">解决</el-button></div>
+              </article>
+              <el-empty v-if="!instanceLoading && !instanceError && !instances.length" description="暂无符合条件的告警" :image-size="70" />
+            </div>
+            <el-table v-else v-loading="instanceLoading" :data="instances" stripe row-key="id" empty-text="暂无符合条件的告警">
               <el-table-column label="告警" min-width="280">
                 <template #default="{ row }">
                   <button class="block max-w-full text-left" @click="openAlertDetail(row)">
@@ -137,12 +160,13 @@
               </el-table-column>
             </el-table>
 
-            <div class="flex justify-end py-5">
+            <div class="alert-pagination flex justify-end py-5">
               <el-pagination
                 v-model:current-page="instancePage.page"
                 v-model:page-size="instancePage.pageSize"
                 background
-                layout="total, sizes, prev, pager, next"
+                :layout="isMobile ? 'prev, pager, next' : 'total, sizes, prev, pager, next'"
+                :pager-count="isMobile ? 5 : 7"
                 :page-sizes="[10, 20, 50, 100]"
                 :total="instancePage.total"
                 @change="loadInstances"
@@ -155,7 +179,12 @@
               <span class="flex items-center gap-2"><Icon icon="mdi:tune-variant" />规则管理</span>
             </template>
 
-            <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div v-if="isMobile" class="mobile-alert-search">
+              <el-input v-model="ruleFilters.keyword" clearable placeholder="搜索规则名称" aria-label="搜索告警规则" @keyup.enter="searchRules" @clear="searchRules" />
+              <button type="button" aria-label="筛选告警规则" @click="Object.assign(ruleFilterDraft, ruleFilters); filterPanel = 'rules'"><Icon icon="mdi:filter-variant" />筛选</button>
+              <el-button v-if="canCreateRule" type="primary" @click="openCreateRule">新建规则</el-button>
+            </div>
+            <div v-else class="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div class="flex flex-wrap gap-3">
                 <el-input
                   v-model="ruleFilters.keyword"
@@ -178,7 +207,19 @@
               </el-button>
             </div>
 
-            <el-table v-loading="ruleLoading" :data="rules" stripe row-key="id" empty-text="暂无告警规则">
+            <div v-if="isMobile" v-loading="ruleLoading" class="mobile-alert-list">
+              <div v-if="ruleError" class="mobile-alert-load-error" role="status"><p>规则加载失败{{ rules.length ? '，下方保留上次成功加载的结果' : '' }}。</p><el-button :loading="ruleLoading" @click="loadRules().catch(() => {})">重新加载</el-button></div>
+              <article v-for="row in rules" :key="row.id" class="mobile-alert-card">
+                <div class="mobile-alert-card-tags"><el-tag :type="severityTag(row.severity)">{{ severityText(row.severity) }}</el-tag><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag><span>{{ sourceName(row.source_key) }}</span></div>
+                <h3 class="mobile-alert-rule-title">{{ row.name }}</h3><p v-if="row.description" class="mobile-alert-reason">{{ row.description }}</p>
+                <dl class="mobile-alert-rule-conditions"><div><dt>触发条件</dt><dd>{{ expressionText(row.source_key, row.trigger_expression) }}</dd></div><div><dt>恢复条件</dt><dd>{{ row.recovery_expression ? expressionText(row.source_key, row.recovery_expression) : '不自动恢复' }}</dd></div></dl>
+                <p class="mobile-alert-rule-health" :class="{ 'text-red-600': row.last_error }">{{ evaluationText(row) }} · {{ row.last_error ? `检测失败：${row.last_error}` : `最近检测 ${formatTime(row.last_success_at)}` }}</p>
+                <div class="mobile-alert-rule-switch"><span>规则状态</span><el-switch :model-value="row.enabled" :disabled="!canUpdateRule" inline-prompt active-text="启用" inactive-text="停用" @change="toggleRule(row, $event)" /></div>
+                <div class="mobile-alert-card-actions"><el-button v-if="canUpdateRule" @click="openEditRule(row)">编辑</el-button><el-button v-if="canExecuteRule" type="success" plain @click="testExistingRule(row)">试运行</el-button><el-button v-if="canDeleteRule" type="danger" plain @click="deleteExistingRule(row)">删除</el-button></div>
+              </article>
+              <el-empty v-if="!ruleLoading && !ruleError && !rules.length" description="暂无告警规则" :image-size="70" />
+            </div>
+            <el-table v-else v-loading="ruleLoading" :data="rules" stripe row-key="id" empty-text="暂无告警规则">
               <el-table-column prop="name" label="规则名称" min-width="190">
                 <template #default="{ row }">
                   <div class="font-medium text-slate-900">{{ row.name }}</div>
@@ -231,12 +272,13 @@
               </el-table-column>
             </el-table>
 
-            <div class="flex justify-end py-5">
+            <div class="alert-pagination flex justify-end py-5">
               <el-pagination
                 v-model:current-page="rulePage.page"
                 v-model:page-size="rulePage.pageSize"
                 background
-                layout="total, sizes, prev, pager, next"
+                :layout="isMobile ? 'prev, pager, next' : 'total, sizes, prev, pager, next'"
+                :pager-count="isMobile ? 5 : 7"
                 :page-sizes="[10, 20, 50]"
                 :total="rulePage.total"
                 @change="loadRules"
@@ -287,8 +329,25 @@
       </section>
     </main>
 
-    <el-drawer v-model="detailVisible" title="告警详情" size="min(680px, 94vw)" destroy-on-close>
-      <template v-if="selectedAlert">
+    <MobileSheet :model-value="Boolean(filterPanel)" :title="filterPanel === 'rules' ? '筛选告警规则' : '筛选告警'" @update:model-value="value => { if (!value) filterPanel = '' }">
+      <el-form label-position="top">
+        <template v-if="filterPanel === 'instances'">
+          <el-form-item label="处理状态"><el-select v-model="instanceFilterDraft.status" clearable placeholder="全部状态" class="w-full"><el-option label="告警中" value="firing" /><el-option label="已确认" value="acknowledged" /><el-option label="已解决" value="resolved" /></el-select></el-form-item>
+          <el-form-item label="异常等级"><el-select v-model="instanceFilterDraft.severity" clearable placeholder="全部等级" class="w-full"><el-option v-for="item in severityOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+          <el-form-item label="所属模块"><el-select v-model="instanceFilterDraft.sourceKey" clearable placeholder="全部模块" class="w-full"><el-option v-for="source in sources" :key="source.source_key" :label="source.module_name" :value="source.source_key" /></el-select></el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="规则状态"><el-select v-model="ruleFilterDraft.enabled" clearable placeholder="全部状态" class="w-full"><el-option label="已启用" :value="true" /><el-option label="已停用" :value="false" /></el-select></el-form-item>
+          <el-form-item label="所属模块"><el-select v-model="ruleFilterDraft.sourceKey" clearable placeholder="全部模块" class="w-full"><el-option v-for="source in sources" :key="source.source_key" :label="source.module_name" :value="source.source_key" /></el-select></el-form-item>
+        </template>
+      </el-form>
+      <template #footer><div class="mobile-alert-filter-actions"><el-button @click="filterPanel === 'instances' ? Object.assign(instanceFilterDraft, { status: '', severity: '', sourceKey: '' }) : Object.assign(ruleFilterDraft, { enabled: '', sourceKey: '' })">重置筛选</el-button><el-button type="primary" @click="filterPanel === 'instances' ? (Object.assign(instanceFilters, instanceFilterDraft), searchInstances()) : (Object.assign(ruleFilters, ruleFilterDraft), searchRules()); filterPanel = ''">查看结果</el-button></div></template>
+    </MobileSheet>
+
+    <el-drawer v-model="detailVisible" title="告警详情" :direction="isMobile ? 'btt' : 'rtl'" :size="isMobile ? 'auto' : 'min(680px, 94vw)'" :class="isMobile ? 'mobile-sheet alert-mobile-detail' : ''" :modal-class="isMobile ? 'mobile-sheet-overlay' : ''" :append-to-body="isMobile" destroy-on-close>
+      <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" class="mb-4" />
+      <div v-if="detailLoading && !selectedAlert?.title" class="py-8 text-center text-slate-500">正在加载告警详情…</div>
+      <template v-if="selectedAlert?.title">
         <div class="mb-5 flex flex-wrap items-center gap-2">
           <el-tag :type="severityTag(selectedAlert.current_severity)" effect="dark">{{ severityText(selectedAlert.current_severity) }}</el-tag>
           <el-tag :type="statusTag(selectedAlert.status)">{{ statusText(selectedAlert.status) }}</el-tag>
@@ -296,6 +355,7 @@
         </div>
         <h2 class="text-xl font-semibold text-slate-900">{{ selectedAlert.title }}</h2>
         <p class="mt-2 text-sm leading-6 text-slate-600">{{ selectedAlert.detail }}</p>
+        <button v-if="isMobile && selectedAlert.resource_url?.startsWith('/') && !selectedAlert.resource_url.startsWith('//')" type="button" class="mobile-alert-resource mt-4" @click="openResource(selectedAlert)"><Icon icon="mdi:link-variant" /><span>{{ selectedAlert.resource_name || '查看关联任务或资源' }}</span><Icon icon="mdi:chevron-right" /></button>
         <el-descriptions class="mt-5" :column="1" border>
           <el-descriptions-item label="关联资源">{{ selectedAlert.resource_name }}（{{ selectedAlert.resource_id }}）</el-descriptions-item>
           <el-descriptions-item label="当前值">{{ displayValue(selectedAlert.latest_value) }}</el-descriptions-item>
@@ -326,9 +386,10 @@
         </el-timeline>
         <el-empty v-if="!eventLoading && !alertEvents.length" description="暂无事件历史" />
       </template>
+      <template v-if="isMobile && selectedAlert?.version != null" #footer><div class="mobile-alert-detail-actions"><el-button @click="detailVisible = false">关闭</el-button><el-button v-if="selectedAlert.status === 'firing' && canAcknowledge" type="warning" :loading="operationLoading" :disabled="detailLoading" @click="acknowledgeAlert(selectedAlert)">确认告警</el-button><el-button v-if="selectedAlert.status !== 'resolved' && canResolve" type="success" :disabled="operationLoading || detailLoading" @click="openResolveDialog(selectedAlert)">解决告警</el-button></div></template>
     </el-drawer>
 
-    <el-dialog v-model="resolveVisible" title="手动解决告警" width="min(520px, 92vw)" destroy-on-close>
+    <el-dialog v-model="resolveVisible" title="手动解决告警" width="min(520px, 92vw)" class="alert-operation-dialog" :append-to-body="isMobile" destroy-on-close>
       <p class="mb-4 text-sm text-slate-600">
         手动解决后，当前异常持续期间不会再次生成告警；资源恢复正常后会重新布防。
       </p>
@@ -354,6 +415,8 @@
       v-model="ruleVisible"
       :title="editingRule ? '编辑告警规则' : '新建告警规则'"
       width="min(760px, 94vw)"
+      class="alert-operation-dialog"
+      :append-to-body="isMobile"
       destroy-on-close
       :close-on-click-modal="false"
     >
@@ -468,13 +531,15 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import Header from '@/components/Header.vue'
 import FunctionalPageHeader from '@/components/page-header/FunctionalPageHeader.vue'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 import { alertApi } from '@/api/alert'
 import { openAuthenticatedSse } from '@/utils/agentSseClient'
 import { PERM } from '@/utils/permissions'
@@ -483,6 +548,8 @@ import { hasPerm } from '@/utils/permissionKit'
 defineOptions({ name: 'Alert' })
 
 const router = useRouter()
+const route = useRoute()
+const { isMobile } = useMobileViewport()
 const severityOptions = [
   { label: '一般', value: 'info' },
   { label: '重要', value: 'warning' },
@@ -511,6 +578,8 @@ const activeTab = ref('instances')
 const loading = ref(false)
 const instanceLoading = ref(false)
 const ruleLoading = ref(false)
+const instanceError = ref(false)
+const ruleError = ref(false)
 const operationLoading = ref(false)
 const eventLoading = ref(false)
 const ruleSaving = ref(false)
@@ -531,7 +600,13 @@ const instancePage = reactive({ page: 1, pageSize: 20, total: 0 })
 const rulePage = reactive({ page: 1, pageSize: 20, total: 0 })
 const instanceFilters = reactive({ keyword: '', status: '', severity: '', sourceKey: '' })
 const ruleFilters = reactive({ keyword: '', sourceKey: '', enabled: '' })
+const filterPanel = ref('')
+const instanceFilterDraft = reactive({ ...instanceFilters })
+const ruleFilterDraft = reactive({ ...ruleFilters })
+const instanceFilterCount = computed(() => [instanceFilters.status, instanceFilters.severity, instanceFilters.sourceKey].filter(Boolean).length)
 const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detailError = ref('')
 const selectedAlert = ref(null)
 const alertEvents = ref([])
 const resolveVisible = ref(false)
@@ -546,6 +621,10 @@ let streamTask = null
 let reconnectAttempt = 0
 let initialized = false
 let refreshTimer = null
+let detailSequence = 0
+let eventSequence = 0
+let instancesInitialized = false
+let rulesInitialized = false
 
 const canAcknowledge = computed(() => hasPerm(PERM.operations.alert.instance.acknowledge))
 const canResolve = computed(() => hasPerm(PERM.operations.alert.instance.resolve))
@@ -705,6 +784,7 @@ async function loadSources() {
 
 async function loadInstances() {
   instanceLoading.value = true
+  instanceError.value = false
   try {
     const response = await alertApi.getInstances({
       page: instancePage.page,
@@ -717,6 +797,11 @@ async function loadInstances() {
     const data = pagePayload(response)
     instances.value = data.items || []
     instancePage.total = data.total || 0
+    instancesInitialized = true
+    instanceError.value = false
+  } catch (error) {
+    instanceError.value = true
+    throw error
   } finally {
     instanceLoading.value = false
   }
@@ -724,6 +809,7 @@ async function loadInstances() {
 
 async function loadRules() {
   ruleLoading.value = true
+  ruleError.value = false
   try {
     const response = await alertApi.getRules({
       page: rulePage.page,
@@ -735,6 +821,11 @@ async function loadRules() {
     const data = pagePayload(response)
     rules.value = data.items || []
     rulePage.total = data.total || 0
+    rulesInitialized = true
+    ruleError.value = false
+  } catch (error) {
+    ruleError.value = true
+    throw error
   } finally {
     ruleLoading.value = false
   }
@@ -747,6 +838,8 @@ async function refreshAll() {
     await loadStats()
     await Promise.all([loadSources(), loadInstances(), loadRules()])
   } catch (error) {
+    if (!instancesInitialized) instanceError.value = true
+    if (!rulesInitialized) ruleError.value = true
     ElMessage.error(error?.message || '告警中心加载失败')
   } finally {
     loading.value = false
@@ -773,7 +866,14 @@ function openResource(row) {
 }
 
 async function openAlertDetail(row) {
+  if (!hasPerm(PERM.operations.alert.instance.read)) {
+    ElMessage.warning('无权限查看告警详情')
+    return
+  }
+  const sequence = ++detailSequence
   detailVisible.value = true
+  detailLoading.value = true
+  detailError.value = ''
   selectedAlert.value = row
   alertEvents.value = []
   try {
@@ -781,23 +881,29 @@ async function openAlertDetail(row) {
       alertApi.getInstance(row.id),
       loadAlertEvents(row.id)
     ])
-    selectedAlert.value = detailResponse.data
+    if (sequence === detailSequence && detailVisible.value) selectedAlert.value = detailResponse.data
   } catch (error) {
+    if (sequence !== detailSequence || !detailVisible.value) return
+    detailError.value = error?.message || '告警详情加载失败'
     ElMessage.error(error?.message || '告警详情加载失败')
+  } finally {
+    if (sequence === detailSequence) detailLoading.value = false
   }
 }
 
 async function loadAlertEvents(alertId) {
+  const sequence = ++eventSequence
   eventLoading.value = true
   try {
     const response = await alertApi.getEvents(alertId, { page: 1, page_size: 100 })
-    alertEvents.value = pagePayload(response).items || []
+    if (sequence === eventSequence && selectedAlert.value?.id === alertId) alertEvents.value = pagePayload(response).items || []
   } finally {
-    eventLoading.value = false
+    if (sequence === eventSequence) eventLoading.value = false
   }
 }
 
 async function acknowledgeAlert(row) {
+  if (operationLoading.value || !canAcknowledge.value || row.status !== 'firing') return
   operationLoading.value = true
   try {
     const response = await alertApi.acknowledge(row.id, row.version)
@@ -805,20 +911,26 @@ async function acknowledgeAlert(row) {
     if (selectedAlert.value?.id === row.id) selectedAlert.value = response.data
     ElMessage.success('告警已确认')
     await loadStats()
+    if (detailVisible.value && selectedAlert.value?.id === row.id) await loadAlertEvents(row.id)
   } catch (error) {
-    if (error?.code === 240903) await loadInstances()
+    if (error?.code === 240903) {
+      await loadInstances()
+      if (detailVisible.value && selectedAlert.value?.id === row.id) await openAlertDetail(row)
+    }
   } finally {
     operationLoading.value = false
   }
 }
 
 function openResolveDialog(row) {
+  if (operationLoading.value || !canResolve.value || row.status === 'resolved') return
   resolvingAlert.value = row
   resolveNote.value = ''
   resolveVisible.value = true
 }
 
 async function resolveAlert() {
+  if (operationLoading.value || !canResolve.value || !resolvingAlert.value) return
   if (resolveNoteRequired.value && !resolveNote.value.trim()) {
     ElMessage.warning('严重和致命告警必须填写处理说明')
     return
@@ -835,6 +947,15 @@ async function resolveAlert() {
     resolveVisible.value = false
     ElMessage.success('告警已手动解决')
     await loadStats()
+    if (detailVisible.value && selectedAlert.value?.id === response.data.id) await loadAlertEvents(response.data.id)
+  } catch (error) {
+    if (error?.code === 240903) {
+      const response = await alertApi.getInstance(resolvingAlert.value.id)
+      resolvingAlert.value = response.data
+      replaceInstance(response.data)
+      if (selectedAlert.value?.id === response.data.id) selectedAlert.value = response.data
+      if (response.data.status === 'resolved') resolveVisible.value = false
+    }
   } finally {
     operationLoading.value = false
   }
@@ -1124,6 +1245,31 @@ function startStream() {
   })
 }
 
+watch([() => route.name, () => route.query.alert_id], ([name, alertId], previous = []) => {
+  if (name !== 'alert') return
+  if (typeof alertId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(alertId)) {
+    if (previous[1]) detailVisible.value = false
+    return
+  }
+  activeTab.value = 'instances'
+  openAlertDetail({ id: alertId })
+}, { immediate: true })
+
+watch(detailVisible, visible => {
+  if (visible) return
+  ++detailSequence
+  ++eventSequence
+  detailLoading.value = false
+  eventLoading.value = false
+  if (route.name === 'alert' && route.query.alert_id) {
+    const query = { ...route.query }
+    delete query.alert_id
+    router.replace({ query })
+  }
+})
+
+watch(isMobile, () => { filterPanel.value = '' })
+
 onMounted(async () => {
   await refreshAll()
   initialized = true
@@ -1132,7 +1278,13 @@ onMounted(async () => {
 onActivated(() => {
   if (initialized) startStream()
 })
-onDeactivated(stopStream)
+onDeactivated(() => {
+  stopStream()
+  filterPanel.value = ''
+  detailVisible.value = false
+  resolveVisible.value = false
+  ruleVisible.value = false
+})
 onUnmounted(() => {
   stopStream()
   if (refreshTimer) clearTimeout(refreshTimer)
@@ -1140,6 +1292,58 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.mobile-alert-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 20px 16px 8px; }
+.mobile-alert-heading p { margin: 0 0 4px; font-size: 12px; color: #64748b; }
+.mobile-alert-heading h1 { margin: 0; color: #0f172a; font-size: 26px; font-weight: 700; }
+.mobile-alert-heading > button { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #fecaca; border-radius: 12px; color: #dc2626; font-size: 22px; }
+.mobile-alert-connection { display: flex; align-items: center; gap: 6px; width: 100%; font-size: 12px; color: #64748b; }
+.mobile-alert-connection > span { width: 6px; height: 6px; border-radius: 50%; }
+.mobile-alert-connection > span:nth-child(2) { margin-left: 10px; }
+.mobile-alert-search { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.mobile-alert-search > .el-input { min-width: 0; flex: 1; }
+.mobile-alert-search > button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; min-height: 44px; padding: 0 10px; border: 1px solid #e2e8f0; border-radius: 8px; color: #475569; font-size: 13px; }
+.mobile-alert-list { min-height: 120px; }
+.mobile-alert-load-error { margin-bottom: 12px; padding: 14px; border: 1px solid #fed7aa; border-radius: 10px; background: #fff7ed; color: #9a3412; font-size: 13px; }
+.mobile-alert-load-error p { margin: 0 0 10px; line-height: 1.7; }
+.mobile-alert-load-error .el-button { min-height: 44px; }
+.mobile-alert-card { margin-bottom: 12px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; overflow-wrap: anywhere; }
+.mobile-alert-card.severity-critical, .mobile-alert-card.severity-error { border-left: 3px solid #dc2626; }
+.mobile-alert-card.severity-warning { border-left: 3px solid #d97706; }
+.mobile-alert-card-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.mobile-alert-card-tags > span:last-child:not(.el-tag) { margin-left: auto; color: #64748b; font-size: 12px; }
+.mobile-alert-card-title { display: block; width: 100%; min-height: 44px; padding: 10px 0 6px; text-align: left; font-size: 16px; font-weight: 600; color: #0f172a; }
+.mobile-alert-rule-title { margin: 12px 0 6px; color: #0f172a; font-size: 16px; font-weight: 600; }
+.mobile-alert-reason { margin: 2px 0 10px; font-size: 13px; line-height: 1.7; color: #475569; }
+.mobile-alert-resource { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; padding: 8px 10px; border-radius: 8px; background: #f8fafc; color: #2563eb; text-align: left; font-size: 13px; }
+.mobile-alert-resource > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mobile-alert-resource > svg { flex-shrink: 0; }
+.mobile-alert-resource:disabled { color: #64748b; }
+.mobile-alert-card-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr); gap: 12px; margin: 12px 0; font-size: 12px; }
+.mobile-alert-card-meta dt, .mobile-alert-rule-conditions dt { color: #64748b; }
+.mobile-alert-card-meta dd { margin: 4px 0 0; color: #334155; }
+.mobile-alert-card-actions, .mobile-alert-filter-actions, .mobile-alert-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mobile-alert-card-actions .el-button, .mobile-alert-filter-actions .el-button, .mobile-alert-detail-actions .el-button { min-width: 0; min-height: 44px; flex: 1; margin-left: 0; padding: 10px 8px; }
+.mobile-alert-rule-conditions { display: grid; gap: 8px; margin: 12px 0; font-size: 13px; }
+.mobile-alert-rule-conditions > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
+.mobile-alert-rule-conditions dd { margin: 0; color: #334155; }
+.mobile-alert-rule-health { font-size: 12px; color: #64748b; line-height: 1.6; }
+.mobile-alert-rule-switch { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin: 8px 0; font-size: 13px; color: #475569; }
+@media (max-width: 767px) {
+  .alert-main { padding-top: 12px; }
+  .alert-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .alert-summary > div { padding: 12px; gap: 8px; }
+  .alert-summary > div > div:first-child { width: 32px; height: 32px; border-radius: 8px; }
+  .alert-summary p:first-child { font-size: 12px; }
+  .alert-summary p:last-child { font-size: 22px; }
+  .alert-tabs { padding-left: 12px; padding-right: 12px; }
+  .alert-pagination { justify-content: center; }
+  .alert-tabs :deep(.el-tabs__item) { padding: 0 10px; font-size: 13px; }
+  .alert-tabs :deep(.el-pagination) { max-width: 100%; }
+  .alert-tabs :deep(.el-tabs__content) { overflow-wrap: anywhere; }
+  .alert-tabs :deep(.el-input__wrapper), .alert-tabs :deep(.el-select__wrapper) { min-height: 44px; }
+  .alert-tabs :deep(.el-switch) { min-height: 44px; }
+}
+
 .alert-page {
   --el-color-primary: #dc2626;
   --el-color-primary-light-3: #ef4444;
@@ -1184,5 +1388,17 @@ onUnmounted(() => {
 
 :deep(.alert-tabs .el-pagination.is-background .el-pager li.is-active) {
   background-color: #dc2626;
+}
+</style>
+
+<style>
+@media (max-width: 767px) {
+  .alert-mobile-detail .el-drawer__body { overflow-wrap: anywhere; }
+  .alert-mobile-detail .el-descriptions__table { table-layout: fixed; }
+  .alert-mobile-detail .el-descriptions__label { width: 85px; }
+  .alert-mobile-detail .el-descriptions__content { overflow-wrap: anywhere; }
+  .alert-mobile-detail .el-timeline { padding-left: 4px; }
+  .alert-operation-dialog .el-dialog__footer { display: flex; flex-wrap: wrap; gap: 8px; }
+  .alert-operation-dialog .el-dialog__footer .el-button { flex: 1; min-height: 44px; margin-left: 0; }
 }
 </style>

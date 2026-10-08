@@ -1,5 +1,5 @@
 ﻿<template>
-    <div class="min-h-screen bg-gray-50 flex flex-col">
+    <div class="min-h-screen bg-gray-50 flex flex-col" :class="{ 'mobile-reading-page': isMobile }">
         <Header />
 
         <div v-if="loading" class="flex items-center justify-center h-96">
@@ -19,7 +19,8 @@
         </div>
 
         <div v-else-if="articleData" class="flex flex-col">
-            <div>
+            <MobileDetailHeader v-if="isMobile" :entity="articleData" :info-items="articleInfoItems" />
+            <div v-else>
             <DetailPageHeader
                 :title="articleData.title || '无标题'"
                 :subtitle="articleData.uuid"
@@ -109,12 +110,13 @@
             </section>
             </div>
 
-            <div class="shrink-0 lg:min-h-[calc(100dvh-4rem)]">
+            <div class="detail-workbench-wrap shrink-0 lg:min-h-[calc(100dvh-4rem)]">
             <section
                 class="shrink-0 py-6 bg-gray-50 flex flex-col overflow-hidden lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:min-h-120"
             >
                 <div class="w-full h-full min-h-0 px-4 sm:px-6 lg:px-8 flex flex-col">
                     <ArticleDetailWorkbench
+                        v-model:mobile-panel="mobilePanel"
                         class="flex-1 min-h-0"
                         :constrain-height="workbenchHeightEnabled"
                         :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
@@ -125,7 +127,7 @@
                         @pane-resized="handlePaneResized"
                     >
                         <template #center-top>
-                            <div class="absolute inset-0 pointer-events-none z-10" aria-hidden="true">
+                            <div v-if="!isMobile" class="absolute inset-0 pointer-events-none z-10" aria-hidden="true">
                                 <MarkingConnector
                                     :markings="getMarkingsByRegion(currentRegion)"
                                     :active-marking-id="activeMarkingId"
@@ -149,8 +151,9 @@
                                 class="article-content-panel flex h-full min-h-0 flex-1 flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6"
                                 :class="{ 'article-content-panel--fullscreen': isContentFullscreen }"
                             >
-                                <div class="mb-4 flex shrink-0 items-center justify-between">
-                                    <h2 class="text-2xl font-bold text-gray-900 flex items-center">
+                                <MobileReadingFormat v-if="isMobile" v-model="activeTab" :entity="articleData" />
+                                <div v-if="!isMobile || activeTab === 'safe-raw'" class="mb-4 flex shrink-0 items-center justify-between">
+                                    <h2 v-if="!isMobile" class="text-2xl font-bold text-gray-900 flex items-center">
                                         <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
                                         文章<span class="text-blue-500">内容</span>
                                     </h2>
@@ -179,6 +182,7 @@
                                         </el-button>
                                         <el-button
                                             size="small"
+                                            v-if="!isMobile"
                                             :aria-label="isContentFullscreen ? '退出全屏' : '全屏查看'"
                                             :aria-pressed="isContentFullscreen"
                                             @click="isContentFullscreen = !isContentFullscreen"
@@ -196,6 +200,7 @@
                                             ref="cleanContentRef"
                                             class="prose max-w-none select-text"
                                             @mouseup="handleCleanContentMouseUp"
+                                            @touchend="handleCleanContentMouseUp"
                                         >
                                             <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed" v-html="highlightedCleanContent"></pre>
                                         </div>
@@ -212,6 +217,7 @@
                                             class="prose max-w-none article-content marking-content select-text"
                                             v-html="editableSafeRawContent"
                                             @mouseup="handleRenderedContentMouseUp"
+                                            @touchend="handleRenderedContentMouseUp"
                                         ></div>
                                     </el-tab-pane>
                                     <el-tab-pane v-if="articleData.translate_content" label="翻译内容" name="translate">
@@ -219,6 +225,7 @@
                                             ref="translateContentRef"
                                             class="prose max-w-none select-text"
                                             @mouseup="handleTranslateContentMouseUp"
+                                            @touchend="handleTranslateContentMouseUp"
                                         >
                                             <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed" v-html="highlightedTranslateContent"></pre>
                                         </div>
@@ -381,9 +388,9 @@
                         </template>
 
                         <template #right>
-                        <div class="flex min-w-0 gap-0 h-full min-h-0 w-full">
+                        <div class="detail-right-panels flex min-w-0 gap-0 h-full min-h-0 w-full">
                             <div
-                                class="flex-1 min-w-0 flex flex-col min-h-0 h-full bg-white rounded-l-xl shadow-sm border border-gray-200 border-r-0 overflow-hidden"
+                                class="detail-right-panel-content flex-1 min-w-0 flex flex-col min-h-0 h-full bg-white rounded-l-xl shadow-sm border border-gray-200 border-r-0 overflow-hidden"
                             >
                                 <ArticleDetailInfoPanel
                                     v-show="rightPanel === 'info'"
@@ -443,13 +450,25 @@
             </div>
         </div>
 
+        <MobileDetailActions
+            v-if="isMobile && articleData && !loading && !error"
+            :entity="{ ...articleData, entity_type: 'article' }"
+            :is-priority-target="isPriorityTarget"
+            :highlight-loading="highlightLoading"
+            :analyzing="analyzing"
+            :agent-options="analyzeOptions"
+            :default-injection-param="defaultInjectionParam"
+            @toggle-priority="togglePriorityTarget"
+            @started="handleAgentStarted"
+        />
+
         <el-dialog
             v-model="showHighlightDialog"
             title="设置重点目标"
-            width="500px"
+            :width="isMobile ? 'calc(100vw - 24px)' : '500px'"
             :close-on-click-modal="false"
         >
-            <el-form :model="highlightForm" label-width="100px">
+            <el-form :model="highlightForm" label-width="100px" :label-position="isMobile ? 'top' : 'right'">
                 <el-form-item label="标记理由">
                     <el-input
                         v-model="highlightForm.reason"
@@ -468,6 +487,7 @@
         </el-dialog>
 
         <MarkingToolbar
+            :mobile="isMobile"
             :visible="toolbarVisible"
             :position="toolbarPosition"
             :available-styles="availableStyles"
@@ -479,7 +499,8 @@
         <el-dialog
             v-model="showApprovalDialog"
             :title="approvalDialogTitle"
-            width="760px"
+            :width="isMobile ? 'calc(100vw - 24px)' : '760px'"
+            :top="isMobile ? '4vh' : '15vh'"
             :close-on-click-modal="false"
             :show-close="false"
             @closed="onApprovalDialogClosed"
@@ -514,6 +535,10 @@
 
 <script setup>
 import AddToEvidenceButton from '@/components/evidence/AddToEvidenceButton.vue'
+import MobileDetailHeader from '@/components/detail/MobileDetailHeader.vue'
+import MobileDetailActions from '@/components/detail/MobileDetailActions.vue'
+import MobileReadingFormat from '@/components/detail/MobileReadingFormat.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
@@ -545,10 +570,13 @@ import { useMinLg } from '@/composables/useMinLg'
 const route = useRoute()
 const router = useRouter()
 const uuid = computed(() => route.params.uuid)
+const { isMobile } = useMobileViewport()
+const mobilePanel = ref('')
 
 const articleData = ref(null)
 const loading = ref(false)
 const error = ref(null)
+let detailRequest = 0
 
 const { isLgUp: workbenchHeightEnabled } = useMinLg()
 
@@ -690,6 +718,7 @@ const {
     handleMarkingHover,
     handleTabChange,
     loadMarkings,
+    clearAllMarkings,
     setupEventListeners,
     cleanupEventListeners
 } = useMarkingHandler({
@@ -743,14 +772,19 @@ async function loadSnapshot() {
 }
 
 const loadArticleDetail = async () => {
+    const requestId = ++detailRequest
+    const requestedUuid = uuid.value
     isContentFullscreen.value = false
+    clearAllMarkings()
+    activeMarkingId.value = null
     loading.value = true
     error.value = null
     revokeSnapshotBlob()
     snapshotError.value = ''
     
     try {
-        const response = await articleApi.getArticleDetail(uuid.value)
+        const response = await articleApi.getArticleDetail(requestedUuid)
+        if (requestId !== detailRequest || requestedUuid !== uuid.value) return
         if (response.code === 0) {
             articleData.value = response.data
             
@@ -772,15 +806,17 @@ const loadArticleDetail = async () => {
             }
 
             await nextTick()
+            if (requestId !== detailRequest || requestedUuid !== uuid.value) return
             loadMarkings()
         } else {
             error.value = response.message || '加载文章详情失败'
         }
     } catch (err) {
+        if (requestId !== detailRequest || requestedUuid !== uuid.value) return
         console.error('加载文章详情失败:', err)
         error.value = '加载文章详情失败，请稍后重试'
     } finally {
-        loading.value = false
+        if (requestId === detailRequest) loading.value = false
     }
 }
 
@@ -906,6 +942,7 @@ async function handleAgentStarted({ agentId, sessionId }) {
         activeSessionId.value = String(sessionId)
         activeAgentId.value = String(agentId)
         rightPanel.value = 'analysis'
+        if (isMobile.value) mobilePanel.value = 'analysis'
         syncAgentSessionQuery()
         await startStreamForSession({ loadDetail: true })
     } finally {
@@ -946,6 +983,17 @@ watch(rightPanel, async (panel) => {
     }
 })
 
+watch(isMobile, async () => {
+    isContentFullscreen.value = false
+    mobilePanel.value = ''
+    clearAllMarkings()
+    activeMarkingId.value = null
+    await nextTick()
+    if (loading.value || error.value) return
+    loadMarkings()
+    applyContentHighlights()
+})
+
 let previousBodyOverflow = ''
 
 watch(isContentFullscreen, (fullscreen) => {
@@ -977,6 +1025,7 @@ watch(() => route.params.uuid, () => {
     activeSessionId.value = ''
     activeAgentId.value = ''
     rightPanel.value = 'info'
+    mobilePanel.value = ''
     syncAgentSessionQuery()
     loadArticleDetail()
 }, { immediate: false })
@@ -1005,18 +1054,42 @@ onMounted(() => {
     setupEventListeners()
     restoreAgentSessionFromQuery()
     window.addEventListener('keydown', handleContentFullscreenKeydown)
+    document.addEventListener('selectionchange', handleMobileSelectionChange)
 })
 
 onUnmounted(() => {
+    detailRequest += 1
+    clearAllMarkings()
     if (isContentFullscreen.value) document.body.style.overflow = previousBodyOverflow
     window.removeEventListener('keydown', handleContentFullscreenKeydown)
+    document.removeEventListener('selectionchange', handleMobileSelectionChange)
     revokeSnapshotBlob()
     cleanupEventListeners()
     disconnectSSE()
 })
+/** """处理手机长按正文和拖动选区后的批注操作。""" */
+function handleMobileSelectionChange() {
+    if (!isMobile.value) return
+    if (activeTab.value === 'clean') handleCleanContentMouseUp()
+    else if (activeTab.value === 'rendered') handleRenderedContentMouseUp()
+    else if (activeTab.value === 'translate') handleTranslateContentMouseUp()
+}
 </script>
 
 <style scoped>
+.mobile-reading-page { background: #fff; }
+.mobile-reading-page .detail-workbench-wrap > section { padding: 0; }
+.mobile-reading-page .detail-workbench-wrap > section > div { padding: 0; }
+.mobile-reading-page .article-content-panel { border: 0; border-radius: 0; box-shadow: none; padding: 8px 20px 28px; }
+.mobile-reading-page .article-tabs :deep(.el-tabs__header) { display: none; }
+.mobile-reading-page .article-tabs :deep(.el-tabs__content),
+.mobile-reading-page .article-tabs :deep(.el-tab-pane) { height: auto; overflow: visible; }
+.mobile-reading-page .article-tabs :deep(.el-tab-pane) { font-size: 17px; line-height: 1.85; overflow-wrap: anywhere; }
+.mobile-reading-page .article-tabs :deep(pre) { font-family: inherit; font-size: 17px; line-height: 1.85; overflow-wrap: anywhere; white-space: pre-wrap; }
+.mobile-reading-page .article-content :deep(table) { display: block; max-width: 100%; overflow-x: auto; }
+.mobile-reading-page .article-content :deep(iframe),
+.mobile-reading-page .article-content :deep(video) { max-width: 100%; }
+
 .article-content :deep(img) {
     max-width: 100%;
     height: auto;

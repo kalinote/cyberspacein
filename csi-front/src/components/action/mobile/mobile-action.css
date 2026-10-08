@@ -1,0 +1,50 @@
+.mobile-action-page { min-height: calc(100dvh - var(--mobile-header-height) - var(--mobile-nav-height)); padding: 16px; background: #f5f7fb; }
+.mobile-action-page h1 { margin: 0; color: #0f172a; font-size: 22px; font-weight: 700; }
+.mobile-action-intro { margin: 6px 0 16px; color: #64748b; font-size: 14px; line-height: 1.65; }
+.mobile-action-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 16px 0 12px; }
+.mobile-action-heading h2 { font-size: 17px; font-weight: 700; color: #0f172a; }
+.mobile-action-list { display: flex; flex-direction: column; gap: 12px; min-height: 96px; }
+.mobile-action-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 16px; }
+.mobile-action-toolbar > .el-input { flex: 1; min-width: 160px; }
+.mobile-action-toolbar > .el-select { flex: 1; min-width: 130px; }
+.mobile-action-page .el-button, .mobile-action-panel .el-button { min-height: 44px; margin-left: 0; }
+.mobile-action-page .el-input__wrapper, .mobile-action-page .el-select__wrapper, .mobile-action-panel .el-input__wrapper { min-height: 44px; }
+.mobile-action-page .el-input__inner, .mobile-action-panel .el-input__inner { font-size: 16px; }
+.mobile-action-shortcuts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 12px 0 20px; }
+.mobile-action-shortcuts > a, .mobile-action-shortcuts > button { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px; border: 1px solid #dbeafe; border-radius: 12px; background: #fff; color: #2563eb; font-size: 14px; text-align: center; }
+.mobile-action-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; padding: 0 0 8px; }
+.mobile-action-metrics > div { min-width: 0; padding: 10px; border-radius: 12px; background: #fff; border: 1px solid #e2e8f0; }
+.mobile-action-metrics span { display: block; color: #64748b; font-size: 12px; }
+.mobile-action-metrics strong { display: block; margin-top: 4px; color: #0f172a; font-size: 20px; }
+.mobile-action-pagination { display: flex; justify-content: center; margin: 20px 0; }
+.mobile-action-pagination .el-pagination { max-width: 100%; }
+.mobile-action-pagination .el-pagination button, .mobile-action-pagination .el-pager li { min-width: 34px; height: 44px; margin: 0 2px; }
+.mobile-action-panel { overflow-wrap: anywhere; }
+.mobile-action-panel summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.mobile-action-panel pre { max-width: 100%; max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.mobile-action-panel .el-form-item { margin-bottom: 20px; }
+.mobile-blueprint-card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; }
+.mobile-blueprint-card h3, .mobile-blueprint-card p { width: 100%; overflow-wrap: anywhere; }
+.mobile-blueprint-card h3 { font-size: 16px; font-weight: 600; color: #0f172a; }
+.mobile-blueprint-card p { font-size: 13px; color: #64748b; }
+.mobile-blueprint-card > span { flex: 1; font-size: 12px; color: #64748b; }
+.mobile-action-run-dialog.el-dialog { width: calc(100% - 24px) !important; max-width: 600px; }
+.mobile-schedule-card { padding: 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow-wrap: anywhere; }
+.mobile-schedule-state { display: flex; gap: 8px; flex-wrap: wrap; }
+.mobile-schedule-card h2 { margin: 12px 0 8px; font-size: 17px; font-weight: 700; color: #0f172a; }
+.mobile-schedule-card p { margin: 8px 0; font-size: 13px; line-height: 1.65; color: #64748b; }
+.mobile-schedule-card p.mobile-schedule-error { color: #b91c1c; background: #fef2f2; padding: 8px; border-radius: 8px; }
+.mobile-schedule-card p.mobile-schedule-next { font-weight: 600; color: #334155; }
+.mobile-schedule-card summary { display: flex; align-items: center; min-height: 44px; font-size: 13px; color: #475569; cursor: pointer; }
+.mobile-schedule-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.mobile-schedule-controls .el-button { flex: 1; padding: 10px; }
+.mobile-schedule-drawer .el-drawer__header { padding-top: max(20px, env(safe-area-inset-top)); }
+.mobile-schedule-drawer .el-drawer__body { padding: 16px; }
+.mobile-schedule-drawer .el-drawer__footer { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.mobile-schedule-drawer .el-radio-group { display: flex; flex-wrap: wrap; row-gap: 8px; }
+.mobile-schedule-drawer .el-radio-button__inner { min-height: 44px; display: flex; align-items: center; }
+.mobile-schedule-drawer .el-button { min-height: 44px; }
+.mobile-action-drawer-overlay { top: var(--mobile-viewport-top, 0px); bottom: auto; height: var(--mobile-viewport-height, 100dvh); }
+.mobile-schedule-drawer.el-drawer, .mobile-embedded-action.el-drawer { max-height: var(--mobile-viewport-height, 100dvh); }
+.mobile-schedule-drawer .el-drawer__header, .mobile-schedule-drawer .el-drawer__footer { flex-shrink: 0; }
+.mobile-schedule-drawer .el-drawer__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

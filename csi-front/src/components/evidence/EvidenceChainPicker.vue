@@ -1,18 +1,20 @@
 <template>
-  <el-dialog :model-value="modelValue" :title="title" width="660px" @update:model-value="$emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" :title="title" width="660px" class="evidence-chain-picker" :append-to-body="isMobile" @update:model-value="$emit('update:modelValue', $event)">
     <div class="flex gap-3 mb-4"><el-input v-model="query" clearable placeholder="搜索证据链" aria-label="搜索引用证据链" @keyup.enter="page = 1; load()" /><el-button @click="page = 1; load()">搜索</el-button></div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb-3" />
     <div v-loading="loading" class="min-h-40 max-h-96 overflow-auto">
       <button v-for="chain in items" :key="chain.id" :disabled="chain.id === excludeId || busy" class="w-full text-left p-4 mb-2 rounded-lg border border-gray-200 hover:border-blue-400 disabled:opacity-40" @click="$emit('select', chain)"><div class="font-medium">{{ chain.title }} <span v-if="chain.id === excludeId" class="text-xs">（当前证据链）</span></div><p class="text-xs text-gray-500 mt-2">{{ chain.node_count }} 个节点 · {{ chain.edge_count }} 条关系 · {{ chain.purpose || '未填写目的' }}</p></button>
       <el-empty v-if="!items.length && !loading && !error" description="暂无可选证据链" :image-size="60" />
     </div>
-    <el-pagination v-model:current-page="page" :page-size="10" :total="total" layout="prev, pager, next" class="mt-4 justify-center" @current-change="load" />
+    <el-pagination v-model:current-page="page" :page-size="10" :total="total" :pager-count="isMobile ? 5 : 7" layout="prev, pager, next" class="mt-4 justify-center" @current-change="load" />
     <template #footer><slot name="footer" /><el-button @click="$emit('update:modelValue', false)">取消</el-button></template>
   </el-dialog>
 </template>
 <script setup>
 import { ref, watch } from 'vue';
 import { evidenceApi } from '@/api/evidence';
+import { useMobileViewport } from '@/composables/useMobileViewport';
+const { isMobile } = useMobileViewport();
 const props = defineProps({
   modelValue: Boolean,
   title: {
@@ -60,3 +62,11 @@ watch(() => props.modelValue, value => {
   } else ++sequence;
 });
 </script>
+
+<style>
+@media (max-width: 767px) {
+  .evidence-chain-picker .el-dialog__body { overflow-wrap: anywhere; }
+  .evidence-chain-picker .el-dialog__footer { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .evidence-chain-picker .el-dialog__footer .el-button { flex: 1 1 120px; min-height: 44px; margin-left: 0; }
+}
+</style>

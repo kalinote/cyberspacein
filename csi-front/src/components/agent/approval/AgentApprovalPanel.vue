@@ -1,5 +1,5 @@
 <template>
-    <div v-if="approval" class="min-w-0">
+    <div v-if="approval" class="agent-approval-body min-w-0">
         <ModifyEntityApprovalBody
             v-if="approval.source === APPROVAL_SOURCE_MODIFY_ENTITY"
             :payload="approval.payload"
@@ -52,3 +52,13 @@ const props = defineProps({
 
 const payloadJson = computed(() => stringifyJsonSafe(props.approval?.payload ?? {}, 2))
 </script>
+
+<style scoped>
+@media (max-width: 767px) {
+    .agent-approval-body { overflow-wrap: anywhere; }
+    .agent-approval-body :deep(pre) { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .agent-approval-body :deep(.el-collapse-item__header) { min-height: 44px; height: auto; line-height: 1.5; }
+    .agent-approval-body :deep(.el-tag) { max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; }
+    .agent-approval-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; }
+}
+</style>

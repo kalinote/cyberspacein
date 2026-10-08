@@ -2,6 +2,23 @@
   <div>
     <Header />
 
+    <main v-if="isMobile" class="mobile-library">
+      <header class="mobile-library__heading"><p>情报与资料</p><h1>资料库</h1><span>从检索发现线索，沉淀重点与专题</span></header>
+      <nav class="mobile-library__entries" aria-label="资料入口">
+        <button v-for="entry in mobileEntries" :key="entry.path" :disabled="!hasPerm(entry.permission.access)" @click="router.push(entry.path)">
+          <Icon :icon="entry.icon" /><strong>{{ entry.label === '专题' ? '专题 Wiki' : entry.label === '重点' ? '重点实体' : entry.label === '证据' ? '证据链' : '情报检索' }}</strong><span>{{ entryDescriptions[entry.path] }}</span><Icon icon="mdi:arrow-top-right" class="mobile-library__entry-arrow" />
+        </button>
+      </nav>
+      <section v-if="hasPerm(PERM.pages.target.highlights.visible)" class="mobile-library__recent" aria-labelledby="library-recent-title">
+        <div class="mobile-library__section-title"><div><h2 id="library-recent-title">近期重点资料</h2><p>按原文编辑时间排序</p></div><router-link v-if="hasPerm(PERM.pages.target.highlights.access)" to="/target/highlights">查看全部<Icon icon="mdi:chevron-right" /></router-link></div>
+        <div v-if="!canPreview" class="mobile-library__state" role="status">暂无查阅重点资料的权限</div>
+        <div v-else-if="highlightError" class="mobile-library__state" role="alert"><Icon icon="mdi:cloud-alert-outline" /><p>{{ highlightError }}</p><el-button @click="loadHighlightPreview">重新加载</el-button></div>
+        <div v-else-if="highlightLoading && !highlightItems.length" class="mobile-library__state" role="status"><el-skeleton :rows="5" animated /><p>正在加载重点资料…</p></div>
+        <div v-else-if="!highlightLoading && !highlightItems.length" class="mobile-library__state" role="status"><Icon icon="mdi:star-outline" /><p>还没有重点资料</p><span>在检索结果或正文页标记重点，方便下次继续阅读。</span></div>
+        <div v-else class="mobile-library__list" :aria-busy="highlightLoading"><MobileHighlightCard v-for="entity in highlightItems" :key="`${entity.entity_type}:${entity.uuid}`" :entity="entity" /></div>
+      </section>
+    </main>
+    <template v-else>
     <!-- 英雄区域 -->
      <!-- TODO: 暂时的占位页面，内容还需要进一步调整 -->
     <section class="bg-linear-to-br from-blue-50 to-white py-12">
@@ -328,24 +345,37 @@
         </div>
       </div>
     </section>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
 import { searchApi } from '@/api/search'
 import { formatDateTime as formatDateTimeUtil } from '@/utils/action/formatters'
+import MobileHighlightCard from '@/components/target/MobileHighlightCard.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import { hasPerm, hasAll } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
+import { KNOWLEDGE_DESTINATIONS } from '@/utils/knowledgeNavigation'
 
 defineOptions({ name: 'TargetManagement' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const mobileEntries = computed(() => KNOWLEDGE_DESTINATIONS.filter(entry => hasPerm(entry.permission.visible)))
+const entryDescriptions = { '/search': '搜索全部情报材料', '/target/highlights': '继续阅读重要线索', '/target/wiki': '查阅专题与引用', '/evidence/chains': '追溯材料之间的关联' }
+const canPreview = computed(() => hasAll([PERM.pages.target.access, PERM.pages.target.highlights.visible, PERM.pages.target.highlights.access, PERM.operations.search.entity.execute]))
 const statsTimeRange = ref('week')
 const highlightLoading = ref(false)
 const highlightItems = ref([])
+const highlightError = ref('')
+let previewSequence = 0
+let active = true
 
 function formatHighlightDate(val) {
   return formatDateTimeUtil(val) || '—'
@@ -377,9 +407,21 @@ function getDetailRoute(entityType, uuid) {
   return `/details/${entityType}/${uuid}`
 }
 
+/**
+ * 获取真实重点材料预览，返回资料入口时刷新且忽略过期响应。
+ * @returns {Promise<void>} 更新当前预览或显示可重试的错误状态。
+ */
 async function loadHighlightPreview() {
+  if (!active) return
+  const sequence = ++previewSequence
+  if (!canPreview.value) {
+    highlightItems.value = []
+    highlightLoading.value = false
+    return
+  }
   try {
     highlightLoading.value = true
+    highlightError.value = ''
     const params = {
       page: 1,
       page_size: 6,
@@ -389,23 +431,25 @@ async function loadHighlightPreview() {
       sort_order: 'desc'
     }
     const response = await searchApi.searchEntity(params)
-    if (response.code === 0 && response.data) {
-      highlightItems.value = response.data.items || []
-    } else {
-      highlightItems.value = []
-    }
+    if (!active || sequence !== previewSequence) return
+    if (response?.code !== 0 || !response.data) throw new Error('重点资料加载失败')
+    highlightItems.value = response.data.items || []
   } catch (err) {
+    if (!active || sequence !== previewSequence) return
     console.error('加载重点实体预览失败:', err)
-    ElMessage.error('重点实体加载失败，请稍后重试')
+    highlightError.value = '重点资料加载失败，请重试'
+    if (!isMobile.value) ElMessage.error('重点实体加载失败，请稍后重试')
     highlightItems.value = []
   } finally {
-    highlightLoading.value = false
+    if (sequence === previewSequence) highlightLoading.value = false
   }
 }
 
-onMounted(() => {
-  loadHighlightPreview()
-})
+onMounted(loadHighlightPreview)
+onActivated(() => { if (!active) { active = true; return loadHighlightPreview() } })
+onDeactivated(() => { active = false; previewSequence++; highlightLoading.value = false })
+onBeforeUnmount(() => { active = false; previewSequence++ })
+watch(canPreview, () => { if (active) loadHighlightPreview() })
 const targetStats = ref([
         {
           type: '网络安全',
@@ -449,4 +493,30 @@ const targetStats = ref([
         }
       ])
 </script>
+
+<style scoped>
+.mobile-library { max-width: 767px; margin: auto; padding: 24px 16px 16px; }
+.mobile-library__heading { margin-bottom: 24px; }
+.mobile-library__heading > p { margin: 0 0 8px; color: #2563eb; font-size: 12px; font-weight: 600; }
+.mobile-library__heading h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.3; color: #0f172a; font-weight: 750; }
+.mobile-library__heading > span { font-size: 13px; color: #64748b; }
+.mobile-library__entries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mobile-library__entries button { position: relative; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 16px 12px; text-align: left; background: white; border: 1px solid #e2e8f0; border-radius: 16px; }
+.mobile-library__entries button > svg:first-child { color: #2563eb; font-size: 24px; margin-bottom: 12px; }
+.mobile-library__entries strong { font-size: 15px; color: #0f172a; margin-bottom: 5px; }
+.mobile-library__entries span { font-size: 11px; line-height: 1.6; color: #64748b; overflow-wrap: anywhere; }
+.mobile-library__entry-arrow { position: absolute; right: 12px; top: 17px; color: #94a3b8; font-size: 16px; }
+.mobile-library__entries button:disabled { opacity: .45; }
+.mobile-library__entries button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.mobile-library__recent { margin-top: 28px; }
+.mobile-library__section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+.mobile-library__section-title h2 { color: #0f172a; font-size: 17px; font-weight: 700; margin: 0; }
+.mobile-library__section-title p { margin: 5px 0 0; color: #94a3b8; font-size: 12px; }
+.mobile-library__section-title a { display: flex; align-items: center; min-height: 44px; color: #2563eb; font-size: 12px; white-space: nowrap; }
+.mobile-library__state { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 28px 16px; color: #64748b; font-size: 14px; text-align: center; border: 1px solid #e2e8f0; border-radius: 16px; background: white; }
+.mobile-library__state > svg { color: #94a3b8; font-size: 34px; }
+.mobile-library__state span { font-size: 12px; line-height: 1.7; }
+.mobile-library__list { display: grid; gap: 12px; }
+.mobile-library__list[aria-busy=true] { opacity: .6; }
+</style>
 

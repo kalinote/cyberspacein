@@ -1,6 +1,32 @@
 <template>
   <div>
     <Header />
+    <main v-if="isMobile" class="mobile-action-page">
+      <h1>行动任务</h1>
+      <p class="mobile-action-intro">优先跟进运行中的行动，查看异常和执行结果。</p>
+      <div class="mobile-action-shortcuts">
+        <router-link v-if="hasPerm(PERM.pages.action.history.access)" to="/action/history">全部行动与异常</router-link>
+        <router-link v-if="hasPerm(PERM.pages.action.tasks.access)" to="/action/tasks">定时任务</router-link>
+      </div>
+      <div class="mobile-action-heading"><h2>正在运行 · {{ runningActions.length }}</h2><el-button v-if="hasPerm(PERM.operations.action.instance.read)" :loading="loadingRunningActions" @click="fetchRunningActions">刷新</el-button></div>
+      <el-alert v-if="mobileRunningError" :title="mobileRunningError" type="error" :closable="false" show-icon class="mb-4" />
+      <div v-loading="loadingRunningActions" class="mobile-action-list">
+        <MobileActionCard v-for="action in runningActions" :key="action.id" :action="action" :busy="mobileBusyId === action.id" :disabled="Boolean(mobileBusyId)"
+          @view="viewActionDetail($event.id)" @operate="operateAction" />
+        <el-empty v-if="!loadingRunningActions && !mobileRunningError && !runningActions.length" :description="hasPerm(PERM.operations.action.instance.read) ? '暂无正在执行的行动' : '暂无权限查看行动'" :image-size="72" />
+      </div>
+      <div class="mobile-action-heading"><h2>从置顶蓝图启动</h2><router-link v-if="hasPerm(PERM.pages.action.blueprints.access)" class="text-sm text-blue-600" to="/action/blueprints">全部蓝图</router-link></div>
+      <el-alert v-if="mobileBlueprintError" :title="mobileBlueprintError" type="error" :closable="false" show-icon class="mb-4"><el-button @click="fetchCommonBlueprints">重新加载</el-button></el-alert>
+      <div v-loading="loadingBlueprints" class="mobile-action-list">
+        <article v-for="blueprint in commonBlueprints" :key="blueprint.id" class="mobile-blueprint-card">
+          <h3>{{ blueprint.title }}</h3><p>{{ blueprint.taskGoal || '使用此蓝图创建行动' }}</p>
+          <span>{{ blueprint.defaultSchedulingMode === 'streaming' ? '异步执行' : '同步执行' }}</span>
+          <el-button v-if="hasPerm(PERM.operations.action.instance.execute)" type="primary" :loading="actionStarting" @click="createActionFromBlueprint(blueprint)">启动行动</el-button>
+        </article>
+        <el-empty v-if="!loadingBlueprints && !mobileBlueprintError && !commonBlueprints.length" description="暂无置顶蓝图" :image-size="64" />
+      </div>
+    </main>
+    <template v-else>
     
     <!-- 英雄区域 -->
     <section class="bg-linear-to-br from-blue-50 to-white py-12">
@@ -312,6 +338,7 @@
         </div>
       </div>
     </section>
+    </template>
     <!-- 蓝图流程图弹窗 -->
     <BlueprintFlowDialog
       v-model="blueprintDialogVisible"
@@ -320,6 +347,7 @@
 
     <!-- 模板参数输入弹窗 -->
     <TemplateParamsDialog
+      :class="{ 'mobile-action-run-dialog': isMobile }"
       v-model="templateParamsDialogVisible"
       :blueprint-id="selectedBlueprintForRun?.id"
       :debug="selectedRunDebug"
@@ -362,7 +390,7 @@
 </template>
 
 <script setup>
-import { ref, onActivated } from 'vue'
+import { ref, onActivated, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -378,10 +406,16 @@ import { ACTION_STATUS, getActionStatusIcon, cronToDescription, formatDateTime, 
 import { buildActionRunRequest } from '@/utils/action/run'
 import { PERM } from '@/utils/permissions'
 import { hasPerm } from '@/utils/permissionKit'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileActionCard from '@/components/action/mobile/MobileActionCard.vue'
+import { useMobileActionOperations } from '@/components/action/mobile/actionOperations'
+import '@/components/action/mobile/mobile-action.css'
 
 defineOptions({ name: 'Action' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const { busyId: mobileBusyId, operateAction } = useMobileActionOperations({ onUpdated: () => fetchRunningActions() })
 const blueprintDialogVisible = ref(false)
 const selectedBlueprintId = ref(null)
 const templateParamsDialogVisible = ref(false)
@@ -401,6 +435,8 @@ const revisionsLoading = ref(false)
 const revisions = ref([])
 const loadingRunningActions = ref(false)
 const loadingBlueprints = ref(false)
+const mobileRunningError = ref('')
+const mobileBlueprintError = ref('')
 const runningActions = ref([])
 const loadingSchedules = ref(false)
 const enabledSchedules = ref([])
@@ -655,6 +691,7 @@ async function fetchRunningActions() {
       totalPages = result.total_pages
       page += 1
     } while (page <= totalPages)
+    mobileRunningError.value = ''
     runningActions.value = items.map(item => ({
       ...item,
       startTime: item.start_at || null,
@@ -667,6 +704,7 @@ async function fetchRunningActions() {
     }))
   } catch (error) {
     console.error('获取行动列表失败:', error)
+    mobileRunningError.value = '运行中的行动加载失败，请点击刷新重试。'
     ElMessage.error('获取正在运行的行动失败')
     runningActions.value = []
   } finally {
@@ -729,6 +767,7 @@ async function fetchCommonBlueprints() {
       page += 1
     } while (page <= totalPages)
 
+    mobileBlueprintError.value = ''
     commonBlueprints.value = items.map(item => {
       return {
         id: item.id,
@@ -750,6 +789,7 @@ async function fetchCommonBlueprints() {
     })
   } catch (error) {
     ElMessage.error('获取行动蓝图失败')
+    mobileBlueprintError.value = '置顶蓝图加载失败，请重试。'
     commonBlueprints.value = []
   } finally {
     loadingBlueprints.value = false
@@ -848,6 +888,13 @@ async function viewBlueprint(blueprint) {
 onActivated(fetchRunningActions)
 onActivated(fetchEnabledSchedules)
 onActivated(fetchCommonBlueprints)
+onDeactivated(() => {
+  blueprintDialogVisible.value = false
+  templateParamsDialogVisible.value = false
+  publishDialogVisible.value = false
+  encapsulateDialogVisible.value = false
+  revisionDialogVisible.value = false
+})
 </script>
 
 

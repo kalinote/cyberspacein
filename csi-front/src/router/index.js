@@ -42,7 +42,7 @@ const router = createRouter({
     {
       path: '/evidence/chains', name: 'evidence-list',
       component: () => import('../views/evidence/EvidenceList.vue'),
-      meta: { requiresAuth: true, pagePermission: PERM.pages.evidence.access }
+      meta: { keepAlive: true, cacheName: 'EvidenceList', requiresAuth: true, pagePermission: PERM.pages.evidence.access }
     },
     {
       path: '/evidence/chains/:id', name: 'evidence-editor',
@@ -175,6 +175,16 @@ const router = createRouter({
       name: 'wiki-page-list',
       component: WikiPageList,
       meta: { keepAlive: true, requiresAuth: true, pagePermission: PERM.pages.target.wiki.access }
+    },
+    {
+      path: '/target/wiki/new', name: 'wiki-create',
+      component: () => import('../views/wiki/WikiEditor.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.target.wiki.access }
+    },
+    {
+      path: '/target/wiki/:id/edit', name: 'wiki-editor',
+      component: () => import('../views/wiki/WikiEditor.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.target.wiki.access }
     },
     {
       // 分析引擎

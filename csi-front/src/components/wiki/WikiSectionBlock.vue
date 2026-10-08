@@ -45,7 +45,8 @@
       </div>
 
       <div v-if="node.infobox && !isEditingContent" class="mb-2">
-        <WikiInfobox :infobox="node.infobox" />
+        <details v-if="isMobile" class="wiki-mobile-infobox"><summary>{{ node.infobox.caption || '专题信息' }} · 查看资料卡</summary><WikiInfobox :infobox="node.infobox" /></details>
+        <WikiInfobox v-else :infobox="node.infobox" />
       </div>
 
       <template v-if="isEditingContent">
@@ -85,6 +86,9 @@ import MonacoEditor from '@/components/MonacoEditor.vue'
 import WikiInfobox from '@/components/wiki/WikiInfobox.vue'
 import WikiMarkdown from '@/components/wiki/WikiMarkdown.vue'
 import { WIKI_EDITOR_KEY } from '@/components/wiki/wikiEditorKey.js'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+
+const { isMobile } = useMobileViewport()
 
 /**
  * @typedef {import('@/utils/wikiContent.js').WikiContentNode} WikiContentNode
@@ -243,6 +247,10 @@ const SectionEditActions = defineComponent({
 </script>
 
 <style scoped>
+.wiki-mobile-infobox{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:18px;background:#f8fafc;display:flow-root}
+.wiki-mobile-infobox summary{font-size:14px;font-weight:600;line-height:24px;min-height:30px;cursor:pointer;color:#475569}
+.wiki-mobile-infobox :deep(.wiki-infobox){float:none;width:100%;margin:10px 0 0;overflow-wrap:anywhere}
+.wiki-mobile-infobox :deep(table){table-layout:fixed}
 .wiki-section-body--editing {
   display: flow-root;
   width: 100%;

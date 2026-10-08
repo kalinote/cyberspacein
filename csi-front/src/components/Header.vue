@@ -1,5 +1,5 @@
 <template>
-  <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-blue-100 transition-all duration-300">
+  <header v-if="!isMobile" class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-blue-100 transition-all duration-300">
     <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex flex-wrap justify-between items-center gap-x-4 lg:gap-x-6">
         <div class="contents lg:flex lg:min-w-0 lg:flex-1 lg:items-center">
@@ -238,10 +238,12 @@ import { authApi } from '@/api/auth'
 import { clearAuth, getAuthState } from '@/stores/auth'
 import { PERM } from '@/utils/permissions'
 import { noPerm, hasPerm } from '@/utils/permissionKit'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 
 defineOptions({ name: 'Header' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
 const route = useRoute()
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/cyberspacein-icon.png`
 const showActionDropdown = ref(false)

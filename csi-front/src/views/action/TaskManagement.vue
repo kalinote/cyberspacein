@@ -1,6 +1,25 @@
 <template>
   <div>
     <Header />
+    <main v-if="isMobile" class="mobile-action-page">
+      <h1>定时任务</h1>
+      <p class="mobile-action-intro">查看执行结果，管理已有调度计划。</p>
+      <div class="mobile-action-metrics">
+        <div v-for="metric in metricCards.filter(item => ['运行中', '失败', '部分完成'].includes(item.label))" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>
+      </div>
+      <div class="mobile-action-shortcuts">
+        <button type="button" @click="openTaskList('tasks')">全部执行记录</button>
+        <button type="button" @click="openTaskList('schedule')">调度计划</button>
+      </div>
+      <div class="mobile-action-heading"><h2>最近执行</h2><el-button :loading="loading" @click="fetchSummary">刷新</el-button></div>
+      <el-alert v-if="mobileSummaryError" :title="mobileSummaryError" type="error" :closable="false" show-icon class="mb-4" />
+      <div v-loading="loading" class="mobile-action-list">
+        <MobileActionCard v-for="run in summary.recent_runs" :key="run.action_id" :action="run" :busy="mobileBusyId === run.action_id" :disabled="Boolean(mobileBusyId)"
+          @view="router.push(`/action/${$event.action_id}`)" @operate="operateAction" />
+        <el-empty v-if="!loading && !mobileSummaryError && !summary.recent_runs.length" description="暂无定时任务执行记录" :image-size="72" />
+      </div>
+    </main>
+    <template v-else>
     <section class="bg-linear-to-br from-blue-50 to-white py-12">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -101,11 +120,12 @@
         </div>
       </div>
     </section>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -113,11 +133,18 @@ import { actionScheduleApi } from '@/api/actionSchedule'
 import { formatDateTime, formatDuration, getStatusTagType, getStatusText } from '@/utils/action'
 import { PERM } from '@/utils/permissions'
 import { hasPerm } from '@/utils/permissionKit'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileActionCard from '@/components/action/mobile/MobileActionCard.vue'
+import { useMobileActionOperations } from '@/components/action/mobile/actionOperations'
+import '@/components/action/mobile/mobile-action.css'
 
 defineOptions({ name: 'TaskManagement' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const { busyId: mobileBusyId, operateAction } = useMobileActionOperations({ onUpdated: () => fetchSummary() })
 const loading = ref(false)
+const mobileSummaryError = ref('')
 const summary = ref({
   schedule_count: 0,
   enabled_schedule_count: 0,
@@ -149,11 +176,15 @@ async function fetchSummary() {
   loading.value = true
   try {
     const response = await actionScheduleApi.getSummary()
-    if (response.code === 0 && response.data) summary.value = { ...summary.value, ...response.data }
+    if (response.code !== 0 || !response.data) throw new Error(response.message || '读取执行记录失败')
+    summary.value = { ...summary.value, ...response.data }
+    mobileSummaryError.value = ''
+  } catch {
+    mobileSummaryError.value = '执行记录更新失败，请点击刷新重试。'
   } finally {
     loading.value = false
   }
 }
 
-onMounted(fetchSummary)
+onActivated(fetchSummary)
 </script>
