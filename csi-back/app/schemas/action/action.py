@@ -43,7 +43,7 @@ class ActionInstanceBaseInfoResponse(BaseModel):
     paused_at: datetime | None = Field(default=None, description="行动最近一次暂停时间")
     finished_at: datetime | None = Field(default=None, description="行动实例化流程结束时间")
     duration: float = Field(description="行动执行时长(秒)")
-    progress: int = Field(description="行动实例化流程进度(%)")
+    progress: float = Field(description="行动实例化流程进度(%)")
     completed_steps: int = Field(description="已完成的节点数量")
     total_steps: int = Field(description="总节点数量")
     schedule_id: str | None = None
@@ -66,7 +66,7 @@ class ActionHistorySummaryResponse(BaseModel):
 class ActionNodeDetailResponse(BaseModel):
     node_instance_id: str | None = Field(default=None, description="节点实例ID")
     status: ActionInstanceNodeStatusEnum = Field(description="节点状态")
-    progress: int = Field(default=0, description="节点执行进度(%)")
+    progress: float = Field(default=0, description="节点执行进度(%)")
     start_at: datetime | None = Field(default=None, description="节点执行开始时间")
     finished_at: datetime | None = Field(default=None, description="节点执行结束时间")
     duration: float = Field(default=0, description="节点执行时长(秒)")

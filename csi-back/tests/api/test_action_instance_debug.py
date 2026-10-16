@@ -8,10 +8,14 @@ from fastapi import BackgroundTasks
 from app.api.v1.endpoints.action import instance as instance_endpoint
 from app.models.action.action import ActionInstanceModel
 from app.models.action.blueprint import ActionBlueprintModel
-from app.schemas.action.action import StartActionRequest
+from app.schemas.action.action import ActionNodeDetailResponse, StartActionRequest
 from app.schemas.action.sdk import SDKResultRequest
 from app.schemas.general import PageParamsSchema
-from app.schemas.constants import ActionFlowStatusEnum, ActionSchedulingModeEnum
+from app.schemas.constants import (
+    ActionFlowStatusEnum,
+    ActionInstanceNodeStatusEnum,
+    ActionSchedulingModeEnum,
+)
 from app.service.action import ActionInstanceService
 
 
@@ -240,8 +244,10 @@ async def test_retry_action_missing_created_action_does_not_start(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("progress", [0, 33.33, 66.67, 100.0])
 async def test_action_list_returns_debug_flag_with_old_action_fallback(
     monkeypatch,
+    progress: float,
 ) -> None:
     common = {
         "status": ActionFlowStatusEnum.RUNNING,
@@ -249,7 +255,7 @@ async def test_action_list_returns_debug_flag_with_old_action_fallback(
         "paused_at": None,
         "finished_at": None,
         "duration": 0,
-        "progress": 0,
+        "progress": progress,
         "finished_nodes_instance": [],
         "execution_plan_snapshot": SimpleNamespace(nodes=[]),
         "schedule_id": None,
@@ -289,10 +295,21 @@ async def test_action_list_returns_debug_flag_with_old_action_fallback(
     )
 
     assert [item.debug for item in response.items] == [True, False]
+    assert [item.progress for item in response.items] == [progress, progress]
     assert [item.scheduling_mode for item in response.items] == [
         ActionSchedulingModeEnum.BARRIER,
         ActionSchedulingModeEnum.BARRIER,
     ]
+
+
+def test_action_node_detail_preserves_fractional_progress() -> None:
+    """节点详情保留组件上报的小数进度。"""
+    detail = ActionNodeDetailResponse(
+        status=ActionInstanceNodeStatusEnum.RUNNING,
+        progress=12.5,
+    )
+
+    assert detail.model_dump(mode="json")["progress"] == 12.5
 
 
 @pytest.mark.asyncio

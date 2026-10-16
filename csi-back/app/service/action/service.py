@@ -1488,7 +1488,7 @@ class ActionInstanceService:
         *,
         _action: ActionInstanceModel | None = None,
     ) -> None:
-        """原子记录节点终态，并按数据库中的真实终态节点数刷新进度。"""
+        """原子记录节点终态，并按执行计划内的终态节点数刷新进度。"""
         action = _action
         if action is None:
             try:
@@ -1510,29 +1510,11 @@ class ActionInstanceService:
             if callable(save):
                 await save()
         try:
-            terminal_nodes = await ActionInstanceNodeModel.find(
-                {
-                    "action_id": action_id,
-                    "status": {
-                        "$in": [
-                            ActionInstanceNodeStatusEnum.COMPLETED,
-                            ActionInstanceNodeStatusEnum.FAILED,
-                            ActionInstanceNodeStatusEnum.CANCELLED,
-                            ActionInstanceNodeStatusEnum.TIMEOUT,
-                            ActionInstanceNodeStatusEnum.SKIPPED,
-                        ]
-                    },
-                }
-            ).to_list()
+            progress = await ActionInstanceService._calculate_action_progress(
+                action_id, action
+            )
         except CollectionWasNotInitialized:
             return
-        terminal_count = len(terminal_nodes)
-        executable_node_count = len(action.execution_plan_snapshot.nodes)
-        progress = (
-            round(terminal_count / executable_node_count * 100, 2)
-            if executable_node_count
-            else 100.0
-        )
         if callable(update):
             await update(
                 {
@@ -1540,6 +1522,34 @@ class ActionInstanceService:
                     "$set": {"updated_at": datetime.now()},
                 }
             )
+
+    @staticmethod
+    async def _calculate_action_progress(
+        action_id: str,
+        action: ActionInstanceModel,
+    ) -> float:
+        """按执行计划内节点的终态比例计算行动进度。"""
+        executable_node_ids = sorted(
+            {node.id for node in action.execution_plan_snapshot.nodes}
+        )
+        if not executable_node_ids:
+            return 100.0
+        terminal_count = await ActionInstanceNodeModel.find(
+            {
+                "action_id": action_id,
+                "node_id": {"$in": executable_node_ids},
+                "status": {
+                    "$in": [
+                        ActionInstanceNodeStatusEnum.COMPLETED,
+                        ActionInstanceNodeStatusEnum.FAILED,
+                        ActionInstanceNodeStatusEnum.CANCELLED,
+                        ActionInstanceNodeStatusEnum.TIMEOUT,
+                        ActionInstanceNodeStatusEnum.SKIPPED,
+                    ]
+                },
+            }
+        ).count()
+        return min(round(terminal_count / len(executable_node_ids) * 100, 2), 100.0)
 
     @staticmethod
     def _get_business_node_ids(action: ActionInstanceModel) -> set[str]:
@@ -5323,21 +5333,9 @@ class ActionInstanceService:
             reference_finalization_state = (
                 "failed" if failed_bridge is not None else "completed"
             )
-        executable_node_count = len(action.execution_plan_snapshot.nodes)
-        terminal_node_count = await ActionInstanceNodeModel.find(
-            {
-                "action_id": action_id,
-                "status": {
-                    "$in": [
-                        ActionInstanceNodeStatusEnum.COMPLETED,
-                        ActionInstanceNodeStatusEnum.FAILED,
-                        ActionInstanceNodeStatusEnum.CANCELLED,
-                        ActionInstanceNodeStatusEnum.TIMEOUT,
-                        ActionInstanceNodeStatusEnum.SKIPPED,
-                    ]
-                },
-            }
-        ).count()
+        progress = await ActionInstanceService._calculate_action_progress(
+            action_id, action
+        )
         now = datetime.now()
         claim = await ActionInstanceModel.find_one(
             {"_id": action_id, "status": ActionFlowStatusEnum.RUNNING}
@@ -5355,16 +5353,7 @@ class ActionInstanceService:
                         if action.start_at
                         else 0
                     ),
-                    "progress": (
-                        round(
-                            terminal_node_count
-                            / executable_node_count
-                            * 100,
-                            2,
-                        )
-                        if executable_node_count
-                        else 100.0
-                    ),
+                    "progress": progress,
                     "updated_at": now,
                     "reference_finalization_state": reference_finalization_state,
                     "reference_queue_lifecycle": "closing",

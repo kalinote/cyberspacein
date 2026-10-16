@@ -668,3 +668,89 @@ async def test_finish_action_partial_result_and_timeout_precedence(
         terminal_result.assert_awaited_once_with(action)
     else:
         terminal_result.assert_not_awaited()
+
+
+@pytest.mark.parametrize("entrypoint", ["record", "finish"])
+@pytest.mark.parametrize("debug", [False, True])
+@pytest.mark.parametrize("all_finished", [False, True])
+async def test_action_progress_counts_only_execution_plan_nodes(
+    monkeypatch,
+    entrypoint: str,
+    debug: bool,
+    all_finished: bool,
+) -> None:
+    """普通运行排除编译期跳过的节点，调试运行计入计划内的跳过节点。"""
+    plan_ids = ["source", "collector", "processor"]
+    if debug:
+        plan_ids.append("debug")
+    action = SimpleNamespace(
+        id="action-1",
+        status=ActionFlowStatusEnum.RUNNING,
+        start_at=datetime.now(),
+        update=AsyncMock(),
+        execution_plan_snapshot=SimpleNamespace(
+            nodes=[SimpleNamespace(id=node_id) for node_id in plan_ids],
+        ),
+    )
+    nodes = [
+        SimpleNamespace(node_id="source", status=ActionInstanceNodeStatusEnum.COMPLETED),
+        SimpleNamespace(node_id="collector", status=ActionInstanceNodeStatusEnum.FAILED),
+        SimpleNamespace(
+            node_id="processor",
+            status=(
+                ActionInstanceNodeStatusEnum.SKIPPED
+                if all_finished
+                else ActionInstanceNodeStatusEnum.RUNNING
+            ),
+        ),
+        SimpleNamespace(node_id="debug", status=ActionInstanceNodeStatusEnum.SKIPPED),
+    ]
+
+    def find_nodes(query):
+        """按调用方的节点与状态条件模拟数据库计数。"""
+        statuses = query["status"]
+        if isinstance(statuses, dict):
+            statuses = statuses["$in"]
+        else:
+            statuses = [statuses]
+        node_ids = query.get("node_id", {}).get("$in")
+        return _FindMany(
+            count=sum(
+                node.status in statuses
+                and (node_ids is None or node.node_id in node_ids)
+                for node in nodes
+            )
+        )
+
+    monkeypatch.setattr(ActionInstanceNodeModel, "find", staticmethod(find_nodes))
+    updates = []
+    monkeypatch.setattr(
+        ActionInstanceModel,
+        "find_one",
+        staticmethod(
+            lambda query: (
+                _FindOne(action)
+                if "status" not in query
+                else _FindOne(modified_count=1, updates=updates)
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        action_service.RuntimeDomainEventService,
+        "publish_action_terminal",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(action_service, "publish_action_status_observation", AsyncMock())
+    monkeypatch.setattr(ActionInstanceService, "cancel_reference_bridges", AsyncMock())
+    monkeypatch.setattr(ActionInstanceService, "cleanup_action_queues", AsyncMock())
+
+    if entrypoint == "record":
+        await ActionInstanceService._record_node_finished(
+            action.id, "collector-instance", _action=action
+        )
+        progress = action.update.await_args.args[0]["$max"]["progress"]
+    else:
+        assert await ActionInstanceService.finish_action(action.id) is True
+        progress = updates[0]["$set"]["progress"]
+
+    assert progress == (100.0 if all_finished else 75.0 if debug else 66.67)

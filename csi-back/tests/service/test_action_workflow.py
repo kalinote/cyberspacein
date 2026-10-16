@@ -1041,6 +1041,7 @@ async def test_missing_value_output_aborts_edge_and_notifies_debug_runtime(
         execution_plan_snapshot=SimpleNamespace(
             public_interface_snapshot={"outputs": []},
             edges=[edge],
+            nodes=[],
         ),
         finished_nodes_instance=[],
         invocation_outputs={},
@@ -1186,7 +1187,7 @@ async def test_cascade_cancel_aborts_intermediate_reference_producer(
     )
     action = SimpleNamespace(
         id="action-1",
-        execution_plan_snapshot=SimpleNamespace(edges=[edge]),
+        execution_plan_snapshot=SimpleNamespace(edges=[edge], nodes=[]),
     )
     target_updates = []
 
@@ -2240,6 +2241,7 @@ async def test_reference_public_output_is_not_written_as_value(monkeypatch):
         id="action-1",
         status=ActionFlowStatusEnum.PAUSED,
         execution_plan_snapshot=SimpleNamespace(
+            nodes=[],
             public_interface_snapshot={
                 "outputs": [
                     {
@@ -2451,6 +2453,7 @@ async def test_finish_node_resolves_value_output_from_current_node_first(
         status=ActionFlowStatusEnum.PAUSED,
         execution_plan_snapshot=SimpleNamespace(
             public_interface_snapshot={"outputs": []},
+            nodes=[],
         ),
         finished_nodes_instance=[],
         invocation_outputs={},
