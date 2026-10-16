@@ -56,12 +56,12 @@
         <div v-else class="mobile-results-list" v-loading="loading">
           <article v-for="result in searchResults" :key="result.uuid" class="mobile-result-card">
             <div class="mobile-result-tags">
-              <el-tag size="small" effect="plain">{{ result.entity_type === 'forum' ? '论坛' : '文章' }}</el-tag>
+              <el-tag size="small" effect="plain">{{ entityTypeLabels[result.entity_type] || result.entity_type }}</el-tag>
               <el-tag :type="getConfidenceInfo(result.confidence).type" size="small">{{ getConfidenceInfo(result.confidence).text }}置信度</el-tag>
               <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
               <el-tag v-if="result.is_highlighted" type="warning" size="small">重点</el-tag>
             </div>
-            <router-link v-if="hasPerm(result.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(result.entity_type, result.uuid)" class="mobile-result-body">
+            <router-link v-if="getDetailRoute(result.entity_type, result.uuid) && hasPerm(result.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(result.entity_type, result.uuid)" class="mobile-result-body">
               <h2 class="search-highlight" v-html="sanitizeHtml(result.title || '无标题')"></h2>
               <p class="search-highlight" v-html="sanitizeHtml(truncateContent(result.clean_content, 140)) || '暂无正文摘要'"></p>
             </router-link>
@@ -103,6 +103,7 @@
             <el-checkbox-group v-model="mobileFilterDraft.entityType">
               <el-checkbox-button value="article">文章</el-checkbox-button>
               <el-checkbox-button value="forum">论坛</el-checkbox-button>
+              <el-checkbox-button value="post">贴文</el-checkbox-button>
             </el-checkbox-group>
           </fieldset>
           <fieldset>
@@ -152,13 +153,13 @@
 
       <MobileSheet v-model="mobileResultActionsVisible" title="情报操作">
         <div v-if="mobileSelectedResult" class="mobile-result-actions">
-          <AddToEvidenceButton :entity="mobileSelectedResult" />
-          <el-button text :disabled="!hasPerm(PERM_HIGHLIGHT?.update)" :loading="mobileSelectedResult._highlightLoading"
+          <AddToEvidenceButton v-if="mobileSelectedResult.entity_type !== 'post'" :entity="mobileSelectedResult" />
+          <el-button v-if="mobileSelectedResult.entity_type !== 'post'" text :disabled="!hasPerm(PERM_HIGHLIGHT?.update)" :loading="mobileSelectedResult._highlightLoading"
             @click="toggleHighlight(mobileSelectedResult)">
             <Icon :icon="mobileSelectedResult.is_highlighted ? 'mdi:star' : 'mdi:star-outline'" />
             {{ mobileSelectedResult.is_highlighted ? '取消重点目标' : '设置重点目标' }}
           </el-button>
-          <router-link v-if="hasPerm(mobileSelectedResult.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid)"
+          <router-link v-if="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid) && hasPerm(mobileSelectedResult.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid)"
             @click="mobileResultActionsVisible = false">查看详情<Icon icon="mdi:arrow-right" /></router-link>
           <router-link v-if="mobileSelectedResult.platform_id" :to="`/details/platform/${mobileSelectedResult.platform_id}`"
             @click="mobileResultActionsVisible = false">查看来源平台</router-link>
@@ -446,14 +447,15 @@
               class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
               <div class="flex justify-between items-start mb-4">
                 <div class="flex flex-wrap items-center gap-2">
-                  <el-tag size="small">{{ result.section }}</el-tag>
+                  <el-tag size="small" effect="plain">{{ entityTypeLabels[result.entity_type] || result.entity_type }}</el-tag>
+                  <el-tag v-if="result.section" size="small">{{ result.section }}</el-tag>
                   <el-tag :type="getConfidenceInfo(result.confidence).type" size="small">{{ getConfidenceInfo(result.confidence).text }}</el-tag>
                   <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
                 </div>
                 <span class="text-sm text-gray-500 shrink-0">{{ formatDateTime(result.update_at) }}</span>
               </div>
-              <h3 class="text-lg font-bold text-gray-900 mb-3 search-highlight" v-html="result.title"></h3>
-              <p class="text-gray-600 mb-4 search-highlight" v-html="truncateContent(result.clean_content, 200) || '暂无分析内容'"></p>
+              <h3 class="text-lg font-bold text-gray-900 mb-3 search-highlight" v-html="sanitizeHtml(result.title)"></h3>
+              <p class="text-gray-600 mb-4 search-highlight" v-html="sanitizeHtml(truncateContent(result.clean_content, 200)) || '暂无分析内容'"></p>
               <div class="flex flex-wrap gap-2 mb-4">
                 <el-tag v-for="tag in result.keywords" :key="tag" size="small" type="info" effect="plain">
                   {{ tag }}
@@ -475,8 +477,9 @@
                   <span v-else class="font-medium">{{ result.author_name }}</span>
                 </span>
                 <div class="flex items-center space-x-4">
-                  <AddToEvidenceButton :entity="result" />
+                  <AddToEvidenceButton v-if="result.entity_type !== 'post'" :entity="result" />
                   <el-button 
+                    v-if="result.entity_type !== 'post'"
                     type="primary" 
                     link
                     @click="toggleHighlight(result)"
@@ -488,7 +491,7 @@
                     </template>
                     {{ result.is_highlighted ? '取消重点目标' : '设置重点目标' }}
                   </el-button>
-                  <router-link v-if="canViewResultDetail" :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
+                  <router-link v-if="getDetailRoute(result.entity_type, result.uuid) && canViewResultDetail" :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
                     查看详情
                     <Icon icon="mdi:arrow-right" class="ml-1" />
                   </router-link>
@@ -634,6 +637,7 @@ const nsfwFilter = ref(1)
 const aigcFilter = ref(1)
 const timeRange = ref('all')
 const categories = ref([])
+const entityTypeLabels = { article: '文章', forum: '论坛', post: '贴文' }
 const sources = ref([])
 const priorities = ref([])
 const sortBy = ref('relevance')
@@ -657,7 +661,7 @@ const mobileFilterCount = computed(() => Number(timeRange.value !== 'all') + cat
   + Number(nsfwFilter.value !== 1) + Number(aigcFilter.value !== 1))
 const mobileFilterSummary = computed(() => [
   timeRange.value !== 'all' ? filterOptions.timeRange.find(option => option.value === timeRange.value)?.label : '',
-  ...categories.value.map(category => category === 'forum' ? '论坛' : '文章'),
+  ...categories.value.map(category => entityTypeLabels[category] || category),
   nsfwFilter.value !== 1 ? formatNsfwTooltip(nsfwFilter.value) : '',
   aigcFilter.value !== 1 ? formatAigcTooltip(aigcFilter.value) : ''
 ].filter(Boolean).join(' · '))
@@ -672,7 +676,8 @@ const filterOptions = {
   ],
   categories: [
     { value: 'forum', label: 'Forum' },
-    { value: 'article', label: 'Article' }
+    { value: 'article', label: 'Article' },
+    { value: 'post', label: '贴文' }
   ],
   sources: [
     { value: '明网', label: '明网' },
@@ -1031,6 +1036,7 @@ function truncateContent(content, maxLength) {
     }
 
     function getDetailRoute(entityType, uuid) {
+      if (!uuid || !['article', 'forum'].includes(entityType)) return ''
       return `/details/${entityType}/${uuid}`
     }
 

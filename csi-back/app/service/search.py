@@ -1,4 +1,5 @@
 import asyncio
+from html import escape
 from typing import Union
 
 from loguru import logger
@@ -18,6 +19,9 @@ from app.utils.search import merge_highlight_tags, has_keywords, rrf_merge
 from app.utils.embedding import embed_query_async
 
 logger = logger.bind(name=__name__)
+
+# 贴文先开放检索，详情及其他实体操作继续使用现有类型约束。
+SEARCH_INDEXES = [*ALL_INDEX, "post"]
 
 
 def _get_es_total(result: dict) -> int:
@@ -48,7 +52,33 @@ def build_filter_must(params: SearchFilterParams) -> list:
             range_clause["gte"] = params.start_at.isoformat()
         if params.end_at is not None:
             range_clause["lte"] = params.end_at.isoformat()
-        must.append({"range": {"last_edit_at": range_clause}})
+        date_filter = {"range": {"last_edit_at": range_clause}}
+        if not params.entity_type or "post" in params.entity_type:
+            date_filter = {
+                "bool": {
+                    "should": [
+                        date_filter,
+                        {
+                            "bool": {
+                                "filter": [{"term": {"entity_type.keyword": "post"}}],
+                                "must_not": [{"exists": {"field": "last_edit_at"}}],
+                                "should": [
+                                    {"range": {"publish_at": range_clause}},
+                                    {
+                                        "bool": {
+                                            "must_not": [{"exists": {"field": "publish_at"}}],
+                                            "filter": [{"range": {"crawled_at": range_clause}}],
+                                        }
+                                    },
+                                ],
+                                "minimum_should_match": 1,
+                            }
+                        },
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        must.append(date_filter)
     return must
 
 
@@ -69,6 +99,9 @@ async def hit_to_search_result(hit: dict) -> SearchResultSchema:
     clean_content = source_data.get("clean_content")
     if highlight_data.get("clean_content"):
         clean_content = merge_highlight_tags(highlight_data["clean_content"][0])
+    if source_data.get("entity_type") == "post" and not title:
+        summary = " ".join(str(source_data.get("clean_content") or "").split())
+        title = escape(summary[:80] + ("…" if len(summary) > 80 else "")) or "贴文"
     keywords_hits = 0
     if highlight_data:
         for fragments in highlight_data.values():
@@ -81,13 +114,13 @@ async def hit_to_search_result(hit: dict) -> SearchResultSchema:
         data_version=source_data.get("data_version", 0),
         platform=platform_name or "",
         platform_id=platform_id,
-        section=source_data.get("section", ""),
+        section=source_data.get("section") or "",
         update_at=parse_datetime(source_data.get("update_at")),
         author_uuid=None,
-        author_name=source_data.get("author_name", ""),
+        author_name=source_data.get("author_name") or "",
         nsfw=source_data.get("nsfw", False),
         aigc=source_data.get("aigc", False),
-        keywords=source_data.get("keywords", []),
+        keywords=source_data.get("keywords") or [],
         title=title,
         clean_content=clean_content,
         confidence=source_data.get("confidence", 1),
@@ -167,19 +200,24 @@ def hits_to_tool_search_hits(hits: list) -> list[EntitySearchToolHitSchema]:
 def _apply_sort_to_body(body: dict, params: SearchFilterParams) -> None:
     if params.sort_by == "relevance":
         return
+    sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
     if params.sort_by in ["last_edit_at", "time"]:
-        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
         body["sort"] = [
-            {"last_edit_at": {"order": sort_order, "missing": "_last"}},
-            {"publish_at": {"order": sort_order, "missing": "_last"}},
+            {"last_edit_at": {"order": sort_order, "missing": "_last", "unmapped_type": "date"}},
+            {"publish_at": {"order": sort_order, "missing": "_last", "unmapped_type": "date"}},
+            {"crawled_at": {"order": sort_order, "missing": "_last", "unmapped_type": "date"}},
         ]
     elif params.sort_by == "publish_at":
-        body["sort"] = [{"publish_at": {"order": "desc", "missing": "_last"}}]
+        body["sort"] = [{"publish_at": {"order": sort_order, "missing": "_last", "unmapped_type": "date"}}]
+    elif params.sort_by == "priority":
+        body["sort"] = [
+            {"confidence": {"order": "desc", "missing": "_last", "unmapped_type": "double"}},
+            {"crawled_at": {"order": "desc", "missing": "_last", "unmapped_type": "date"}},
+        ]
     elif params.sort_by == "crawled_at":
-        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
-        body["sort"] = [{"crawled_at": {"order": sort_order, "missing": "_last"}}]
+        body["sort"] = [{"crawled_at": {"order": sort_order, "missing": "_last", "unmapped_type": "date"}}]
     else:
-        body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last"}}]
+        body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last", "unmapped_type": "date"}}]
 
 
 def keyword_list_query_body(
@@ -268,21 +306,10 @@ async def search_filter_only(es, params: EntitySearchRequestSchema) -> PageRespo
         "size": params.page_size
     }
     
-    if params.sort_by == "relevance":
-        # 预留
-        pass
-    elif params.sort_by in ["last_edit_at", "time"]:
-        sort_order = params.sort_order if params.sort_order in ["asc", "desc"] else "desc"
-        query_body["sort"] = [
-            {"last_edit_at": {"order": sort_order, "missing": "_last"}},
-            {"publish_at": {"order": sort_order, "missing": "_last"}}
-        ]
-    elif params.sort_by == "publish_at":
-        query_body["sort"] = [{"publish_at": {"order": "desc", "missing": "_last"}}]
-    elif params.sort_by == "crawled_at":
-        query_body["sort"] = [{"crawled_at": {"order": "desc", "missing": "_last"}}]
-        
-    result = await es.search(index=ALL_INDEX, body=query_body)
+    if params.sort_by is not None:
+        _apply_sort_to_body(query_body, params)
+
+    result = await es.search(index=SEARCH_INDEXES, body=query_body, ignore_unavailable=True, allow_no_indices=True)
     total = _get_es_total(result)
     hits = result["hits"]["hits"]
     items = await hits_to_search_results(hits)
@@ -292,7 +319,7 @@ async def search_filter_only(es, params: EntitySearchRequestSchema) -> PageRespo
 async def search_keyword(es, params: EntitySearchRequestSchema) -> PageResponseSchema[SearchResultSchema]:
     from_ = (params.page - 1) * params.page_size
     query_body = keyword_query_body(params, from_, params.page_size)
-    result = await es.search(index=ALL_INDEX, body=query_body)
+    result = await es.search(index=SEARCH_INDEXES, body=query_body, ignore_unavailable=True, allow_no_indices=True)
     total = _get_es_total(result)
     hits = result["hits"]["hits"]
     items = await hits_to_search_results(hits)
@@ -354,7 +381,7 @@ async def search_vector(es, params: EntitySearchRequestSchema, query_vector: lis
         "from": from_,
         "size": size
     }
-    result = await es.search(index=ALL_INDEX, body=query_body)
+    result = await es.search(index=SEARCH_INDEXES, body=query_body, ignore_unavailable=True, allow_no_indices=True)
     total = _get_es_total(result)
     hits = result["hits"]["hits"]
     items = await hits_to_search_results(hits)
@@ -393,8 +420,8 @@ async def search_entity(es, params: EntitySearchRequestSchema, instruct: str = "
         vector_body = {"query": {"knn": knn}, "from": 0, "size": hybrid_size}
 
         kw_result, vec_result = await asyncio.gather(
-            es.search(index=ALL_INDEX, body=keyword_body),
-            es.search(index=ALL_INDEX, body=vector_body)
+            es.search(index=SEARCH_INDEXES, body=keyword_body, ignore_unavailable=True, allow_no_indices=True),
+            es.search(index=SEARCH_INDEXES, body=vector_body, ignore_unavailable=True, allow_no_indices=True)
         )
 
         kw_total = _get_es_total(kw_result)

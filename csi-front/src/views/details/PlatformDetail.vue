@@ -464,19 +464,24 @@
                     </div>
                 </div>
 
-                <div class="space-y-6" v-loading="intelligenceLoading">
+                <div v-if="intelligenceError" class="text-center py-12 text-gray-500" role="alert">
+                    <p>{{ intelligenceError }}</p>
+                    <el-button @click="loadRelatedIntelligence">重新加载</el-button>
+                </div>
+                <div v-else class="space-y-6" v-loading="intelligenceLoading">
                     <div v-for="result in relatedIntelligence" :key="result.uuid"
                         class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
                         <div class="flex justify-between items-start mb-4">
                             <div class="flex flex-wrap items-center gap-2">
-                                <el-tag size="small">{{ result.section }}</el-tag>
+                                <el-tag size="small" effect="plain">{{ entityTypeLabels[result.entity_type] || result.entity_type }}</el-tag>
+                                <el-tag v-if="result.section" size="small">{{ result.section }}</el-tag>
                                 <el-tag :type="getConfidenceInfo(result.confidence).type" size="small">{{ getConfidenceInfo(result.confidence).text }}</el-tag>
                                 <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
                             </div>
                             <span class="text-sm text-gray-500 shrink-0">{{ formatDateTime(result.update_at) }}</span>
                         </div>
-                        <h3 class="text-lg font-bold text-gray-900 mb-3 search-highlight" v-html="result.title"></h3>
-                        <p class="text-gray-600 mb-4 search-highlight" v-html="truncateContent(result.clean_content, 200) || '暂无分析内容'"></p>
+                        <h3 class="text-lg font-bold text-gray-900 mb-3 search-highlight" v-html="sanitizeHtml(result.title)"></h3>
+                        <p class="text-gray-600 mb-4 search-highlight" v-html="sanitizeHtml(truncateContent(result.clean_content, 200)) || '暂无分析内容'"></p>
                         <div class="flex flex-wrap gap-2 mb-4">
                             <el-tag v-for="tag in result.keywords" :key="tag" size="small" type="info" effect="plain">
                                 {{ tag }}
@@ -499,6 +504,7 @@
                             </span>
                             <div class="flex items-center space-x-4">
                                 <el-button 
+                                    v-if="result.entity_type !== 'post'"
                                     type="primary" 
                                     link
                                     @click="toggleHighlight(result)"
@@ -509,7 +515,7 @@
                                     </template>
                                     {{ result.is_highlighted ? '取消重点目标' : '设置重点目标' }}
                                 </el-button>
-                                <router-link :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
+                                <router-link v-if="getDetailRoute(result.entity_type, result.uuid)" :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
                                     查看详情
                                     <Icon icon="mdi:arrow-right" class="ml-1" />
                                 </router-link>
@@ -554,6 +560,7 @@ import MobilePlatformDetail from '@/components/platform/MobilePlatformDetail.vue
 import { useMobileViewport } from '@/composables/useMobileViewport';
 import { PERM } from '@/utils/permissions';
 import { hasPerm } from '@/utils/permissionKit';
+import { sanitizeHtml } from '@/utils/markdown';
 
 defineOptions({ name: "PlatformDetail" });
 
@@ -605,6 +612,7 @@ const snapshots = ref([
     { date: "2025-01-01", image: "https://www.horosama.com/api/image_all/anime/1080p/pc/1D7777CC99E23305868038B5DD305e02.jpg" }
 ]);
 const relatedIntelligence = ref([]);
+const entityTypeLabels = { article: '文章', forum: '论坛', post: '贴文' };
 const intelligenceSortBy = ref("relevance");
 const intelligenceCurrentPage = ref(1);
 const intelligencePageSize = ref(5);
@@ -916,7 +924,7 @@ async function loadPlatformDetail() {
             if (response.code === 0 && response.data) {
                 relatedIntelligence.value = response.data.items || [];
                 intelligenceTotalResults.value = response.data.total || 0;
-            }
+            } else throw new Error(response.message || '关联情报加载失败');
         } catch (error) {
             if (!pageAlive || generation !== intelligenceGeneration || id !== platformId.value) return;
             intelligenceError.value = '关联情报加载失败，请重试';
@@ -958,6 +966,7 @@ async function loadPlatformDetail() {
         return { text: "高", type: "warning" };
     }
     function getDetailRoute(entityType, uuid) {
+        if (!uuid || !['article', 'forum'].includes(entityType)) return '';
         return `/details/${entityType}/${uuid}`;
     }
     async function toggleHighlight(result) {
