@@ -16,7 +16,85 @@ es_client = importlib.import_module("es_client")
 BulkFailure = es_client.BulkFailure
 BulkStoreResult = es_client.BulkStoreResult
 ElasticsearchClient = es_client.ElasticsearchClient
-validate_and_transform = importlib.import_module("validator").validate_and_transform
+validator = importlib.import_module("validator")
+validate_and_transform = validator.validate_and_transform
+
+
+class DateParsingTests(unittest.TestCase):
+    """验证系统标准时间与既有采集器时间格式的兼容性。"""
+
+    def test_iso8601_preserves_timezone_and_microseconds_without_warning(self):
+        """标准时区、微秒与 UTC 标识正常解析，不产生误报警。"""
+        cases = [
+            ("2026-10-16T07:44:38+00:00", "2026-10-16T07:44:38+00:00"),
+            ("2026-10-16T07:46:04.935303+00:00", "2026-10-16T07:46:04.935303+00:00"),
+            ("2026-10-16T15:44:38+08:00", "2026-10-16T15:44:38+08:00"),
+            ("2026-10-16T03:44:38.123456-04:00", "2026-10-16T03:44:38.123456-04:00"),
+            ("2026-10-16T07:44:38Z", "2026-10-16T07:44:38+00:00"),
+            ("2026-10-16T07:46:04.935303Z", "2026-10-16T07:46:04.935303+00:00"),
+            ("2026-10-16T07:44:38+0000", "2026-10-16T07:44:38+00:00"),
+        ]
+        with self.assertNoLogs(validator.logger, level="WARNING"):
+            for value, expected in cases:
+                with self.subTest(value=value):
+                    self.assertEqual(validator.parse_date(value), expected)
+
+    def test_existing_crawler_date_formats_remain_supported(self):
+        """既有采集器的空格、斜杠、短日期及紧凑时间格式保持兼容。"""
+        cases = [
+            ("2026-10-16 15:46:09", "2026-10-16T15:46:09"),
+            ("2026-10-16 15:46:09.123456", "2026-10-16T15:46:09.123456"),
+            ("2026-10-16T15:46:09", "2026-10-16T15:46:09"),
+            ("2026-10-16T15:46:09.123456", "2026-10-16T15:46:09.123456"),
+            ("2026-10-16 15:46", "2026-10-16T15:46:00"),
+            ("2026-10-16", "2026-10-16T00:00:00"),
+            ("2026/10/16 15:46:09", "2026-10-16T15:46:09"),
+            ("2026/10/16 15:46", "2026-10-16T15:46:00"),
+            ("2026/10/16", "2026-10-16T00:00:00"),
+            ("16/10/2026 15:46:09", "2026-10-16T15:46:09"),
+            ("16/10/2026 15:46", "2026-10-16T15:46:00"),
+            ("16/10/2026", "2026-10-16T00:00:00"),
+            ("16-10-2026 15:46:09", "2026-10-16T15:46:09"),
+            ("16-10-2026", "2026-10-16T00:00:00"),
+            ("20261016 15:46:09", "2026-10-16T15:46:09"),
+            ("20261016 15:46", "2026-10-16T15:46:00"),
+            ("20261016", "2026-10-16T00:00:00"),
+            ("2026.10.16 15:46:09", "2026-10-16T15:46:09"),
+            ("2026.10.16", "2026-10-16T00:00:00"),
+        ]
+        with self.assertNoLogs(validator.logger, level="WARNING"):
+            for value, expected in cases:
+                with self.subTest(value=value):
+                    self.assertEqual(validator.parse_date(value), expected)
+
+    def test_all_entity_types_preserve_date_fields(self):
+        """文章、论坛和贴文统一保留时间，不给无时区时间擅自补时区。"""
+        dates = {
+            "publish_at": "2026-10-16T15:44:38+08:00",
+            "crawled_at": "2026-10-16T07:46:04.935303+00:00",
+            "last_edit_at": "2026-10-16 15:45:00",
+            "highlighted_at": "2026-10-16T07:46:00Z",
+        }
+        with self.assertNoLogs(validator.logger, level="WARNING"):
+            for entity_type in ("article", "forum", "post"):
+                with self.subTest(entity_type=entity_type):
+                    result = validate_and_transform({
+                        "uuid": "date-verification", "entity_type": entity_type,
+                        **dates,
+                    })
+                    self.assertEqual(result["publish_at"], dates["publish_at"])
+                    self.assertEqual(result["crawled_at"], dates["crawled_at"])
+                    self.assertEqual(result["last_edit_at"], "2026-10-16T15:45:00")
+                    self.assertEqual(result["highlighted_at"], "2026-10-16T07:46:00+00:00")
+
+    def test_empty_and_invalid_dates_are_not_coerced(self):
+        """空值与非法时间不会被误转换为当前时间。"""
+        for value in (None, "", "   ", 42, False):
+            with self.subTest(value=value):
+                self.assertIsNone(validator.parse_date(value))
+        with self.assertLogs(validator.logger, level="WARNING"):
+            self.assertIsNone(validator.parse_date("日期无效"))
+            self.assertIsNone(validator.parse_date("2026-02-30T07:46:00+00:00"))
 
 
 class EntityStorageTests(unittest.TestCase):

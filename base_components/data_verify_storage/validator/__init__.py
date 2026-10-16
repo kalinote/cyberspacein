@@ -54,14 +54,14 @@ COMMON_DATE_FORMATS = [
 
 
 def parse_date(date_str: str) -> Optional[str]:
-    """将常见时间字符串转换为 ISO 8601 格式"""
+    """将常见时间转换为 ISO 8601，保留已有时区与微秒精度。"""
     if not date_str or not isinstance(date_str, str):
         return None
     raw = date_str.strip()
     if not raw:
         return None
     try:
-        # fromisoformat 补充支持带时区偏移（例如 +08:00）的标准 ISO 8601。
+        # 按系统通用解析方式支持时区偏移，并保留后续旧格式的兼容回退。
         dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         return dt.isoformat()
     except ValueError:
