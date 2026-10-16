@@ -2,6 +2,11 @@ import { INPUT_TYPE_DEFAULTS } from './constants'
 
 // 规范化输入默认值
 export const normalizeDefaultValue = (type, value) => {
+  if (type === 'key-value') {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? JSON.parse(JSON.stringify(value))
+      : {}
+  }
   if (value === undefined || value === null) {
     return INPUT_TYPE_DEFAULTS[type] ?? null
   }

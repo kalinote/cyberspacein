@@ -656,7 +656,13 @@
               <el-switch v-model="input.required" />
             </el-form-item>
             <el-form-item v-if="input.type !== 'comment'" :label="`默认值`" :prop="`inputs.${index}.default`">
-              <el-input v-model="input.default" placeholder="请输入默认值" />
+              <KeyValueEditor
+                v-if="input.type === 'key-value'"
+                :model-value="normalizeDefaultValue(input.type, input.default)"
+                :typed-values="input.custom_props?.typedValues ?? input.custom_props?.['typed-values'] ?? false"
+                @update:model-value="input.default = $event"
+              />
+              <el-input v-else v-model="input.default" placeholder="请输入默认值" />
             </el-form-item>
             <el-form-item v-if="input.type === 'select'" label="选项">
               <TagInput
@@ -1093,6 +1099,7 @@ import { actionApi } from '@/api/action'
 import { platformApi } from '@/api/platform'
 import { getPaginatedData } from '@/utils/request'
 import { INPUT_TYPES, formatDateTime, formatJson, getValueType, getValuePreview, isComplexValue, filterByKeyword, getDefaultData, ACTION_STATUS } from '@/utils/action'
+import { normalizeDefaultValue } from '@/utils/action/node'
 import GenericNode from '@/components/action/nodes/GenericNode.vue'
 import SubflowNode from '@/components/action/nodes/SubflowNode.vue'
 import EncapsulatedNodeManager from '@/components/action/EncapsulatedNodeManager.vue'
@@ -1548,7 +1555,9 @@ const loadNodeForEdit = async () => {
         label: i.label || '',
         description: i.description || '',
         required: !!i.required,
-        default: i.default !== undefined && i.default !== null ? String(i.default) : '',
+        default: i.type === 'key-value'
+          ? normalizeDefaultValue(i.type, i.default)
+          : (i.default !== undefined && i.default !== null ? String(i.default) : ''),
         options: Array.isArray(i.options) ? [...i.options] : [],
         custom_style: i.custom_style && typeof i.custom_style === 'object' ? { ...i.custom_style } : {},
         custom_props: i.custom_props && typeof i.custom_props === 'object' ? { ...i.custom_props } : {}
@@ -1707,7 +1716,9 @@ const handleSubmit = async () => {
           label: input.label,
           description: input.description || '',
           required: input.type === 'comment' ? false : (input.required || false),
-          default: input.type === 'comment' ? '' : (input.default || ''),
+          default: input.type === 'key-value'
+            ? normalizeDefaultValue(input.type, input.default)
+            : (input.type === 'comment' ? '' : (input.default || '')),
           custom_style: input.custom_style || {},
           custom_props: input.custom_props || {}
         }

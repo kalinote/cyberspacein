@@ -1,0 +1,4 @@
+csi-base-component-sdk>=2.7.0
+requests
+boto3
+python-dotenv>=1.0.0

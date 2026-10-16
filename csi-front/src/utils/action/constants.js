@@ -11,6 +11,7 @@ export const INPUT_TYPE_DEFAULTS = {
   'datetime': null,
   'tags': [],
   'conditions': [],
+  'key-value': {},
   'comment': ''
 }
 
@@ -18,7 +19,7 @@ export const INPUT_TYPE_DEFAULTS = {
 export const INPUT_TYPES = [
   'int', 'string', 'textarea', 'select', 'checkbox', 
   'checkbox-group', 'radio-group', 'boolean', 'datetime', 
-  'tags', 'conditions', 'comment'
+  'tags', 'conditions', 'key-value', 'comment'
 ]
 
 // 参数模式常量

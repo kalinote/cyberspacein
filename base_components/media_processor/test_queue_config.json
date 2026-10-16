@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "node_id": "media_processor_queue_test",
+    "action_id": "media_processor_queue_test"
+  },
+  "config": {
+    "max_workers": 4,
+    "download_size_limit": "50M",
+    "total_size_limit": "200M",
+    "media_timeout_seconds": 600,
+    "failure_policy": "continue"
+  },
+  "inputs": {
+    "data_in": { "type": "reference", "value": ["media_in"] }
+  },
+  "outputs": {
+    "data_out": { "type": "reference", "value": ["media_out"] }
+  }
+}
