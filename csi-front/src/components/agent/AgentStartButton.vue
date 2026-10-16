@@ -67,7 +67,7 @@
   <div :class="block ? 'w-full' : 'inline-flex'">
     <button
       type="button"
-      :disabled="disabled || loading || !agentOptions.length"
+      :disabled="disabled || loading || !agentOptions.length || !canStart"
       :class="buttonClass"
       @click="openDialog"
     >
@@ -87,11 +87,14 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onDeactivated, onUnmounted, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import AgentStartDialog from '@/components/agent/AgentStartDialog.vue'
 import { agentApi } from '@/api/agent'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import { hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
 
 const props = defineProps({
   buttonText: {
@@ -144,8 +147,11 @@ const emit = defineEmits(['started', 'update:loading'])
 
 const dialogVisible = ref(false)
 const internalLoading = ref(false)
+let startRequest = 0
 
 const loading = computed(() => props.loading || internalLoading.value)
+const { isMobile } = useMobileViewport()
+const canStart = computed(() => !isMobile.value || (hasPerm(PERM.operations.agent.agent.read) && hasPerm(PERM.operations.agent.agent.execute)))
 
 const PRIMARY_CLASS =
   'text-white font-medium transition-colors flex items-center justify-center gap-1.5 bg-[var(--el-color-primary)] hover:bg-[var(--el-color-primary-light-3)] disabled:bg-[var(--el-color-primary-light-5)] disabled:cursor-not-allowed rounded-md'
@@ -160,6 +166,7 @@ const buttonClass = computed(() => {
 })
 
 function openDialog() {
+  if (!canStart.value || props.disabled || loading.value) return
   if (!props.agentOptions.length) {
     ElMessage.warning('暂无可用的分析引擎')
     return
@@ -168,10 +175,13 @@ function openDialog() {
 }
 
 async function handleConfirm(payload) {
+  if (!canStart.value || props.disabled || loading.value) return
+  const requestId = ++startRequest
   internalLoading.value = true
   emit('update:loading', true)
   try {
     const response = await agentApi.startAgent(payload)
+    if (requestId !== startRequest) return
 
     if (response.code === 0 && response.data?.agent_id) {
       const sessionId = response.data.session_id
@@ -190,13 +200,26 @@ async function handleConfirm(payload) {
       ElMessage.error(response.message || '启动分析引擎失败')
     }
   } catch (err) {
+    if (requestId !== startRequest) return
     console.error('启动分析引擎失败:', err)
     ElMessage.error('启动分析引擎失败，请稍后重试')
   } finally {
-    internalLoading.value = false
-    emit('update:loading', false)
+    if (requestId === startRequest) {
+      internalLoading.value = false
+      emit('update:loading', false)
+    }
   }
 }
+
+onDeactivated(() => {
+  dialogVisible.value = false
+  startRequest += 1
+  internalLoading.value = false
+  emit('update:loading', false)
+})
+onUnmounted(() => {
+  startRequest += 1
+})
 
 defineExpose({ openDialog })
 </script>

@@ -9,7 +9,12 @@
     v-model:expanded-keys="expandedTabKeys"
   >
     <template #toolbar>
-      <div class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+      <div v-if="isMobile" class="mobile-config-toolbar">
+        <el-input v-model="activeSearchKeyword" :placeholder="activeTab === 'dictionary' ? searchPlaceholder : `搜索本页${activeTab === 'users' ? '用户' : '权限组'}`" clearable><template #prefix><Icon icon="mdi:magnify" /></template></el-input>
+        <el-select v-if="activeTab === 'dictionary'" v-model="dictFilterCategory" clearable placeholder="全部分类"><el-option v-for="item in dictCategoryOptions" :key="item" :label="item" :value="item" /></el-select>
+        <el-button v-if="canViewCurrentAdd" type="primary" :disabled="!canUseCurrentAdd" @click="handleAdd">{{ addButtonLabel }}</el-button>
+      </div>
+      <div v-else class="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <Icon :icon="currentTabIcon" class="text-2xl text-blue-600" />
           <h2 class="text-xl font-bold text-gray-900">{{ currentTabLabel }}</h2>
@@ -40,7 +45,41 @@
       </div>
     </template>
 
-    <div v-if="activeTab === 'users' && canViewUserList" class="space-y-4">
+    <el-alert v-if="currentListError" :title="currentListError" type="error" :closable="false" show-icon><el-button link @click="loadActiveTabData()">重新加载</el-button></el-alert>
+    <el-skeleton v-else-if="currentListLoading" :rows="6" animated />
+    <div v-else-if="isMobile" class="mobile-management-list">
+      <template v-if="activeTab === 'users' && canViewUserList">
+        <article v-for="user in mobileUsers" :key="user.uuid" class="mobile-management-card">
+          <header><div><h2>{{ user.display_name }}</h2><p>@{{ user.username }}</p></div><el-tag :type="user.enabled ? 'success' : 'info'">{{ user.enabled ? '已启用' : '已禁用' }}</el-tag></header>
+          <div class="mobile-management-tags"><el-tag v-if="user.temporary_account" type="warning">临时账号</el-tag><el-tag v-for="id in user.groups" :key="id" size="small">{{ groupNameByUuid[id] || id }}</el-tag></div>
+          <p v-if="user.remark">{{ user.remark }}</p>
+          <details><summary>账号资料</summary><dl><dt>邮箱</dt><dd>{{ user.email || '未设置' }}</dd><dt>最近登录</dt><dd>{{ formatDateTime(user.login_date) }} · {{ user.login_ip || '暂无 IP' }}</dd><dt>到期时间</dt><dd>{{ formatExpired(user.expired_at) }}</dd><dt>创建记录</dt><dd>{{ formatDateTime(user.create_at) }} · {{ user.create_by }}</dd><dt>修改记录</dt><dd>{{ formatDateTime(user.update_at) }} · {{ user.update_by }}</dd><dt>唯一标识</dt><dd>{{ user.uuid }}</dd></dl></details>
+          <footer><el-button v-if="hasPerm(PERM_USERS.detailRead)" @click="handleViewUser(user)">查看</el-button><el-button v-if="hasPerm(PERM_USERS.groupUpdate) && !user.is_system" type="primary" plain @click="handleEditUser(user)">编辑</el-button><el-button v-if="hasPerm(PERM_USERS.delete) && !user.is_system" type="danger" plain :loading="deletingUserId === user.uuid" :disabled="Boolean(deletingUserId)" @click="handleDeleteUser(user)">删除</el-button></footer>
+        </article>
+        <el-empty v-if="!mobileUsers.length" description="本页没有匹配的用户" />
+        <el-pagination layout="prev, pager, next" :pager-count="5" :total="userTotal" :page-size="10" v-model:current-page="userPage" @current-change="fetchUsers" />
+      </template>
+      <template v-else-if="activeTab === 'groups' && canViewGroupList">
+        <article v-for="group in mobileGroups" :key="group.uuid" class="mobile-management-card">
+          <header><div><h2>{{ group.display_name }}</h2><p>@{{ group.group_name }}</p></div><el-tag :type="group.enabled ? 'success' : 'info'">{{ group.enabled ? '已启用' : '已禁用' }}</el-tag></header>
+          <p v-if="group.remark">{{ group.remark }}</p>
+          <details><summary>权限与资料 · {{ group.permissions?.includes('*') ? '全部权限' : `${group.permissions?.length || 0} 项权限` }}</summary><dl><dt>创建记录</dt><dd>{{ formatDateTime(group.create_at) }} · {{ group.create_by }}</dd><dt>修改记录</dt><dd>{{ formatDateTime(group.update_at) }} · {{ group.update_by || '-' }}</dd><dt>唯一标识</dt><dd>{{ group.uuid }}</dd></dl><p v-for="code in group.permissions" :key="code" class="mobile-permission-code">{{ code === '*' ? '全部权限' : code }}</p></details>
+          <footer><el-button v-if="hasPerm(PERM_GROUPS.update) && !group.is_system" type="primary" plain @click="handleEditGroup(group)">编辑权限组</el-button><el-button v-if="hasPerm(PERM_GROUPS.delete) && !group.is_system" type="danger" plain :loading="deletingGroupId === group.uuid" :disabled="Boolean(deletingGroupId)" @click="handleDeleteGroup(group)">删除</el-button></footer>
+        </article>
+        <el-empty v-if="!mobileGroups.length" description="本页没有匹配的权限组" />
+        <el-pagination layout="prev, pager, next" :pager-count="5" :total="groupTotal" :page-size="10" v-model:current-page="groupPage" @current-change="fetchGroups" />
+      </template>
+      <template v-else-if="activeTab === 'dictionary' && canViewDictList">
+        <article v-for="perm in filteredDictRows" :key="perm.permKey" class="mobile-management-card">
+          <header><h2>{{ perm.name }}</h2><el-tag :type="perm.enabled ? 'success' : 'info'">{{ perm.enabled ? '已启用' : '已禁用' }}</el-tag></header><p class="mobile-permission-code">{{ perm.permKey }}</p>
+          <div class="mobile-management-tags"><el-tag v-if="perm.category" size="small">{{ perm.category }}</el-tag><el-tag v-for="tag in perm.tags" :key="tag" size="small" type="info">{{ tag }}</el-tag></div><p v-if="perm.desc">{{ perm.desc }}</p>
+          <footer><el-button v-if="hasPerm(PERM_DICT.update) && !perm.systemReserved" type="primary" plain @click="openEditDict(perm)">编辑</el-button><el-button v-if="hasPerm(PERM_DICT.delete) && perm.source === 'placeholder'" type="danger" plain @click="handleDeleteDict(perm)">删除</el-button></footer>
+        </article>
+        <el-empty v-if="!filteredDictRows.length" :description="dictEmptyText" />
+      </template>
+      <el-empty v-else description="暂无此模块的查看权限" />
+    </div>
+    <div v-else-if="activeTab === 'users' && canViewUserList" class="space-y-4">
       <div
         v-for="user in userList"
         :key="user.uuid"
@@ -300,6 +339,7 @@
   </ConfigCenterLayout>
 
   <el-dialog
+    class="mobile-config-dialog"
     v-model="dictDialogVisible"
     :title="dictDialogTitle"
     :width="dictDialogWidth"
@@ -307,11 +347,11 @@
     :fullscreen="dictDialogFullscreen"
   >
     <el-tabs v-if="dictMode === 'create'" v-model="dictCreateTab" class="-mt-2 mb-4">
-      <el-tab-pane label="单条新增" name="single" />
-      <el-tab-pane label="批量新增" name="batch" />
+      <el-tab-pane label="单条新增" name="single" :disabled="dictSaving" />
+      <el-tab-pane label="批量新增" name="batch" :disabled="dictSaving" />
     </el-tabs>
 
-    <el-form v-if="dictMode === 'edit' || dictCreateTab === 'single'" ref="dictFormRef" :model="dictForm" :rules="dictRules" label-width="90px">
+    <el-form v-if="dictMode === 'edit' || dictCreateTab === 'single'" ref="dictFormRef" :disabled="dictSaving" :model="dictForm" :rules="dictRules" label-width="90px">
       <el-form-item label="权限码" prop="permKey">
         <el-input v-model="dictForm.permKey" :disabled="dictMode === 'edit'" placeholder="例如：operation:custom:resource:read" />
       </el-form-item>
@@ -345,14 +385,21 @@
     </el-form>
 
     <div v-else class="space-y-3">
-      <div class="flex items-center justify-between">
-        <div class="text-xs text-gray-500">每行一条权限码，带 * 的列为必填</div>
+      <div class="flex items-center justify-between" :class="{ 'mobile-batch-toolbar': isMobile }">
+        <div class="text-xs text-gray-500">{{ isMobile ? '逐项填写权限，标记必填的字段不能为空' : '每行一条权限码，带 * 的列为必填' }}</div>
         <div class="flex items-center gap-2">
           <el-button v-if="hasPerm(PERM_DICT.create)" @click="handleResetBatchRows">清空全部</el-button>
           <el-button v-if="hasPerm(PERM_DICT.create)" type="primary" plain @click="handleAddBatchRow">新增一行</el-button>
         </div>
       </div>
-      <div class="max-h-105 overflow-auto border border-gray-200 rounded-lg">
+      <div v-if="isMobile" class="mobile-management-list">
+        <details v-for="(row, index) in dictBatchRows" :key="row.rowId" class="mobile-management-card" :open="index === dictBatchRows.length - 1 || Boolean(row.errorFields.permKey || row.errorFields.name || row.errorFields.category)">
+          <summary>第 {{ index + 1 }} 项 · {{ row.name || '待填写权限' }}</summary>
+          <el-form label-position="top" :disabled="dictSaving"><el-form-item label="权限码（必填）" :error="row.errorFields.permKey ? '请填写有效权限码' : ''"><el-input v-model="row.permKey" /></el-form-item><el-form-item label="名称（必填）" :error="row.errorFields.name ? '请填写名称' : ''"><el-input v-model="row.name" /></el-form-item><el-form-item label="分类（必填）" :error="row.errorFields.category ? '请填写分类' : ''"><el-select v-model="row.category" filterable allow-create default-first-option><el-option v-for="item in dictCategoryOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item><el-form-item label="描述"><el-input v-model="row.desc" type="textarea" :rows="2" /></el-form-item><el-form-item label="标签"><el-select v-model="row.tags" multiple filterable allow-create default-first-option><el-option v-for="item in dictTagOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item><el-form-item label="启用"><el-switch v-model="row.enabled" /></el-form-item></el-form>
+          <el-button v-if="hasPerm(PERM_DICT.create)" type="danger" plain @click="handleRemoveBatchRow(index)">移除此项</el-button>
+        </details>
+      </div>
+      <div v-else class="max-h-105 overflow-auto border border-gray-200 rounded-lg">
         <table class="w-full text-sm">
           <thead class="bg-gray-50">
             <tr>
@@ -421,7 +468,7 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="editUserDialogVisible" :title="userDialogTitle" width="520px">
+  <el-dialog v-model="editUserDialogVisible" :title="userDialogTitle" width="520px" class="mobile-config-dialog">
     <div v-if="editingUser" class="space-y-4">
       <div class="text-sm text-gray-600">
         用户：{{ editingUser.display_name }}（@{{ editingUser.username }}）
@@ -432,12 +479,12 @@
           <el-select
             v-model="editUserGroupUuids"
             multiple
-            :disabled="!canUseEditUser"
+            :disabled="savingEditUser || !canUseEditUser || userDialogMode === 'detail'"
             placeholder="请选择用户组"
             class="w-full!"
           >
             <el-option
-              v-for="group in groupList"
+              v-for="group in groupChoices"
               :key="group.uuid"
               :label="group.display_name || group.group_name"
               :value="group.uuid"
@@ -461,8 +508,8 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="createUserDialogVisible" title="新增用户" width="560px">
-    <el-form ref="createUserFormRef" :model="createUserForm" :rules="createUserRules" label-width="100px">
+  <el-dialog v-model="createUserDialogVisible" title="新增用户" width="560px" class="mobile-config-dialog">
+    <el-form ref="createUserFormRef" :disabled="creatingUser" :model="createUserForm" :rules="createUserRules" label-width="100px">
       <el-form-item label="用户名" prop="username">
         <el-input v-model="createUserForm.username" placeholder="请输入用户名" />
       </el-form-item>
@@ -496,7 +543,7 @@
       <el-form-item label="用户组" prop="groups">
         <el-select v-model="createUserForm.groups" multiple placeholder="请选择用户组（可选）" class="w-full!">
           <el-option
-            v-for="group in groupList"
+            v-for="group in groupChoices"
             :key="group.uuid"
             :label="group.display_name || group.group_name"
             :value="group.uuid"
@@ -511,8 +558,10 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="createGroupDialogVisible" title="新增权限组" width="1200px" top="2vh" class="group-permission-dialog">
-    <el-form ref="createGroupFormRef" :model="createGroupForm" :rules="createGroupRules" label-width="100px">
+  <el-dialog v-model="createGroupDialogVisible" title="新增权限组" width="1200px" top="2vh" class="group-permission-dialog mobile-config-dialog">
+    <nav v-if="isMobile" class="mobile-group-steps"><button :class="{ active: groupSection === 'profile' }" @click="groupSection = 'profile'">1 基本信息</button><button :class="{ active: groupSection === 'permissions' }" @click="groupSection = 'permissions'">2 分配权限</button></nav>
+    <el-form ref="createGroupFormRef" :disabled="creatingGroup" :model="createGroupForm" :rules="createGroupRules" label-width="100px">
+      <div v-show="!isMobile || groupSection === 'profile'">
       <el-form-item label="组标识" prop="group_name">
         <el-input v-model="createGroupForm.group_name" placeholder="例如：admin、analyst（唯一）" />
       </el-form-item>
@@ -525,12 +574,13 @@
       <el-form-item label="启用">
         <el-switch v-model="createGroupForm.enabled" />
       </el-form-item>
-      <el-form-item label="权限码" prop="permissions">
-        <div v-loading="permCodeCatalogLoading" class="w-full">
+      </div>
+      <el-form-item v-show="!isMobile || groupSection === 'permissions'" label="权限码" prop="permissions">
+        <div v-loading="permCodeCatalogLoading" class="w-full"><el-alert v-if="permCodeCatalogError" :title="permCodeCatalogError" type="error" :closable="false"><el-button link @click="fetchPermCodeCatalog">重新加载</el-button></el-alert>
           <GroupPermissionPicker
             v-model="createGroupForm.permissions"
             :perm-codes="enabledCatalogPermCodes"
-            :disabled="permCodeCatalogLoading || !hasPerm(PERM_GROUPS.create)"
+            :disabled="creatingGroup || permCodeCatalogLoading || Boolean(permCodeCatalogError) || !hasPerm(PERM_GROUPS.create)"
             class="w-full"
           />
         </div>
@@ -539,15 +589,17 @@
 
     <template #footer>
       <el-button @click="createGroupDialogVisible = false">取消</el-button>
-      <el-button v-if="hasPerm(PERM_GROUPS.create)" type="primary" :loading="creatingGroup" @click="handleSubmitCreateGroup">创建</el-button>
+      <el-button v-if="hasPerm(PERM_GROUPS.create)" type="primary" :loading="creatingGroup" :disabled="permCodeCatalogLoading || Boolean(permCodeCatalogError)" @click="handleSubmitCreateGroup">创建</el-button>
     </template>
   </el-dialog>
 
-  <el-dialog v-model="editGroupDialogVisible" title="编辑权限组" width="1200px" top="2vh" class="group-permission-dialog">
+  <el-dialog v-model="editGroupDialogVisible" title="编辑权限组" width="1200px" top="2vh" class="group-permission-dialog mobile-config-dialog">
+    <nav v-if="isMobile" class="mobile-group-steps"><button :class="{ active: groupSection === 'profile' }" @click="groupSection = 'profile'">1 基本信息</button><button :class="{ active: groupSection === 'permissions' }" @click="groupSection = 'permissions'">2 分配权限</button></nav>
     <div v-if="editingGroup" class="mb-3 text-sm text-gray-600">
       权限组：{{ editingGroup.display_name }}（@{{ editingGroup.group_name }}）
     </div>
-    <el-form ref="editGroupFormRef" :model="editGroupForm" :rules="editGroupRules" label-width="100px">
+    <el-form ref="editGroupFormRef" :disabled="savingEditGroup" :model="editGroupForm" :rules="editGroupRules" label-width="100px">
+      <div v-show="!isMobile || groupSection === 'profile'">
       <el-form-item label="组标识">
         <el-input v-model="editGroupForm.group_name" disabled />
       </el-form-item>
@@ -560,12 +612,13 @@
       <el-form-item label="启用">
         <el-switch v-model="editGroupForm.enabled" />
       </el-form-item>
-      <el-form-item label="权限码" prop="permissions">
-        <div v-loading="permCodeCatalogLoading" class="w-full">
+      </div>
+      <el-form-item v-show="!isMobile || groupSection === 'permissions'" label="权限码" prop="permissions">
+        <div v-loading="permCodeCatalogLoading" class="w-full"><el-alert v-if="permCodeCatalogError" :title="permCodeCatalogError" type="error" :closable="false"><el-button link @click="fetchPermCodeCatalog">重新加载</el-button></el-alert>
           <GroupPermissionPicker
             v-model="editGroupForm.permissions"
             :perm-codes="enabledCatalogPermCodes"
-            :disabled="permCodeCatalogLoading || !hasPerm(PERM_GROUPS.update)"
+            :disabled="savingEditGroup || permCodeCatalogLoading || Boolean(permCodeCatalogError) || !hasPerm(PERM_GROUPS.update)"
             class="w-full"
           />
         </div>
@@ -574,13 +627,13 @@
 
     <template #footer>
       <el-button @click="editGroupDialogVisible = false">取消</el-button>
-      <el-button v-if="hasPerm(PERM_GROUPS.update)" type="primary" :loading="savingEditGroup" @click="handleSaveEditGroup">保存</el-button>
+      <el-button v-if="hasPerm(PERM_GROUPS.update)" type="primary" :loading="savingEditGroup" :disabled="permCodeCatalogLoading || Boolean(permCodeCatalogError)" @click="handleSaveEditGroup">保存</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onActivated, onDeactivated, reactive, watch, onBeforeUnmount } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ConfigCenterLayout from '@/components/layout/ConfigCenterLayout.vue'
@@ -590,13 +643,20 @@ import { PERM } from '@/utils/permissions'
 import { systemApi } from '@/api/system'
 import GroupPermissionPicker from '@/components/system/GroupPermissionPicker.vue'
 import { hasPerm } from '@/utils/permissionKit'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 
 defineOptions({ name: 'UserPermissionManagement' })
+const { isMobile } = useMobileViewport()
+const groupSection = ref('profile')
 
 const PERM_TABS = PERM.pages.system.permissions.tabs
 const PERM_USERS = PERM.operations.system.users
 const PERM_GROUPS = PERM.operations.system.groups
 const PERM_DICT = PERM.operations.system.permissionCodes
+let pageActive = true, pageEpoch = 0, dialogEpoch = 0, dictRequest = 0, catalogRequest = 0, optionsRequest = 0
+let ownConfirmation = false, confirmationId = 0
+const userLoading = ref(false), groupLoading = ref(false), dictLoading = ref(false)
+const userError = ref(''), groupError = ref(''), dictError = ref(''), permCodeCatalogError = ref('')
 
 const activeTab = ref('users')
 const expandedTabKeys = ref([])
@@ -604,6 +664,40 @@ const userSearchKeyword = ref('')
 const groupSearchKeyword = ref('')
 const dictSearchKeyword = ref('')
 const dictFilterCategory = ref('')
+const currentListLoading = computed(() => ({ users: userLoading.value, groups: groupLoading.value, dictionary: dictLoading.value })[activeTab.value])
+const currentListError = computed(() => ({ users: userError.value, groups: groupError.value, dictionary: dictError.value })[activeTab.value])
+
+/**
+ * 检查异步操作是否仍属于当前页面、模块和弹窗，并重新验证授权。
+ * @param {object} context 操作开始时的页面、模块、权限及可选弹窗序号。
+ * @returns {boolean} 只有当前上下文可以继续更新界面或提交写入。
+ */
+function isContextCurrent(context) {
+  if (!pageActive || context.page !== pageEpoch || context.tab !== activeTab.value) return false
+  if (context.dialog !== undefined && context.dialog !== dialogEpoch) return false
+  const tab = PERM_TABS[context.tab]
+  if (!tab || !hasPerm(tab.visible) || !hasPerm(tab.access)) return false
+  return hasPerm(PERM.pages.system.permissions.access) && hasPerm(context.permission)
+}
+
+/**
+ * 显示本页独占的业务确认，离页或撤权后即使确认迟到也不能执行写入。
+ * @param {object} context 当前操作上下文。
+ * @param {string} message 原业务确认文案。
+ * @param {string} title 确认标题。
+ * @param {object} options 原确认按钮选项。
+ * @returns {Promise<boolean>} 当前上下文中明确确认才返回真。
+ */
+async function confirmCurrent(context, message, title, options) {
+  if (ownConfirmation || !isContextCurrent(context)) return false
+  const id = ++confirmationId
+  ownConfirmation = true
+  try {
+    await ElMessageBox.confirm(message, title, options)
+    return isContextCurrent(context)
+  } catch { return false }
+  finally { if (id === confirmationId) ownConfirmation = false }
+}
 
 const activeSearchKeyword = computed({
   get() {
@@ -621,11 +715,22 @@ const activeSearchKeyword = computed({
 
 const userList = ref([])
 const groupList = ref([])
+const groupOptions = ref([])
+const groupChoices = computed(() => [...new Map([...groupOptions.value, ...groupList.value].map(group => [group.uuid, group])).values()])
+const userPage = ref(1)
+const groupPage = ref(1)
+const userTotal = ref(0)
+const groupTotal = ref(0)
+const mobileUsers = computed(() => userList.value.filter(item => `${item.display_name} ${item.username} ${item.email || ''}`.toLowerCase().includes(userSearchKeyword.value.trim().toLowerCase())))
+const mobileGroups = computed(() => groupList.value.filter(item => `${item.display_name} ${item.group_name} ${item.remark || ''}`.toLowerCase().includes(groupSearchKeyword.value.trim().toLowerCase())))
+let userRequest = 0
+let groupRequest = 0
 const permCodeList = ref([]) // 权限码字典列表（会被字典搜索影响）
 const permCodeCatalogList = ref([]) // 权限组弹窗目录专用（与字典解耦）
 const permCodeCatalogLoading = ref(false)
 const deletingUserId = ref('')
 const deletingGroupId = ref('')
+const deletingDictId = ref('')
 
 const editUserDialogVisible = ref(false)
 const editingUser = ref(null)
@@ -673,6 +778,7 @@ const createUserRules = {
 }
 
 const createGroupDialogVisible = ref(false)
+watch([createGroupDialogVisible, editGroupDialogVisible], () => { groupSection.value = 'profile' })
 const creatingGroup = ref(false)
 const createGroupFormRef = ref(null)
 const createGroupForm = reactive({
@@ -696,17 +802,35 @@ const groupNameByUuid = computed(() => {
 })
 
 async function fetchUsers() {
-  const res = await systemApi.getUsers({ page: 1, page_size: 10 })
-  userList.value =
-    (res?.data?.items || []).map(user => ({
-      ...user,
-      groups: Array.isArray(user.groups) ? user.groups : []
-    }))
+  const requestId = ++userRequest
+  const context = { page: pageEpoch, tab: activeTab.value, permission: PERM_USERS.listRead }
+  if (!isContextCurrent(context)) return
+  userLoading.value = true
+  userError.value = ''
+  try {
+    const res = await systemApi.getUsers({ page: userPage.value, page_size: 10 })
+    if (requestId !== userRequest || !isContextCurrent(context)) return
+    if ((res?.code != null && res.code !== 0) || !Array.isArray(res?.data?.items)) throw new Error(res?.message || '用户列表加载失败')
+    userTotal.value = res.data.total || 0
+    userList.value = res.data.items.map(user => ({ ...user, groups: Array.isArray(user.groups) ? user.groups : [] }))
+  } catch (error) { if (requestId === userRequest && isContextCurrent(context)) userError.value = error?.message || '用户列表加载失败，请重试' }
+  finally { if (requestId === userRequest) userLoading.value = false }
 }
 
 async function fetchGroups() {
-  const res = await systemApi.getGroups({ page: 1, page_size: 10 })
-  groupList.value = res?.data?.items || []
+  const requestId = ++groupRequest
+  const context = { page: pageEpoch, tab: activeTab.value, permission: PERM_GROUPS.read }
+  if (!isContextCurrent(context)) return
+  groupLoading.value = true
+  groupError.value = ''
+  try {
+    const res = await systemApi.getGroups({ page: groupPage.value, page_size: 10 })
+    if (requestId !== groupRequest || !isContextCurrent(context)) return
+    if ((res?.code != null && res.code !== 0) || !Array.isArray(res?.data?.items)) throw new Error(res?.message || '权限组列表加载失败')
+    groupTotal.value = res.data.total || 0
+    groupList.value = res.data.items
+  } catch (error) { if (requestId === groupRequest && isContextCurrent(context)) groupError.value = error?.message || '权限组列表加载失败，请重试' }
+  finally { if (requestId === groupRequest) groupLoading.value = false }
 }
 
 function normalizePermCode(row) {
@@ -725,20 +849,35 @@ function normalizePermCode(row) {
 }
 
 async function fetchPermCodes(params = {}) {
-  const res = await systemApi.getPermCodes(params)
-  const rows = Array.isArray(res?.data) ? res.data : []
-  permCodeList.value = rows.map(normalizePermCode)
+  const requestId = ++dictRequest
+  const context = { page: pageEpoch, tab: 'dictionary', permission: PERM_DICT.read }
+  if (!isContextCurrent(context)) return
+  dictLoading.value = true
+  dictError.value = ''
+  try {
+    const res = await systemApi.getPermCodes(params)
+    if (requestId !== dictRequest || !isContextCurrent(context)) return
+    if ((res?.code != null && res.code !== 0) || !Array.isArray(res?.data)) throw new Error(res?.message || '权限码加载失败')
+    permCodeList.value = res.data.map(normalizePermCode)
+  } catch (error) { if (requestId === dictRequest && isContextCurrent(context)) dictError.value = error?.message || '权限码加载失败，请重试' }
+  finally { if (requestId === dictRequest) dictLoading.value = false }
 }
 
 async function fetchPermCodeCatalog() {
-  if (permCodeCatalogLoading.value) return
+  const requestId = ++catalogRequest
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'groups', permission: createGroupDialogVisible.value ? PERM_GROUPS.create : PERM_GROUPS.update }
+  if (!isContextCurrent(context)) return
   permCodeCatalogLoading.value = true
+  permCodeCatalogError.value = ''
   try {
     const res = await systemApi.getPermCodes({})
-    const rows = Array.isArray(res?.data) ? res.data : []
-    permCodeCatalogList.value = rows.map(normalizePermCode)
+    if (requestId !== catalogRequest || !isContextCurrent(context)) return
+    if ((res?.code != null && res.code !== 0) || !Array.isArray(res?.data)) throw new Error(res?.message || '权限目录加载失败')
+    permCodeCatalogList.value = res.data.map(normalizePermCode)
+  } catch (error) {
+    if (requestId === catalogRequest && isContextCurrent(context)) permCodeCatalogError.value = error?.message || '权限目录加载失败，请重试'
   } finally {
-    permCodeCatalogLoading.value = false
+    if (requestId === catalogRequest) permCodeCatalogLoading.value = false
   }
 }
 
@@ -746,13 +885,10 @@ async function loadActiveTabData(tab = activeTab.value) {
   try {
     if (tab === 'users' && hasPerm(PERM_USERS.listRead)) await fetchUsers()
     else if (tab === 'groups' && hasPerm(PERM_GROUPS.read)) await fetchGroups()
-    else if (tab === 'dictionary' && hasPerm(PERM_DICT.read)) await fetchPermCodes()
+    else if (tab === 'dictionary' && hasPerm(PERM_DICT.read)) await fetchPermCodes({ keyword: dictSearchKeyword.value.trim() || undefined })
   } catch {
   }
 }
-
-onMounted(() => loadActiveTabData())
-watch(activeTab, tab => loadActiveTabData(tab))
 
 function formatExpired(dateStr) {
   if (!dateStr) return '永久有效'
@@ -783,9 +919,9 @@ watch(permissionNavItems, (items) => {
   activeTab.value = (firstEnabled || items[0]).key
 }, { immediate: true })
 
-const canViewUserList = computed(() => hasPerm(PERM_USERS.listRead))
-const canViewGroupList = computed(() => hasPerm(PERM_GROUPS.read))
-const canViewDictList = computed(() => hasPerm(PERM_DICT.read))
+const canViewUserList = computed(() => hasPerm(PERM_TABS.users.visible) && hasPerm(PERM_TABS.users.access) && hasPerm(PERM_USERS.listRead))
+const canViewGroupList = computed(() => hasPerm(PERM_TABS.groups.visible) && hasPerm(PERM_TABS.groups.access) && hasPerm(PERM_GROUPS.read))
+const canViewDictList = computed(() => hasPerm(PERM_TABS.dictionary.visible) && hasPerm(PERM_TABS.dictionary.access) && hasPerm(PERM_DICT.read))
 
 const canViewCurrentAdd = computed(() => {
   if (activeTab.value === 'users') return hasPerm(PERM_USERS.create)
@@ -971,6 +1107,8 @@ function openCreateDict() {
     ElMessage.warning('暂无操作权限')
     return
   }
+  if (!pageActive || activeTab.value !== 'dictionary') return
+  dialogEpoch++
   dictMode.value = 'create'
   dictCreateTab.value = 'single'
   handleResetBatchRows()
@@ -991,6 +1129,8 @@ function openEditDict(row) {
     ElMessage.warning('暂无操作权限')
     return
   }
+  if (!pageActive || activeTab.value !== 'dictionary' || row.systemReserved) return
+  dialogEpoch++
   dictMode.value = 'edit'
   dictForm.uuid = row.uuid || ''
   dictForm.permKey = row.permKey
@@ -1009,91 +1149,73 @@ async function handleDeleteDict(row) {
     ElMessage.warning('暂无操作权限')
     return
   }
-  try {
-    await ElMessageBox.confirm(`确认删除权限码：${row.permKey}？`, '删除确认', {
+  if (!row.uuid || row.source !== 'placeholder' || deletingDictId.value) return
+  const context = { page: pageEpoch, tab: 'dictionary', permission: PERM_DICT.delete }
+  if (!await confirmCurrent(context, `确认删除权限码：${row.permKey}？`, '删除确认', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消'
-    })
-  } catch {
-    return
-  }
+    })) return
+  deletingDictId.value = row.uuid
   try {
     await systemApi.deletePermCode(row.uuid)
+    if (!isContextCurrent(context)) return
     ElMessage.success('删除成功')
     await fetchPermCodes({ keyword: String(dictSearchKeyword.value || '').trim() || undefined })
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '删除失败，请重试')
+  } finally {
+    if (context.page === pageEpoch) deletingDictId.value = ''
   }
 }
 
 async function handleSaveDict() {
-  if (dictMode.value === 'edit' && !hasPerm(PERM_DICT.update)) {
-    ElMessage.warning('暂无操作权限')
-    return
-  }
-  if (dictMode.value === 'create' && dictCreateTab.value === 'single' && !hasPerm(PERM_DICT.create)) {
-    ElMessage.warning('暂无操作权限')
-    return
-  }
-  if (dictMode.value === 'create' && dictCreateTab.value === 'batch' && !hasPerm(PERM_DICT.create)) {
-    ElMessage.warning('暂无操作权限')
-    return
-  }
+  const permission = dictMode.value === 'edit' ? PERM_DICT.update : PERM_DICT.create
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'dictionary', permission }
+  if (!isContextCurrent(context) || !dictDialogVisible.value || dictSaving.value) return
   if (dictMode.value === 'create' && dictCreateTab.value === 'batch') {
     await handleSaveDictBatch()
     return
   }
-  if (dictSaving.value) return
-  const ok = await dictFormRef.value?.validate?.().catch(() => false)
-  if (!ok) return
-
-  const permKey = String(dictForm.permKey || '').trim()
-  const name = String(dictForm.name || '').trim()
-  const category = String(dictForm.category || '').trim()
-  const desc = String(dictForm.desc || '').trim()
-  const tags = Array.isArray(dictForm.tags) ? dictForm.tags.map(t => String(t).trim()).filter(Boolean) : []
-
   dictSaving.value = true
   try {
-    if (dictMode.value === 'create') {
-      await systemApi.createPermCode({
-        perm_key: permKey,
-        name,
-        category,
-        desc: desc || undefined,
-        tags,
-        enabled: Boolean(dictForm.enabled)
-      })
+    const ok = await dictFormRef.value?.validate?.().catch(() => false)
+    if (!ok || !isContextCurrent(context)) return
+    const snapshot = { ...dictForm, tags: [...dictForm.tags] }
+    const mode = dictMode.value
+    const name = String(snapshot.name || '').trim()
+    const category = String(snapshot.category || '').trim()
+    const desc = String(snapshot.desc || '').trim()
+    const tags = snapshot.tags.map(tag => String(tag).trim()).filter(Boolean)
+    if (mode === 'create') {
+      await systemApi.createPermCode({ perm_key: String(snapshot.permKey || '').trim(), name, category, desc: desc || undefined, tags, enabled: Boolean(snapshot.enabled) })
+      if (!isContextCurrent(context)) return
       ElMessage.success('新增成功')
-      dictDialogVisible.value = false
-      await fetchPermCodes({ keyword: String(dictSearchKeyword.value || '').trim() || undefined })
-      return
+    } else {
+      let impactAcknowledged = false
+      if (snapshot.originalEnabled && !snapshot.enabled) {
+        const impactRes = await systemApi.getPermCodeImpact(snapshot.uuid)
+        if (!isContextCurrent(context)) return
+        if (impactRes?.code != null && impactRes.code !== 0) throw new Error(impactRes.message || '权限影响范围加载失败')
+        const impact = impactRes?.data || {}
+        const message = '禁用后将影响 ' + (impact.group_count || 0) + ' 个权限组、' + (impact.user_count || 0) + ' 个用户，是否继续？'
+        if (!await confirmCurrent(context, message, '禁用权限确认', { type: 'warning' })) return
+        impactAcknowledged = true
+      }
+      const payload = snapshot.source === 'standard'
+        ? { enabled: Boolean(snapshot.enabled), impact_acknowledged: impactAcknowledged }
+        : { name, category, desc: desc || undefined, tags, enabled: Boolean(snapshot.enabled), impact_acknowledged: impactAcknowledged }
+      if (!isContextCurrent(context)) return
+      await systemApi.updatePermCode(snapshot.uuid, payload)
+      if (!isContextCurrent(context)) return
+      ElMessage.success('保存成功')
     }
-
-    let impactAcknowledged = false
-    if (dictForm.originalEnabled && !dictForm.enabled) {
-      const impactRes = await systemApi.getPermCodeImpact(dictForm.uuid)
-      const impact = impactRes?.data || {}
-      const message = `禁用后将影响 ${impact.group_count || 0} 个权限组、${impact.user_count || 0} 个用户，是否继续？`
-      await ElMessageBox.confirm(message, '禁用权限确认', { type: 'warning' })
-      impactAcknowledged = true
-    }
-    const payload = dictForm.source === 'standard'
-      ? { enabled: Boolean(dictForm.enabled), impact_acknowledged: impactAcknowledged }
-      : {
-          name,
-          category,
-          desc: desc || undefined,
-          tags,
-          enabled: Boolean(dictForm.enabled),
-          impact_acknowledged: impactAcknowledged
-        }
-    await systemApi.updatePermCode(dictForm.uuid, payload)
-    ElMessage.success('保存成功')
     dictDialogVisible.value = false
     await fetchPermCodes({ keyword: String(dictSearchKeyword.value || '').trim() || undefined })
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '保存失败，请重试')
   } finally {
-    dictSaving.value = false
+    if (context.dialog === dialogEpoch) dictSaving.value = false
   }
 }
 
@@ -1205,7 +1327,8 @@ function applyBatchErrorFeedback(message) {
 }
 
 async function handleSaveDictBatch() {
-  if (dictSaving.value) return
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'dictionary', permission: PERM_DICT.create }
+  if (dictSaving.value || !dictDialogVisible.value || !isContextCurrent(context)) return
   const normalizedRows = validateBatchRows()
   if (normalizedRows.length === 0) return
 
@@ -1214,15 +1337,17 @@ async function handleSaveDictBatch() {
     await systemApi.createPermCodesBatch({
       items: normalizedRows.map(row => row.item)
     })
+    if (!isContextCurrent(context)) return
     ElMessage.success('批量新增成功')
     dictDialogVisible.value = false
     handleResetBatchRows()
     await fetchPermCodes({ keyword: String(dictSearchKeyword.value || '').trim() || undefined })
   } catch (error) {
+    if (!isContextCurrent(context)) return
     const message = getRequestErrorMessage(error)
     applyBatchErrorFeedback(message)
   } finally {
-    dictSaving.value = false
+    if (context.dialog === dialogEpoch) dictSaving.value = false
   }
 }
 
@@ -1232,30 +1357,34 @@ watch(
   ([tab, keyword]) => {
     if (dictSearchTimer) clearTimeout(dictSearchTimer)
     dictSearchTimer = null
-    if (tab !== 'dictionary') return
+    dictRequest++
+    if (!pageActive || tab !== 'dictionary') return
     dictSearchTimer = setTimeout(() => {
       fetchPermCodes({ keyword: String(keyword || '').trim() || undefined }).catch(() => {})
     }, 300)
   }
 )
 
-onBeforeUnmount(() => {
-  if (dictSearchTimer) clearTimeout(dictSearchTimer)
-})
-
 async function handleEditUser(user) {
   if (!hasPerm(PERM_USERS.groupUpdate)) {
     ElMessage.warning('暂无操作权限')
     return
   }
+  if (!pageActive || activeTab.value !== 'users' || user?.is_system) return
+  const context = { page: pageEpoch, dialog: ++dialogEpoch, tab: 'users', permission: PERM_USERS.groupUpdate }
   try {
     const res = await systemApi.getUser(user.uuid)
+    if (!isContextCurrent(context)) return
+    if ((res?.code != null && res.code !== 0) || !res?.data) throw new Error(res?.message || '用户详情加载失败')
     const detail = res?.data || user
+    if (isMobile.value) await loadMobileGroupOptions()
+    if (!isContextCurrent(context)) return
     userDialogMode.value = 'edit'
     editingUser.value = detail
     editUserGroupUuids.value = Array.isArray(detail.groups) ? [...detail.groups] : []
     editUserDialogVisible.value = true
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '用户详情加载失败，请重试')
   }
 }
 
@@ -1264,14 +1393,19 @@ async function handleViewUser(user) {
     ElMessage.warning('暂无查看权限')
     return
   }
+  if (!pageActive || activeTab.value !== 'users') return
+  const context = { page: pageEpoch, dialog: ++dialogEpoch, tab: 'users', permission: PERM_USERS.detailRead }
   try {
     const res = await systemApi.getUser(user.uuid)
+    if (!isContextCurrent(context)) return
+    if ((res?.code != null && res.code !== 0) || !res?.data) throw new Error(res?.message || '用户详情加载失败')
     const detail = res?.data || user
     userDialogMode.value = 'detail'
     editingUser.value = detail
     editUserGroupUuids.value = Array.isArray(detail.groups) ? [...detail.groups] : []
     editUserDialogVisible.value = true
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '用户详情加载失败，请重试')
   }
 }
 
@@ -1285,9 +1419,9 @@ async function handleDeleteUser(user) {
     return
   }
   if (!user?.uuid || deletingUserId.value) return
+  const context = { page: pageEpoch, tab: 'users', permission: PERM_USERS.delete }
   const userLabel = user.display_name || user.username || user.uuid
-  try {
-    await ElMessageBox.confirm(
+  if (!await confirmCurrent(context,
       `确认删除用户“${userLabel}”？删除后账号将被停用，所有活动会话将终止。`,
       '删除用户',
       {
@@ -1295,19 +1429,18 @@ async function handleDeleteUser(user) {
         confirmButtonText: '删除',
         cancelButtonText: '取消'
       }
-    )
-  } catch {
-    return
-  }
+    )) return
 
   deletingUserId.value = user.uuid
   try {
     await systemApi.deleteUser(user.uuid)
+    if (!isContextCurrent(context)) return
     ElMessage.success('用户删除成功')
     await fetchUsers()
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '删除失败，请重试')
   } finally {
-    deletingUserId.value = ''
+    if (context.page === pageEpoch) deletingUserId.value = ''
   }
 }
 
@@ -1316,7 +1449,8 @@ function handleEditGroup(group) {
     ElMessage.warning('暂无操作权限')
     return
   }
-  fetchPermCodeCatalog().catch(() => {})
+  if (!pageActive || activeTab.value !== 'groups' || group?.is_system) return
+  dialogEpoch++
   editingGroup.value = group
   editGroupForm.group_name = group?.group_name || ''
   editGroupForm.display_name = group?.display_name || ''
@@ -1324,6 +1458,7 @@ function handleEditGroup(group) {
   editGroupForm.enabled = Boolean(group?.enabled)
   editGroupForm.permissions = Array.isArray(group?.permissions) ? [...group.permissions] : []
   editGroupDialogVisible.value = true
+  fetchPermCodeCatalog()
 }
 
 async function handleDeleteGroup(group) {
@@ -1336,9 +1471,9 @@ async function handleDeleteGroup(group) {
     return
   }
   if (!group?.uuid || deletingGroupId.value) return
+  const context = { page: pageEpoch, tab: 'groups', permission: PERM_GROUPS.delete }
   const groupLabel = group.display_name || group.group_name || group.uuid
-  try {
-    await ElMessageBox.confirm(
+  if (!await confirmCurrent(context,
       `确认删除权限组“${groupLabel}”？仅未被用户引用的权限组可以删除。`,
       '删除权限组',
       {
@@ -1346,19 +1481,18 @@ async function handleDeleteGroup(group) {
         confirmButtonText: '删除',
         cancelButtonText: '取消'
       }
-    )
-  } catch {
-    return
-  }
+    )) return
 
   deletingGroupId.value = group.uuid
   try {
     await systemApi.deleteGroup(group.uuid)
+    if (!isContextCurrent(context)) return
     ElMessage.success('权限组删除成功')
     await fetchGroups()
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '删除失败，请重试')
   } finally {
-    deletingGroupId.value = ''
+    if (context.page === pageEpoch) deletingGroupId.value = ''
   }
 }
 
@@ -1367,6 +1501,8 @@ async function openCreateUserDialog() {
     ElMessage.warning('暂无操作权限')
     return
   }
+  if (!pageActive || activeTab.value !== 'users') return
+  const context = { page: pageEpoch, dialog: ++dialogEpoch, tab: 'users', permission: PERM_USERS.create }
   createUserForm.username = ''
   createUserForm.password = ''
   createUserForm.display_name = ''
@@ -1376,8 +1512,32 @@ async function openCreateUserDialog() {
   createUserForm.temporary_account = false
   createUserForm.expired_at = ''
   createUserForm.groups = []
-  if (hasPerm(PERM_GROUPS.read)) await fetchGroups().catch(() => {})
-  createUserDialogVisible.value = true
+  try {
+    if (isMobile.value) await loadMobileGroupOptions()
+    else if (hasPerm(PERM_GROUPS.read)) await fetchGroups()
+    if (isContextCurrent(context)) createUserDialogVisible.value = true
+  } catch (error) { if (isContextCurrent(context)) ElMessage.error(error?.message || '权限组选项加载失败，请重试') }
+}
+
+/** """手机用户表单读取完整可选权限组，不受列表当前页限制。""" */
+async function loadMobileGroupOptions() {
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'users', permission: PERM_GROUPS.read }
+  const requestId = ++optionsRequest
+  if (!isContextCurrent(context)) { groupOptions.value = []; return }
+  const groups = []
+  let page = 1
+  let total = 0
+  do {
+    const res = await systemApi.getGroups({ page, page_size: 100 })
+    if (requestId !== optionsRequest || !isContextCurrent(context)) return
+    if ((res?.code != null && res.code !== 0) || !Array.isArray(res?.data?.items)) throw new Error(res?.message || '权限组选项加载失败')
+    const items = res.data.items
+    groups.push(...items)
+    total = res?.data?.total || 0
+    if (!items.length) break
+    page += 1
+  } while (groups.length < total)
+  if (requestId === optionsRequest && isContextCurrent(context)) groupOptions.value = groups
 }
 
 function openCreateGroupDialog() {
@@ -1385,13 +1545,15 @@ function openCreateGroupDialog() {
     ElMessage.warning('暂无操作权限')
     return
   }
-  fetchPermCodeCatalog().catch(() => {})
+  if (!pageActive || activeTab.value !== 'groups') return
+  dialogEpoch++
   createGroupForm.group_name = ''
   createGroupForm.display_name = ''
   createGroupForm.remark = ''
   createGroupForm.enabled = true
   createGroupForm.permissions = []
   createGroupDialogVisible.value = true
+  fetchPermCodeCatalog()
 }
 
 async function handleSaveEditUser() {
@@ -1399,18 +1561,22 @@ async function handleSaveEditUser() {
     ElMessage.warning('暂无操作权限')
     return
   }
-  if (!editingUser.value) return
+  if (!editingUser.value || !editUserDialogVisible.value || savingEditUser.value || userDialogMode.value !== 'edit') return
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'users', permission: PERM_USERS.groupUpdate }
+  if (!isContextCurrent(context)) return
   savingEditUser.value = true
   try {
     await systemApi.updateUserGroups(editingUser.value.uuid, {
-      groups: editUserGroupUuids.value
+      groups: [...editUserGroupUuids.value]
     })
+    if (!isContextCurrent(context)) return
     ElMessage.success('保存成功')
     editUserDialogVisible.value = false
     await fetchUsers()
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '保存失败，请重试')
   } finally {
-    savingEditUser.value = false
+    if (context.dialog === dialogEpoch) savingEditUser.value = false
   }
 }
 
@@ -1419,12 +1585,13 @@ async function handleSubmitCreateUser() {
     ElMessage.warning('暂无操作权限')
     return
   }
-  if (creatingUser.value) return
-  const ok = await createUserFormRef.value?.validate?.().catch(() => false)
-  if (!ok) return
-
+  if (creatingUser.value || !createUserDialogVisible.value) return
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'users', permission: PERM_USERS.create }
+  if (!isContextCurrent(context)) return
   creatingUser.value = true
   try {
+    const ok = await createUserFormRef.value?.validate?.().catch(() => false)
+    if (!ok || !isContextCurrent(context)) return
     const payload = {
       username: createUserForm.username.trim(),
       password: createUserForm.password,
@@ -1434,15 +1601,17 @@ async function handleSubmitCreateUser() {
       enabled: Boolean(createUserForm.enabled),
       temporary_account: Boolean(createUserForm.temporary_account),
       expired_at: createUserForm.expired_at || undefined,
-      groups: Array.isArray(createUserForm.groups) ? createUserForm.groups : []
+      groups: Array.isArray(createUserForm.groups) ? [...createUserForm.groups] : []
     }
     await systemApi.createUser(payload)
+    if (!isContextCurrent(context)) return
     ElMessage.success('创建成功')
     createUserDialogVisible.value = false
     await fetchUsers()
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '创建失败，请重试')
   } finally {
-    creatingUser.value = false
+    if (context.dialog === dialogEpoch) creatingUser.value = false
   }
 }
 
@@ -1451,26 +1620,30 @@ async function handleSubmitCreateGroup() {
     ElMessage.warning('暂无操作权限')
     return
   }
-  if (creatingGroup.value) return
-  const ok = await createGroupFormRef.value?.validate?.().catch(() => false)
-  if (!ok) return
-
+  if (creatingGroup.value || !createGroupDialogVisible.value || permCodeCatalogLoading.value || permCodeCatalogError.value) return
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'groups', permission: PERM_GROUPS.create }
+  if (!isContextCurrent(context)) return
   creatingGroup.value = true
   try {
+    const ok = await createGroupFormRef.value?.validate?.().catch(() => false)
+    if (!isContextCurrent(context)) return
+    if (!ok) { groupSection.value = 'profile'; return }
     const payload = {
       group_name: createGroupForm.group_name.trim(),
       display_name: createGroupForm.display_name.trim(),
       remark: createGroupForm.remark?.trim() || undefined,
       enabled: Boolean(createGroupForm.enabled),
-      permissions: Array.isArray(createGroupForm.permissions) ? createGroupForm.permissions : []
+      permissions: Array.isArray(createGroupForm.permissions) ? [...createGroupForm.permissions] : []
     }
     await systemApi.createGroup(payload)
+    if (!isContextCurrent(context)) return
     ElMessage.success('创建成功')
     createGroupDialogVisible.value = false
     await fetchGroups()
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '创建失败，请重试')
   } finally {
-    creatingGroup.value = false
+    if (context.dialog === dialogEpoch) creatingGroup.value = false
   }
 }
 
@@ -1479,31 +1652,93 @@ async function handleSaveEditGroup() {
     ElMessage.warning('暂无操作权限')
     return
   }
-  if (!editingGroup.value) return
-  if (savingEditGroup.value) return
-  const ok = await editGroupFormRef.value?.validate?.().catch(() => false)
-  if (!ok) return
-
+  if (!editingGroup.value || !editGroupDialogVisible.value || savingEditGroup.value || permCodeCatalogLoading.value || permCodeCatalogError.value) return
+  const context = { page: pageEpoch, dialog: dialogEpoch, tab: 'groups', permission: PERM_GROUPS.update }
+  if (!isContextCurrent(context)) return
   savingEditGroup.value = true
   try {
+    const ok = await editGroupFormRef.value?.validate?.().catch(() => false)
+    if (!isContextCurrent(context)) return
+    if (!ok) { groupSection.value = 'profile'; return }
     const payload = {
       display_name: editGroupForm.display_name.trim(),
       remark: editGroupForm.remark?.trim() || undefined,
       enabled: Boolean(editGroupForm.enabled),
-      permissions: Array.isArray(editGroupForm.permissions) ? editGroupForm.permissions : []
+      permissions: Array.isArray(editGroupForm.permissions) ? [...editGroupForm.permissions] : []
     }
     await systemApi.updateGroup(editingGroup.value.uuid, payload)
+    if (!isContextCurrent(context)) return
     ElMessage.success('保存成功')
     editGroupDialogVisible.value = false
     await fetchGroups()
-  } catch {
+  } catch (error) {
+    if (isContextCurrent(context)) ElMessage.error(error?.message || '保存失败，请重试')
   } finally {
-    savingEditGroup.value = false
+    if (context.dialog === dialogEpoch) savingEditGroup.value = false
   }
 }
+
+/**
+ * 作废当前页面的异步工作并关闭挂载到 body 的弹窗，保留列表筛选和页码。
+ * @returns {void} 页面再次激活时重新读取当前模块。
+ */
+function invalidatePageWork() {
+  pageEpoch++; dialogEpoch++; userRequest++; groupRequest++; dictRequest++; catalogRequest++; optionsRequest++
+  if (dictSearchTimer) clearTimeout(dictSearchTimer)
+  dictSearchTimer = null
+  confirmationId++
+  if (ownConfirmation) ElMessageBox.close()
+  ownConfirmation = false
+  editUserDialogVisible.value = false; createUserDialogVisible.value = false
+  editGroupDialogVisible.value = false; createGroupDialogVisible.value = false; dictDialogVisible.value = false
+  editingUser.value = null; editingGroup.value = null
+  creatingUser.value = false; creatingGroup.value = false; savingEditUser.value = false; savingEditGroup.value = false; dictSaving.value = false
+  userLoading.value = false; groupLoading.value = false; dictLoading.value = false; permCodeCatalogLoading.value = false
+  userError.value = ''; groupError.value = ''; dictError.value = ''
+  deletingUserId.value = ''; deletingGroupId.value = ''; deletingDictId.value = ''
+}
+
+watch([editUserDialogVisible, createUserDialogVisible, editGroupDialogVisible, createGroupDialogVisible, dictDialogVisible], (values, previous) => {
+  if (!values.some((value, index) => !value && previous[index])) return
+  dialogEpoch++; catalogRequest++; optionsRequest++
+  creatingUser.value = false; creatingGroup.value = false; savingEditUser.value = false; savingEditGroup.value = false; dictSaving.value = false; permCodeCatalogLoading.value = false
+}, { flush: 'sync' })
+watch(activeTab, () => { invalidatePageWork(); loadActiveTabData() })
+watch(() => [PERM.pages.system.permissions.access, ...Object.values(PERM_TABS).flatMap(tab => [tab.visible, tab.access]), ...Object.values(PERM_USERS), ...Object.values(PERM_GROUPS), ...Object.values(PERM_DICT)].map(code => hasPerm(code)), () => {
+  invalidatePageWork()
+  if (!canViewUserList.value) userList.value = []
+  if (!canViewGroupList.value) groupList.value = []
+  if (!canViewDictList.value) permCodeList.value = []
+  if (!hasPerm(PERM_GROUPS.read)) groupOptions.value = []
+  loadActiveTabData()
+})
+onMounted(() => loadActiveTabData())
+onActivated(() => { if (!pageActive) { pageActive = true; loadActiveTabData() } })
+onDeactivated(() => { pageActive = false; invalidatePageWork() })
+onBeforeUnmount(() => { pageActive = false; invalidatePageWork() })
 </script>
 
 <style scoped>
+.mobile-management-list { display: grid; gap: 12px; }
+.mobile-management-card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; background: white; min-width: 0; overflow-wrap: anywhere; }
+.mobile-management-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.mobile-management-card header > div { min-width: 0; }
+.mobile-management-card h2 { font-weight: 700; font-size: 17px; color: #0f172a; }
+.mobile-management-card p { margin-top: 6px; font-size: 13px; color: #64748b; line-height: 1.6; }
+.mobile-management-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.mobile-management-tags :deep(.el-tag) { max-width: 100%; height: auto; min-height: 24px; white-space: normal; }
+.mobile-management-card summary { min-height: 44px; padding-block: 12px; font-size: 14px; color: #475569; cursor: pointer; }
+.mobile-management-card dl { margin: 0; font-size: 13px; line-height: 1.7; }
+.mobile-management-card dt { color: #64748b; margin-top: 8px; }
+.mobile-management-card dd { margin: 0; color: #0f172a; }
+.mobile-management-card footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.mobile-management-card footer .el-button { flex: 1; min-height: 44px; margin: 0; }
+.mobile-permission-code { font-family: monospace; overflow-wrap: anywhere; }
+.mobile-group-steps { display: flex; gap: 8px; margin-bottom: 16px; position: sticky; top: 0; background: white; z-index: 2; padding-bottom: 8px; }
+.mobile-group-steps button { flex: 1; min-height: 44px; border-radius: 10px; background: #f1f5f9; color: #475569; }
+.mobile-group-steps button.active { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+.mobile-batch-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+.mobile-batch-toolbar .el-button { flex: 1; min-height: 44px; margin: 0; }
 :deep(.group-permission-dialog .el-dialog__body) {
   max-height: calc(100vh - 180px);
   overflow: auto;

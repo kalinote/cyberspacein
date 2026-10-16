@@ -1,7 +1,14 @@
 <template>
   <div class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow flex flex-col">
     <div class="mb-4">
-      <h3 class="text-xl font-bold text-gray-900 mb-4 line-clamp-2">{{ blueprint.title }}</h3>
+      <div class="flex items-start justify-between gap-3 mb-4">
+        <h3 class="text-xl font-bold text-gray-900 min-w-0 line-clamp-2">{{ blueprint.title }}</h3>
+        <BlueprintPinButton
+          compact
+          :blueprint="blueprint"
+          @change="emit('pin-change', $event)"
+        />
+      </div>
       <div class="flex items-center gap-2 flex-wrap">
         <el-tag
           v-if="blueprint.taskType"
@@ -171,6 +178,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import BlueprintRunControl from '@/components/action/BlueprintRunControl.vue'
+import BlueprintPinButton from '@/components/action/BlueprintPinButton.vue'
 import { PERM } from '@/utils/permissions'
 import { hasAll, hasPerm } from '@/utils/permissionKit'
 
@@ -194,6 +202,7 @@ const canEncapsulate = computed(() => hasAll([
 ]))
 
 const emit = defineEmits([
+  'pin-change',
   'view',
   'edit',
   'publish',

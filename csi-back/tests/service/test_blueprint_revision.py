@@ -233,10 +233,14 @@ async def test_publish_hash_includes_runtime_definition_snapshot(
     await BlueprintRevisionService.publish(blueprint)
     blueprint.default_scheduling_mode = ActionSchedulingModeEnum.STREAMING
     await BlueprintRevisionService.publish(blueprint)
+    blueprint.is_pinned = True
+    await BlueprintRevisionService.publish(blueprint)
 
-    assert len(inserted) == 3
+    assert len(inserted) == 4
     assert inserted[0].content_hash != inserted[1].content_hash
     assert inserted[1].content_hash != inserted[2].content_hash
+    assert inserted[2].content_hash == inserted[3].content_hash
+    assert "is_pinned" not in inserted[3].blueprint_snapshot.model_dump()
     assert (
         inserted[2].blueprint_snapshot.default_scheduling_mode
         == ActionSchedulingModeEnum.STREAMING

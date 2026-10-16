@@ -1,9 +1,15 @@
 <template>
-    <div>
+    <div :class="{ 'mobile-agent-monitor': isMobile }">
         <Header />
 
+        <header v-if="isMobile" class="mobile-agent-heading">
+            <h1>分析中心</h1>
+            <p>选择引擎开始分析，或继续已有会话。</p>
+            <button v-if="hasPerm(PERM.pages.agent.sessions.visible)" type="button" :disabled="!canViewSessions" @click="canViewSessions && router.push({ name: 'agent-session-list' })"><Icon icon="mdi:message-text-outline" /> 查看分析会话 <Icon icon="mdi:chevron-right" /></button>
+        </header>
+
         <!-- 英雄区域 -->
-        <section class="bg-linear-to-br from-blue-50 to-white py-12">
+        <section v-if="!isMobile" class="bg-linear-to-br from-blue-50 to-white py-12">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div class="lg:col-span-2">
@@ -69,29 +75,34 @@
         </section>
 
         <!-- 分析引擎列表区域 -->
-        <section class="py-12 bg-linear-to-b from-white to-gray-50">
+        <section class="agent-launch-section py-12 bg-linear-to-b from-white to-gray-50">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center mb-8">
                     <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
                         <Icon icon="mdi:format-list-bulleted" class="text-blue-600 text-2xl" />
                         <span><span class="text-blue-500">分析引擎</span>列表</span>
                     </h2>
-                    <el-button type="primary" link @click="goToEngineConfig">
+                    <el-button v-if="!isMobile || hasPerm(PERM.pages.agent.config.agents.visible)" type="primary" link :disabled="isMobile && !hasPerm(PERM.pages.agent.config.agents.access)" @click="goToEngineConfig">
                         <template #icon><Icon icon="mdi:arrow-right" /></template>
                         查看全部分析引擎
                     </el-button>
                 </div>
 
                 <div v-loading="agentListLoading" element-loading-text="加载中..." class="min-h-48">
-                    <div v-if="!agentListLoading && agentList.length === 0" class="flex flex-col items-center justify-center py-16">
+                    <div v-if="isMobile && (agentListError || agentOptionsError)" class="mb-4 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700" role="alert">
+                        <p>{{ agentListError || agentOptionsError }}</p>
+                        <p v-if="agentList.length" class="mt-1 text-xs">以下保留上次加载的引擎资料，可能不是最新状态。</p>
+                        <el-button class="mt-3" :loading="agentListLoading" @click="fetchAgentList(); loadAgentOptions()">重新加载</el-button>
+                    </div>
+                    <div v-if="!agentListLoading && agentList.length === 0 && (!isMobile || !agentListError)" class="flex flex-col items-center justify-center py-16">
                         <Icon icon="mdi:inbox" class="text-6xl text-gray-300 mb-4" />
                         <p class="text-gray-500">暂无分析引擎</p>
                     </div>
-                    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div v-else-if="agentList.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div
                             v-for="item in agentList"
                             :key="item.id"
-                            class="bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow"
+                            class="agent-launch-card bg-white rounded-2xl p-6 shadow-lg border border-blue-100 hover:shadow-xl transition-shadow"
                         >
                             <div class="flex items-start justify-between mb-4">
                                 <div class="flex-1 min-w-0">
@@ -165,7 +176,7 @@
         </section>
 
         <!-- 分析引擎分类统计 -->
-        <section class="py-12 bg-white">
+        <section v-if="!isMobile" class="py-12 bg-white">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center mb-8">
                     <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
@@ -231,7 +242,7 @@
         </section>
 
         <!-- 分析引擎性能监控 -->
-        <section class="py-12 bg-linear-to-b from-gray-50 to-white">
+        <section v-if="!isMobile" class="py-12 bg-linear-to-b from-gray-50 to-white">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center mb-8">
                     <h2 class="text-2xl font-bold text-gray-900 flex items-center space-x-2">
@@ -326,16 +337,23 @@ import Header from '@/components/Header.vue'
 import { Icon } from '@iconify/vue'
 import AgentStartButton from '@/components/agent/AgentStartButton.vue'
 import { agentApi } from '@/api/agent'
-import { getPaginatedData } from '@/utils/request'
 import { formatDateTime } from '@/utils/action'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import { hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
 
 defineOptions({ name: 'AgentMonitor' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const canViewSessions = computed(() => hasPerm(PERM.pages.agent.sessions.access) && hasPerm(PERM.operations.agent.session.read))
 const statsTimeRange = ref('week')
 const agentList = ref([])
 const agentListLoading = ref(false)
+const agentListError = ref('')
+const agentOptionsError = ref('')
 const agentOptions = ref([])
+let agentListRequest = 0
 
 const runAgentOptions = computed(() =>
     agentOptions.value.map((item) => ({
@@ -363,17 +381,26 @@ const formatToolsLabel = (tools) => {
 }
 
 async function fetchAgentList() {
+    const requestId = ++agentListRequest
     agentListLoading.value = true
+    agentListError.value = ''
     try {
-        const result = await getPaginatedData(agentApi.getAgentList, {
+        const response = await agentApi.getAgentList({
             page: 1,
             page_size: 6
         })
-        agentList.value = result.items || []
+        if (requestId !== agentListRequest) return
+        const data = response?.code === 0 && response.data
+            ? response.data
+            : Array.isArray(response?.items) && typeof response.total === 'number' ? response : null
+        if (!data || !Array.isArray(data.items)) throw new Error('引擎列表返回无效')
+        agentList.value = data.items
     } catch {
-        agentList.value = []
+        if (requestId !== agentListRequest) return
+        agentListError.value = '分析引擎加载失败，请重新加载'
+        if (!isMobile.value) agentList.value = []
     } finally {
-        agentListLoading.value = false
+        if (requestId === agentListRequest) agentListLoading.value = false
     }
 }
 
@@ -382,15 +409,18 @@ function goToEngineConfig() {
 }
 
 async function loadAgentOptions() {
+    agentOptionsError.value = ''
     try {
         const res = await agentApi.getAgentsConfigList()
-        const list = res?.data || []
+        if (res?.code !== 0 || !Array.isArray(res.data)) throw new Error('引擎选项返回无效')
+        const list = res.data
         agentOptions.value = list.map((item) => ({
             label: item.name,
             value: item.id,
         }))
     } catch {
         agentOptions.value = []
+        agentOptionsError.value = '可运行引擎选项加载失败，请重新加载后发起分析'
     }
 }
 
@@ -496,3 +526,17 @@ const engineStats = ref([
                 }
             ])
 </script>
+
+<style scoped>
+.mobile-agent-heading { padding: 20px 16px; background: #fff; }
+.mobile-agent-heading h1 { font-size: 24px; font-weight: 700; color: #0f172a; }
+.mobile-agent-heading p { margin: 6px 0 16px; color: #64748b; font-size: 14px; }
+.mobile-agent-heading button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 52px; padding: 12px; border-radius: 12px; background: #eff6ff; color: #1d4ed8; font-size: 15px; text-align: left; }
+.mobile-agent-heading button > svg:last-child { margin-left: auto; }
+.mobile-agent-heading button:disabled { opacity: .5; }
+.mobile-agent-monitor .agent-launch-section { padding: 16px 0; background: #f8fafc; }
+.mobile-agent-monitor .agent-launch-section > div > div:first-child { margin-bottom: 14px; gap: 8px; }
+.mobile-agent-monitor .agent-launch-section h2 { font-size: 18px; }
+.mobile-agent-monitor .agent-launch-card { padding: 16px; box-shadow: none; border-color: #e2e8f0; }
+.mobile-agent-monitor .agent-launch-card :deep(button) { min-height: 44px; }
+</style>

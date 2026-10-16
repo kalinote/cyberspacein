@@ -1,5 +1,5 @@
 <template>
-    <div v-if="approval" class="min-w-0">
+    <div v-if="approval" class="agent-approval-body min-w-0">
         <ModifyEntityApprovalBody
             v-if="approval.source === APPROVAL_SOURCE_MODIFY_ENTITY"
             :payload="approval.payload"
@@ -10,6 +10,10 @@
         />
         <WikiEditApprovalBody
             v-else-if="approval.source === APPROVAL_SOURCE_WIKI_EDIT"
+            :payload="approval.payload"
+        />
+        <EvidenceApprovalBody
+            v-else-if="APPROVAL_SOURCES_EVIDENCE.includes(approval.source)"
             :payload="approval.payload"
         />
         <div v-else class="rounded-lg border border-amber-100 bg-amber-50/40 p-4">
@@ -30,10 +34,12 @@ import { computed } from 'vue'
 import ModifyEntityApprovalBody from './ModifyEntityApprovalBody.vue'
 import WikiCreateApprovalBody from './WikiCreateApprovalBody.vue'
 import WikiEditApprovalBody from './WikiEditApprovalBody.vue'
+import EvidenceApprovalBody from './EvidenceApprovalBody.vue'
 import {
     APPROVAL_SOURCE_MODIFY_ENTITY,
     APPROVAL_SOURCE_WIKI_CREATE,
     APPROVAL_SOURCE_WIKI_EDIT,
+    APPROVAL_SOURCES_EVIDENCE,
 } from '@/utils/agentApproval'
 import { stringifyJsonSafe } from '@/utils/agentSse'
 
@@ -46,3 +52,13 @@ const props = defineProps({
 
 const payloadJson = computed(() => stringifyJsonSafe(props.approval?.payload ?? {}, 2))
 </script>
+
+<style scoped>
+@media (max-width: 767px) {
+    .agent-approval-body { overflow-wrap: anywhere; }
+    .agent-approval-body :deep(pre) { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .agent-approval-body :deep(.el-collapse-item__header) { min-height: 44px; height: auto; line-height: 1.5; }
+    .agent-approval-body :deep(.el-tag) { max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; }
+    .agent-approval-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; }
+}
+</style>

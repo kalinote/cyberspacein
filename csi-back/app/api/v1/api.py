@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     annotation,
     article,
     embedding,
+    evidence,
     forum,
     highlight,
     overview,
@@ -38,3 +39,4 @@ api_router.include_router(auth.router)
 api_router.include_router(system.router)
 api_router.include_router(system_config.router)
 api_router.include_router(wiki.router)
+api_router.include_router(evidence.router)

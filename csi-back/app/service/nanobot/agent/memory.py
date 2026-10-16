@@ -318,7 +318,8 @@ class Consolidator:
             )
             target = budget // 2
             try:
-                estimated, source = self.estimate_session_prompt_tokens(
+                estimated, source = await asyncio.to_thread(
+                    self.estimate_session_prompt_tokens,
                     session,
                     session_summary=session_summary,
                 )
@@ -344,7 +345,8 @@ class Consolidator:
                 if estimated <= target:
                     break
 
-                boundary = self.pick_consolidation_boundary(
+                boundary = await asyncio.to_thread(
+                    self.pick_consolidation_boundary,
                     session, max(1, estimated - target),
                 )
                 if boundary is None:
@@ -387,7 +389,8 @@ class Consolidator:
                 await self.sessions.save(session)
 
                 try:
-                    estimated, source = self.estimate_session_prompt_tokens(
+                    estimated, source = await asyncio.to_thread(
+                        self.estimate_session_prompt_tokens,
                         session,
                         session_summary=session_summary,
                     )

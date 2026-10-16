@@ -2,6 +2,7 @@
     <div class="shrink-0 w-full border-t border-gray-100 bg-white">
         <button
             type="button"
+            :aria-expanded="expanded"
             class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
             @click="expanded = !expanded"
         >
@@ -69,3 +70,9 @@ defineProps({
 
 const expanded = ref(false)
 </script>
+
+<style scoped>
+@media (max-width: 767px) {
+    button { min-height: 44px; }
+}
+</style>

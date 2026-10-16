@@ -2,10 +2,22 @@
     <div 
         class="input-renderer-wrapper nodrag" 
         :class="[positionClass, { 'multi-line-layout': isMultiLineLayout }]"
-        :style="inputConfig.custom_style"
+        :style="isMobile ? undefined : inputConfig.custom_style"
     >
+        <div v-if="isMobile" class="mobile-blueprint-input">
+            <div class="mobile-input-heading"><span>{{ inputConfig.label || inputConfig.name }}<strong v-if="inputConfig.required"> *</strong></span><el-button v-if="isTemplateMode && nodeId && inputConfig.type !== 'comment'" :disabled="disabled" :type="currentMode === PARAM_MODE.PARAM ? 'primary' : 'default'" plain @click="toggleMode">{{ currentMode === PARAM_MODE.PARAM ? '参数注入' : '固定值' }}</el-button></div>
+            <p v-if="inputConfig.description" class="mobile-input-description">{{ inputConfig.description }}</p>
+            <template v-if="inputConfig.type !== 'comment'">
+                <ParamSelector v-if="isTemplateMode && currentMode === PARAM_MODE.PARAM" :model-value="boundParamName" :input-type="inputConfig.type" :available-params="availableParams" :disabled="disabled" @update:model-value="handleParamChange" />
+                <component v-else :is="componentType" :model-value="normalizedModelValue" v-bind="computedProps" :disabled="disabled" :placeholder="inputConfig.placeholder || `请输入${inputConfig.label || inputConfig.name}`" :aria-label="inputConfig.label || inputConfig.name" @update:model-value="handleUpdate">
+                    <template v-if="componentType === 'el-select'"><el-option v-for="option in inputConfig.options || []" :key="option.value" :label="option.label" :value="option.value" /></template>
+                    <template v-else-if="componentType === 'el-checkbox-group'"><el-checkbox v-for="option in inputConfig.options || []" :key="option.value" :label="option.value">{{ option.label }}</el-checkbox></template>
+                    <template v-else-if="componentType === 'el-radio-group'"><el-radio v-for="option in inputConfig.options || []" :key="option.value" :label="option.value">{{ option.label }}</el-radio></template>
+                </component>
+            </template>
+        </div>
         <!-- 注释型输入项：仅展示文本 -->
-        <template v-if="inputConfig.type === 'comment'">
+        <template v-else-if="inputConfig.type === 'comment'">
             <div class="comment-display">
                 <div class="divider-line"></div>
                 <div class="comment-content">
@@ -183,6 +195,9 @@ import ConditionInput from './ConditionInput.vue'
 import KeyValueEditor from './KeyValueEditor.vue'
 import ParamSelector from '@/components/action/template/ParamSelector.vue'
 import { PARAM_MODE } from '@/utils/action/constants'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileBlueprintStructuredField from '@/components/action/mobile/MobileBlueprintStructuredField.vue'
+const { isMobile } = useMobileViewport()
 
 // TODO: 这里还需要优化规范一下，比如考虑是否把boolean和switch统一起来
 const INPUT_TYPE_MAP = {
@@ -265,6 +280,7 @@ watch(currentBinding, (paramName) => {
 }, { immediate: true })
 
 const toggleMode = () => {
+    if (props.disabled) return
     if (currentMode.value === PARAM_MODE.FIXED) {
         currentMode.value = PARAM_MODE.PARAM
     } else {
@@ -274,17 +290,20 @@ const toggleMode = () => {
 }
 
 const handleParamChange = (paramName) => {
+    if (props.disabled) return
     boundParamName.value = paramName
     updateBinding(paramName)
 }
 
 const updateBinding = (paramName) => {
+    if (props.disabled) return
     if (templateContext?.updateBinding && props.nodeId && props.inputConfig.name) {
         templateContext.updateBinding(props.nodeId, props.inputConfig.name, paramName)
     }
 }
 
 const componentType = computed(() => {
+    if (isMobile.value && ['tags', 'conditions', 'key-value'].includes(props.inputConfig.type)) return MobileBlueprintStructuredField
     return INPUT_TYPE_MAP[props.inputConfig.type] || 'el-input'
 })
 
@@ -298,7 +317,8 @@ const computedProps = computed(() => {
     
     return {
         ...defaultProps,
-        ...customProps
+        ...customProps,
+        ...(isMobile.value && ['tags', 'conditions', 'key-value'].includes(props.inputConfig.type) ? { kind: props.inputConfig.type } : {})
     }
 })
 
@@ -326,6 +346,7 @@ const normalizedModelValue = computed(() => {
 })
 
 const handleUpdate = (value) => {
+    if (props.disabled) return
     emit('update:modelValue', value)
 }
 </script>
@@ -334,6 +355,14 @@ const handleUpdate = (value) => {
 .input-renderer-wrapper {
     width: 100%;
 }
+.mobile-blueprint-input { display: grid; gap: 8px; min-width: 0; width: 100%; }
+.mobile-input-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; color: #334155; }
+.mobile-input-heading > span { min-width: 0; overflow-wrap: anywhere; }.mobile-input-heading strong { color: #dc2626; }
+.mobile-input-description { color: #64748b; font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; white-space: pre-wrap; }
+.mobile-blueprint-input :deep(.el-input__wrapper), .mobile-blueprint-input :deep(.el-select__wrapper), .mobile-blueprint-input :deep(.el-button) { min-height: 44px; }
+.mobile-blueprint-input :deep(.el-checkbox), .mobile-blueprint-input :deep(.el-radio) { min-height: 44px; white-space: normal; margin: 0; height: auto; }
+.mobile-blueprint-input :deep(.el-checkbox__label), .mobile-blueprint-input :deep(.el-radio__label) { white-space: normal; overflow-wrap: anywhere; }
+.mobile-blueprint-input :deep(.el-date-editor), .mobile-blueprint-input :deep(.el-select) { width: 100%; min-width: 0; }.mobile-blueprint-input :deep(textarea) { font-size: 16px; }
 
 .single-line-content {
     display: flex;

@@ -37,8 +37,8 @@ export const alertApi = {
       params: { max_resources: maxResources }
     })
   },
-  getInstances(params = {}) {
-    return request.get('/alerts/instances', params)
+  getInstances(params = {}, config = {}) {
+    return request.get('/alerts/instances', params, config)
   },
   getInstance(alertId) {
     return request.get(`/alerts/instances/${alertId}`)
@@ -57,8 +57,8 @@ export const alertApi = {
       note
     })
   },
-  getStats() {
-    return request.get('/alerts/stats')
+  getStats(config = {}) {
+    return request.get('/alerts/stats', undefined, config)
   },
   getWorkerStatus() {
     return request.get('/alerts/worker/status')

@@ -1,0 +1,15 @@
+@media (max-width: 767px) {
+  .wiki-revision-modal.el-dialog { display: flex; flex-direction: column; width: 100%; height: var(--mobile-viewport-height, 100dvh); max-height: var(--mobile-viewport-height, 100dvh); margin: 0; padding: 16px; border-radius: 0; }
+  .wiki-revision-modal .el-dialog__header { padding-right: 44px; flex-shrink: 0; }
+  .wiki-revision-modal .el-dialog__headerbtn { width: 44px; height: 44px; }
+  .wiki-revision-modal .el-dialog__body { overflow-y: auto; min-height: 0; flex: 1; overflow-wrap: anywhere; }
+  .wiki-revision-modal .el-dialog__footer { flex-shrink: 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .wiki-revision-modal .el-button { min-height: 44px; }
+  .wiki-revision-modal .el-select__wrapper { min-height: 44px; }
+  .wiki-revision-modal .el-pagination { flex-wrap: wrap; justify-content: center; }
+  .wiki-revision-modal .el-dialog__body > .max-h-\[65vh\], .wiki-revision-modal .el-dialog__body > .max-h-\[70vh\] { max-height: none; }
+  .wiki-revision-modal .markdown-body { min-width: 0; overflow-wrap: anywhere; }
+  .wiki-revision-modal .markdown-body table { display: block; max-width: 100%; overflow-x: auto; }
+  .wiki-revision-modal .markdown-body pre { max-width: 100%; overflow-x: auto; }
+  .wiki-revision-overlay { top: var(--mobile-viewport-top, 0px); height: var(--mobile-viewport-height, 100dvh); bottom: auto; }
+}

@@ -7,12 +7,19 @@ import pytest
 from app.api.v1.endpoints.action import blueprint as blueprint_endpoint
 from app.api.v1.endpoints.action import instance as instance_endpoint
 from app.models.action.action import ActionInstanceModel, ActionInstanceNodeModel
-from app.models.action.blueprint import ActionBlueprintModel, GraphModel, ViewportModel
+from app.models.action.blueprint import (
+    ActionBlueprintModel,
+    GraphModel,
+    ViewportModel,
+    create_blueprint_snapshot,
+)
+from app.models.action.blueprint_revision import ActionBlueprintRevisionModel
+from app.models.action.node import ActionNodeModel
 from app.models.action.component_run import ComponentRunModel
 from app.models.action.node_execution import ActionNodeExecutionModel
 from app.models.action.schedule import ActionScheduleModel
 from app.schemas.general import PageParamsSchema
-from app.schemas.action.blueprint import ActionBlueprintSchema
+from app.schemas.action.blueprint import ActionBlueprintPinSchema, ActionBlueprintSchema
 from app.schemas.constants import (
     ActionInstanceNodeStatusEnum,
     ActionSchedulingModeEnum,
@@ -37,18 +44,124 @@ def test_blueprint_schema_defaults_to_barrier_mode() -> None:
 
 
 @pytest.mark.asyncio
-async def test_blueprint_list_sorts_by_created_at_descending(monkeypatch):
+@pytest.mark.parametrize(
+    ("is_pinned", "expected_filters"),
+    [
+        (None, {"is_deleted": False}),
+        (True, {"is_deleted": False, "is_pinned": True}),
+        (False, {"is_deleted": False, "is_pinned": {"$ne": True}}),
+    ],
+)
+async def test_blueprint_list_filters_before_pagination(
+    monkeypatch, is_pinned, expected_filters,
+):
+    """置顶筛选在分页前执行，未置顶筛选兼容旧文档缺字段。"""
     query = Mock()
-    query.count = AsyncMock(return_value=0)
+    query.count = AsyncMock(return_value=105)
     query.sort.return_value = query
     query.skip.return_value = query
     query.limit.return_value = query
     query.to_list = AsyncMock(return_value=[])
-    monkeypatch.setattr(ActionBlueprintModel, "find", Mock(return_value=query))
+    find = Mock(return_value=query)
+    monkeypatch.setattr(ActionBlueprintModel, "find", find)
 
-    await blueprint_endpoint.get_blueprints(PageParamsSchema())
+    response = await blueprint_endpoint.get_blueprints(
+        PageParamsSchema(page=2, page_size=100), is_pinned=is_pinned,
+    )
 
+    find.assert_called_once_with(expected_filters)
     query.sort.assert_called_once_with("-created_at")
+    query.skip.assert_called_once_with(100)
+    query.limit.assert_called_once_with(100)
+    assert response.total == 105
+    assert response.total_pages == 2
+
+
+def test_legacy_blueprint_defaults_to_unpinned_and_snapshot_excludes_pin(monkeypatch):
+    """旧蓝图默认未置顶，置顶状态不进入执行快照或编辑请求。"""
+    monkeypatch.setattr(
+        ActionBlueprintModel, "get_motor_collection", classmethod(lambda _cls: object()),
+    )
+    blueprint = ActionBlueprintModel.model_validate({
+        "_id": "legacy-blueprint",
+        "name": "旧蓝图",
+        "version": "1.0.0",
+        "description": "描述",
+        "target": "目标",
+        "graph": {"nodes": [], "edges": [], "viewport": {"x": 0, "y": 0, "zoom": 1}},
+    })
+
+    assert blueprint.is_pinned is False
+    assert blueprint_endpoint._blueprint_detail(blueprint).is_pinned is False
+    blueprint.is_pinned = True
+    assert blueprint_endpoint._blueprint_detail(blueprint).is_pinned is True
+    assert "is_pinned" not in create_blueprint_snapshot(blueprint).model_dump()
+    assert "is_pinned" not in ActionBlueprintSchema.model_fields
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pin_fields", [{}, {"is_pinned": True}])
+async def test_blueprint_list_returns_pin_state(monkeypatch, pin_fields):
+    """列表回显置顶状态，并兼容未包含置顶字段的旧对象。"""
+    blueprint = SimpleNamespace(
+        id="blueprint-1", name="蓝图", version="1.0.0", description="描述",
+        target="目标", implementation_period=0, graph=SimpleNamespace(nodes=[]),
+        created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
+        is_template=False, **pin_fields,
+    )
+    query = Mock()
+    query.count = AsyncMock(return_value=1)
+    query.sort.return_value = query
+    query.skip.return_value = query
+    query.limit.return_value = query
+    query.to_list = AsyncMock(return_value=[blueprint])
+    revision_query = Mock()
+    revision_query.sort.return_value = revision_query
+    revision_query.first_or_none = AsyncMock(return_value=None)
+    node_query = Mock(count=AsyncMock(return_value=0))
+    monkeypatch.setattr(ActionBlueprintModel, "find", Mock(return_value=query))
+    monkeypatch.setattr(ActionBlueprintRevisionModel, "find", Mock(return_value=revision_query))
+    monkeypatch.setattr(ActionNodeModel, "find", Mock(return_value=node_query))
+    monkeypatch.setattr(blueprint_endpoint, "count_workflow_paths", Mock(return_value=0))
+
+    response = await blueprint_endpoint.get_blueprints(PageParamsSchema())
+
+    assert response.items[0].is_pinned is pin_fields.get("is_pinned", False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_pinned", [True, False])
+@pytest.mark.parametrize("modified_count", [0, 1])
+async def test_pin_update_is_atomic_and_idempotent(monkeypatch, is_pinned, modified_count):
+    """置顶只原子更新单个字段，重复设置相同状态也成功。"""
+    query = Mock(update=AsyncMock(return_value=SimpleNamespace(
+        matched_count=1, modified_count=modified_count,
+    )))
+    find_one = Mock(return_value=query)
+    monkeypatch.setattr(ActionBlueprintModel, "find_one", find_one)
+
+    response = await blueprint_endpoint.update_blueprint_pin(
+        "blueprint-1", ActionBlueprintPinSchema(is_pinned=is_pinned),
+    )
+
+    find_one.assert_called_once_with({"_id": "blueprint-1", "is_deleted": False})
+    query.update.assert_awaited_once_with({"$set": {"is_pinned": is_pinned}})
+    assert response.code == 0
+    assert response.data.is_pinned is is_pinned
+
+
+@pytest.mark.asyncio
+async def test_pin_update_rejects_missing_or_deleted_blueprint(monkeypatch):
+    """不存在或已删除的蓝图不能置顶。"""
+    query = Mock(update=AsyncMock(return_value=SimpleNamespace(matched_count=0)))
+    monkeypatch.setattr(ActionBlueprintModel, "find_one", Mock(return_value=query))
+
+    response = await blueprint_endpoint.update_blueprint_pin(
+        "missing", ActionBlueprintPinSchema(is_pinned=True),
+    )
+
+    assert response.code == 240411
+    assert response.data is None
 
 
 @pytest.mark.asyncio
@@ -254,6 +367,7 @@ async def test_update_blueprint_keeps_id_and_disables_invalid_schedules(
         },
         created_at=created_at,
         updated_at=old_updated_at,
+        is_pinned=True,
         save=AsyncMock(),
     )
     schedule = SimpleNamespace(
@@ -305,6 +419,8 @@ async def test_update_blueprint_keeps_id_and_disables_invalid_schedules(
     )
     assert blueprint.template is None
     assert blueprint.created_at == created_at
+    assert blueprint.is_pinned is True
+    assert response.data.blueprint.is_pinned is True
     assert blueprint.updated_at != old_updated_at
     blueprint.save.assert_awaited_once()
     clear_cache.assert_awaited_once_with("blueprint", "blueprint-1")

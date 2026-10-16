@@ -3,6 +3,8 @@
         class="resource-config-panel relative group flex flex-col"
         :class="showTopDivider ? 'border-t border-gray-200' : ''"
     >
+        <section v-if="isMobile" class="mobile-blueprint-resources"><Icon icon="mdi:cog-outline" /><h3>资源配置</h3><p>此蓝图尚无独立的资源配置项。</p><p>节点使用的参数可在节点详情中维护。</p></section>
+        <template v-else>
         <div
             class="flex items-center justify-between py-3 px-2 cursor-pointer hover:bg-gray-50 shrink-0"
             @click="collapsed = !collapsed"
@@ -23,12 +25,15 @@
                 <p class="text-xs mt-1">具体编辑能力将后续提供</p>
             </div>
         </div>
+        </template>
     </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+const { isMobile } = useMobileViewport()
 
 defineProps({
     /** 为 true 时在顶部绘制分割线（接在模板参数等其它折叠块下方时） */
@@ -45,4 +50,5 @@ const collapsed = ref(false)
 .resource-config-panel {
     width: 100%;
 }
+.mobile-blueprint-resources { padding: 24px 12px; text-align: center; }.mobile-blueprint-resources svg { margin: 0 auto 12px; color: #94a3b8; font-size: 36px; }.mobile-blueprint-resources h3 { font-size: 16px; font-weight: 650; }.mobile-blueprint-resources p { color: #64748b; font-size: 13px; line-height: 1.8; margin-top: 8px; }
 </style>

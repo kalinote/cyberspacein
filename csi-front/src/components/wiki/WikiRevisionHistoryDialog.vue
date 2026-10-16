@@ -4,6 +4,9 @@
     title="修改记录"
     width="min(92vw, 1000px)"
     top="6vh"
+    :fullscreen="isMobile"
+    class="wiki-revision-modal"
+    modal-class="wiki-revision-overlay"
     destroy-on-close
     @open="onOpen"
     @closed="onClosed"
@@ -57,7 +60,11 @@
     </div>
 
     <div v-loading="loading" element-loading-text="加载中..." class="min-h-48">
-      <el-table v-if="items.length" :data="items" stripe class="w-full" max-height="520">
+      <div v-if="loadError" role="alert" class="p-3 bg-orange-50 rounded-lg mb-3"><p>{{ loadError }}</p><el-button @click="fetchList(pagination.page)">重新加载</el-button></div>
+      <div v-if="isMobile && items.length" class="wiki-revision-cards">
+        <article v-for="item in items" :key="item.revision" class="wiki-revision-card"><div class="flex gap-2 items-center"><strong>修订 {{ item.revision }}</strong><el-tag v-if="item.revision === currentRevision" size="small" type="success">当前</el-tag><el-tag size="small" type="info">{{ getWikiChangeTypeLabel(item.changeType) }}</el-tag></div><p>{{ formatWikiRevisionSummary(item) }}</p><p class="text-xs text-gray-500">{{ formatTime(item.createdAt) }}</p><div class="flex gap-2"><el-button @click="emit('preview', item.revision)">查看</el-button><el-button @click="compareFrom = item.revision">设为基线</el-button><el-button @click="compareTo = item.revision">设为目标</el-button></div></article>
+      </div>
+      <el-table v-else-if="items.length" :data="items" stripe class="w-full" max-height="520">
         <el-table-column label="修订" width="72" align="center">
           <template #default="{ row }">
             <span class="font-mono">{{ row.revision }}</span>
@@ -89,12 +96,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <p v-else-if="!loading" class="text-sm text-gray-400 text-center py-8 m-0">暂无修改记录</p>
+      <p v-else-if="!loading && !loadError" class="text-sm text-gray-400 text-center py-8 m-0">暂无修改记录</p>
     </div>
     <div v-if="pagination.total > 0" class="flex justify-end mt-4">
       <el-pagination
         small
-        layout="total, prev, pager, next"
+        :layout="isMobile ? 'prev, pager, next' : 'total, prev, pager, next'"
+        :pager-count="isMobile ? 5 : 7"
         :current-page="pagination.page"
         :page-size="pagination.pageSize"
         :total="pagination.total"
@@ -113,6 +121,13 @@ import { ElMessage } from 'element-plus'
 import { wikiApi, normalizeWikiRevisionListResponse } from '@/api/wiki.js'
 import { formatDateTime } from '@/utils/action'
 import { formatWikiRevisionSummary, getWikiChangeTypeLabel } from '@/utils/wikiRevisionLabels.js'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import './wikiMobileDialogs.css'
+
+const { isMobile } = useMobileViewport()
+const loadError = ref('')
+let requestGeneration = 0
+let openGeneration = 0
 
 /** @typedef {import('@/types/wiki.js').WikiRevisionListItem} WikiRevisionListItem */
 
@@ -167,6 +182,7 @@ watch(visible, (val) => {
 })
 
 function onOpen() {
+  openGeneration += 1
   pagination.value.page = 1
   compareFrom.value = null
   compareTo.value = null
@@ -176,6 +192,8 @@ function onOpen() {
 }
 
 function onClosed() {
+  requestGeneration += 1
+  openGeneration += 1
   items.value = []
   revisionOptions.value = []
   compareFrom.value = null
@@ -214,12 +232,15 @@ function formatTime(raw) {
 
 async function fetchRevisionOptions() {
   if (!props.wikiId) return
+  const generation = openGeneration
   try {
     const res = await wikiApi.listRevisions(props.wikiId, { page: 1, pageSize: 100 })
+    if (generation !== openGeneration) return
     const { items: list } = normalizeWikiRevisionListResponse(res)
     revisionOptions.value = list
     applyDefaultCompareSelection(list)
   } catch {
+    if (generation !== openGeneration) return
     revisionOptions.value = []
     compareFrom.value = null
     compareTo.value = null
@@ -231,19 +252,24 @@ async function fetchRevisionOptions() {
  */
 async function fetchList(page) {
   if (!props.wikiId) return
+  const generation = ++requestGeneration
   loading.value = true
+  loadError.value = ''
   try {
     const res = await wikiApi.listRevisions(props.wikiId, {
       page,
       pageSize: pagination.value.pageSize,
     })
+    if (generation !== requestGeneration) return
+    if (!Array.isArray((res?.data || res)?.items)) throw new Error('版本记录数据无效，请重试')
     const { items: list, pagination: p } = normalizeWikiRevisionListResponse(res)
     items.value = list
     pagination.value = { ...pagination.value, ...p }
-  } catch {
-    items.value = []
+  } catch (error) {
+    if (generation !== requestGeneration) return
+    loadError.value = error?.message || '版本记录加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === requestGeneration) loading.value = false
   }
 }
 
@@ -262,3 +288,7 @@ function handleCompare() {
   emit('compare', { from: compareFrom.value, to: compareTo.value })
 }
 </script>
+
+<style scoped>
+.wiki-revision-cards{display:grid;gap:12px;min-width:0}.wiki-revision-card{min-width:0;border:1px solid #e2e8f0;border-radius:12px;padding:14px}.wiki-revision-card>div{flex-wrap:wrap}.wiki-revision-card>p{margin:10px 0;overflow-wrap:anywhere;line-height:1.6}.wiki-revision-card :deep(.el-button){margin:0;padding:10px}
+</style>

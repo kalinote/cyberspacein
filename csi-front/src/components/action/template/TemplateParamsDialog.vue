@@ -1,9 +1,11 @@
 <template>
-    <el-dialog
+    <component :is="isMobile ? MobileSheet : 'el-dialog'"
         v-model="dialogVisible"
         :title="debug ? '填写模板参数 · 调试运行' : '填写模板参数'"
         width="600px"
         :close-on-click-modal="false"
+        :close-on-press-escape="!submitting"
+        :show-close="!submitting"
         @close="handleClose"
     >
         <el-alert
@@ -20,8 +22,9 @@
             :closable="false"
             class="mb-4"
         />
-        <div v-loading="loading" :element-loading-text="'加载参数中...'" class="min-h-[200px]">
-            <div v-if="!loading && inputConfigs.length === 0" class="text-center py-8 text-gray-400">
+        <div v-loading="loading" :element-loading-text="'加载参数中...'" class="min-h-[200px]" :class="{ 'mobile-template-params': isMobile }">
+            <div v-if="loadError" role="alert" class="text-center py-8 text-gray-500"><p class="mb-3">{{ loadError }}</p><el-button @click="fetchBlueprintData">重新加载</el-button></div>
+            <div v-else-if="!loading && inputConfigs.length === 0" class="text-center py-8 text-gray-400">
                 <Icon icon="mdi:package-variant" class="text-4xl mb-2 block mx-auto" />
                 <p class="text-sm">该模板没有参数</p>
             </div>
@@ -47,11 +50,12 @@
                             </span>
                             <el-tag v-if="config.required" size="small" type="danger">必填</el-tag>
                             <el-tag size="small" :type="getTypeTagType(config.type)">{{ config.type }}</el-tag>
-                            <el-tooltip v-if="config.description" :content="config.description" placement="top">
+                            <el-tooltip v-if="config.description && !isMobile" :content="config.description" placement="top">
                                 <Icon icon="mdi:information-outline" class="text-gray-400 text-sm cursor-help" />
                             </el-tooltip>
                         </div>
                     </template>
+                    <p v-if="isMobile && config.description" class="mobile-param-description">{{ config.description }}</p>
 
                     <InputRenderer
                         :input-config="config"
@@ -64,20 +68,26 @@
 
         <template #footer>
             <el-button :disabled="submitting" @click="handleClose">取消</el-button>
-            <el-button type="primary" @click="handleSubmit" :loading="submitting">
+            <el-button type="primary" @click="handleSubmit" :loading="submitting" :disabled="loading || !!loadError || !blueprintData">
                 确定运行
             </el-button>
         </template>
-    </el-dialog>
+    </component>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import InputRenderer from '@/components/action/nodes/components/InputRenderer.vue'
 import { actionApi } from '@/api/action'
 import { INPUT_TYPE_DEFAULTS } from '@/utils/action/constants'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+
+const { isMobile } = useMobileViewport()
+const loadError = ref('')
+let requestGeneration = 0
 
 const props = defineProps({
     modelValue: {
@@ -115,7 +125,7 @@ const paramValues = ref({})
 const formRef = ref(null)
 
 const inputConfigs = computed(() => {
-    return blueprintData.value?.template?.params.map(param => ({
+    return blueprintData.value?.template?.params?.map(param => ({
         id: param.name,
         name: param.name,
         label: param.label,
@@ -200,10 +210,14 @@ const initParamValues = () => {
 
 const fetchBlueprintData = async () => {
     if (!props.blueprintId) return
-    
+    const id = props.blueprintId
+    const generation = ++requestGeneration
+    loadError.value = ''
+    blueprintData.value = null
     loading.value = true
     try {
-        const response = await actionApi.getBlueprint(props.blueprintId)
+        const response = await actionApi.getBlueprint(id)
+        if (generation !== requestGeneration || id !== props.blueprintId || !props.modelValue) return
         if (response.code === 0 && response.data) {
             blueprintData.value = response.data
             initParamValues()
@@ -211,15 +225,17 @@ const fetchBlueprintData = async () => {
             ElMessage.error(response.message || '获取蓝图详情失败')
         }
     } catch (error) {
+        if (generation !== requestGeneration) return
+        loadError.value = '模板参数加载失败，请重试'
         console.error('获取蓝图详情失败:', error)
         ElMessage.error('获取蓝图详情失败')
     } finally {
-        loading.value = false
+        if (generation === requestGeneration) loading.value = false
     }
 }
 
 const handleSubmit = async () => {
-    if (loading.value) return
+    if (loading.value || props.submitting || loadError.value) return
     if (!blueprintData.value) {
         ElMessage.warning('蓝图参数尚未加载')
         return
@@ -240,6 +256,8 @@ const handleSubmit = async () => {
 }
 
 const handleClose = () => {
+    requestGeneration++
+    loading.value = false
     dialogVisible.value = false
     paramValues.value = {}
     blueprintData.value = null
@@ -248,14 +266,19 @@ const handleClose = () => {
     }
 }
 
-watch(() => props.modelValue, (newValue) => {
+watch(() => [props.modelValue, props.blueprintId], ([newValue]) => {
     if (newValue && props.blueprintId) {
         fetchBlueprintData()
+    } else {
+        requestGeneration++
+        loading.value = false
     }
 })
+onBeforeUnmount(() => { requestGeneration++ })
 </script>
 
 <style scoped>
+.mobile-template-params :deep(.el-form-item__label) { height: auto; line-height: 1.5; }.mobile-template-params :deep(.el-form-item__label > div) { flex-wrap: wrap; }.mobile-template-params :deep(.input-renderer-wrapper) { width: 100%; min-width: 0; }.mobile-template-params :deep(.el-input__wrapper), .mobile-template-params :deep(.el-select__wrapper), .mobile-template-params :deep(.el-button) { min-height: 44px; }.mobile-param-description { flex-basis: 100%; margin: 0 0 8px; color: #64748b; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 :deep(.el-form-item) {
     margin-bottom: 20px;
 }

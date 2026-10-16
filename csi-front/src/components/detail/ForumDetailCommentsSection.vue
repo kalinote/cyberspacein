@@ -21,7 +21,7 @@
                     v-for="item in featuredComments"
                     :key="item.uuid"
                     :to="`/details/forum/${item.uuid}`"
-                    class="flex items-center gap-2 px-3 py-2 border border-gray-100 rounded hover:border-blue-200 hover:bg-blue-50 transition-all cursor-pointer"
+                    class="featured-comment flex items-center gap-2 px-3 py-2 border border-gray-100 rounded hover:border-blue-200 hover:bg-blue-50 transition-all cursor-pointer"
                 >
                     <Icon icon="mdi:account-circle" class="text-blue-600 text-base shrink-0" />
                     <span class="font-medium text-gray-900 shrink-0">{{ item.author_name || '匿名用户' }}:</span>
@@ -35,6 +35,7 @@
                     :page-size="pageSize"
                     :total="featuredTotal"
                     layout="prev, pager, next"
+                    :pager-count="isMobile ? 5 : 7"
                     background
                     @update:current-page="emit('update:featuredPage', $event)"
                 />
@@ -57,7 +58,7 @@
                 <div
                     v-for="item in commentList"
                     :key="item.uuid"
-                    class="relative flex gap-4 p-4 border border-gray-100 rounded-lg hover:border-blue-200 hover:shadow-sm transition-all"
+                    class="forum-comment relative flex gap-4 p-4 border border-gray-100 rounded-lg hover:border-blue-200 hover:shadow-sm transition-all"
                 >
                     <div class="absolute top-4 right-4">
                         <span v-if="item.floor" class="text-sm text-gray-400">#{{ item.floor }}</span>
@@ -113,6 +114,7 @@
                     :page-size="pageSize"
                     :total="commentTotal"
                     layout="prev, pager, next"
+                    :pager-count="isMobile ? 5 : 7"
                     background
                     @update:current-page="emit('update:commentPage', $event)"
                 />
@@ -125,6 +127,9 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { formatDateTime } from '@/utils/action'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+
+const { isMobile } = useMobileViewport()
 
 const props = defineProps({
     featuredComments: {
@@ -175,3 +180,18 @@ const showSection = computed(
     () => props.featuredComments.length > 0 || props.commentList.length > 0,
 )
 </script>
+
+<style scoped>
+@media (max-width: 767px) {
+    [data-forum-comments-section] > div { padding: 16px; }
+    [data-forum-comments-section] h2 { font-size: 20px; }
+    .featured-comment { flex-wrap: wrap; padding: 12px; }
+    .featured-comment > span:nth-of-type(2) { flex-basis: calc(100% - 28px); white-space: normal; }
+    .featured-comment > span:last-child { margin-left: 0; font-size: 12px; }
+    .forum-comment { gap: 10px; padding: 14px 12px 54px; }
+    .forum-comment > .shrink-0 > div { width: 32px; height: 32px; }
+    .forum-comment > .flex-1 > div:first-child { flex-wrap: wrap; padding-right: 18px; gap: 4px; }
+    .forum-comment > .flex-1 > div:first-child > span:last-child { width: 100%; font-size: 12px; }
+    .forum-comment > div:last-child a { min-height: 44px; }
+}
+</style>

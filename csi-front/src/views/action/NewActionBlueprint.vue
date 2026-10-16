@@ -1,10 +1,50 @@
 <template>
-    <div class="h-screen flex flex-col bg-white">
+    <div class="h-screen flex flex-col bg-white" :class="{ 'mobile-blueprint-page': isMobile }">
         <Header />
 
-        <SimplePageHeader :title="pageTitle" />
+        <SimplePageHeader v-if="!isMobile" :title="pageTitle" />
 
-        <div
+        <MobileBlueprintEditor v-if="isMobile" ref="mobileEditorRef"
+            :elements="elements" :configs="nodeTypeConfigs" :selected-id="selectedGraphNodeId"
+            :title="actionForm.title" :editable="canEdit && pageActive" :dirty="draftDirty || Boolean(localDraftSignature)"
+            :loading="loadingBlueprint || loadingNodeConfigs" :saving="saving" :error="editorError"
+            :can-undo="historyStatus.canUndo" :can-redo="historyStatus.canRedo" :issues="mobileIssues"
+            @select="selectedGraphNodeId = $event" @selection="mobileSelectedIds = $event" @mode="setMobileMode" @fit="fitMobileGraph" @fit-all="fitMobileGraph(true)"
+            @save="handleSaveAction" @retry="initializeEditor" @undo="restoreHistory('undo')" @redo="restoreHistory('redo')"
+            @add-node="addMobileNode" @connect="connectMobileNodes" @bind="bindMobileNodes"
+            @unbind="confirmMobileUnbind" @remove="removeMobileElements" @position="moveMobileNode" @move-group="moveMobileGroup"
+            @apply-layout="applyMobileLayout" @cancel-layout="cancelMobileLayout">
+            <template #canvas>
+                <VueFlow id="mobile-blueprint-flow" :nodes="mobileCanvasNodes" :edges="mobileCanvasEdges" :node-types="nodeTypes" :edge-types="edgeTypes" :min-zoom="0.05" :max-zoom="3"
+                    :nodes-draggable="canEdit && !saving && mobileMode === 'move'" :nodes-connectable="false"
+                    :elements-selectable="false" :delete-key-code="null" :zoom-on-double-click="false" class="h-full w-full"
+                    @node-click="mobileEditorRef?.selectNode($event.node.id)"
+                    @edge-click="handleMobileEdgeClick" @node-drag-stop="recordMobileDrag" @nodes-initialized="fitMobileGraph(false)">
+                    <Background pattern-color="#cbd5e1" :gap="18" />
+                    <Controls :show-interactive="false" />
+                </VueFlow>
+            </template>
+            <template #fields="{ node }"><MobileBlueprintNodeFields :node="node" :disabled="!canEdit || saving" @field-change="updateMobileField(node.id, $event)" /></template>
+            <template #settings>
+                <el-form :model="actionForm" label-position="top" :disabled="!canEdit || saving">
+                    <el-form-item label="蓝图标题" required><el-input v-model="actionForm.title" /></el-form-item>
+                    <el-form-item label="版本号" required><el-input v-model="actionForm.version" /></el-form-item>
+                    <el-form-item label="任务目标" required><el-input v-model="actionForm.target" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" /></el-form-item>
+                    <el-form-item label="详细信息"><el-input v-model="actionForm.description" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" /></el-form-item>
+                    <el-form-item label="执行期限（秒，0 为不限制）"><el-input-number v-model="actionForm.implementation_period" :min="0" /></el-form-item>
+                    <el-form-item label="默认异步执行"><el-switch :model-value="actionForm.default_scheduling_mode === 'streaming'" @update:model-value="actionForm.default_scheduling_mode = $event ? 'streaming' : 'barrier'" /></el-form-item>
+                    <el-form-item label="模板蓝图"><el-switch v-model="isTemplate" /></el-form-item>
+                    <el-form-item label="资源配置"><el-switch v-model="resourceConfigEnabled" /></el-form-item>
+                </el-form>
+            </template>
+            <template #template><TemplateParamsManager v-if="isTemplate" embedded :resizable="false" :disabled="!canEdit || saving" v-model:params="templateParams" v-model:bindings="templateBindings" /><p v-else class="text-sm text-gray-500">请先在蓝图设置中启用模板蓝图。</p></template>
+            <template #resource><ResourceConfigPanel v-if="resourceConfigEnabled" :show-top-divider="false" /><p v-else class="text-sm text-gray-500">尚未启用资源配置。</p></template>
+            <template #interfaces><BlueprintInterfacePanel :ports="publicInterfaces" :disabled="!canEdit || saving" @unbind="confirmMobileUnbind" /></template>
+            <template #upgrade><el-button v-if="selectedEncapsulatedUpgrade" :disabled="!canEdit || saving" @click="upgradeSelectedEncapsulatedNode">升级到 v{{ selectedEncapsulatedUpgrade.definition_version }} 并按稳定端口重连</el-button></template>
+            <template #publish><div v-if="isEditMode" class="flex flex-wrap gap-2 mt-4"><el-button v-if="hasPerm(PERM.operations.action.blueprint.publish)" :disabled="!canEdit || saving || mobileMode === 'move'" @click="publishDialogVisible = true">发布版本</el-button><el-button v-if="canEncapsulate" :disabled="!canEdit || saving || mobileMode === 'move'" @click="encapsulateDialogVisible = true">封装为节点</el-button></div></template>
+        </MobileBlueprintEditor>
+
+        <div v-else
             v-loading="loadingBlueprint"
             element-loading-text="加载行动蓝图中..."
             class="flex-1 flex overflow-hidden"
@@ -70,7 +110,7 @@
                 >
                     已选择蓝图输出，请点击结束节点顶部的绑定 Handle；按 Esc 取消
                 </div>
-                <VueFlow v-model="elements" :node-types="nodeTypes" :edge-types="edgeTypes" :default-zoom="1.5" :min-zoom="0.2" :max-zoom="4"
+                <VueFlow id="desktop-blueprint-flow" :model-value="elements" @update:model-value="acceptDesktopElements" :node-types="nodeTypes" :edge-types="edgeTypes" :default-zoom="1.5" :min-zoom="0.2" :max-zoom="4"
                     fit-view-on-init class="h-full w-full"
                     @node-click="selectedGraphNodeId = $event.node.id"
                     @pane-click="handlePaneClick">
@@ -292,7 +332,8 @@ import {
     provide,
     watch
 } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onActivated, onDeactivated, reactive } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from "@/components/Header.vue"
 import SimplePageHeader from "@/components/page-header/SimplePageHeader.vue"
@@ -310,7 +351,12 @@ import BlueprintEncapsulateDialog from "@/components/action/BlueprintEncapsulate
 import TemplateParamsManager from "@/components/action/template/TemplateParamsManager.vue"
 import ResourceConfigPanel from "@/components/action/ResourceConfigPanel.vue"
 import { actionApi } from '@/api/action'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElMessage, ElNotification, ElMessageBox } from 'element-plus'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileBlueprintEditor from '@/components/action/mobile/MobileBlueprintEditor.vue'
+import MobileBlueprintNode from '@/components/action/mobile/MobileBlueprintNode.vue'
+import MobileBlueprintNodeFields from '@/components/action/mobile/MobileBlueprintNodeFields.vue'
+import { captureBlueprintDraft, createBlueprintHistory, blueprintConnectionIssue, collectBlueprintGraphIssues, blueprintRemovalImpact, projectMobileBlueprint } from '@/utils/action/mobileGraph'
 import { hasAll, hasPerm } from '@/utils/permissionKit'
 import { PERM } from '@/utils/permissions'
 import {
@@ -346,7 +392,25 @@ import '@vue-flow/core/dist/theme-default.css'
 
 const router = useRouter()
 const route = useRoute()
-const blueprintId = computed(() => route.params.blueprintId || null)
+const { isMobile } = useMobileViewport()
+const mobileEditorRef = ref(null)
+const blueprintLocalDrafts = reactive(new Map())
+provide('blueprintLocalDrafts', blueprintLocalDrafts)
+const localDraftSignature = computed(() => {
+    const drafts = [...blueprintLocalDrafts.values()].filter(Boolean)
+    return drafts.length ? JSON.stringify(drafts) : ''
+})
+const mobileMode = ref('browse')
+const mobileSelectedIds = ref([])
+const pageActive = ref(true)
+const editorError = ref('')
+let editorEpoch = 0
+let nodeRequest = 0
+const canLoad = computed(() => hasPerm(PERM.operations.action.node.read) && (!blueprintId.value || hasPerm(PERM.operations.action.blueprint.read)))
+const canEdit = computed(() => canLoad.value && hasPerm(blueprintId.value ? PERM.operations.action.blueprint.update : PERM.operations.action.blueprint.create))
+const savedViewport = ref({ x: 0, y: 0, zoom: 1 })
+const createdBlueprintId = ref(null)
+const blueprintId = computed(() => route.params.blueprintId || createdBlueprintId.value || null)
 const isEditMode = computed(() => Boolean(blueprintId.value))
 const pageTitle = computed(() => isEditMode.value ? '编辑标准行动蓝图' : '创建标准行动蓝图')
 const saveButtonText = computed(() => isEditMode.value ? '保存蓝图修改' : '保存行动蓝图')
@@ -362,9 +426,13 @@ const nodeTypeConfigs = ref([])
 const loadingNodeConfigs = ref(false)
 
 const fetchNodeConfigs = async () => {
+    const request = ++nodeRequest
+    const epoch = editorEpoch
+    if (!pageActive.value || !canLoad.value) return false
     loadingNodeConfigs.value = true
     try {
         const response = await actionApi.getNodes()
+        if (request !== nodeRequest || epoch !== editorEpoch || !pageActive.value || !canLoad.value) return false
         if (response.code === 0) {
             const nodes = response.data || []
             nodeTypeConfigs.value = nodes.map(node => {
@@ -390,15 +458,15 @@ const fetchNodeConfigs = async () => {
 
                 return processedNode
             })
-        } else {
-            ElMessage.error(`获取节点配置失败: ${response.message}`)
-            nodeTypeConfigs.value = []
-        }
+            return true
+        } else throw new Error(response.message || '获取节点配置失败')
     } catch (error) {
+        if (request !== nodeRequest || epoch !== editorEpoch || !pageActive.value) return false
         ElMessage.error('获取节点配置失败')
-        nodeTypeConfigs.value = []
+        editorError.value = '节点定义加载失败，现有草稿已保留，请重试。'
+        return false
     } finally {
-        loadingNodeConfigs.value = false
+        if (request === nodeRequest && epoch === editorEpoch) loadingNodeConfigs.value = false
     }
 }
 
@@ -450,7 +518,7 @@ const toggleCategory = (type) => {
 const nodeTypes = computed(() => {
     const types = {}
     nodeTypeConfigs.value.forEach(config => {
-        const component = componentForConfig(config)
+        const component = isMobile.value ? markRaw(MobileBlueprintNode) : componentForConfig(config)
         if (component) types[config.id] = component
     })
     return types
@@ -460,24 +528,57 @@ const edgeTypes = {
 }
 
 const elements = ref([])
+const desktopSyncReady = ref(!isMobile.value)
 const selectedGraphNodeId = ref(null)
 const {
-    addEdges,
+    addEdges: addDesktopEdges,
     addNodes,
     onConnect,
     screenToFlowCoordinate,
     onNodesInitialized,
     updateNodeInternals,
-    updateNode,
-    updateNodeData,
+    updateNode: updateDesktopNode,
+    updateNodeData: updateDesktopNodeData,
     onNodeDrag,
     onNodeDragStop,
     isValidConnection,
-    getNodes,
-    getEdges,
+    getNodes: desktopNodes,
+    getEdges: desktopEdges,
     getViewport,
-    setViewport
-} = useVueFlow()
+    setViewport,
+    setElements: setDesktopElements,
+    fitView
+} = useVueFlow('desktop-blueprint-flow')
+const mobileFlow = useVueFlow('mobile-blueprint-flow')
+const mobileDisplayPositions = ref({})
+const mobileProjection = computed(() => projectMobileBlueprint(elements.value, mobileDisplayPositions.value))
+const mobileCanvasNodes = computed(() => mobileProjection.value.filter(item => !item.source).map(node => ({ ...node, selected: mobileMode.value === 'select' ? mobileSelectedIds.value.includes(node.id) : node.id === selectedGraphNodeId.value })))
+const mobileCanvasEdges = computed(() => mobileProjection.value.filter(item => item.source))
+const getNodes = computed(() => isMobile.value ? elements.value.filter(item => !item.source) : desktopNodes.value)
+const getEdges = computed(() => isMobile.value ? elements.value.filter(item => item.source) : desktopEdges.value)
+
+/** """桌面重新挂载完成后才接受其图状态，避免旧画布覆盖当前草稿。""" */
+const acceptDesktopElements = value => {
+    if (!isMobile.value && desktopSyncReady.value && pageActive.value) elements.value = value
+}
+
+/** """手机操作只修改原始图，独立画布的测量与临时坐标不参与保存。""" */
+const updateNode = (id, patch) => {
+    if (!isMobile.value) return updateDesktopNode(id, patch)
+    const node = elements.value.find(item => !item.source && item.id === id)
+    if (node) Object.assign(node, typeof patch === 'function' ? patch(node) : patch)
+}
+/** """更新原节点参数，并让手机投影重新读取显示数据。""" */
+const updateNodeData = (id, patch) => {
+    if (!isMobile.value) return updateDesktopNodeData(id, patch)
+    const node = elements.value.find(item => !item.source && item.id === id)
+    if (node) node.data = { ...node.data, ...patch }
+}
+/** """新增边始终写入业务图，手机投影只负责展示。""" */
+const addEdges = edges => {
+    if (!isMobile.value) return addDesktopEdges(edges)
+    elements.value = [...elements.value, ...(Array.isArray(edges) ? edges : [edges])]
+}
 
 const getDataEdges = () => getEdges.value.filter(
     edge => edge.data?.relationKind !== 'boundary-binding'
@@ -648,7 +749,7 @@ const restoreBindingRelations = async () => {
             || node.data?.bindingTargetState?.relationCount > 0
         ))
         .map(node => node.id)
-    if (relationNodeIds.length > 0) {
+    if (relationNodeIds.length > 0 && !isMobile.value) {
         updateNodeInternals(relationNodeIds)
     }
     await nextTick()
@@ -678,6 +779,7 @@ const selectedEncapsulatedUpgrade = computed(() => {
 })
 
 const upgradeSelectedEncapsulatedNode = () => {
+    if (isMobile.value && (!canEdit.value || saving.value)) return
     const node = selectedGraphNode.value
     const oldConfig = selectedNodeConfig.value
     const newConfig = selectedEncapsulatedUpgrade.value
@@ -743,6 +845,8 @@ const encapsulating = ref(false)
  * 4. handle 的传输类型和业务接口必须同时兼容
  */
 isValidConnection.value = (connection) => {
+    // 已有关系的画布水合不属于新建连接，不能因自身端口占用而被过滤。
+    if (connection.id && elements.value.some(edge => edge.source && edge.id === connection.id && edge.source === connection.source && edge.target === connection.target && edge.sourceHandle === connection.sourceHandle && edge.targetHandle === connection.targetHandle)) return true
     // 1. 基础验证：节点是否存在
     const sourceNode = elements.value.find(el => el.id === connection.source)
     const targetNode = elements.value.find(el => el.id === connection.target)
@@ -834,7 +938,7 @@ const createNodeFromConfig = (configId, position) => {
         data.boundaryBinding = null
     }
     return {
-        id: `node-${Date.now()}`,
+        id: `node-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`,
         type: config.id,
         position: position,
         data
@@ -884,11 +988,244 @@ const resourceData = ref({})
 const templateParams = ref([])
 const templateBindings = ref({})
 
+const history = createBlueprintHistory()
+const historyStatus = ref({ canUndo: false, canRedo: false })
+const historyReady = ref(false)
+const savedDraftSignature = ref('')
+let historyTimer = null
+let restoringDraft = false
+let layoutBefore = null
+let layoutProjectionBefore = null
+const pendingConfirmations = new Set()
+const draftSnapshot = computed(() => captureBlueprintDraft({ elements: elements.value, form: actionForm.value, template: isTemplate.value, params: templateParams.value, bindings: templateBindings.value, resource: resourceData.value, resourceEnabled: resourceConfigEnabled.value }))
+const draftSignature = computed(() => JSON.stringify(draftSnapshot.value))
+const draftDirty = computed(() => historyReady.value && draftSignature.value !== savedDraftSignature.value)
+const mobileIssues = computed(() => {
+    const issues = []
+    for (const [field, label] of [['title', '蓝图标题'], ['version', '版本号'], ['target', '任务目标']]) {
+        if (!String(actionForm.value[field] || '').trim()) issues.push({ message: `请填写${label}` })
+    }
+    return [...issues, ...collectBlueprintGraphIssues(elements.value.filter(item => !item.source), elements.value.filter(item => item.source && item.data?.relationKind !== 'boundary-binding'), publicInterfaces.value)]
+})
+
+/** """合并连续字段输入为一个撤销步骤，并刷新工具栏状态。""" */
+const recordHistory = () => {
+    clearTimeout(historyTimer)
+    if (!historyReady.value || restoringDraft || layoutBefore || !pageActive.value) return
+    history.commit(draftSnapshot.value)
+    historyStatus.value = { canUndo: history.canUndo, canRedo: history.canRedo }
+}
+watch(draftSignature, () => {
+    if (!historyReady.value || restoringDraft || layoutBefore) return
+    clearTimeout(historyTimer)
+    historyTimer = setTimeout(recordHistory, 350)
+})
+
+/** """恢复语义快照，保留手机浏览视口并重建派生绑定状态。""" */
+const restoreHistory = async (direction) => {
+    if (!canEdit.value || saving.value || layoutBefore || !pageActive.value) return
+    recordHistory()
+    const snapshot = history[direction]()
+    if (!snapshot) return
+    restoringDraft = true
+    if (isMobile.value) {
+        const positions = { ...mobileDisplayPositions.value }
+        for (const restored of snapshot.elements.filter(item => !item.source)) {
+            const previous = elements.value.find(item => !item.source && item.id === restored.id)
+            const displayed = mobileCanvasNodes.value.find(item => item.id === restored.id)
+            if (previous && displayed && (previous.position.x !== restored.position.x || previous.position.y !== restored.position.y)) positions[restored.id] = { x: displayed.position.x + restored.position.x - previous.position.x, y: displayed.position.y + restored.position.y - previous.position.y }
+        }
+        mobileDisplayPositions.value = positions
+    }
+    elements.value = snapshot.elements
+    actionForm.value = snapshot.form
+    isTemplate.value = snapshot.template
+    templateParams.value = snapshot.params
+    templateBindings.value = snapshot.bindings
+    resourceData.value = snapshot.resource
+    resourceConfigEnabled.value = snapshot.resourceEnabled
+    if (!elements.value.some(node => node.id === selectedGraphNodeId.value)) selectedGraphNodeId.value = null
+    await nextTick()
+    await restoreBindingRelations()
+    restoringDraft = false
+    historyStatus.value = { canUndo: history.canUndo, canRedo: history.canRedo }
+}
+
+/** """手机拟合只改变浏览视口，保存仍使用已载入的桌面视口。""" */
+const fitMobileGraph = async (all = false) => {
+    const epoch = editorEpoch
+    await nextTick()
+    const focus = selectedGraphNodeId.value || mobileCanvasNodes.value[0]?.id
+    if (isMobile.value && pageActive.value && epoch === editorEpoch) mobileFlow.fitView({ ...(all === true ? {} : { nodes: focus ? [focus] : [] }), padding: 0.2, minZoom: all === true ? 0.05 : 0.8, maxZoom: 1, duration: 0 })
+}
+
+/** """添加节点后转到参数编辑；默认坐标不重排任何已有节点。""" */
+const addMobileNode = async (configId) => {
+    if (!canEdit.value || saving.value || !pageActive.value || layoutBefore) return
+    const config = nodeTypeConfigs.value.find(item => item.id === configId)
+    if (!config?.enabled || !config.is_latest || config.rendererUnsupported) return
+    recordHistory()
+    const nodes = elements.value.filter(item => !item.source)
+    const node = createNodeFromConfig(configId, { x: nodes.length ? Math.max(...nodes.map(item => item.position.x)) + 240 : 60, y: 100 })
+    elements.value = [...elements.value, node]
+    selectedGraphNodeId.value = node.id
+    recordHistory()
+    await nextTick()
+    mobileEditorRef.value?.showFields()
+}
+
+/** """固定值字段通过原节点字段 ID 更新，不修改定义或模板绑定。""" */
+const updateMobileField = (nodeId, { inputId, value }) => {
+    if (!canEdit.value || saving.value || !pageActive.value) return
+    const node = elements.value.find(item => !item.source && item.id === nodeId)
+    if (!node?.data.config?.inputs?.some(input => input.id === inputId)) return
+    updateNodeData(nodeId, { [inputId]: value })
+}
+
+/** """提交前重新校验两端口，防止向导打开后图已改变。""" */
+const connectMobileNodes = (connection) => {
+    if (!canEdit.value || saving.value || !pageActive.value) return
+    const nodes = getNodes.value
+    const issue = blueprintConnectionIssue(nodes, getDataEdges(), connection)
+    if (issue || !isValidConnection.value(connection)) { ElMessage.warning(issue || '当前端口连接无效'); return }
+    recordHistory()
+    const handle = nodes.find(node => node.id === connection.source)?.data.config?.handles?.find(item => item.id === connection.sourceHandle)
+    addEdges([{ ...connection, id: `edge-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`, style: { stroke: handle?.color || '#909399', strokeWidth: 3 } }])
+    nextTick(recordHistory)
+}
+
+/** """公开 IO 向导使用既有候选校验和绑定对话框。""" */
+const bindMobileNodes = ({ boundaryId, targetId }) => {
+    if (!canEdit.value || saving.value || !pageActive.value) return
+    const boundary = getNodes.value.find(node => node.id === boundaryId)
+    const target = getNodes.value.find(node => node.id === targetId)
+    if (boundary && target) openBoundaryBinding(boundary, target)
+}
+
+/** """数据边打开连接详情，派生边则定位所属公开 IO。""" */
+const handleMobileEdgeClick = ({ edge }) => {
+    if (edge.data?.relationKind === 'boundary-binding') {
+        const boundary = getNodes.value.find(node => (node.id === edge.source || node.id === edge.target) && isBoundaryConfig(node.data.config))
+        if (boundary) mobileEditorRef.value?.selectNode(boundary.id)
+    } else mobileEditorRef.value?.openEdge(edge)
+}
+
+/** """记录移动前坐标，浏览和连线模式都不能直接拖动节点。""" */
+const setMobileMode = (mode) => {
+    if (mode !== 'browse' && (!canEdit.value || saving.value)) return
+    if (mode === 'move' && !layoutBefore) {
+        recordHistory()
+        layoutBefore = new Map(getNodes.value.map(node => [node.id, { ...node.position }]))
+        layoutProjectionBefore = Object.fromEntries(mobileCanvasNodes.value.map(node => [node.id, { ...node.position }]))
+        mobileDisplayPositions.value = { ...layoutProjectionBefore }
+    }
+    mobileMode.value = mode
+}
+/** """拖动仅记录浏览投影，点击应用布局前不修改原坐标。""" */
+const recordMobileDrag = ({ node }) => {
+    if (!layoutBefore || !canEdit.value || saving.value || !pageActive.value || mobileMode.value !== 'move') return
+    mobileDisplayPositions.value = { ...mobileDisplayPositions.value, [node.id]: { ...node.position } }
+}
+/** """取消尚未应用的位置变化，不触碰任何连接或参数。""" */
+const cancelMobileLayout = () => {
+    if (layoutProjectionBefore) mobileDisplayPositions.value = { ...layoutProjectionBefore }
+    layoutBefore = null
+    layoutProjectionBefore = null
+    mobileMode.value = 'browse'
+}
+/** """明确应用移动后的坐标，再形成可撤销的布局操作。""" */
+const applyMobileLayout = async () => {
+    if (!canEdit.value || saving.value || !pageActive.value) { cancelMobileLayout(); return }
+    if (layoutBefore && layoutProjectionBefore) for (const node of getNodes.value) {
+        const original = layoutBefore.get(node.id), before = layoutProjectionBefore[node.id], after = mobileDisplayPositions.value[node.id]
+        if (original && before && after) updateNode(node.id, { position: { x: original.x + after.x - before.x, y: original.y + after.y - before.y } })
+    }
+    layoutBefore = null
+    layoutProjectionBefore = null
+    mobileMode.value = 'browse'
+    await nextTick()
+    recordHistory()
+}
+/** """数值坐标编辑也只改变位置，不改变端口或业务连接。""" */
+const moveMobileNode = async ({ nodeId, x, y }) => {
+    if (!canEdit.value || saving.value || !pageActive.value || !Number.isFinite(x) || !Number.isFinite(y)) return
+    const node = getNodes.value.find(item => item.id === nodeId)
+    const display = mobileCanvasNodes.value.find(item => item.id === nodeId)
+    if (!node || !display) return
+    const original = layoutBefore?.get(nodeId) || node.position
+    const projection = layoutProjectionBefore?.[nodeId] || display.position
+    mobileDisplayPositions.value = { ...mobileDisplayPositions.value, [nodeId]: { x: projection.x + x - original.x, y: projection.y + y - original.y } }
+    if (layoutBefore) return
+    recordHistory()
+    updateNode(nodeId, { position: { x, y } })
+    await nextTick()
+    recordHistory()
+}
+
+/** """多选统一平移只改变坐标，形成一次可撤销的布局操作。""" */
+const moveMobileGroup = async ({ nodeIds, x, y }) => {
+    if (!canEdit.value || saving.value || !pageActive.value || layoutBefore || !Number.isFinite(x) || !Number.isFinite(y)) return
+    recordHistory()
+    const positions = { ...mobileDisplayPositions.value }
+    for (const node of getNodes.value.filter(item => nodeIds.includes(item.id))) {
+        const display = mobileCanvasNodes.value.find(item => item.id === node.id)
+        if (display) positions[node.id] = { x: display.position.x + x, y: display.position.y + y }
+        updateNode(node.id, { position: { x: node.position.x + x, y: node.position.y + y } })
+    }
+    mobileDisplayPositions.value = positions
+    await nextTick()
+    recordHistory()
+}
+
+/**
+ * 确认期间重新检查页面、权限与草稿，拒绝过期的移除操作。
+ * @param {object} selection 待删除的节点或普通数据边。
+ */
+const removeMobileElements = async ({ nodeIds = [], edgeIds = [] }) => {
+    if (!canEdit.value || saving.value || !pageActive.value || layoutBefore) return
+    const epoch = editorEpoch, signature = draftSignature.value
+    const ids = nodeIds.filter(id => elements.value.some(node => !node.source && node.id === id))
+    const impact = blueprintRemovalImpact(elements.value, ids, edgeIds, templateBindings.value)
+    if (!ids.length && !impact.edgeIds.length) return
+    const token = Symbol()
+    pendingConfirmations.add(token)
+    try {
+        await ElMessageBox.confirm(`将移除 ${ids.length} 个节点和 ${impact.edgeIds.length} 条数据连接；${impact.boundaryIds.length} 个 IO 将解除绑定，清理 ${impact.templateCount} 项模板字段绑定。其余 IO 端口覆盖会重新校验，可通过撤销恢复。`, '确认移除', { type: 'warning', confirmButtonText: '移除', cancelButtonText: '保留' })
+        if (epoch !== editorEpoch || !pageActive.value || !canEdit.value || saving.value || signature !== draftSignature.value) return
+        recordHistory()
+        elements.value = elements.value.filter(item => !ids.includes(item.id) && !impact.edgeIds.includes(item.id) && item.data?.relationKind !== 'boundary-binding').map(item => impact.boundaryIds.includes(item.id) ? { ...item, data: { ...item.data, boundaryBinding: null, bindingDisplay: null } } : item)
+        const bindings = { ...templateBindings.value }
+        for (const id of ids) delete bindings[id]
+        templateBindings.value = bindings
+        if (ids.includes(selectedGraphNodeId.value)) selectedGraphNodeId.value = null
+        await nextTick()
+        recordHistory()
+    } catch { /* 用户取消时保留完整草稿。 */ }
+    finally { pendingConfirmations.delete(token) }
+}
+
+/** """解绑保留公开 IO 节点及稳定接口 ID，并可撤销。""" */
+const confirmMobileUnbind = async (nodeId) => {
+    if (!canEdit.value || saving.value || !pageActive.value) return
+    const epoch = editorEpoch, signature = draftSignature.value, token = Symbol()
+    pendingConfirmations.add(token)
+    try {
+        await ElMessageBox.confirm('解除替代关系后，公开 IO 节点仍然保留。保存前需检查接口类型和数据连接。', '解除 IO 绑定', { confirmButtonText: '解除绑定', cancelButtonText: '保留' })
+        if (epoch !== editorEpoch || !pageActive.value || !canEdit.value || saving.value || signature !== draftSignature.value) return
+        recordHistory()
+        handleUnbindBoundary(nodeId)
+        await nextTick()
+        recordHistory()
+    } catch { /* 取消不改变绑定。 */ }
+    finally { pendingConfirmations.delete(token) }
+}
+
 provide('templateContext', {
     isTemplateMode: computed(() => isTemplate.value),
     availableParams: computed(() => templateParams.value),
     bindings: templateBindings,
     updateBinding: (nodeId, fieldName, paramName) => {
+        if (isMobile.value && (!canEdit.value || saving.value || !pageActive.value)) return
         if (!templateBindings.value[nodeId]) {
             templateBindings.value[nodeId] = {}
         }
@@ -986,12 +1323,14 @@ const findNodeConfig = (node) => {
         .sort((left, right) => right.matches - left.matches)[0]?.config || null
 }
 
-const loadBlueprintForEdit = async () => {
+const loadBlueprintForEdit = async (epoch = editorEpoch) => {
     if (!blueprintId.value) return
+    const id = blueprintId.value
 
     loadingBlueprint.value = true
     try {
-        const response = await actionApi.getBlueprint(blueprintId.value)
+        const response = await actionApi.getBlueprint(id)
+        if (epoch !== editorEpoch || !pageActive.value || !canLoad.value || id !== blueprintId.value) return false
         const blueprint = response.data
         if (response.code !== 0 || !blueprint) {
             throw new Error(response.message || '获取行动蓝图失败')
@@ -1050,14 +1389,15 @@ const loadBlueprintForEdit = async () => {
         const processedEdges = (blueprint.graph?.edges || []).map(edge => {
             const sourceNode = processedNodes.find(node => node.id === edge.source)
             const sourceHandle = sourceNode?.data?.config?.handles?.find(
-                handle => handle.id === edge.sourceHandle
+                handle => handle.id === edge.sourceHandle || (edge.source_port_id && (handle.port_id || handle.id) === edge.source_port_id)
             )
+            const targetHandle = processedNodes.find(node => node.id === edge.target)?.data?.config?.handles?.find(handle => handle.id === edge.targetHandle || (edge.target_port_id && (handle.port_id || handle.id) === edge.target_port_id))
             return {
                 id: edge.id,
                 source: edge.source,
-                sourceHandle: edge.sourceHandle,
+                sourceHandle: sourceHandle?.id || edge.sourceHandle || edge.source_port_id,
                 target: edge.target,
-                targetHandle: edge.targetHandle,
+                targetHandle: targetHandle?.id || edge.targetHandle || edge.target_port_id,
                 style: {
                     stroke: sourceHandle?.color || '#909399',
                     strokeWidth: 3
@@ -1067,29 +1407,53 @@ const loadBlueprintForEdit = async () => {
 
         const { off: stopRestoreListener } = onNodesInitialized(() => {
             stopRestoreListener()
-            restoreBindingRelations()
+            if (epoch === editorEpoch && pageActive.value) restoreBindingRelations()
         })
         elements.value = [...processedNodes, ...processedEdges]
         await restoreBindingRelations()
-        if (blueprint.graph?.viewport) {
-            setTimeout(() => setViewport(blueprint.graph.viewport), 0)
-        }
+        if (epoch !== editorEpoch || !pageActive.value || !canLoad.value) return false
+        savedViewport.value = { ...(blueprint.graph?.viewport || { x: 0, y: 0, zoom: 1 }) }
+        if (isMobile.value) await fitMobileGraph()
+        else if (blueprint.graph?.viewport) setTimeout(() => { if (epoch === editorEpoch && pageActive.value && !isMobile.value) setViewport(blueprint.graph.viewport) }, 0)
+        return true
     } catch (error) {
+        if (epoch !== editorEpoch || !pageActive.value) return false
         console.error('加载行动蓝图失败:', error)
         if (!error?.code) {
             ElMessage.error(error.message || '加载行动蓝图失败')
         }
+        editorError.value = error.message || '加载行动蓝图失败，请重试'
+        return false
     } finally {
-        loadingBlueprint.value = false
+        if (epoch === editorEpoch) loadingBlueprint.value = false
     }
 }
 
 const initializeEditor = async () => {
+    const epoch = ++editorEpoch
+    historyReady.value = false
+    clearTimeout(historyTimer)
+    mobileEditorRef.value?.closeSheets()
+    bindingDialogVisible.value = false
+    editorError.value = ''
+    saving.value = false
+    savedViewport.value = { x: 0, y: 0, zoom: 1 }
+    mobileDisplayPositions.value = {}
+    layoutBefore = null
+    layoutProjectionBefore = null
+    mobileMode.value = 'browse'
     resetEditor()
-    await fetchNodeConfigs()
+    if (!pageActive.value || !canLoad.value) { editorError.value = '需要蓝图读取与节点读取权限才能载入编辑器'; return }
+    if (!await fetchNodeConfigs() || epoch !== editorEpoch || !pageActive.value) return
     if (isEditMode.value) {
-        await loadBlueprintForEdit()
+        if (!await loadBlueprintForEdit(epoch)) return
     }
+    await nextTick()
+    if (epoch !== editorEpoch || !pageActive.value) return
+    history.reset(draftSnapshot.value)
+    savedDraftSignature.value = draftSignature.value
+    historyStatus.value = { canUndo: false, canRedo: false }
+    historyReady.value = true
 }
 
 const handleBindingKeydown = (event) => {
@@ -1101,12 +1465,103 @@ const handleBindingKeydown = (event) => {
 
 onMounted(() => {
     window.addEventListener('keydown', handleBindingKeydown)
+    window.addEventListener('beforeunload', handleDraftBeforeUnload)
     initializeEditor()
 })
 onBeforeUnmount(() => {
     window.removeEventListener('keydown', handleBindingKeydown)
+    window.removeEventListener('beforeunload', handleDraftBeforeUnload)
+    deactivateEditor()
 })
-watch(blueprintId, initializeEditor)
+watch(() => route.params.blueprintId, (id) => {
+    if (createdBlueprintId.value && id === createdBlueprintId.value) return
+    createdBlueprintId.value = null
+    initializeEditor()
+})
+
+/** """离页先确认未保存草稿，不让保存中的请求悄悄切换目标。""" */
+const confirmDraftLeave = async () => {
+    if (saving.value || publishing.value || encapsulating.value) { ElMessage.warning('正在保存，请等待操作完成'); return false }
+    if (!draftDirty.value && !layoutBefore && !localDraftSignature.value) return true
+    const epoch = editorEpoch, signature = draftSignature.value, localSignature = localDraftSignature.value, token = Symbol()
+    pendingConfirmations.add(token)
+    try {
+        await ElMessageBox.confirm('当前蓝图有未保存修改，离开将丢弃这些草稿。', '离开编辑器', { confirmButtonText: '丢弃并离开', cancelButtonText: '继续编辑', type: 'warning' })
+        return epoch === editorEpoch && pageActive.value && signature === draftSignature.value && localSignature === localDraftSignature.value && !saving.value
+    } catch { return false }
+    finally { pendingConfirmations.delete(token) }
+}
+onBeforeRouteLeave(confirmDraftLeave)
+onBeforeRouteUpdate((to, from) => to.params.blueprintId !== from.params.blueprintId ? confirmDraftLeave() : true)
+
+/** """浏览器关闭提示只作用于当前编辑器的未保存草稿。""" */
+const handleDraftBeforeUnload = event => {
+    if (pageActive.value && (draftDirty.value || saving.value || layoutBefore || localDraftSignature.value)) { event.preventDefault(); event.returnValue = '' }
+}
+/** """失活时使请求与确认失效，关闭所有传送到 body 的面板。""" */
+const deactivateEditor = () => {
+    if (!pageActive.value) return
+    pageActive.value = false
+    editorEpoch++
+    nodeRequest++
+    clearTimeout(historyTimer)
+    cancelMobileLayout()
+    mobileEditorRef.value?.closeSheets()
+    bindingDialogVisible.value = false
+    publishDialogVisible.value = false
+    encapsulateDialogVisible.value = false
+    if (pendingConfirmations.size) { ElMessageBox.close(); pendingConfirmations.clear() }
+}
+onDeactivated(deactivateEditor)
+onActivated(() => { if (!pageActive.value) { pageActive.value = true; if (!historyReady.value) initializeEditor() } })
+watch(canLoad, allowed => {
+    if (!allowed) {
+        editorEpoch++
+        nodeRequest++
+        loadingBlueprint.value = false
+        loadingNodeConfigs.value = false
+        historyReady.value = false
+        elements.value = []
+        nodeTypeConfigs.value = []
+        actionForm.value = { title: '', version: '1.0.0', target: '', description: '', implementation_period: 0, default_scheduling_mode: 'barrier' }
+        templateParams.value = []
+        templateBindings.value = {}
+        resourceData.value = {}
+        mobileEditorRef.value?.closeSheets()
+        bindingDialogVisible.value = false
+        editorError.value = '编辑器读取权限已撤销'
+    } else if (pageActive.value && !historyReady.value) initializeEditor()
+}, { flush: 'sync' })
+watch(canEdit, allowed => {
+    if (!allowed) {
+        editorEpoch++
+        saving.value = false
+        publishing.value = false
+        encapsulating.value = false
+        loadingBlueprint.value = false
+        loadingNodeConfigs.value = false
+        cancelMobileLayout()
+        mobileEditorRef.value?.closeSheets()
+        bindingDialogVisible.value = false
+        publishDialogVisible.value = false
+        encapsulateDialogVisible.value = false
+        if (pendingConfirmations.size) { ElMessageBox.close(); pendingConfirmations.clear() }
+    } else if (pageActive.value && !historyReady.value && canLoad.value) initializeEditor()
+}, { flush: 'sync' })
+watch(isMobile, async (mobile, wasMobile) => {
+    desktopSyncReady.value = false
+    if (wasMobile) { cancelMobileLayout(); mobileEditorRef.value?.closeSheets() }
+    else savedViewport.value = { ...getViewport() }
+    if (!mobile) setDesktopElements(elements.value)
+    await nextTick()
+    if (mobile !== isMobile.value || !pageActive.value) return
+    if (mobile) fitMobileGraph()
+    else {
+        setDesktopElements(elements.value)
+        setViewport(savedViewport.value)
+        desktopSyncReady.value = true
+    }
+}, { flush: 'sync' })
 
 
 // 流程图逻辑
@@ -1355,6 +1810,7 @@ const onDrop = (event) => {
 }
 
 onNodeDrag(({ event, node }) => {
+    if (isMobile.value) return
     if (isBoundaryConfig(node?.data?.config)) {
         setBindingCandidate(
             node,
@@ -1364,6 +1820,7 @@ onNodeDrag(({ event, node }) => {
 })
 
 onNodeDragStop(({ event, node }) => {
+    if (isMobile.value) return
     if (!isBoundaryConfig(node?.data?.config)) return
     const candidateNodeId = bindingCandidate.value?.nodeId
     const targetNode = elements.value.find(element => element.id === candidateNodeId)
@@ -1379,9 +1836,13 @@ onNodeDragStop(({ event, node }) => {
 })
 
 const handleConfirmBinding = (binding) => {
+    if (isMobile.value && (!canEdit.value || saving.value || !pageActive.value)) return
     const boundaryNode = pendingBoundaryNode.value
     const targetNode = pendingTargetNode.value
     if (!boundaryNode || !targetNode) return
+    const candidate = validateBindingCandidate(boundaryNode, targetNode, getNodes.value, getDataEdges())
+    if (!candidate.valid || !binding.interfaceName?.trim() || binding.interfacePortId !== boundaryNode.data.interfacePortId || !binding.targetPortIds?.length || binding.targetPortIds.some(id => !candidate.bindableHandles.some(handle => (handle.port_id || handle.id) === id))) { ElMessage.warning('绑定目标或端口已变化，请重新选择'); return }
+    if (isMobile.value) recordHistory()
     const nameInput = (boundaryNode.data?.config?.inputs || []).find(
         input => input.name === 'interface_name'
     )
@@ -1420,6 +1881,7 @@ const handleConfirmBinding = (binding) => {
     pendingBoundaryNode.value = null
     pendingTargetNode.value = null
     pendingBindableHandles.value = []
+    if (isMobile.value) nextTick(recordHistory)
 }
 
 const handleCancelBinding = () => {
@@ -1438,17 +1900,27 @@ const handleUnbindBoundary = (nodeId) => {
 
 const persistBlueprint = async ({ navigate = true, notify = true } = {}) => {
     /** 校验并保存当前编辑器草稿，可供发布和封装流程复用。 */
-    if (!actionFormRef.value || saving.value) return
-
+    if (saving.value || !canEdit.value || !pageActive.value || editorError.value || loadingBlueprint.value || loadingNodeConfigs.value || layoutBefore) return false
+    if (localDraftSignature.value) { ElMessage.warning('请先应用或取消当前面板中的修改，再保存蓝图'); return false }
+    const epoch = editorEpoch
+    const targetId = blueprintId.value
+    const editing = Boolean(targetId)
+    saving.value = true
     try {
-        await actionFormRef.value.validate()
-    } catch {
-        return false
+
+    if (isMobile.value) {
+        if (mobileIssues.value.length) { mobileEditorRef.value?.showIssues(); return false }
+    } else {
+        try {
+            if (!actionFormRef.value) return false
+            await actionFormRef.value.validate()
+        } catch { return false }
     }
+    if (epoch !== editorEpoch || !canEdit.value || !pageActive.value || targetId !== blueprintId.value) return false
 
     const nodes = getNodes.value
     const edges = getDataEdges()
-    const viewport = getViewport()
+    const viewport = isMobile.value ? savedViewport.value : getViewport()
 
     if (!nodes || nodes.length === 0) {
         ElMessage.error('请至少添加一个节点')
@@ -1576,16 +2048,22 @@ const persistBlueprint = async ({ navigate = true, notify = true } = {}) => {
         }
     }
 
-    saving.value = true
+    const submittedSignature = draftSignature.value
+    recordHistory()
     try {
-        const response = isEditMode.value
-            ? await actionApi.updateActionBlueprint(blueprintId.value, actionData)
-            : await actionApi.createActionBlueprint(actionData)
+        const payload = JSON.parse(JSON.stringify(actionData))
+        const response = editing
+            ? await actionApi.updateActionBlueprint(targetId, payload)
+            : await actionApi.createActionBlueprint(payload)
+        if (epoch !== editorEpoch || !pageActive.value || !canEdit.value || targetId !== blueprintId.value) return false
 
         if (response.code !== 0) {
             ElMessage.error(response.message || `${isEditMode.value ? '更新' : '新增'}行动蓝图失败`)
             return false
         }
+        savedDraftSignature.value = submittedSignature
+        savedViewport.value = { ...viewport }
+        if (!editing && response.data?.id) createdBlueprintId.value = response.data.id
 
         if (notify) {
             ElMessage.success(isEditMode.value ? '行动蓝图更新成功' : '新增行动蓝图成功')
@@ -1601,28 +2079,32 @@ const persistBlueprint = async ({ navigate = true, notify = true } = {}) => {
                 duration: 0
             })
         }
-        if (navigate) {
+        if (navigate && !draftDirty.value) {
+            saving.value = false
             await router.push('/action/blueprints')
         }
         return true
     } catch (error) {
         console.error(`${isEditMode.value ? '更新' : '新增'}行动蓝图失败:`, error)
+        if (epoch === editorEpoch && pageActive.value) ElMessage.error('保存失败，草稿已保留，请检查后重试')
         return false
-    } finally {
-        saving.value = false
     }
+    } finally { if (epoch === editorEpoch) saving.value = false }
 }
 
-const handleSaveAction = () => persistBlueprint()
+const handleSaveAction = () => persistBlueprint({ navigate: !isMobile.value })
 
 const handlePublishBlueprint = async () => {
-    if (!blueprintId.value || publishing.value) return
+    if (!blueprintId.value || publishing.value || !canEdit.value || !hasPerm(PERM.operations.action.blueprint.publish) || !pageActive.value) return
+    const epoch = editorEpoch, id = blueprintId.value
     publishing.value = true
     try {
         if (!await persistBlueprint({ navigate: false, notify: false })) {
             return
         }
-        const response = await actionApi.publishBlueprint(blueprintId.value)
+        if (epoch !== editorEpoch || !pageActive.value || !canEdit.value || !hasPerm(PERM.operations.action.blueprint.publish)) return
+        const response = await actionApi.publishBlueprint(id)
+        if (epoch !== editorEpoch || !pageActive.value || !hasPerm(PERM.operations.action.blueprint.publish)) return
         if (response.code !== 0) {
             ElMessage.error(response.message || '发布蓝图版本失败')
             return
@@ -1637,13 +2119,16 @@ const handlePublishBlueprint = async () => {
 }
 
 const handleEncapsulateBlueprint = async (payload) => {
-    if (!blueprintId.value || encapsulating.value) return
+    if (!blueprintId.value || encapsulating.value || !canEdit.value || !canEncapsulate.value || !pageActive.value) return
+    const epoch = editorEpoch, id = blueprintId.value
     encapsulating.value = true
     try {
         if (!await persistBlueprint({ navigate: false, notify: false })) {
             return
         }
-        const response = await actionApi.encapsulateBlueprint(blueprintId.value, payload)
+        if (epoch !== editorEpoch || !pageActive.value || !canEdit.value || !canEncapsulate.value) return
+        const response = await actionApi.encapsulateBlueprint(id, payload)
+        if (epoch !== editorEpoch || !pageActive.value || !canEncapsulate.value) return
         if (response.code !== 0) {
             ElMessage.error(response.message || '封装蓝图失败')
             return
@@ -1660,6 +2145,8 @@ const handleEncapsulateBlueprint = async (payload) => {
 </script>
 
 <style scoped>
+.mobile-blueprint-page { height: calc(var(--mobile-viewport-height, 100dvh) - var(--mobile-header-height, 56px) - var(--mobile-nav-height, 64px)); min-height: 0; overflow: hidden; }
+:global(.mobile-keyboard-open) .mobile-blueprint-page { height: calc(var(--mobile-viewport-height, 100dvh) - var(--mobile-header-height, 56px)); }
 :deep(.vue-flow__node.boundary-binding-candidate) {
     z-index: 1000 !important;
 }

@@ -1,5 +1,24 @@
 <template>
-  <div class="w-full bg-white rounded-xl border border-gray-200 shadow-sm">
+  <div v-if="isMobile" class="mobile-permission-picker">
+    <div class="mobile-permission-summary"><strong>权限分配</strong><span>已选 {{ selectedRows.length }} 项</span></div>
+    <el-input v-model="searchKeyword" clearable placeholder="搜索权限名称或权限码" :disabled="disabled" />
+    <div class="mobile-permission-filters">
+      <el-select v-model="category" clearable placeholder="全部分类" :disabled="disabled"><el-option v-for="item in categoryOptions" :key="item" :label="item" :value="item" /></el-select>
+      <el-button :type="mobileSelectedOnly ? 'primary' : 'default'" @click="mobileSelectedOnly = !mobileSelectedOnly">{{ mobileSelectedOnly ? '查看全部' : '只看已选' }}</el-button>
+    </div>
+    <p v-if="hasWildcard" class="text-sm text-blue-700">最高等级权限组包含全部权限，无法在此修改。</p>
+    <p v-if="selectedUnknownPerms.length" class="text-sm text-amber-700">保留 {{ selectedUnknownPerms.length }} 项未在当前目录定义的权限：{{ selectedUnknownPerms.join('、') }}</p>
+    <details v-for="group in mobilePermissionGroups" :key="group.label" :open="Boolean(searchKeyword) || mobileSelectedOnly" class="mobile-permission-group">
+      <summary>{{ group.label }} <span>{{ group.items.filter(item => selectedKnownPermKeys.includes(item.permKey)).length }} / {{ group.items.length }}</span></summary>
+      <label v-for="item in group.items" :key="item.permKey" class="mobile-permission-option">
+        <input type="checkbox" :checked="selectedKnownPermKeys.includes(item.permKey)" :disabled="disabled || hasWildcard" @change="toggleMobilePermission(item.permKey, $event.target.checked)" />
+        <span><strong>{{ item.name }}</strong><small>{{ item.permKey }}</small><small v-if="item.desc">{{ item.desc }}</small></span>
+      </label>
+    </details>
+    <p v-if="!mobilePermissionGroups.length" class="text-sm text-gray-500 py-6 text-center">没有匹配的权限</p>
+    <el-button :disabled="disabled || hasWildcard || !selectedRows.length" @click="clearAllSelected">清空已选权限</el-button>
+  </div>
+  <div v-else class="w-full bg-white rounded-xl border border-gray-200 shadow-sm">
     <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
       <div class="min-w-0">
         <div class="text-sm font-bold text-gray-900">权限分配</div>
@@ -121,8 +140,9 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 
 defineOptions({ name: 'GroupPermissionPicker' })
 
@@ -142,6 +162,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue'])
+const { isMobile } = useMobileViewport()
+const mobileSelectedOnly = ref(false)
 
 const treeProps = {
   label: 'label',
@@ -273,6 +295,27 @@ const catalogTree = computed(() => buildCatalogTree(props.permCodes))
 const filteredCatalogTree = computed(() => filterTreeByCategory(catalogTree.value, category.value))
 const sourcePerms = computed(() => flattenPerms(catalogTree.value))
 const allPerms = computed(() => flattenPerms(filteredCatalogTree.value))
+const mobilePermissionGroups = computed(() => {
+  const query = searchKeyword.value.trim().toLowerCase()
+  const groups = new Map()
+  for (const item of allPerms.value) {
+    if (query && !`${item.name} ${item.permKey} ${item.desc}`.toLowerCase().includes(query)) continue
+    if (mobileSelectedOnly.value && !selectedKnownPermKeys.value.includes(item.permKey)) continue
+    const label = item.category || '未分类'
+    if (!groups.has(label)) groups.set(label, [])
+    groups.get(label).push(item)
+  }
+  return [...groups].map(([label, items]) => ({ label, items }))
+})
+
+/** """切换单项权限，同时保留目录之外的已有权限。""" */
+function toggleMobilePermission(key, checked) {
+  if (props.disabled || hasWildcard.value) return
+  const next = new Set(selectedKnownPermKeys.value)
+  if (checked) next.add(key)
+  else next.delete(key)
+  emitPermissions([...next])
+}
 
 const permMetaByKey = computed(() => {
   const map = {}
@@ -375,6 +418,12 @@ function syncTreeCheckedKeys() {
 watch([sourcePerms, selectedKnownPermKeys], () => {
   syncTreeCheckedKeys()
 }, { immediate: true })
+watch(treeRef, async tree => {
+  if (!tree) return
+  await nextTick()
+  syncTreeCheckedKeys()
+  treeRef.value?.filter?.(searchKeyword.value)
+})
 
 function handleTreeCheck(_node, checkedInfo) {
   if (props.disabled) return
@@ -399,6 +448,18 @@ function clearAllSelected() {
 </script>
 
 <style scoped>
+.mobile-permission-picker { display: grid; gap: 12px; width: 100%; min-width: 0; }
+.mobile-permission-summary, .mobile-permission-filters { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mobile-permission-summary span { color: #64748b; font-size: 12px; }
+.mobile-permission-filters .el-select { flex: 1; min-width: 0; }
+.mobile-permission-group { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+.mobile-permission-group summary { padding: 14px 12px; min-height: 48px; background: #f8fafc; cursor: pointer; overflow-wrap: anywhere; }
+.mobile-permission-group summary span { font-size: 12px; color: #64748b; margin-left: 8px; }
+.mobile-permission-option { display: flex; align-items: flex-start; gap: 12px; padding: 14px 12px; border-top: 1px solid #f1f5f9; cursor: pointer; }
+.mobile-permission-option input { width: 20px; height: 20px; margin-top: 4px; flex-shrink: 0; accent-color: #2563eb; }
+.mobile-permission-option > span { min-width: 0; }
+.mobile-permission-option strong, .mobile-permission-option small { display: block; overflow-wrap: anywhere; line-height: 1.6; }
+.mobile-permission-option small { color: #64748b; font-size: 12px; }
 .perm-tree {
   padding: 6px 0;
 }

@@ -5,7 +5,9 @@
     width="min(96vw, 1200px)"
     top="4vh"
     destroy-on-close
-    class="wiki-revision-preview-dialog"
+    class="wiki-revision-preview-dialog wiki-revision-modal"
+    :fullscreen="isMobile"
+    modal-class="wiki-revision-overlay"
     @open="onOpen"
     @closed="onClosed"
   >
@@ -22,6 +24,7 @@
     </div>
 
     <div v-loading="loading" element-loading-text="加载历史版本..." class="min-h-60 max-h-[65vh] overflow-y-auto pr-1">
+      <div v-if="loadError" role="alert"><p>{{ loadError }}</p><el-button @click="loadRevision">重新加载</el-button></div>
       <template v-if="detail && !loading">
         <div class="mb-6">
           <h2 class="text-2xl font-bold text-gray-900 m-0">{{ detail.snapshot.title }}</h2>
@@ -55,7 +58,7 @@
         <span>
           <el-button
             type="primary"
-            :disabled="!detail || isCurrentRevision || loading"
+            :disabled="!allowRestore || !detail || isCurrentRevision || loading"
             @click="handleRestore"
           >
             恢复到此版本
@@ -73,10 +76,17 @@ import WikiSnapshotArticle from '@/components/wiki/WikiSnapshotArticle.vue'
 import { wikiApi } from '@/api/wiki.js'
 import { formatDateTime } from '@/utils/action'
 import { getWikiChangeTypeLabel } from '@/utils/wikiRevisionLabels.js'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import './wikiMobileDialogs.css'
+
+const { isMobile } = useMobileViewport()
+const loadError = ref('')
+let requestGeneration = 0
 
 /** @typedef {import('@/types/wiki.js').WikiRevisionDetail} WikiRevisionDetail */
 
 const props = defineProps({
+  allowRestore: { type: Boolean, default: true },
   modelValue: {
     type: Boolean,
     default: false,
@@ -142,6 +152,7 @@ function onOpen() {
 }
 
 function onClosed() {
+  requestGeneration += 1
   detail.value = null
 }
 
@@ -162,19 +173,24 @@ function formatTime(raw) {
 
 async function loadRevision() {
   if (!props.wikiId || !props.revision) return
+  const generation = ++requestGeneration
   loading.value = true
+  loadError.value = ''
   detail.value = null
   try {
-    detail.value = await wikiApi.getRevision(props.wikiId, props.revision)
-  } catch {
-    detail.value = null
+    const response = await wikiApi.getRevision(props.wikiId, props.revision)
+    if (generation !== requestGeneration) return
+    detail.value = response
+  } catch (error) {
+    if (generation !== requestGeneration) return
+    loadError.value = error?.message || '历史版本加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === requestGeneration) loading.value = false
   }
 }
 
 async function handleRestore() {
-  if (!detail.value || isCurrentRevision.value) return
+  if (!props.allowRestore || !detail.value || isCurrentRevision.value) return
   const rev = detail.value.revision
   try {
     await ElMessageBox.confirm(
@@ -189,6 +205,6 @@ async function handleRestore() {
   } catch {
     return
   }
-  emit('restore', rev)
+  if (props.allowRestore) emit('restore', rev)
 }
 </script>

@@ -31,6 +31,21 @@ class OverviewSummaryStatusSchema(BaseModel):
     )
 
 
+class OverviewLatestIntelligenceItemSchema(BaseModel):
+    uuid: str = Field(description="情报记录 UUID")
+    entity_type: str = Field(description="实体类型")
+    title: str = Field(description="标题")
+    clean_content: str = Field(description="正文摘要，最多 200 字符")
+    platform: str = Field(description="来源平台")
+    section: str = Field(description="所属板块")
+    last_edit_at: datetime = Field(description="内容最后编辑时间")
+    is_highlighted: bool = Field(description="是否为重点目标")
+
+
+class OverviewLatestIntelligenceSchema(BaseModel):
+    items: list[OverviewLatestIntelligenceItemSchema] = Field(description="按内容最后编辑时间倒序排列的情报记录")
+
+
 class OverviewTimeBucketSchema(BaseModel):
     period_start: datetime = Field(description="该统计区间起始时刻（含时区）")
     doc_count: int = Field(description="该区间内文档数")

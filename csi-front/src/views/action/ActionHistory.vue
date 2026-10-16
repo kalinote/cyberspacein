@@ -1,6 +1,45 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <Header />
+    <main v-if="isMobile" class="mobile-action-page">
+      <h1>行动记录</h1>
+      <p class="mobile-action-intro">跟进执行进度，处理异常并查看结果。</p>
+      <div class="mobile-action-metrics">
+        <div><span>执行中</span><strong>{{ statistics.running }}</strong></div>
+        <div><span>失败</span><strong>{{ statistics.failed }}</strong></div>
+        <div><span>部分完成</span><strong>{{ statistics.partiallyCompleted }}</strong></div>
+      </div>
+      <form class="mobile-action-toolbar" @submit.prevent="handleFilterChange">
+        <el-input v-model="filters.keyword" placeholder="搜索行动名称或描述" aria-label="搜索行动" clearable @clear="handleFilterChange" />
+        <el-button type="primary" native-type="submit">搜索</el-button>
+        <el-select v-model="filters.status" aria-label="行动状态" placeholder="全部状态" clearable @change="handleFilterChange">
+          <el-option v-for="status in Object.values(ACTION_STATUS)" :key="status" :value="status" :label="getStatusText(status)" />
+        </el-select>
+        <el-button @click="mobileDateVisible = true">{{ filters.dateRange ? '已选日期' : '日期筛选' }}</el-button>
+        <el-button :loading="loading" aria-label="刷新行动记录" @click="fetchActions()"><Icon icon="mdi:refresh" /></el-button>
+      </form>
+      <el-alert v-if="mobileHistoryError" :title="mobileHistoryError" type="error" :closable="false" show-icon class="mb-4" />
+      <div v-loading="loading" class="mobile-action-list">
+        <MobileActionCard v-for="action in actions" :key="action.id" :action="action" :busy="mobileBusyId === action.id" :disabled="Boolean(mobileBusyId)"
+          @view="viewActionDetail($event.id)" @operate="operateAction" />
+        <el-empty v-if="!loading && !mobileHistoryError && !actions.length" description="暂无符合条件的行动" :image-size="72" />
+      </div>
+      <div v-if="pagination.total" class="mobile-action-pagination">
+        <el-pagination v-model:current-page="pagination.page" :page-size="pagination.pageSize" :total="pagination.total" :pager-count="5" layout="prev, pager, next" @current-change="handlePageChange" />
+      </div>
+      <MobileSheet v-model="mobileDateVisible" title="行动创建日期">
+        <el-form class="mobile-action-panel" label-position="top">
+          <el-form-item label="开始日期"><el-input v-model="mobileDateFrom" type="date" aria-label="开始日期" /></el-form-item>
+          <el-form-item label="结束日期"><el-input v-model="mobileDateTo" type="date" aria-label="结束日期" /></el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="mobileDateFrom = ''; mobileDateTo = ''; filters.dateRange = null; mobileDateVisible = false; handleFilterChange()">清除</el-button>
+          <el-button type="primary" :disabled="!mobileDateFrom || !mobileDateTo || mobileDateTo < mobileDateFrom"
+            @click="filters.dateRange = [mobileDateFrom, mobileDateTo]; mobileDateVisible = false; handleFilterChange()">应用日期</el-button>
+        </template>
+      </MobileSheet>
+    </main>
+    <template v-else>
     
     <FunctionalPageHeader
       title-prefix="历史行动"
@@ -159,13 +198,12 @@
               <div
                 v-for="action in actions"
                 :key="action.id"
-                class="bg-gray-50 rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-all cursor-pointer"
+                class="flex min-w-0 flex-col bg-gray-50 rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-all cursor-pointer"
                 @click="viewActionDetail(action.id)"
               >
-                <div class="flex items-start justify-between mb-4">
-                  <div class="flex-1">
-                    <h3 class="text-lg font-bold text-gray-900 mb-2 line-clamp-1">{{ action.name }}</h3>
-                    <p class="text-sm text-gray-600 line-clamp-2 mb-3">{{ action.description }}</p>
+                <div class="flex shrink-0 items-start justify-between mb-2">
+                  <div class="min-w-0 flex-1">
+                    <h3 class="text-lg font-bold text-gray-900 line-clamp-1">{{ action.name }}</h3>
                   </div>
                   <div class="shrink-0 ml-2 flex items-center gap-1.5">
                     <el-tag
@@ -193,7 +231,11 @@
                   </div>
                 </div>
 
-                <div class="space-y-2 mb-4">
+                <div class="flex-1 mb-4">
+                  <p class="text-sm text-gray-600 line-clamp-2 break-words">{{ action.description }}</p>
+                </div>
+
+                <div class="shrink-0 space-y-2 mb-4">
                   <div v-if="action.startTime" class="flex items-center justify-between text-sm">
                     <span class="text-gray-500 flex items-center gap-2">
                       <Icon icon="mdi:play-circle" class="text-green-500" />
@@ -219,7 +261,7 @@
 
                 <div
                   v-if="ACTION_PROGRESS_STATUSES.has(action.status)"
-                  class="mb-4"
+                  class="shrink-0 mb-4"
                 >
                   <div class="flex justify-between text-xs text-gray-600 mb-1">
                     <span>执行进度</span>
@@ -238,7 +280,7 @@
                   </div>
                 </div>
 
-                <div class="flex items-center gap-2 pt-4 border-t border-gray-200">
+                <div class="flex shrink-0 items-center gap-2 pt-4 border-t border-gray-200">
                   <el-button type="primary" link size="small" class="flex-1" @click.stop="viewActionDetail(action.id)">
                     <template #icon><Icon icon="mdi:eye" /></template>
                     查看详情
@@ -431,12 +473,13 @@
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
 <script setup>
 defineOptions({ name: 'ActionHistory' })
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import Header from '@/components/Header.vue'
@@ -452,8 +495,20 @@ import {
 } from '@/utils/action'
 import { actionApi } from '@/api/action'
 import { getPaginatedData } from '@/utils/request'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import MobileActionCard from '@/components/action/mobile/MobileActionCard.vue'
+import { useMobileActionOperations } from '@/components/action/mobile/actionOperations'
+import { fetchMobileActionPage } from '@/components/action/mobile/mobileActionData'
+import '@/components/action/mobile/mobile-action.css'
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const mobileDateVisible = ref(false)
+const mobileDateFrom = ref('')
+const mobileDateTo = ref('')
+const mobileHistoryError = ref('')
+const { busyId: mobileBusyId, operateAction } = useMobileActionOperations({ onUpdated: () => fetchActions(false) })
 
 const SCHEDULING_MODE_TAG_CLASSES = Object.freeze({
   barrier: 'border-blue-200! bg-blue-50! text-blue-600!',
@@ -538,10 +593,11 @@ const fetchActions = async (showLoading = true) => {
     }
     
     const [result, summaryResponse] = await Promise.all([
-      getPaginatedData(actionApi.getActionHistory, params),
+      (isMobile.value ? fetchMobileActionPage : getPaginatedData)(actionApi.getActionHistory, params),
       actionApi.getActionHistorySummary(showLoading ? {} : { silent: true }).catch(() => null)
     ])
     
+    mobileHistoryError.value = ''
     actions.value = (result.items || [])
       .filter(item => !locallyDeletedActionIds.has(item.id))
       .map(item => ({
@@ -568,6 +624,7 @@ const fetchActions = async (showLoading = true) => {
       }
     }
   } catch (error) {
+    mobileHistoryError.value = actions.value.length && !showLoading ? '更新失败，当前仍显示上次记录，可点击刷新重试。' : '行动记录加载失败，请点击刷新重试。'
     console.error('获取行动历史失败:', error)
     if (showLoading) actions.value = []
   } finally {
@@ -577,7 +634,7 @@ const fetchActions = async (showLoading = true) => {
       const shouldShowLoading = queuedShowLoading
       fetchActionsQueued = false
       queuedShowLoading = false
-      void fetchActions(shouldShowLoading)
+      if (pageActive) void fetchActions(shouldShowLoading)
     }
   }
 }
@@ -701,9 +758,10 @@ const deleteAction = (actionId) => {
 }
 
 let pollingInterval = null
+let pageActive = true
 
 const startPolling = () => {
-  if (pollingInterval) return
+  if (pollingInterval || !pageActive) return
 
   pollingInterval = window.setInterval(() => {
     fetchActions(false)
@@ -734,7 +792,23 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  pageActive = false
   stopPolling()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onDeactivated(() => {
+  mobileDateVisible.value = false
+  pageActive = false
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onActivated(() => {
+  if (pageActive) return
+  pageActive = true
+  fetchActions(false)
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>

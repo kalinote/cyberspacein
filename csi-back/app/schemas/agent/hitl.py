@@ -15,6 +15,9 @@ class HitlSource:
     TOOL_MODIFY_ENTITY = "tool:modify_entity"
     TOOL_WIKI_CREATE = "tool:wiki_create"
     TOOL_WIKI_EDIT = "tool:wiki_edit"
+    TOOL_EVIDENCE_CREATE = "tool:evidence_create"
+    TOOL_EVIDENCE_SAVE = "tool:evidence_save"
+    TOOL_EVIDENCE_DELETE = "tool:evidence_delete"
 
 
 def build_source(behavior: str, name: str) -> str:

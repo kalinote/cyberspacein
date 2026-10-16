@@ -325,10 +325,12 @@ export function useAgentSessionStream(options = {}) {
         if (!batchItems.length) return
         const el = eventsScrollEl.value
         const prevHeight = el?.scrollHeight ?? 0
+        const prevTop = el?.scrollTop ?? 0
         timelineItems.value = [...batchItems, ...timelineItems.value]
         await nextTick()
         if (el) {
-            el.scrollTop += el.scrollHeight - prevHeight
+            el.scrollTop = prevTop + el.scrollHeight - prevHeight
+            updateEventsScrollState()
         }
     }
 
@@ -363,7 +365,6 @@ export function useAgentSessionStream(options = {}) {
         clearInitialReplayTracking()
         initialReplayPending = true
         initialReplayCount = 0
-        scheduleInitialReplayFinalize()
     }
 
     function noteInitialReplayEvent() {
@@ -373,9 +374,11 @@ export function useAgentSessionStream(options = {}) {
     }
 
     async function loadOlderEvents() {
-        if (!hasMoreHistory.value || historyLoading.value) return
+        if (!replayReadyForPagination.value || !hasMoreHistory.value || historyLoading.value) return
         if (!resolvedAgentId.value || !sessionId.value) return
 
+        const requestedSession = sessionId.value
+        const generation = connectionGeneration
         historyLoading.value = true
         try {
             const url = agentApi.getAgentStatusUrl(resolvedAgentId.value, sessionId.value, {
@@ -383,20 +386,23 @@ export function useAgentSessionStream(options = {}) {
                 offset: historyOffset.value,
             })
             const { events } = await fetchReplayBatch(url, { expectedLimit: replayPageSize })
+            if (generation !== connectionGeneration || requestedSession !== sessionId.value) return
             if (!events.length) {
                 hasMoreHistory.value = false
                 return
             }
             const batchItems = buildTimelineBatch(events)
             await prependTimelineBatch(batchItems)
+            if (generation !== connectionGeneration || requestedSession !== sessionId.value) return
             historyOffset.value += replayPageSize
             if (events.length < replayPageSize) {
                 hasMoreHistory.value = false
             }
         } catch (error) {
+            if (generation !== connectionGeneration || requestedSession !== sessionId.value) return
             ElMessage.error(error?.message || '加载历史事件失败')
         } finally {
-            historyLoading.value = false
+            if (generation === connectionGeneration) historyLoading.value = false
         }
     }
 
@@ -438,6 +444,8 @@ export function useAgentSessionStream(options = {}) {
 
     /** @param {boolean} [force] */
     function scrollEventsToBottom(force = false) {
+        // 补载历史时由 prependTimelineBatch 保持阅读位置，避免自动跟随到底部。
+        if (historyLoading.value) return
         if (!force && !isEventsScrollAtBottom.value) return
         const el = eventsScrollEl.value
         if (!el) return
@@ -569,7 +577,11 @@ export function useAgentSessionStream(options = {}) {
 
     async function loadSessionDetail() {
         if (!sessionId.value) throw new Error('缺少 session_id 参数')
-        const res = await agentApi.getAgentSessionDetail(sessionId.value)
+        const requestedSession = sessionId.value
+        const generation = connectionGeneration
+        const res = await agentApi.getAgentSessionDetail(requestedSession)
+        // 切换或离开会话后，旧详情不能覆盖当前会话。
+        if (generation !== connectionGeneration || requestedSession !== sessionId.value) return false
         if (res?.code !== 0) {
             throw new Error(res?.message || '获取会话详情失败')
         }
@@ -578,6 +590,7 @@ export function useAgentSessionStream(options = {}) {
         if (raw?.status) {
             sessionRuntimeStatus.value = String(raw.status)
         }
+        return true
     }
 
     async function runSseAttempt(url, generation) {
@@ -588,6 +601,8 @@ export function useAgentSessionStream(options = {}) {
                 signal: controller.signal,
                 onOpen: () => {
                     if (generation !== connectionGeneration || controller.signal.aborted) return
+                    // 连接建立后再判断回放结束，避免将建连等待误判为空历史。
+                    if (initialReplayPending) scheduleInitialReplayFinalize()
                     sseConnected.value = true
                     sseError.value = ''
                     retryCount = 0
@@ -823,32 +838,35 @@ export function useAgentSessionStream(options = {}) {
 
     async function reloadSession({ loadDetail = true } = {}) {
         disconnectSSE()
+        const generation = connectionGeneration
         resetStreamState()
         if (loadDetail && sessionId.value) {
             try {
-                await loadSessionDetail()
+                if (await loadSessionDetail() === false) return
             } catch (e) {
                 throw e
             }
         }
         if (sessionId.value && resolvedAgentId.value) {
             await nextTick()
-            connectSSE()
+            if (generation === connectionGeneration) connectSSE()
         }
     }
 
     async function startStreamForSession({ loadDetail = false } = {}) {
+        disconnectSSE()
+        const generation = connectionGeneration
         resetStreamState()
         if (loadDetail && sessionId.value) {
             try {
-                await loadSessionDetail()
+                if (await loadSessionDetail() === false) return
             } catch {
                 // 嵌入场景可仅依赖 SSE
             }
         }
         if (sessionId.value && resolvedAgentId.value) {
             await nextTick()
-            connectSSE()
+            if (generation === connectionGeneration) connectSSE()
         }
     }
 
@@ -864,8 +882,9 @@ export function useAgentSessionStream(options = {}) {
         cancelLoading,
         todos,
         timelineItems,
-        hasMoreHistory,
+        hasMoreHistory: computed(() => replayReadyForPagination.value && hasMoreHistory.value),
         historyLoading,
+        loadOlderEvents,
         showApprovalDialog,
         pendingApproval,
         approvalReason,

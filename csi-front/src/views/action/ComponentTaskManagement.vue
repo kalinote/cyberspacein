@@ -1,5 +1,6 @@
 <template>
-  <ConfigCenterLayout
+  <component
+    :is="isMobile ? MobileTaskLayout : ConfigCenterLayout"
     title-prefix="组件任务"
     title-suffix="管理"
     subtitle="管理完整行动的定时计划与执行记录"
@@ -28,7 +29,25 @@
     </template>
 
     <template #toolbar>
-      <div class="bg-white px-6 py-4 border-b border-gray-200 flex flex-col items-stretch gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div v-if="isMobile">
+        <form class="mobile-action-toolbar" @submit.prevent="taskPagination.page = 1; schedulePagination.page = 1; refreshCurrent()">
+          <el-input v-model="filters.keyword" aria-label="搜索计划或蓝图" placeholder="搜索计划或蓝图" clearable @clear="taskPagination.page = 1; schedulePagination.page = 1; refreshCurrent()" />
+          <el-button type="primary" native-type="submit">搜索</el-button>
+          <el-select v-if="activeTab === 'tasks'" v-model="filters.status" aria-label="执行状态" placeholder="全部状态" clearable @change="taskPagination.page = 1; fetchTaskList()">
+            <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <el-select v-else v-model="filters.enabled" aria-label="计划启用状态" placeholder="全部计划" clearable @change="schedulePagination.page = 1; fetchScheduleList()">
+            <el-option label="已启用" :value="true" /><el-option label="已停用" :value="false" />
+          </el-select>
+          <el-button aria-label="刷新任务列表" @click="refreshCurrent"><Icon icon="mdi:refresh" /></el-button>
+        </form>
+        <div class="mobile-action-heading">
+          <el-tag :type="!schedulerKnown ? 'info' : schedulerStatus.online ? 'success' : 'danger'">{{ schedulerKnown ? (schedulerStatus.online ? '调度器在线' : '调度器离线') : schedulerError ? '调度状态不可用' : '确认调度状态中' }}</el-tag>
+          <el-button v-if="activeTab === 'schedule' && canCreate" type="primary" @click="openCreateDrawer">新增计划</el-button>
+          <el-button v-if="activeTab === 'tasks' && filters.schedule_id" @click="filters.schedule_id = ''; taskPagination.page = 1; fetchTaskList()">查看全部计划记录</el-button>
+        </div>
+      </div>
+      <div v-else class="bg-white px-6 py-4 border-b border-gray-200 flex flex-col items-stretch gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div class="flex items-center gap-3 shrink-0">
           <Icon :icon="currentTabIcon" class="text-2xl text-blue-600" />
           <h2 class="text-xl font-bold text-gray-900">{{ currentTabLabel }}</h2>
@@ -60,7 +79,7 @@
     </template>
 
     <el-alert
-      v-if="!schedulerStatus.online"
+      v-if="!schedulerStatus.online && (!isMobile || schedulerKnown)"
       title="行动调度器当前离线，计划仍可编辑，但不会自动触发。"
       type="warning"
       :closable="false"
@@ -68,6 +87,34 @@
       class="mb-4"
     />
 
+    <template v-if="isMobile">
+      <el-alert v-if="mobileListError" :title="mobileListError" type="error" :closable="false" show-icon class="mb-4" />
+      <div v-if="activeTab === 'tasks'" v-loading="taskLoading" class="mobile-action-list">
+        <MobileActionCard v-for="task in taskList" :key="task.action_id" :action="task" :busy="mobileBusyId === task.action_id" :disabled="Boolean(mobileBusyId)"
+          @view="router.push(`/action/${$event.action_id}`)" @operate="operateAction" />
+        <el-empty v-if="!taskLoading && !mobileListError && !taskList.length" description="暂无符合条件的执行记录" :image-size="72" />
+        <div v-if="taskPagination.total" class="mobile-action-pagination"><el-pagination v-model:current-page="taskPagination.page" :page-size="taskPagination.pageSize" :total="taskPagination.total" :pager-count="5" layout="prev, pager, next" @current-change="handleTaskPage" /></div>
+      </div>
+      <div v-else v-loading="scheduleLoading" class="mobile-action-list">
+        <article v-for="schedule in scheduleList" :key="schedule.id" class="mobile-schedule-card">
+          <div class="mobile-schedule-state"><el-tag :type="schedule.enabled ? 'success' : 'info'">{{ schedule.enabled ? '已启用' : '已停用' }}</el-tag><el-tag v-if="['failed', 'invalid'].includes(schedule.last_trigger_status)" type="danger">触发异常</el-tag></div>
+          <h2>{{ schedule.name }}</h2>
+          <p v-if="schedule.last_error" class="mobile-schedule-error">{{ schedule.last_error }}</p>
+          <p class="mobile-schedule-next">下次执行：{{ formatDateTime(schedule.next_run_at) }}</p>
+          <p>{{ schedule.blueprint_name }} · {{ schedule.blueprint_version }}</p>
+          <details><summary>计划详情</summary><p>{{ schedule.description || '暂无描述' }}</p><p>{{ scheduleDescription(schedule) }}</p><p>时区：{{ schedule.timezone }} · 优先级 {{ schedule.priority }}</p><p>{{ schedule.overlap_policy === 'forbid' ? '禁止重叠执行' : '允许重叠执行' }} · {{ schedule.misfire_policy === 'fire_once' ? '错过后补一次' : '跳过错过的执行' }}</p></details>
+          <div class="mobile-schedule-controls">
+            <el-button type="primary" plain @click="showScheduleRuns(schedule)">执行记录</el-button>
+            <el-button v-if="canUpdate" @click="toggleSchedule(schedule, !schedule.enabled)">{{ schedule.enabled ? '停用' : '启用' }}</el-button>
+            <el-button v-if="canUpdate" @click="openEditDrawer(schedule)">编辑</el-button>
+            <el-button v-if="canDelete" type="danger" plain @click="removeSchedule(schedule)">删除</el-button>
+          </div>
+        </article>
+        <el-empty v-if="!scheduleLoading && !mobileListError && !scheduleList.length" description="暂无符合条件的调度计划" :image-size="72" />
+        <div v-if="schedulePagination.total" class="mobile-action-pagination"><el-pagination v-model:current-page="schedulePagination.page" :page-size="schedulePagination.pageSize" :total="schedulePagination.total" :pager-count="5" layout="prev, pager, next" @current-change="handleSchedulePage" /></div>
+      </div>
+    </template>
+    <template v-else>
     <div v-if="activeTab === 'tasks'">
       <div v-loading="taskLoading" element-loading-text="加载中..." class="min-h-50 space-y-4">
         <article v-for="task in taskList" :key="task.action_id" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md transition-shadow">
@@ -157,9 +204,10 @@
       </div>
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="editingScheduleId ? '编辑调度计划' : '新增调度计划'" size="620px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="formRules" label-position="top">
-        <div class="grid grid-cols-2 gap-x-4">
+    </template>
+    <el-drawer v-model="drawerVisible" :title="editingScheduleId ? '编辑调度计划' : '新增调度计划'" :size="isMobile ? '100%' : '620px'" :direction="isMobile ? 'btt' : 'rtl'" :class="{ 'mobile-schedule-drawer': isMobile }" :modal-class="isMobile ? 'mobile-action-drawer-overlay' : ''" destroy-on-close>
+      <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" :class="{ 'mobile-action-panel': isMobile }">
+        <div class="grid gap-x-4" :class="isMobile ? 'grid-cols-1' : 'grid-cols-2'">
           <el-form-item label="计划名称" prop="name"><el-input v-model="form.name" placeholder="请输入计划名称" maxlength="100" /></el-form-item>
           <el-form-item label="行动蓝图" prop="blueprint_id">
             <el-select v-model="form.blueprint_id" placeholder="请选择行动蓝图" filterable class="w-full!" @change="handleBlueprintChange">
@@ -176,7 +224,7 @@
           </el-form-item>
         </div>
 
-        <div class="grid grid-cols-2 gap-x-4">
+        <div class="grid gap-x-4" :class="isMobile ? 'grid-cols-1' : 'grid-cols-2'">
           <el-form-item label="调度类型" prop="schedule_type">
             <el-radio-group v-model="form.schedule_type" @change="resetScheduleFields">
               <el-radio-button value="cron">Cron</el-radio-button>
@@ -212,7 +260,7 @@
           </div>
         </el-form-item>
 
-        <div class="grid grid-cols-2 gap-x-4">
+        <div class="grid gap-x-4" :class="isMobile ? 'grid-cols-1' : 'grid-cols-2'">
           <el-form-item label="开始时间" prop="start_at"><el-date-picker v-model="form.start_at" type="datetime" class="w-full!" /></el-form-item>
           <el-form-item label="结束时间"><el-date-picker v-model="form.end_at" type="datetime" clearable class="w-full!" /></el-form-item>
           <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="1" :max="10" class="w-full!" /></el-form-item>
@@ -238,7 +286,7 @@
         </div>
       </template>
     </el-drawer>
-  </ConfigCenterLayout>
+  </component>
 </template>
 
 <script setup>
@@ -255,16 +303,29 @@ import { ACTION_STATUS, cronToDescription, formatDateTime, formatDuration, getAc
 import { INPUT_TYPE_DEFAULTS } from '@/utils/action/constants'
 import { PERM } from '@/utils/permissions'
 import { hasPerm } from '@/utils/permissionKit'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileTaskLayout from '@/components/action/mobile/MobileTaskLayout.vue'
+import MobileActionCard from '@/components/action/mobile/MobileActionCard.vue'
+import { useMobileActionOperations } from '@/components/action/mobile/actionOperations'
+import { fetchMobileActionPage } from '@/components/action/mobile/mobileActionData'
+import '@/components/action/mobile/mobile-action.css'
 
 defineOptions({ name: 'ComponentTaskManagement' })
 
 const route = useRoute()
 const router = useRouter()
+const { isMobile } = useMobileViewport()
+const { busyId: mobileBusyId, operateAction } = useMobileActionOperations({ onUpdated: () => fetchTaskList() })
 const activeTab = ref(route.query.tab === 'schedule' ? 'schedule' : 'tasks')
 const taskList = ref([])
 const scheduleList = ref([])
 const taskLoading = ref(false)
 const scheduleLoading = ref(false)
+const taskError = ref('')
+const scheduleError = ref('')
+const schedulerKnown = ref(false)
+const schedulerError = ref(false)
+const mobileListError = computed(() => activeTab.value === 'tasks' ? taskError.value : scheduleError.value)
 const taskPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const schedulePagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const statistics = reactive({ task_count: 0, schedule_count: 0 })
@@ -310,6 +371,7 @@ const formRules = {
 }
 const templateParams = computed(() => selectedBlueprint.value?.template?.params || [])
 let refreshTimer = null
+let pageActive = true
 
 function defaultForm() {
   return {
@@ -388,14 +450,17 @@ async function loadBlueprints() {
 async function fetchTaskList(silent = false) {
   if (!silent) taskLoading.value = true
   try {
-    const result = await getPaginatedData(actionScheduleApi.getRuns, {
+    const result = await (isMobile.value ? fetchMobileActionPage : getPaginatedData)(actionScheduleApi.getRuns, {
       page: taskPagination.page, page_size: taskPagination.pageSize,
       keyword: filters.keyword || undefined, status: filters.status || undefined,
       schedule_id: filters.schedule_id || undefined
     })
+    taskError.value = ''
     taskList.value = result.items || []
     taskPagination.total = result.pagination?.total || 0
     statistics.task_count = taskPagination.total
+  } catch {
+    taskError.value = '执行记录更新失败，请点击刷新重试。'
   } finally {
     if (!silent) taskLoading.value = false
   }
@@ -404,22 +469,33 @@ async function fetchTaskList(silent = false) {
 async function fetchScheduleList(silent = false) {
   if (!silent) scheduleLoading.value = true
   try {
-    const result = await getPaginatedData(actionScheduleApi.getSchedules, {
+    const result = await (isMobile.value ? fetchMobileActionPage : getPaginatedData)(actionScheduleApi.getSchedules, {
       page: schedulePagination.page, page_size: schedulePagination.pageSize,
       keyword: filters.keyword || undefined,
       enabled: filters.enabled === null ? undefined : filters.enabled
     })
+    scheduleError.value = ''
     scheduleList.value = result.items || []
     schedulePagination.total = result.pagination?.total || 0
     statistics.schedule_count = schedulePagination.total
+  } catch {
+    scheduleError.value = '调度计划更新失败，请点击刷新重试。'
   } finally {
     if (!silent) scheduleLoading.value = false
   }
 }
 
 async function fetchSchedulerStatus() {
-  const response = await actionScheduleApi.getStatus()
-  if (response.code === 0 && response.data) schedulerStatus.value = response.data
+  try {
+    const response = await actionScheduleApi.getStatus()
+    if (response.code !== 0 || !response.data) throw new Error('调度状态暂不可用')
+    schedulerStatus.value = response.data
+    schedulerKnown.value = true
+    schedulerError.value = false
+  } catch {
+    schedulerKnown.value = false
+    schedulerError.value = true
+  }
 }
 
 function refreshCurrent() {
@@ -533,6 +609,7 @@ watch(activeTab, value => {
 
 onMounted(async () => {
   await Promise.all([loadBlueprints(), fetchSchedulerStatus()])
+  if (!pageActive) return
   refreshCurrent()
   if (route.query.create === '1' && canCreate.value) nextTick(openCreateDrawer)
   refreshTimer = window.setInterval(() => {
@@ -542,5 +619,8 @@ onMounted(async () => {
   }, 5000)
 })
 
-onUnmounted(() => window.clearInterval(refreshTimer))
+onUnmounted(() => {
+  pageActive = false
+  window.clearInterval(refreshTimer)
+})
 </script>

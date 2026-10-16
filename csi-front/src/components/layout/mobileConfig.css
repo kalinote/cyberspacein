@@ -1,0 +1,36 @@
+@media (max-width: 767px) {
+  .mobile-config-center { height: auto; min-height: calc(100dvh - 130px); }
+  .mobile-config-heading { padding: 20px 16px 12px; }
+  .mobile-config-heading > button { display: flex; align-items: center; min-height: 44px; color: #2563eb; gap: 4px; }
+  .mobile-config-heading h1 { font-size: 23px; font-weight: 750; color: #0f172a; overflow-wrap: anywhere; }
+  .mobile-config-heading p { margin-top: 6px; color: #64748b; font-size: 13px; line-height: 1.7; }
+  .mobile-config-directory { padding: 8px 16px 24px; display: grid; gap: 14px; }
+  .mobile-config-directory section { background: white; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; }
+  .mobile-config-directory button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 58px; text-align: left; padding: 12px 16px; color: #334155; }
+  .mobile-config-directory button > :nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .mobile-config-directory button > svg:first-child { color: #2563eb; font-size: 23px; flex-shrink: 0; }
+  .mobile-config-directory button:disabled { color: #94a3b8; background: #f8fafc; }
+  .mobile-config-children { border-top: 1px solid #f1f5f9; padding-left: 18px; }
+  .mobile-config-children button { font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+  .mobile-config-center .config-center-body, .mobile-config-center .config-center-content { display: block; overflow: visible; min-width: 0; }
+  .mobile-config-center .config-center-items { padding: 12px 16px 24px; overflow: visible; min-width: 0; }
+  .mobile-config-toolbar { display: grid; gap: 10px; padding: 12px 16px; background: white; border-block: 1px solid #e2e8f0; }
+  .mobile-config-toolbar .el-input, .mobile-config-toolbar .el-select { width: 100%; min-width: 0; }
+  .mobile-config-toolbar .el-input__wrapper, .mobile-config-toolbar .el-select__wrapper { min-height: 44px; }
+  .mobile-config-toolbar-actions { display: flex; gap: 8px; }
+  .mobile-config-toolbar-actions > * { flex: 1; min-width: 0; margin: 0; }
+  .mobile-config-toolbar button { min-height: 44px; }
+  .mobile-config-dialog.el-dialog { width: 100% !important; max-width: 100%; margin: 0 !important; height: var(--mobile-viewport-height, 100dvh); max-height: var(--mobile-viewport-height, 100dvh); border-radius: 0; display: flex; flex-direction: column; padding: 16px; }
+  .mobile-config-dialog .el-dialog__header { min-height: 44px; padding-right: 38px; }
+  .mobile-config-dialog .el-dialog__body { flex: 1; min-width: 0; overflow-x: hidden; overflow-y: auto; padding-bottom: 16px; }
+  .mobile-config-dialog .el-dialog__footer { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+  .mobile-config-dialog .el-dialog__footer > .el-button { flex: 1; min-width: 0; min-height: 44px; white-space: normal; height: auto; margin: 0; }
+  .mobile-config-dialog .el-form-item { display: block; margin-bottom: 22px; }
+  .mobile-config-dialog .el-form-item__label { width: auto !important; height: auto; line-height: 1.5; margin-bottom: 8px; justify-content: flex-start; white-space: normal; }
+  .mobile-config-dialog .el-form-item__content { margin-left: 0 !important; min-width: 0; }
+  .mobile-config-dialog .el-input__wrapper, .mobile-config-dialog .el-select__wrapper { min-height: 44px; }
+  .mobile-config-dialog .el-input-number, .mobile-config-dialog .el-date-editor { max-width: 100%; }
+  .mobile-config-dialog textarea { max-height: 40dvh; }
+  .mobile-config-dialog .el-tabs__item { min-height: 44px; }
+  .mobile-config-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+}

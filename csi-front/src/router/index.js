@@ -35,6 +35,21 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
+      path: '/evidence', name: 'evidence-home',
+      component: () => import('../views/evidence/EvidenceHome.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.evidence.access }
+    },
+    {
+      path: '/evidence/chains', name: 'evidence-list',
+      component: () => import('../views/evidence/EvidenceList.vue'),
+      meta: { keepAlive: true, cacheName: 'EvidenceList', requiresAuth: true, pagePermission: PERM.pages.evidence.access }
+    },
+    {
+      path: '/evidence/chains/:id', name: 'evidence-editor',
+      component: () => import('../views/evidence/EvidenceEditor.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.evidence.access }
+    },
+    {
       path: '/login',
       name: 'login',
       component: Login
@@ -160,6 +175,16 @@ const router = createRouter({
       name: 'wiki-page-list',
       component: WikiPageList,
       meta: { keepAlive: true, requiresAuth: true, pagePermission: PERM.pages.target.wiki.access }
+    },
+    {
+      path: '/target/wiki/new', name: 'wiki-create',
+      component: () => import('../views/wiki/WikiEditor.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.target.wiki.access }
+    },
+    {
+      path: '/target/wiki/:id/edit', name: 'wiki-editor',
+      component: () => import('../views/wiki/WikiEditor.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.target.wiki.access }
     },
     {
       // 分析引擎

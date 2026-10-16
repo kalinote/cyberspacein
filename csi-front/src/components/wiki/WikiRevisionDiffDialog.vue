@@ -4,11 +4,15 @@
     :title="dialogTitle"
     width="min(96vw, 1100px)"
     top="4vh"
+    :fullscreen="isMobile"
+    class="wiki-revision-modal"
+    modal-class="wiki-revision-overlay"
     destroy-on-close
     @open="onOpen"
     @closed="onClosed"
   >
     <div v-loading="loading" element-loading-text="加载版本对比..." class="min-h-48 max-h-[70vh] overflow-y-auto pr-1">
+      <div v-if="loadError" role="alert"><p>{{ loadError }}</p><el-button @click="loadDiff">重新加载</el-button></div>
       <template v-if="diff && !loading">
         <p class="text-xs text-gray-500 m-0 mb-4">
           基线修订 <span class="font-mono font-medium text-gray-700">{{ diff.fromRevision }}</span>
@@ -188,6 +192,12 @@ import { computed, ref, watch } from 'vue'
 import WikiTextDiffHunks from '@/components/wiki/WikiTextDiffHunks.vue'
 import CitationDiffBlock from '@/components/wiki/WikiCitationDiffBlock.vue'
 import { wikiApi } from '@/api/wiki.js'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import './wikiMobileDialogs.css'
+
+const { isMobile } = useMobileViewport()
+const loadError = ref('')
+let requestGeneration = 0
 import {
   formatSectionPath,
   formatScalarValue,
@@ -259,6 +269,7 @@ function onOpen() {
 }
 
 function onClosed() {
+  requestGeneration += 1
   diff.value = null
   activePanels.value = ['meta', 'categories', 'sections', 'footnotes', 'references']
 }
@@ -311,13 +322,17 @@ function emitPreview() {
 
 async function loadDiff() {
   if (!props.wikiId || !props.fromRevision || !props.toRevision) return
+  const generation = ++requestGeneration
   loading.value = true
+  loadError.value = ''
   diff.value = null
   try {
-    diff.value = await wikiApi.getRevisionDiff(props.wikiId, {
+    const response = await wikiApi.getRevisionDiff(props.wikiId, {
       from: props.fromRevision,
       to: props.toRevision,
     })
+    if (generation !== requestGeneration) return
+    diff.value = response
     const panels = []
     if (diff.value.meta.length) panels.push('meta')
     if (
@@ -330,11 +345,11 @@ async function loadDiff() {
     if (diff.value.footnotes.length) panels.push('footnotes')
     if (diff.value.references.length) panels.push('references')
     activePanels.value = panels.length ? panels : []
-  } catch {
-    diff.value = null
-    visible.value = false
+  } catch (error) {
+    if (generation !== requestGeneration) return
+    loadError.value = error?.message || '版本对比加载失败，请重试'
   } finally {
-    loading.value = false
+    if (generation === requestGeneration) loading.value = false
   }
 }
 </script>

@@ -106,6 +106,7 @@ class ActionBlueprintModel(Document):
     resource: dict[str, Any] | None = None
     graph: GraphModel
     is_deleted: bool = Field(default=False, description="是否已删除")
+    is_pinned: bool = Field(default=False, description="是否全局置顶到行动主页")
     is_template: bool = Field(default=False, description="是否为模板")
     # TODO: 后续增加对应的模型
     template: dict[str, Any] | None = Field(default=None, description="模板配置")

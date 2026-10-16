@@ -2,7 +2,10 @@
   <el-drawer
     v-model="visible"
     title="封装节点内部行动"
-    size="72%"
+    :size="isMobile ? '100%' : '72%'"
+    :direction="isMobile ? 'btt' : 'rtl'"
+    :class="{ 'mobile-embedded-action': isMobile }"
+    :modal-class="isMobile ? 'mobile-action-drawer-overlay' : ''"
     destroy-on-close
     @open="loadDetail"
   >
@@ -45,7 +48,15 @@
 
         <div>
           <h4 class="mb-2 text-sm font-semibold text-gray-800">内部节点</h4>
-          <el-table :data="nodeRows" size="small" max-height="320">
+          <div v-if="isMobile" class="mobile-embedded-nodes">
+            <article v-for="row in nodeRows" :key="row.id">
+              <div><strong>{{ row.name }}</strong><el-tag :type="getStatusTagType(row.detail.status)" size="small">{{ getStatusText(row.detail.status) }}</el-tag></div>
+              <p v-if="row.detail.error_message" class="text-red-600">{{ row.detail.error_message }}</p>
+              <p v-if="row.detail.skip_reason">{{ row.detail.skip_reason }}</p>
+              <details v-if="row.detail.outputs"><summary>执行结果</summary><pre>{{ JSON.stringify(row.detail.outputs, null, 2) }}</pre></details>
+            </article>
+          </div>
+          <el-table v-else :data="nodeRows" size="small" max-height="320">
             <el-table-column prop="name" label="节点" min-width="180" />
             <el-table-column label="类型" width="130">
               <template #default="{ row }">
@@ -101,6 +112,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { actionApi } from '@/api/action'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 import {
   formatLogTime,
   getStatusTagType,
@@ -112,6 +124,7 @@ const props = defineProps({
   parentActionId: { type: String, default: '' },
   nodeId: { type: String, default: '' }
 })
+const { isMobile } = useMobileViewport()
 const emit = defineEmits(['update:modelValue'])
 const visible = computed({
   get: () => props.modelValue,
@@ -190,3 +203,17 @@ const loadDetail = async () => {
   }
 }
 </script>
+
+<style>
+.mobile-embedded-action .el-drawer__header { padding-top: max(20px, env(safe-area-inset-top)); }
+.mobile-embedded-action .el-drawer__body { padding: 16px 16px max(20px, env(safe-area-inset-bottom)); }
+.mobile-embedded-action .el-button { min-height: 44px; }
+.mobile-embedded-action .flex.gap-2 { flex-wrap: wrap; }
+.mobile-embedded-action .shrink-0 { overflow-wrap: anywhere; max-width: 100%; }
+.mobile-embedded-nodes { display: flex; flex-direction: column; gap: 10px; }
+.mobile-embedded-nodes article { padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; }
+.mobile-embedded-nodes article > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; overflow-wrap: anywhere; }
+.mobile-embedded-nodes p { margin-top: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.mobile-embedded-nodes summary { display: flex; align-items: center; min-height: 44px; font-size: 13px; cursor: pointer; }
+.mobile-embedded-nodes pre { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+</style>

@@ -215,8 +215,32 @@ async def test_save_meta_overwrite(store_mocks: dict[str, Any]) -> None:
     await store.save(session)
 
     pipeline = store_mocks["session_collection"].find_one_and_update.await_args.args[1]
-    assert pipeline[0]["$set"]["metadata"] == {"k": "v"}
+    assert pipeline[0]["$set"]["metadata"] == {"$literal": {"k": "v"}}
     assert pipeline[0]["$set"]["last_consolidated_seq"] == 7
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metadata", [
+    {"_last_summary": {"text": "已完成"}},
+    {"runtime_checkpoint": {
+        "phase": "final_response",
+        "assistant_message": {"role": "assistant", "content": "$原样保留"},
+        "completed_tool_results": [], "pending_tool_calls": [],
+    }},
+    {},
+])
+async def test_save_metadata_is_literal_not_an_aggregation_expression(
+    store_mocks: dict[str, Any], metadata: dict[str, Any],
+) -> None:
+    """检查点替换、清除和美元符号正文都必须作为完整字面量保存。"""
+    session = _make_session()
+    session.metadata = metadata
+
+    await MongoSessionStore().save(session)
+
+    pipeline = store_mocks["session_collection"].find_one_and_update.await_args.args[1]
+    assert pipeline[0]["$set"]["metadata"] == {"$literal": metadata}
+    store_mocks["insert_many"].assert_not_awaited()
 
 
 @pytest.mark.asyncio

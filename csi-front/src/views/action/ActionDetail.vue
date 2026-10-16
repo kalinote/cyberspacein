@@ -1,6 +1,69 @@
 <template>
-    <div class="h-screen flex flex-col bg-white">
+    <div :class="isMobile ? 'bg-gray-50' : 'h-screen flex flex-col bg-white'">
         <Header />
+        <main v-if="isMobile" class="mobile-action-page">
+            <el-alert v-if="mobileLoadError" :title="mobileLoadError" type="error" :closable="false" show-icon class="mb-4" />
+            <div v-if="mobileInitialLoading || (loadingActionData && !actionData.id)" class="mobile-action-loading" role="status"><el-skeleton :rows="8" animated /><p>正在加载行动状态与节点信息…</p></div>
+            <div v-else-if="!actionData.id" class="mobile-action-loading"><p>暂时无法读取行动信息</p><el-button type="primary" :loading="loadingActionData" @click="loadActionData">重新加载</el-button></div>
+            <div v-else v-loading="loadingActionData" class="mobile-action-list">
+                <MobileActionCard :action="actionData" :show-detail="false" :interactive="false" />
+                <div class="mobile-action-heading"><h2>节点执行情况</h2><el-button :loading="loadingActionData" @click="loadActionData">刷新</el-button></div>
+                <div class="mobile-node-filters" aria-label="节点筛选">
+                    <button v-for="item in [{ value: 'all', label: '全部节点' }, { value: 'attention', label: '需关注' }, { value: 'running', label: '执行中' }]" :key="item.value" type="button" :class="{ active: mobileNodeFilter === item.value }" :aria-pressed="mobileNodeFilter === item.value" @click="mobileNodeFilter = item.value">{{ item.label }}</button>
+                </div>
+                <button v-for="node in mobileNodeRows" :key="node.id" type="button" class="mobile-node-card"
+                    @click="handleNodeClick({ node: { id: node.id } }); mobileNodeVisible = true">
+                    <div><strong>{{ getNodeName(node.id) }}</strong><el-tag :type="getStatusTagType(node.detail.status)" size="small">{{ getStatusText(node.detail.status) }}</el-tag></div>
+                    <p v-if="node.detail.errorMessage" class="mobile-node-error">{{ node.detail.errorMessage }}</p>
+                    <p v-else-if="node.detail.status === ACTION_STATUS.AWAITING_APPROVAL" class="text-amber-700">需要人工审批，点击查看会话</p>
+                    <p v-else-if="node.detail.skip_reason">{{ node.detail.skip_reason }}</p>
+                    <p v-else>{{ node.detail.finished ? '查看执行结果与日志' : `执行进度 ${Math.round(node.detail.progress || 0)}%` }}</p>
+                </button>
+                <el-empty v-if="!loadingActionData && !mobileNodeRows.length" description="暂无此状态的节点" :image-size="64" />
+                <el-button v-if="elements.length" @click="mobileGraphVisible = true">查看执行流程图</el-button>
+                <details class="mobile-action-info"><summary>行动信息</summary><p>{{ actionData.description || '暂无描述' }}</p><p>开始：{{ formatDateTime(actionData.startTime) }}</p><p>结束：{{ formatDateTime(actionData.endTime) }}</p><p>耗时：{{ formatDuration(actionData.duration) }}</p><p>执行期限：{{ actionData.implementationPeriod > 0 ? formatDuration(actionData.implementationPeriod) : '未限制' }}</p></details>
+            </div>
+            <MobileSheet v-model="mobileNodeVisible" :title="selectedNodeId ? getNodeName(selectedNodeId) : '节点详情'" @closed="selectedNodeId = null">
+                <div v-if="selectedNodeDetail" class="mobile-action-panel mobile-node-panel">
+                    <el-tag :type="getStatusTagType(selectedNodeDetail.status)">{{ getStatusText(selectedNodeDetail.status) }}</el-tag>
+                    <el-alert v-if="selectedNodeDetail.errorMessage" :title="selectedNodeDetail.errorMessage" type="error" :closable="false" show-icon />
+                    <el-alert v-else-if="selectedNodeDetail.skip_reason" :title="selectedNodeDetail.skip_reason" type="info" :closable="false" />
+                    <el-alert v-else-if="selectedNodeDetail.finished" :title="getStatusText(selectedNodeDetail.status)" :type="selectedNodeDetail.status === ACTION_STATUS.COMPLETED ? 'success' : 'warning'" :closable="false" />
+                    <el-button v-if="selectedNodeDetail.status === ACTION_STATUS.AWAITING_APPROVAL && canReadAnalysisSession" :disabled="!selectedNodeDetail.extension_state?.session_id" type="warning" @click="openAnalysisSession">打开审批会话</el-button>
+                    <el-button v-if="selectedNodeDetail.embedded_action_id || selectedNodeDetail.node_kind === 'encapsulated'" :disabled="!selectedNodeDetail.embedded_action_id" @click="embeddedDetailVisible = true">查看内部行动与日志</el-button>
+                    <details v-if="selectedNodeDetail.outputs" open><summary>输出结果</summary><pre><code v-html="highlightJSON(selectedNodeDetail.outputs)"></code></pre></details>
+                    <details v-if="selectedNodeDetail.inputs"><summary>输入数据</summary><pre><code v-html="highlightJSON(selectedNodeDetail.inputs)"></code></pre></details>
+                    <details v-if="selectedNodeConfigs"><summary>配置参数</summary><pre><code v-html="highlightJSON(selectedNodeConfigs)"></code></pre></details>
+                    <details><summary>执行信息</summary><p>开始：{{ formatDateTime(selectedNodeDetail.startTime, { includeSecond: true }) }}</p><p>结束：{{ formatDateTime(selectedNodeDetail.endTime, { includeSecond: true }) }}</p><p v-if="selectedNodeDetail.handler">执行器：{{ selectedNodeDetail.handler }}</p></details>
+                    <div class="mobile-action-heading"><h3>执行日志</h3><el-button :loading="isLoadingNodeLogs" @click="fetchNodeLogs(selectedNodeId, true)">刷新</el-button></div>
+                    <div class="mobile-node-log-filters">
+                        <el-select v-model="logFilters.level" aria-label="日志级别" clearable placeholder="全部级别"><el-option v-for="level in ['TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'FATAL']" :key="level" :value="level" :label="level" /></el-select>
+                        <el-input v-model="logFilters.keyword" aria-label="搜索日志" clearable placeholder="搜索日志" />
+                    </div>
+                    <details><summary>更多日志筛选</summary><el-select v-model="logFilters.source" aria-label="日志来源" clearable placeholder="全部来源"><el-option v-for="source in ['sdk', 'logging', 'stdout', 'stderr', 'exception', 'system', 'native', 'subflow', 'orchestrator']" :key="source" :value="source" :label="source" /></el-select><el-select v-model="logFilters.componentRunId" aria-label="执行组件" clearable placeholder="全部组件"><el-option v-for="run in selectedNodeDetail.component_runs || []" :key="run.component_run_id" :value="run.component_run_id" :label="getComponentName(run.component_id)" /></el-select></details>
+                    <el-button v-if="nodeLogState[selectedNodeId]?.previousCursor && selectedNodeLogs.length < 5000" :loading="isLoadingNodeLogs" @click="fetchNodeLogs(selectedNodeId, false, true)">加载更早日志</el-button>
+                    <div v-loading="isLoadingNodeLogs" class="mobile-node-logs">
+                        <article v-for="(log, index) in selectedNodeLogs" :key="log.event_id || index" :class="getLogLevelClass(log.level)">
+                            <div><time>{{ formatLogTime(log.occurred_at) }}</time><strong :class="getLogLevelTextClass(log.level)">{{ log.level }}</strong><el-button text aria-label="复制日志内容" @click="copyLogContent(log)"><Icon icon="mdi:content-copy" /></el-button></div>
+                            <p>{{ log.message }}<template v-if="log.exception">{{ '\n' + log.exception }}</template></p>
+                            <el-tag v-if="log.truncated || log.fields?.truncated" type="warning" size="small">已截断</el-tag>
+                            <details v-if="hasLogMetadata(log)"><summary>元数据</summary><pre>{{ formatLogMetadata(log) }}</pre></details>
+                        </article>
+                        <p v-if="!isLoadingNodeLogs && !selectedNodeLogs.length" class="text-center text-sm text-gray-500 py-6">暂无日志</p>
+                    </div>
+                </div>
+                <el-empty v-else description="节点暂无执行信息" :image-size="64" />
+            </MobileSheet>
+            <MobileSheet v-model="mobileGraphVisible" title="执行流程图" destroy-on-close>
+                <div class="mobile-action-graph"><VueFlow v-if="mobileGraphVisible" v-model="elements" :node-types="nodeTypes" :min-zoom="0.15" :max-zoom="4" :nodes-draggable="false" :nodes-connectable="false" fit-view-on-init
+                    @node-click="handleNodeClick($event); mobileGraphVisible = false; mobileNodeVisible = true"><Background /><Controls /></VueFlow></div>
+            </MobileSheet>
+            <MobileActionBar v-if="!mobileInitialLoading && actionData.id && mobileOperations.length && hasPerm(PERM.operations.action.instance.execute)" aria-label="行动控制">
+                <el-button v-for="operation in mobileOperations" :key="operation" :type="operation === 'stop' ? 'danger' : 'primary'"
+                    :loading="Boolean(mobileBusyId)" @click="operateAction(actionData, operation)">{{ getActionOperationLabel(actionData.status, operation) }}</el-button>
+            </MobileActionBar>
+        </main>
+        <template v-else>
 
         <SimplePageHeader :title="actionData.name || '行动详情'" />
 
@@ -467,6 +530,7 @@
                 </div>
             </div>
         </div>
+        </template>
         <EmbeddedActionDetail
             v-model="embeddedDetailVisible"
             :parent-action-id="actionId"
@@ -490,6 +554,15 @@ import UnsupportedNativeNode from "@/components/action/nodes/UnsupportedNativeNo
 import { resolveNativeNodeRenderer } from "@/components/action/nodes/nativeNodeRendererRegistry"
 import EmbeddedActionDetail from "@/views/action/EmbeddedActionDetail.vue"
 import { actionApi } from '@/api/action'
+import { useMobileViewport } from '@/composables/useMobileViewport'
+import MobileSheet from '@/components/mobile/MobileSheet.vue'
+import MobileActionBar from '@/components/mobile/MobileActionBar.vue'
+import MobileActionCard from '@/components/action/mobile/MobileActionCard.vue'
+import { useMobileActionOperations, getActionOperations, getActionOperationLabel } from '@/components/action/mobile/actionOperations'
+import { PERM } from '@/utils/permissions'
+import { hasPerm } from '@/utils/permissionKit'
+import { rememberRecentVisit } from '@/stores/recentVisits'
+import '@/components/action/mobile/mobile-action.css'
 import { ElMessage } from 'element-plus'
 import hljs from 'highlight.js/lib/core'
 import json from 'highlight.js/lib/languages/json'
@@ -518,6 +591,16 @@ import '@vue-flow/core/dist/theme-default.css'
 const route = useRoute()
 const router = useRouter()
 const actionId = computed(() => route.params.id)
+const { isMobile } = useMobileViewport()
+const mobileNodeVisible = ref(false)
+const mobileGraphVisible = ref(false)
+const mobileNodeFilter = ref('all')
+const mobileLoadError = ref('')
+const mobileInitialLoading = ref(true)
+const { busyId: mobileBusyId, operateAction } = useMobileActionOperations({
+    onUpdated: () => updateActionData(),
+    onCreated: id => router.push(`/action/${id}`)
+})
 
 const nodeTypeConfigs = ref([])
 const loadingNodeConfigs = ref(false)
@@ -656,6 +739,18 @@ const actionData = ref({
     node_details: {}
 })
 
+const mobileNodePriority = [ACTION_STATUS.FAILED, ACTION_STATUS.TIMEOUT, ACTION_STATUS.AWAITING_APPROVAL, ACTION_STATUS.PAUSED, ACTION_STATUS.RUNNING, ACTION_STATUS.WAITING, ACTION_STATUS.PARTIALLY_COMPLETED]
+const mobileOperations = computed(() => getActionOperations(actionData.value.status))
+const mobileNodeRows = computed(() => {
+    const ids = [...new Set([...(actionData.value.graph?.nodes || []).map(node => node.id), ...Object.keys(actionData.value.node_details || {})])]
+    return ids.map(id => ({ id, detail: actionData.value.node_details[id] || { status: ACTION_STATUS.PENDING } }))
+        .filter(node => mobileNodeFilter.value === 'all'
+            || (mobileNodeFilter.value === 'running' ? node.detail.status === ACTION_STATUS.RUNNING
+                : [ACTION_STATUS.FAILED, ACTION_STATUS.TIMEOUT, ACTION_STATUS.AWAITING_APPROVAL, ACTION_STATUS.PAUSED, ACTION_STATUS.PARTIALLY_COMPLETED].includes(node.detail.status)))
+        .sort((left, right) => (mobileNodePriority.indexOf(left.detail.status) < 0 ? 99 : mobileNodePriority.indexOf(left.detail.status))
+            - (mobileNodePriority.indexOf(right.detail.status) < 0 ? 99 : mobileNodePriority.indexOf(right.detail.status)))
+})
+
 const selectedNodeId = ref(null)
 const embeddedDetailVisible = ref(false)
 
@@ -689,7 +784,10 @@ const selectedNodeConfigs = computed(() => {
     return node?.data?.form_data || null
 })
 
+const canReadAnalysisSession = computed(() => hasPerm(PERM.pages.agent.analysis.access) && hasPerm(PERM.operations.agent.session.read))
+
 const openAnalysisSession = () => {
+    if (!canReadAnalysisSession.value) return
     const state = selectedNodeDetail.value?.extension_state || {}
     if (!state.session_id) {
         ElMessage.warning('分析会话尚未创建或已不可用')
@@ -757,6 +855,7 @@ const {
 } = useVerticalResize(Math.min(400, maxNodeDetailHeight), 220, maxNodeDetailHeight)
 
 const fetchNodeLogs = async (nodeId, reset = false, loadOlder = false, silent = false) => {
+    const requestedActionId = actionId.value
     const pendingRequest = nodeLogRequests.get(nodeId)
     if (pendingRequest) {
         // 后台增量请求未结束时，显式筛选或向前翻页需要排队，不能被悄悄丢弃。
@@ -767,6 +866,7 @@ const fetchNodeLogs = async (nodeId, reset = false, loadOlder = false, silent = 
             // 前一个后台请求失败不应阻止用户发起新的显式查询。
         }
     }
+    if (requestedActionId !== actionId.value || !actionPageActive) return false
     const detail = actionData.value.node_details[nodeId]
     if (!detail?.node_instance_id) return false
     if (reset) {
@@ -792,6 +892,7 @@ const fetchNodeLogs = async (nodeId, reset = false, loadOlder = false, silent = 
         if (logFilters.value.componentRunId) params.component_run_id = logFilters.value.componentRunId
         if (logFilters.value.keyword) params.keyword = logFilters.value.keyword
         const response = await actionApi.getNodeLogs(detail.node_instance_id, params)
+        if (requestedActionId !== actionId.value || !actionPageActive) return false
         if (response.code !== 0) return false
         const page = response.data || {}
         const existing = nodeLogs.value[nodeId] || []
@@ -819,7 +920,7 @@ const fetchNodeLogs = async (nodeId, reset = false, loadOlder = false, silent = 
         return false
     } finally {
         if (nodeLogRequests.get(nodeId) === request) nodeLogRequests.delete(nodeId)
-        if (!silent) loadingNodeLogs.value[nodeId] = false
+        if (!silent && requestedActionId === actionId.value) loadingNodeLogs.value[nodeId] = false
     }
 }
 
@@ -872,16 +973,21 @@ const highlightJSON = (obj) => {
 
 
 const loadActionData = async () => {
+    const requestedId = actionId.value
+    mobileLoadError.value = ''
     loadingActionData.value = true
     try {
-        const response = await actionApi.getActionDetail(actionId.value)
+        const response = await actionApi.getActionDetail(requestedId)
+        if (requestedId !== actionId.value || !actionPageActive || route.name !== 'action-detail') return
         if (response.code !== 0) {
+            mobileLoadError.value = response.message || '获取行动详情失败，请重试'
             ElMessage.error(`获取行动详情失败: ${response.message || '未知错误'}`)
             return
         }
         
         const apiData = response.data
         if (!apiData) {
+            mobileLoadError.value = '行动详情为空，请刷新重试'
             ElMessage.error('获取行动详情失败: 数据为空')
             return
         }
@@ -925,6 +1031,7 @@ const loadActionData = async () => {
         }
         
         actionData.value = transformedData
+        rememberRecentVisit(route, transformedData.name || '行动详情')
     /**
      * 旧行动没有定义快照时，通过表单字段匹配最接近的历史节点配置。
      *
@@ -1134,24 +1241,30 @@ const loadActionData = async () => {
     
     elements.value = [...processedNodes, ...processedEdges]
     
-    if (transformedData.graph.viewport) {
+    if (!isMobile.value && transformedData.graph.viewport) {
         setViewport(transformedData.graph.viewport)
-    } else {
+    } else if (!isMobile.value) {
         setTimeout(() => {
-            fitView()
+            if (actionPageActive) fitView()
         }, 100)
     }
     } catch (error) {
+        if (requestedId === actionId.value && actionPageActive) mobileLoadError.value = '获取行动详情失败，请稍后重试'
         console.error('获取行动详情失败:', error)
         ElMessage.error('获取行动详情失败，请稍后重试')
     } finally {
-        loadingActionData.value = false
+        if (requestedId === actionId.value) {
+            loadingActionData.value = false
+            mobileInitialLoading.value = false
+        }
     }
 }
 
 const updateActionData = async () => {
+    const requestedId = actionId.value
     try {
-        const response = await actionApi.getActionDetail(actionId.value)
+        const response = await actionApi.getActionDetail(requestedId)
+        if (requestedId !== actionId.value || !actionPageActive) return
         if (response.code !== 0) {
             return
         }
@@ -1224,9 +1337,10 @@ const updateActionData = async () => {
 }
 
 let pollingInterval = null
+let actionPageActive = true
 
 const startPolling = () => {
-    if (pollingInterval) return
+    if (pollingInterval || !actionPageActive) return
     
     pollingInterval = setInterval(async () => {
         if (document.hidden) return
@@ -1273,15 +1387,35 @@ watch(
 
 onMounted(async () => {
     await Promise.all([fetchNodeConfigs(), fetchComponentNames()])
+    if (!actionPageActive) return
     await loadActionData()
+    if (!actionPageActive) return
     startPolling()
     document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
+    actionPageActive = false
     stopPolling()
     clearTimeout(logFilterTimer)
     document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+watch(actionId, async (id, previousId) => {
+    if (!id || !previousId || id === previousId || route.name !== 'action-detail') return
+    stopPolling()
+    mobileNodeVisible.value = false
+    mobileGraphVisible.value = false
+    selectedNodeId.value = null
+    mobileInitialLoading.value = true
+    actionData.value.id = ''
+    elements.value = []
+    nodeLogs.value = {}
+    nodeLogState.value = {}
+    loadingNodeLogs.value = {}
+    nodeLogRequests.clear()
+    await loadActionData()
+    startPolling()
 })
 </script>
 
@@ -1289,5 +1423,29 @@ onUnmounted(() => {
 :deep(.vue-flow__node) {
     cursor: pointer;
 }
+.mobile-node-filters { display: flex; gap: 8px; }
+.mobile-node-filters button { min-height: 44px; flex: 1; padding: 8px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; color: #475569; font-size: 14px; }
+.mobile-node-filters button.active { color: #2563eb; background: #eff6ff; border-color: #93c5fd; }
+.mobile-node-card { padding: 16px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; text-align: left; }
+.mobile-node-card > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.mobile-node-card strong { min-width: 0; font-size: 15px; color: #0f172a; overflow-wrap: anywhere; }
+.mobile-node-card p { margin-top: 8px; color: #64748b; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.mobile-node-card p.mobile-node-error { color: #b91c1c; }
+.mobile-action-info { padding: 16px; border-radius: 14px; background: #fff; color: #475569; font-size: 13px; }
+.mobile-action-info summary { min-height: 44px; display: flex; align-items: center; font-size: 15px; font-weight: 600; color: #0f172a; cursor: pointer; }
+.mobile-action-info p { margin: 8px 0; overflow-wrap: anywhere; }
+.mobile-node-panel { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.mobile-node-panel > .el-tag { align-self: flex-start; }
+.mobile-node-panel :deep(.el-select__wrapper) { min-height: 44px; }
+.mobile-node-panel pre { padding: 12px; background: #f8fafc; border-radius: 8px; }
+.mobile-node-log-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mobile-node-logs { max-height: 55dvh; overflow-y: auto; }
+.mobile-node-logs article { padding: 10px; border-bottom: 1px solid #e2e8f0; }
+.mobile-node-logs article > div { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.mobile-node-logs article :deep(.el-button) { margin-left: auto; min-width: 44px; }
+.mobile-node-logs p { font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mobile-action-graph { height: 65dvh; min-height: 280px; }
+.mobile-action-loading { padding: 28px 0; text-align: center; }
+.mobile-action-loading p { margin: 20px 0; color: #64748b; font-size: 14px; }
 </style>
 

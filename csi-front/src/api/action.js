@@ -49,6 +49,10 @@ export const actionApi = {
   updateActionBlueprint(id, data) {
     return request.put(`/action/blueprint/${id}`, data)
   },
+  /** """设置蓝图的全局主页置顶状态。""" */
+  updateBlueprintPin(id, isPinned) {
+    return request.patch(`/action/blueprint/${id}/pin`, { is_pinned: isPinned })
+  },
   // 获取行动蓝图详情
   getBlueprint(id) {
     return request.get(`/action/blueprint/detail/${id}`)
@@ -82,8 +86,8 @@ export const actionApi = {
     return request.delete(`/action/blueprint/${id}`)
   },
   // 获取行动历史列表
-  getActionHistory(params = {page: 1, page_size: 10}) {
-    return request.get('/action/list', params)
+  getActionHistory(params = {page: 1, page_size: 10}, config = {}) {
+    return request.get('/action/list', params, config)
   },
   // 获取行动历史全量状态统计
   getActionHistorySummary(config = {}) {

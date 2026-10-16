@@ -57,13 +57,15 @@
   <el-dialog
     v-model="visible"
     title="运行分析引擎"
+    class="agent-start-dialog"
+    :append-to-body="isMobile"
     :width="dialogWidth"
     :close-on-click-modal="false"
     destroy-on-close
     @open="onOpen"
     @closed="onClosed"
   >
-    <el-form label-width="120px" class="agent-start-form">
+    <el-form label-width="120px" :label-position="isMobile ? 'top' : 'right'" class="agent-start-form">
       <el-form-item label="分析引擎" required>
         <el-select
           v-model="form.agentId"
@@ -83,6 +85,7 @@
       <el-form-item label="执行参数" class="agent-start-form-item-block">
         <TypedDictParamsEditor
           ref="paramsEditorRef"
+          class="agent-start-params"
           v-model="form.paramRows"
           title="执行参数 (injection_param)"
         />
@@ -90,7 +93,8 @@
 
       <el-form-item label="初始用户提示词" class="agent-start-form-item-block">
         <div class="w-full min-w-0">
-          <MarkdownPromptField v-model="form.userPrompt" :min-height="200" />
+          <el-input v-if="isMobile" v-model="form.userPrompt" type="textarea" :autosize="{ minRows: 5, maxRows: 10 }" resize="none" placeholder="输入分析需求，可使用 Markdown 格式" aria-label="初始用户提示词" />
+          <MarkdownPromptField v-else v-model="form.userPrompt" :min-height="200" />
           <p class="text-xs text-gray-400 mt-1">{{ userPromptHint }}</p>
         </div>
       </el-form-item>
@@ -138,6 +142,7 @@ import TypedDictParamsEditor from '@/components/agent/TypedDictParamsEditor.vue'
 import MarkdownPromptField from '@/components/agent/MarkdownPromptField.vue'
 import AgentAutoApproveSwitch from '@/components/agent/AgentAutoApproveSwitch.vue'
 import { getAgentAutoApproveValue } from '@/composables/useAgentAutoApprove'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 import {
   objectToParamRows,
   buildObjectFromParamRows,
@@ -175,6 +180,7 @@ const visible = computed({
 })
 
 const paramsEditorRef = ref(null)
+const { isMobile } = useMobileViewport()
 
 const form = reactive({
   agentId: '',
@@ -255,5 +261,25 @@ function handleConfirm() {
 
 .agent-start-form-item-block :deep(.el-form-item__content) {
   display: block;
+}
+
+@media (max-width: 767px) {
+  .agent-start-form :deep(.el-form-item__label) { width: auto !important; }
+  .agent-start-form :deep(.el-form-item__content) { margin-left: 0 !important; }
+  .agent-start-params { flex-direction: column; }
+  .agent-start-params :deep(> div) { max-width: 100%; }
+  .agent-start-params :deep(> div > div:first-child) { flex-wrap: wrap; gap: 8px; }
+  .agent-start-params :deep(.flex.items-center.gap-2.mb-1\.5) { flex-wrap: wrap; }
+  .agent-start-params :deep(.el-input),
+  .agent-start-params :deep(.el-select) { max-width: 100%; }
+  /* 嵌套参数保留横向浏览，避免压缩或裁掉对象编辑控件。 */
+  .agent-start-params :deep(> div:nth-child(2) > div:nth-child(2)) { overflow-x: auto; }
+}
+</style>
+
+<style>
+@media (max-width: 767px) {
+  .agent-start-dialog .el-dialog__footer { display: flex; gap: 8px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .agent-start-dialog .el-dialog__footer .el-button { flex: 1; min-height: 44px; margin-left: 0; }
 }
 </style>

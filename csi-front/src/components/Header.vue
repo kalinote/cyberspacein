@@ -1,20 +1,24 @@
 <template>
-  <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-blue-100 transition-all duration-300">
+  <header v-if="!isMobile" class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-blue-100 transition-all duration-300">
     <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex justify-between items-center h-16">
-        <div class="flex items-center">
-          <div class="flex items-center space-x-2">
-            <div class="w-8 h-8 bg-linear-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center">
-              <Icon icon="mdi:database-search" class="text-white text-lg" />
-            </div>
-            <span class="text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
+      <div class="flex flex-wrap justify-between items-center gap-x-4 lg:gap-x-6">
+        <div class="contents lg:flex lg:min-w-0 lg:flex-1 lg:items-center">
+          <div class="flex h-16 shrink-0 items-center gap-2">
+            <img
+              :src="brandIconUrl"
+              alt=""
+              width="32"
+              height="32"
+              class="h-8 w-8 shrink-0 object-contain"
+            />
+            <span class="whitespace-nowrap text-xl font-bold text-gray-800">CyberSpace<span class="text-blue-500">IN</span></span>
           </div>
 
-          <nav class="hidden md:flex ml-10 space-x-8">
+          <nav class="order-last hidden w-full min-w-0 items-center justify-evenly gap-1 pb-3 whitespace-nowrap md:flex lg:order-none lg:ml-6 lg:w-auto lg:flex-1 lg:pb-0">
             <router-link
               v-if="canViewOverview"
               :to="canAccessOverview ? '/' : route.fullPath"
-              class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors"
+              class="shrink-0 text-gray-600 hover:text-blue-600 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md hover:bg-blue-50 transition-colors"
               :class="!canAccessOverview ? 'text-gray-400 bg-gray-50 cursor-not-allowed' : ''"
               active-class="!text-blue-600 !bg-blue-50"
               @click="guardNav(canAccessOverview, $event)"
@@ -22,7 +26,7 @@
             <router-link
               v-if="canViewSearch"
               :to="canAccessSearch ? '/search' : route.fullPath"
-              class="font-medium px-4 py-2 rounded-md transition-colors"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/search' ? 'text-blue-600! bg-blue-50!' : '',
                 canAccessSearch
@@ -35,13 +39,13 @@
             </router-link>
             <div
               v-if="canViewAction"
-              class="relative"
+              class="relative shrink-0"
               @mouseenter="showActionDropdown = true"
               @mouseleave="showActionDropdown = false"
             >
               <router-link
                 :to="canAccessAction ? '/action' : route.fullPath"
-                class="font-medium px-4 py-2 rounded-md transition-colors flex items-center space-x-1"
+                class="font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors flex items-center space-x-1"
                 :class="[
                   route.path.startsWith('/action') ? 'text-blue-600! bg-blue-50!' : '',
                   canAccessAction
@@ -86,7 +90,7 @@
             <router-link
               v-if="canViewTarget"
               :to="canAccessTarget ? '/target' : route.fullPath"
-              class="font-medium px-4 py-2 rounded-md transition-colors"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/target' ? 'text-blue-600! bg-blue-50!' : '',
                 canAccessTarget
@@ -98,9 +102,19 @@
               目标管理
             </router-link>
             <router-link
+              v-if="canViewEvidence"
+              :to="canAccessEvidence ? '/evidence' : route.fullPath"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
+              :class="[
+                route.path.startsWith('/evidence') ? 'text-blue-600! bg-blue-50!' : '',
+                canAccessEvidence ? 'text-gray-600 hover:text-blue-600 hover:bg-blue-50' : 'text-gray-400 bg-gray-50 cursor-not-allowed'
+              ]"
+              @click="guardNav(canAccessEvidence, $event)"
+            >证据链</router-link>
+            <router-link
               v-if="canViewAgent"
               :to="canAccessAgent ? '/agent' : route.fullPath"
-              class="font-medium px-4 py-2 rounded-md transition-colors"
+              class="shrink-0 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md transition-colors"
               :class="[
                 route.path === '/agent' ? 'text-blue-600! bg-blue-50!' : '',
                 canAccessAgent
@@ -113,13 +127,13 @@
             </router-link>
             <div
               v-if="canViewSystemMenu"
-              class="relative"
+              class="relative shrink-0"
               @mouseenter="showSystemDropdown = true"
               @mouseleave="showSystemDropdown = false"
             >
               <router-link
                 :to="canAccessSystemMenu ? '/system' : route.fullPath"
-                class="text-gray-600 hover:text-blue-600 font-medium px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
+                class="text-gray-600 hover:text-blue-600 font-medium px-2 xl:px-3 2xl:px-4 py-2 rounded-md hover:bg-blue-50 transition-colors flex items-center space-x-1"
                 :class="isSystemNavActive ? 'text-blue-600! bg-blue-50!' : ''"
                 @click="guardNav(canAccessSystemMenu, $event)"
               >
@@ -136,7 +150,7 @@
               >
                 <div
                   v-show="showSystemDropdown"
-                  class="absolute top-full left-0 mt-1 min-w-48 bg-white rounded-lg shadow-lg border border-blue-100 py-2 z-50"
+                  class="absolute top-full right-0 mt-1 min-w-48 bg-white rounded-lg shadow-lg border border-blue-100 py-2 z-50"
                 >
                   <router-link
                     v-if="canViewAlert"
@@ -174,8 +188,8 @@
           </nav>
         </div>
 
-        <div class="flex items-center space-x-10">
-          <div class="hidden md:block">
+        <div class="flex h-16 shrink-0 items-center gap-4">
+          <div class="hidden xl:block">
             <el-input
               v-if="canViewSearch"
               v-model="quickSearchQuery"
@@ -224,11 +238,14 @@ import { authApi } from '@/api/auth'
 import { clearAuth, getAuthState } from '@/stores/auth'
 import { PERM } from '@/utils/permissions'
 import { noPerm, hasPerm } from '@/utils/permissionKit'
+import { useMobileViewport } from '@/composables/useMobileViewport'
 
 defineOptions({ name: 'Header' })
 
 const router = useRouter()
+const { isMobile } = useMobileViewport()
 const route = useRoute()
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/cyberspacein-icon.png`
 const showActionDropdown = ref(false)
 const showSystemDropdown = ref(false)
 const isSystemNavActive = computed(
@@ -250,6 +267,8 @@ const canAccessAction = computed(() => hasPerm(PERM.pages.action.access))
 const canAccessActionTask = computed(() => hasPerm(PERM.pages.action.tasks.access))
 const canViewTarget = computed(() => hasPerm(PERM.pages.target.visible))
 const canAccessTarget = computed(() => hasPerm(PERM.pages.target.access))
+const canViewEvidence = computed(() => hasPerm(PERM.pages.evidence.visible))
+const canAccessEvidence = computed(() => hasPerm(PERM.pages.evidence.access))
 const canViewAgent = computed(() => hasPerm(PERM.pages.agent.visible))
 const canAccessAgent = computed(() => hasPerm(PERM.pages.agent.access))
 const canViewSystemConfig = computed(() => hasPerm(PERM.pages.system.config.visible))

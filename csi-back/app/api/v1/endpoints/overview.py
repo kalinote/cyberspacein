@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.db.elasticsearch import get_es
 from app.schemas.overview import (
+    OverviewLatestIntelligenceSchema,
     OverviewPlatformStatusSchema,
     OverviewSummaryStatusSchema,
     OverviewTimeSeriesParamsSchema,
@@ -12,7 +13,12 @@ from app.schemas.overview import (
     OverviewTimeUnitEnum,
 )
 from app.schemas.response import ApiResponseSchema
-from app.service.overview import fetch_platform_status, fetch_summary_status, fetch_time_field_stats
+from app.service.overview import (
+    fetch_latest_intelligence,
+    fetch_platform_status,
+    fetch_summary_status,
+    fetch_time_field_stats,
+)
 
 logger = logger.bind(name=__name__)
 
@@ -61,6 +67,25 @@ async def get_summary_status():
     except Exception as e:
         logger.exception(f"数据汇总统计失败: {e}")
         return ApiResponseSchema.error(code=250006, message=f"数据汇总统计失败: {str(e)}")
+
+
+@router.get(
+    "/latest-intelligence",
+    response_model=OverviewLatestIntelligenceSchema | ApiResponseSchema[None],
+    summary="按内容最后编辑时间获取最新情报",
+)
+async def get_latest_intelligence(
+    limit: int = Query(3, ge=1, le=12, description="返回记录数量，默认 3 条"),
+):
+    """获取具有最后编辑时间的最新情报列表。"""
+    es = get_es()
+    if not es:
+        return ApiResponseSchema.error(code=250001, message="数据库连接失败")
+    try:
+        return await fetch_latest_intelligence(es, limit)
+    except Exception as e:
+        logger.exception(f"最新情报查询失败: {e}")
+        return ApiResponseSchema.error(code=250007, message="最新情报查询失败，请稍后重试")
 
 
 @router.get(

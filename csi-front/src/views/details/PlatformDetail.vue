@@ -1,7 +1,11 @@
 <template>
     <div>
         <Header />
-
+        <MobilePlatformDetail v-if="isMobile" :platform="platformDetail" :loading="detailLoading" :error="detailError"
+            :range="currentRange" :buckets="mobileTrendBuckets" :trend-loading="platformTrendLoading" :trend-error="trendError" :daily="trendDailyDisplay" :change="trendChangeDisplay"
+            :intelligence="relatedIntelligence" :intelligence-loading="intelligenceLoading" :intelligence-error="intelligenceError" :sort="intelligenceSortBy" :page="intelligenceCurrentPage" :page-size="intelligencePageSize" :total="intelligenceTotalResults"
+            @retry="loadPlatformDetail" @range-change="currentRange = $event; onTrendRangeChange()" @retry-trend="fetchPlatformNewDataStatus" @retry-intelligence="loadRelatedIntelligence" @sort-change="intelligenceSortBy = $event" @page-change="intelligenceCurrentPage = $event" @highlight="toggleHighlight" />
+        <template v-else>
         <!-- 顶部标题区域 -->
         <DetailPageHeader
             :title="platformDetail.name"
@@ -529,6 +533,7 @@
                 </div>
             </div>
         </section>
+        </template>
     </div>
 </template>
 
@@ -545,6 +550,10 @@ import { platformApi } from "@/api/platform";
 import { searchApi } from "@/api/search";
 import { highlightApi } from "@/api/highlight";
 import { formatDate, formatDateTime } from "@/utils/action";
+import MobilePlatformDetail from '@/components/platform/MobilePlatformDetail.vue';
+import { useMobileViewport } from '@/composables/useMobileViewport';
+import { PERM } from '@/utils/permissions';
+import { hasPerm } from '@/utils/permissionKit';
 
 defineOptions({ name: "PlatformDetail" });
 
@@ -553,6 +562,15 @@ const props = defineProps({
 });
 
 const route = useRoute();
+const { isMobile } = useMobileViewport();
+const detailLoading = ref(false);
+const detailError = ref('');
+const intelligenceError = ref('');
+const trendError = ref('');
+const mobileTrendBuckets = ref([]);
+let detailGeneration = 0;
+let intelligenceGeneration = 0;
+let pageAlive = true;
 const platformId = computed(() => props.id || route.params.id);
 
 const RANGE_CONFIG = {
@@ -603,30 +621,52 @@ const trendChangeRateClass = computed(() => {
     return "text-gray-900";
 });
 
-watch(() => route.params.id, () => {
+watch(platformId, () => {
+    intelligenceGeneration++;
+    relatedIntelligence.value = [];
+    intelligenceTotalResults.value = 0;
+    intelligenceCurrentPage.value = 1;
+    mobileTrendBuckets.value = [];
     loadPlatformDetail();
     fetchPlatformNewDataStatus();
 });
+watch(isMobile, mobile => {
+    // 断点切换会替换图表 DOM，旧实例应先释放。
+    if (trendChart.value) { trendChart.value.dispose(); trendChart.value = null; }
+    if (handleResize) { window.removeEventListener('resize', handleResize); handleResize = null; }
+    if (mobile) fetchPlatformNewDataStatus(); else initChart();
+});
 watch(intelligenceCurrentPage, () => loadRelatedIntelligence());
 watch(intelligenceSortBy, () => {
-    intelligenceCurrentPage.value = 1;
-    loadRelatedIntelligence();
+    if (intelligenceCurrentPage.value === 1) loadRelatedIntelligence();
+    else intelligenceCurrentPage.value = 1;
 });
 
 let handleResize = null;
 async function loadPlatformDetail() {
+        if (isMobile.value && !hasPerm(PERM.operations.content.platform.read)) return;
+        const id = platformId.value;
+        const generation = ++detailGeneration;
+        detailLoading.value = true;
+        detailError.value = '';
         try {
-            const response = await platformApi.getPlatformDetail(platformId.value);
+            const response = await platformApi.getPlatformDetail(id);
+            if (!pageAlive || generation !== detailGeneration || id !== platformId.value) return;
             if (response.code === 0 && response.data) {
                 const data = response.data;
                 platformDetail.value = {
-                    uuid: data.id || "", name: data.name || "", description: data.description || "", type: data.type || "", status: data.status || "", netType: data.net_type || "", createdAt: formatDate(data.created_at), updatedAt: formatDate(data.updated_at), url: data.url || "", logo: data.logo || "", tags: data.tags || [], sections: data.sections || [], category: data.category || "", subCategory: data.sub_category || "", spiderName: data.spider_name || ""
+                    uuid: data.id || "", name: data.name || "", description: data.description || "", type: data.type || "", status: data.status || "", netType: data.net_type || "", createdAt: formatDate(data.created_at), updatedAt: formatDate(data.updated_at), url: data.url || "", logo: data.logo || "", tags: data.tags || [], sections: data.sections || [], category: data.category || "", subCategory: data.sub_category || "", spiderName: data.spider_name || "", confidence: data.confidence
                 };
+                detailLoading.value = false;
                 loadRelatedIntelligence();
-            }
+            } else throw new Error(response.message || '平台资料不存在');
         } catch (error) {
+            if (!pageAlive || generation !== detailGeneration || id !== platformId.value) return;
+            detailError.value = '平台资料加载失败，请重试';
             console.error("加载平台详情失败:", error);
             ElNotification({ title: "加载失败", message: "获取平台详情失败，请稍后重试", type: "error", position: "top-right", duration: 3000 });
+        } finally {
+            if (generation === detailGeneration) detailLoading.value = false;
         }
     }
     function getStatusType(status) {
@@ -792,18 +832,21 @@ async function loadPlatformDetail() {
     }
 
     async function fetchPlatformNewDataStatus() {
+        if (isMobile.value && !hasPerm(PERM.operations.content.platform.read)) return;
         const id = platformId.value;
         const rangeKey = currentRange.value;
         const cfg = RANGE_CONFIG[rangeKey];
         if (!id || !cfg) return;
         const myGen = ++trendFetchGeneration;
         platformTrendLoading.value = true;
+        trendError.value = '';
         try {
             const res = await platformApi.getPlatformNewDataStatus(id, { n: cfg.n, unit: cfg.unit });
             if (myGen !== trendFetchGeneration) return;
             if (currentRange.value !== rangeKey || platformId.value !== id) return;
             const data = res?.data;
             if (!data) {
+                mobileTrendBuckets.value = [];
                 trendChangeDisplay.value = "—";
                 trendDailyDisplay.value = "—";
                 trendChangeRateRaw.value = null;
@@ -813,6 +856,7 @@ async function loadPlatformDetail() {
             const buckets = Array.isArray(data.buckets) ? data.buckets : [];
             const labels = buckets.map((b) => formatBucketLabel(b.period_start, data.unit || cfg.unit));
             const values = buckets.map((b) => Number(b.doc_count) || 0);
+            mobileTrendBuckets.value = labels.map((label, index) => ({ label, value: values[index] }));
             trendChangeRateRaw.value =
                 data.change_rate_percent == null ? null : Number(data.change_rate_percent);
             trendChangeDisplay.value = formatChangeRatePercent(data.change_rate_percent);
@@ -826,6 +870,8 @@ async function loadPlatformDetail() {
             trendChangeDisplay.value = "—";
             trendDailyDisplay.value = "—";
             trendChangeRateRaw.value = null;
+            mobileTrendBuckets.value = [];
+            trendError.value = '新增趋势加载失败，请重试';
             applyTrendChartOption([], [], cfg.unit);
         } finally {
             if (myGen === trendFetchGeneration) platformTrendLoading.value = false;
@@ -857,22 +903,29 @@ async function loadPlatformDetail() {
         ElNotification({ title: "配置平台", message: "正在打开平台配置页面...", type: "info", position: "top-right", duration: 3000 });
     }
     async function loadRelatedIntelligence() {
-        if (!platformDetail.value.name) return;
+        if (!platformDetail.value.name || detailLoading.value || (isMobile.value && !hasPerm(PERM.operations.search.entity.execute))) return;
+        const id = platformId.value;
+        const name = platformDetail.value.name;
+        const generation = ++intelligenceGeneration;
+        intelligenceError.value = '';
         try {
             intelligenceLoading.value = true;
             const params = { page: intelligenceCurrentPage.value, page_size: intelligencePageSize.value, sort_by: intelligenceSortBy.value, platform: platformDetail.value.name };
             const response = await searchApi.searchEntity(params);
+            if (!pageAlive || generation !== intelligenceGeneration || id !== platformId.value || name !== platformDetail.value.name) return;
             if (response.code === 0 && response.data) {
                 relatedIntelligence.value = response.data.items || [];
                 intelligenceTotalResults.value = response.data.total || 0;
             }
         } catch (error) {
+            if (!pageAlive || generation !== intelligenceGeneration || id !== platformId.value) return;
+            intelligenceError.value = '关联情报加载失败，请重试';
             console.error("加载关联情报失败:", error);
             ElMessage.error("加载关联情报失败，请稍后重试");
             relatedIntelligence.value = [];
             intelligenceTotalResults.value = 0;
         } finally {
-            intelligenceLoading.value = false;
+            if (generation === intelligenceGeneration) intelligenceLoading.value = false;
         }
     }
     function truncateContent(content, maxLength) {
@@ -908,7 +961,7 @@ async function loadPlatformDetail() {
         return `/details/${entityType}/${uuid}`;
     }
     async function toggleHighlight(result) {
-        if (!result || !result.uuid) return;
+        if (!result || !result.uuid || result._highlightLoading || (isMobile.value && !hasPerm(PERM.operations.target.highlight.update))) return;
         result._highlightLoading = true;
         try {
             const isHighlighted = result.is_highlighted;
@@ -931,10 +984,14 @@ async function loadPlatformDetail() {
 
 onMounted(() => {
     loadPlatformDetail();
-    initChart();
+    if (isMobile.value) fetchPlatformNewDataStatus(); else initChart();
 });
 
 onBeforeUnmount(() => {
+    pageAlive = false;
+    detailGeneration++;
+    intelligenceGeneration++;
+    trendFetchGeneration++;
     if (trendChart.value) trendChart.value.dispose();
     if (handleResize) window.removeEventListener("resize", handleResize);
 });

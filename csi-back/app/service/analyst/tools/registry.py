@@ -5,6 +5,10 @@ from __future__ import annotations
 from loguru import logger
 
 from app.service.analyst.tools.get_current_time import GetCurrentTimeTool
+from app.service.analyst.tools.evidence import (
+    EvidenceListTool, EvidenceReadTool, EvidenceResolveTool, EvidenceCreateTool,
+    EvidenceSaveTool, EvidenceValidateTool, EvidenceDeleteTool,
+)
 from app.service.analyst.tools.get_entity import GetEntityTool
 from app.service.analyst.tools.search_entities import SearchEntitiesTool
 from app.service.analyst.tools.modify_entity import ModifyEntityTool
@@ -24,6 +28,13 @@ from app.service.nanobot.agent.tools.base import Tool
 logger = logger.bind(name=__name__)
 
 BUSINESS_TOOL_CLASSES: dict[str, type[Tool]] = {
+    "evidence_list": EvidenceListTool,
+    "evidence_read": EvidenceReadTool,
+    "evidence_resolve": EvidenceResolveTool,
+    "evidence_create": EvidenceCreateTool,
+    "evidence_save": EvidenceSaveTool,
+    "evidence_validate": EvidenceValidateTool,
+    "evidence_delete": EvidenceDeleteTool,
     "get_current_time": GetCurrentTimeTool,
     "get_entity": GetEntityTool,
     "search_entities": SearchEntitiesTool,

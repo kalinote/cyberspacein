@@ -14,6 +14,7 @@ export function useMarking({ entityUuid, entityType } = {}) {
   const markingInstances = ref(new Map())
   const originalTexts = ref(new Map())
   const isMultilineSelection = ref(false)
+  let restoreGeneration = 0
 
   const markingStyles = [
     { value: 'underline', label: '下划线', icon: 'mdi:format-underline', supportsMultiline: false },
@@ -464,6 +465,8 @@ export function useMarking({ entityUuid, entityType } = {}) {
   }
 
   function clearAllMarkings() {
+    restoreGeneration += 1
+    hideToolbar()
     markings.value.forEach(marking => {
       const instance = markingInstances.value.get(marking.id)
       if (instance) {
@@ -471,6 +474,7 @@ export function useMarking({ entityUuid, entityType } = {}) {
       }
     })
     markingInstances.value.clear()
+    originalTexts.value.clear()
     markings.value = []
   }
 
@@ -535,12 +539,15 @@ export function useMarking({ entityUuid, entityType } = {}) {
    * 从后端加载批注列表并在 DOM 上恢复高亮
    */
   async function loadAndRestoreMarkings(cleanEl, renderedEl, translateEl) {
+    const generation = ++restoreGeneration
     const uuid = typeof entityUuid === 'object' ? entityUuid?.value : entityUuid
     const type = typeof entityType === 'object' ? entityType?.value : entityType
     if (!uuid || !type) return
 
     try {
       const res = await annotationApi.list(uuid, type)
+      // 丢弃切换实体、布局或离开页面前发出的旧请求。
+      if (generation !== restoreGeneration || uuid !== (typeof entityUuid === 'object' ? entityUuid?.value : entityUuid)) return
       if (res.code !== 0 || !res.data) return
 
       const regionElMap = {
