@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 DATA_INDEX_MAP = {
     "forum": "forum",
     "article": "article",
+    "post": "post",
 }
 
 

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from .article import ARTICLE_SCHEMA, DATE_FIELDS as ARTICLE_DATE_FIELDS
 from .forums import FORUMS_SCHEMA, DATE_FIELDS as FORUMS_DATE_FIELDS
+from .post import POST_SCHEMA, DATE_FIELDS as POST_DATE_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,9 @@ def validate_and_transform(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     elif entity_type == "forum":
         schema = FORUMS_SCHEMA
         date_fields = FORUMS_DATE_FIELDS
+    elif entity_type == "post":
+        schema = POST_SCHEMA
+        date_fields = POST_DATE_FIELDS
     else:
         logger.error(f"未知的 entity_type: {entity_type}")
         return None
