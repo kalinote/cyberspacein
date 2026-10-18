@@ -4,11 +4,11 @@
         <span>阅读内容</span>
         <select :value="modelValue" aria-label="阅读内容格式" @change="emit('update:modelValue', $event.target.value)">
             <option v-if="entity.clean_content" value="clean">正文</option>
-            <option v-if="!entity.clean_content" value="empty">内容</option>
-            <option v-if="entity.safe_raw_content" value="rendered">原文排版</option>
+            <option v-if="!entity.clean_content && !structuredContent" value="empty">内容</option>
+            <option v-if="entity.safe_raw_content || structuredContent" value="rendered">{{ structuredContent ? '渲染内容' : '原文排版' }}</option>
             <option v-if="entity.translate_content" value="translate">翻译</option>
-            <option v-if="entity.raw_content" value="raw">原始源代码</option>
-            <option v-if="entity.safe_raw_content" value="safe-raw">安全内容代码</option>
+            <option v-if="entity.raw_content" value="raw">{{ structuredContent ? '原始数据' : '原始源代码' }}</option>
+            <option v-if="entity.safe_raw_content && !structuredContent" value="safe-raw">安全内容代码</option>
             <option v-if="entity.snapshot" value="snapshot">页面快照</option>
         </select>
     </label>
@@ -19,6 +19,7 @@ import { Icon } from '@iconify/vue'
 defineProps({
     entity: { type: Object, required: true },
     modelValue: { type: String, default: 'clean' },
+    structuredContent: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 </script>

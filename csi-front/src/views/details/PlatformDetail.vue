@@ -966,7 +966,7 @@ async function loadPlatformDetail() {
         return { text: "高", type: "warning" };
     }
     function getDetailRoute(entityType, uuid) {
-        if (!uuid || !['article', 'forum'].includes(entityType)) return '';
+        if (!uuid || !['article', 'forum', 'post'].includes(entityType) || !hasPerm(PERM.operations.content[entityType].read)) return '';
         return `/details/${entityType}/${uuid}`;
     }
     async function toggleHighlight(result) {

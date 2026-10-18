@@ -27,7 +27,7 @@ function pageHarness(t, file, options = {}) {
     useRouter: () => ({ push: path => events.push(path) }),
     useMobileViewport: () => ({ isMobile: Vue.ref(Boolean(options.mobile)) }),
     onMounted() {}, onBeforeRouteLeave() {}, onBeforeUnmount: fn => hooks.push(fn),
-    hasPerm: () => true, hasAny: () => true, guardPermission: () => true,
+    hasPerm: options.hasPerm || (() => true), hasAny: () => true, guardPermission: () => true,
     formatDate: value => value, formatDateTime: value => value,
     sanitizeHtml: value => String(value || ''), getCosUrl: value => value,
     platformApi: options.platformApi || {}, searchApi: options.searchApi || {}, highlightApi: {},
@@ -73,10 +73,10 @@ function pageHarness(t, file, options = {}) {
 
 const results = ['post', 'article', 'forum'].map(entity_type => ({
   uuid: `${entity_type}-1`, entity_type, title: '情报标题', clean_content: '',
-  platform: 'twitter', platform_id: 'twitter-id', keywords: [], confidence: 1,
+  platform: 'Twitter', platform_id: 'twitter-id', keywords: [], confidence: 1,
 }))
 
-test('桌面和手机搜索提交贴文筛选，保留文章论坛详情并隐藏贴文详情', async t => {
+test('桌面和手机搜索提交贴文筛选，并开放贴文、文章和论坛详情', async t => {
   const calls = []
   const { page, nodes } = pageHarness(t, 'views/Search.vue', {
     mobile: true,
@@ -87,7 +87,7 @@ test('桌面和手机搜索提交贴文筛选，保留文章论坛详情并隐�
   await Vue.nextTick()
   assert.deepEqual(calls[0].entity_type, ['post'])
   assert.match(page.mobileFilterSummary.value, /贴文/)
-  assert.equal(page.getDetailRoute('post', 'post-1'), '')
+  assert.equal(page.getDetailRoute('post', 'post-1'), '/details/post/post-1')
   assert.ok(page.filterOptions.categories.some(item => item.value === 'post'))
   page.mobileSelectedResult.value = results[0]
   page.mobileResultActionsVisible.value = true
@@ -96,28 +96,28 @@ test('桌面和手机搜索提交贴文筛选，保留文章论坛详情并隐�
     const links = nodes().filter(node => node.type === 'router-link').map(node => node.props.to)
     assert.ok(links.includes('/details/article/article-1'))
     assert.ok(links.includes('/details/forum/forum-1'))
-    assert.ok(!links.some(path => String(path).startsWith('/details/post/')))
+    assert.ok(links.includes('/details/post/post-1'))
   }
 })
 
 test('平台关联情报按当前平台分页请求，桌面只保留已实现的详情入口', async t => {
   const calls = []
   const { page, nodes } = pageHarness(t, 'views/details/PlatformDetail.vue', {
-    platformApi: { getPlatformDetail: async () => ({ code: 0, data: { id: 'twitter-id', name: 'twitter' } }) },
+    platformApi: { getPlatformDetail: async () => ({ code: 0, data: { id: 'twitter-id', name: 'Twitter' } }) },
     searchApi: { searchEntity: async params => { calls.push(params); return { code: 0, data: { items: results, total: 3 } } } },
   })
   await page.loadPlatformDetail()
   await Vue.nextTick()
-  assert.equal(calls[0].platform, 'twitter')
+  assert.equal(calls[0].platform, 'Twitter')
   assert.equal(calls[0].page_size, 5)
   assert.equal(page.intelligenceTotalResults.value, 3)
   const links = nodes().filter(node => node.type === 'router-link').map(node => node.props.to)
   assert.ok(links.includes('/details/article/article-1'))
   assert.ok(links.includes('/details/forum/forum-1'))
-  assert.ok(!links.some(path => String(path).startsWith('/details/post/')))
+  assert.ok(links.includes('/details/post/post-1'))
 })
 
-test('手机平台关联情报隐藏贴文查看按钮，文章论坛按钮仍可跳转', t => {
+test('手机平台关联情报可跳转贴文、文章和论坛详情', t => {
   const { page, nodes, events } = pageHarness(t, 'components/platform/MobilePlatformDetail.vue', {
     props: { platform: { uuid: 'twitter-id', type: 'post' }, buckets: [], intelligence: results },
   })
@@ -125,9 +125,9 @@ test('手机平台关联情报隐藏贴文查看按钮，文章论坛按钮仍�
   const buttons = nodes().filter(node => node.type === 'el-button'
     && (Array.isArray(node.children) ? node.children : node.children?.default?.() || [])
       .some(child => child.children === '查看情报'))
-  assert.equal(buttons.length, 2)
+  assert.equal(buttons.length, 3)
   buttons.forEach(button => button.props.onClick())
-  assert.deepEqual(events.sort(), ['/details/article/article-1', '/details/forum/forum-1'])
+  assert.deepEqual(events.sort(), ['/details/article/article-1', '/details/forum/forum-1', '/details/post/post-1'])
 })
 
 test('平台关联情报接口报错时显示重试状态，不伪装为暂无数据', async t => {
@@ -138,4 +138,12 @@ test('平台关联情报接口报错时显示重试状态，不伪装为暂无�
   await page.loadRelatedIntelligence()
   assert.equal(page.intelligenceError.value, '关联情报加载失败，请重试')
   assert.ok(nodes().some(node => node.props?.role === 'alert'))
+})
+
+test('缺少贴文读取权限时隐藏贴文入口，并保留有权限的文章入口', t => {
+  for (const file of ['views/Search.vue', 'views/details/PlatformDetail.vue']) {
+    const { page } = pageHarness(t, file, { hasPerm: code => code !== PERM.operations.content.post.read })
+    assert.equal(page.getDetailRoute('post', 'post-1'), '')
+    assert.equal(page.getDetailRoute('article', 'article-1'), '/details/article/article-1')
+  }
 })

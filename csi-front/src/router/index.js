@@ -235,6 +235,13 @@ const router = createRouter({
       meta: { requiresAuth: true, pagePermission: PERM.pages.search.access }
     },
     {
+      // 贴文详情页
+      path: '/details/post/:uuid',
+      name: 'post-detail',
+      component: () => import('../views/details/PostDetail.vue'),
+      meta: { requiresAuth: true, pagePermission: PERM.pages.search.access }
+    },
+    {
       path: '/details/wiki/:id',
       name: 'wiki-detail',
       component: WikiDetail,

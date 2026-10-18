@@ -15,14 +15,15 @@
                 <h2 class="text-xl font-bold text-gray-900 mb-2">加载失败</h2>
                 <p class="text-gray-600 mb-4">{{ error }}</p>
                 <el-button type="primary" @click="$router.back()">返回</el-button>
+                <el-button v-if="isPost" class="ml-2" @click="loadArticleDetail">重新加载</el-button>
             </div>
         </div>
 
         <div v-else-if="articleData" class="flex flex-col">
-            <MobileDetailHeader v-if="isMobile" :entity="articleData" :info-items="articleInfoItems" />
+            <MobileDetailHeader v-if="isMobile" :entity="headerEntity" :info-items="articleInfoItems" />
             <div v-else>
             <DetailPageHeader
-                :title="articleData.title || '无标题'"
+                :title="detailTitle"
                 :subtitle="articleData.uuid"
             >
                 <template #tags>
@@ -43,8 +44,8 @@
                     </el-tag>
                 </template>
                 <template #extra>
-                    <AddToEvidenceButton :entity="{ ...articleData, entity_type: 'article' }" />
-                    <el-link v-if="articleData.url" :href="articleData.url" target="_blank" type="primary" class="text-sm">
+                    <AddToEvidenceButton v-if="!isPost" :entity="{ ...articleData, entity_type: 'article' }" />
+                    <el-link v-if="sourceUrl" :href="sourceUrl" target="_blank" type="primary" class="text-sm">
                         <template #icon>
                             <Icon icon="mdi:open-in-new" />
                         </template>
@@ -119,6 +120,7 @@
                         v-model:mobile-panel="mobilePanel"
                         class="flex-1 min-h-0"
                         :constrain-height="workbenchHeightEnabled"
+                        :pane-storage-key="isPost ? 'post-detail-pane-sizes' : 'article-detail-pane-sizes'"
                         :sorted-markings="getSortedMarkingsByRegion(currentRegion)"
                         :active-marking-id="activeMarkingId"
                         @marking-update="handleUpdateMarking"
@@ -151,11 +153,11 @@
                                 class="article-content-panel flex h-full min-h-0 flex-1 flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6"
                                 :class="{ 'article-content-panel--fullscreen': isContentFullscreen }"
                             >
-                                <MobileReadingFormat v-if="isMobile" v-model="activeTab" :entity="articleData" />
+                                <MobileReadingFormat v-if="isMobile" v-model="activeTab" :entity="articleData" :structured-content="isPost" />
                                 <div v-if="!isMobile || activeTab === 'safe-raw'" class="mb-4 flex shrink-0 items-center justify-between">
                                     <h2 v-if="!isMobile" class="text-2xl font-bold text-gray-900 flex items-center">
                                         <Icon icon="mdi:text-box" class="text-blue-600 mr-2" />
-                                        文章<span class="text-blue-500">内容</span>
+                                        {{ entityLabel }}<span class="text-blue-500">内容</span>
                                     </h2>
                                     <div class="flex items-center gap-2">
                                         <el-button
@@ -205,14 +207,24 @@
                                             <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed" v-html="highlightedCleanContent"></pre>
                                         </div>
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="!articleData.clean_content" label="内容" name="empty">
+                                    <el-tab-pane v-if="!articleData.clean_content && !isPost" label="内容" name="empty">
                                         <div class="text-center py-12 text-gray-400 flex flex-col items-center">
                                             <Icon icon="mdi:text-box-remove-outline" class="text-5xl mb-2" />
                                             <p>暂无内容，点击开始分析以分析实体内容</p>
                                         </div>
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="articleData.safe_raw_content" label="安全渲染内容" name="rendered">
+                                    <el-tab-pane v-if="articleData.safe_raw_content || isPost" :label="isPost ? '渲染内容' : '安全渲染内容'" name="rendered">
+                                        <template v-if="isPost">
+                                            <div ref="renderedContentRef" class="prose max-w-none article-content marking-content select-text"
+                                                @mouseup="handleRenderedContentMouseUp" @touchend="handleRenderedContentMouseUp">
+                                                <pre v-if="articleData.clean_content" class="mx-0! px-0! whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed" v-html="highlightedCleanContent"></pre>
+                                                <div v-else-if="editableSafeRawContent" v-html="sanitizedPostContent"></div>
+                                                <p v-else class="text-gray-400">该贴文没有文字正文</p>
+                                            </div>
+                                            <PostMediaGallery :post="articleData" />
+                                        </template>
                                         <div
+                                            v-else
                                             ref="renderedContentRef"
                                             class="prose max-w-none article-content marking-content select-text"
                                             v-html="editableSafeRawContent"
@@ -230,15 +242,15 @@
                                             <pre class="whitespace-pre-wrap wrap-break-word text-gray-700 leading-relaxed" v-html="highlightedTranslateContent"></pre>
                                         </div>
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="articleData.raw_content" label="原始源代码" name="raw">
+                                    <el-tab-pane v-if="articleData.raw_content" :label="isPost ? '原始数据' : '原始源代码'" name="raw">
                                         <MonacoEditor
                                             ref="rawEditorRef"
                                             :model-value="articleData.raw_content"
                                             :read-only="true"
-                                            language="html"
+                                            :language="isPost ? 'json' : 'html'"
                                         />
                                     </el-tab-pane>
-                                    <el-tab-pane v-if="articleData.safe_raw_content" label="安全内容代码" name="safe-raw">
+                                    <el-tab-pane v-if="articleData.safe_raw_content && !isPost" label="安全内容代码" name="safe-raw">
                                         <MonacoEditor
                                             ref="safeRawEditorRef"
                                             v-model="editableSafeRawContent"
@@ -287,6 +299,18 @@
                                 class="flex h-full min-h-0 flex-col gap-6"
                                 :class="hasCenterBottomExtraCards ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'"
                             >
+                            <div v-if="isPost" class="shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center"><Icon icon="mdi:chart-box-outline" class="text-blue-600 mr-2" />贴文<span class="text-blue-500">信息</span></h3>
+                                <dl v-if="postMetrics.length" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                    <div v-for="metric in postMetrics" :key="metric.key"><dt class="text-sm text-gray-500">{{ metric.label }}</dt><dd class="mt-1 text-xl font-bold text-gray-900">{{ metric.value.toLocaleString() }}</dd></div>
+                                </dl>
+                                <p v-else class="text-sm text-gray-400">暂无互动数据</p>
+                                <dl v-if="articleData.parent_id || articleData.mentions?.length || articleData.ip_location" class="mt-4 pt-4 border-t border-gray-100 space-y-3 text-sm">
+                                    <div v-if="articleData.parent_id"><dt class="text-gray-500">关联原帖 ID</dt><dd class="mt-1 break-all">{{ articleData.parent_id }}</dd></div>
+                                    <div v-if="articleData.mentions?.length"><dt class="text-gray-500">提及用户 ID</dt><dd class="mt-1 break-all">{{ articleData.mentions.join('、') }}</dd></div>
+                                    <div v-if="articleData.ip_location"><dt class="text-gray-500">IP 属地</dt><dd class="mt-1">{{ articleData.ip_location }}</dd></div>
+                                </dl>
+                            </div>
                             <Timeline
                                 v-if="showArticleTimeline"
                                 :fill-height="!hasCenterBottomExtraCards && workbenchHeightEnabled"
@@ -399,6 +423,8 @@
                                     :agent-options="analyzeOptions"
                                     :default-injection-param="defaultInjectionParam"
                                     :analyzing="analyzing"
+                                    :show-analysis-action="!isPost"
+                                    :show-priority-action="!isPost"
                                     :is-priority-target="isPriorityTarget"
                                     :selected-keywords="selectedKeywords"
                                     :keyword-colors="keywordColors"
@@ -415,6 +441,7 @@
                                 <ArticleDetailAnalysisPanel
                                     v-show="rightPanel === 'analysis'"
                                     :session-id="activeSessionId"
+                                    :empty-description="isPost ? '暂无关联的分析会话' : undefined"
                                     :timeline-items="timelineItems"
                                     :register-events-scroll-el="registerEventsScrollEl"
                                     :on-events-scroll="onEventsScroll"
@@ -451,7 +478,7 @@
         </div>
 
         <MobileDetailActions
-            v-if="isMobile && articleData && !loading && !error"
+            v-if="!isPost && isMobile && articleData && !loading && !error"
             :entity="{ ...articleData, entity_type: 'article' }"
             :is-priority-target="isPriorityTarget"
             :highlight-loading="highlightLoading"
@@ -553,9 +580,11 @@ import Timeline from '@/components/Timeline.vue'
 import DetailRightActivityRail from '@/components/detail/DetailRightActivityRail.vue'
 import ArticleDetailInfoPanel from '@/components/detail/ArticleDetailInfoPanel.vue'
 import ArticleDetailAnalysisPanel from '@/components/detail/ArticleDetailAnalysisPanel.vue'
+import PostMediaGallery from '@/components/detail/PostMediaGallery.vue'
 import AgentApprovalPanel from '@/components/agent/approval/AgentApprovalPanel.vue'
 import { useAgentSessionStream } from '@/composables/useAgentSessionStream'
 import { articleApi } from '@/api/article'
+import { postApi } from '@/api/post'
 import { agentApi } from '@/api/agent'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '@/utils/action'
@@ -567,6 +596,14 @@ import { useEntityHighlight } from '@/composables/useEntityHighlight'
 import { hasEntities } from '@/utils/entityDisplay'
 import { loadMhtmlSnapshot, revokeBlobUrl, resolveSnapshotUrl } from '@/utils/mhtmlSnapshot'
 import { useMinLg } from '@/composables/useMinLg'
+import { sanitizeHtml } from '@/utils/markdown'
+import { safePostUrl } from '@/utils/postMedia'
+import { hasPerm } from '@/utils/permissionKit'
+import { PERM } from '@/utils/permissions'
+
+const props = defineProps({ entityType: { type: String, default: 'article' } })
+const isPost = computed(() => props.entityType === 'post')
+const entityLabel = computed(() => isPost.value ? '贴文' : '文章')
 const route = useRoute()
 const router = useRouter()
 const uuid = computed(() => route.params.uuid)
@@ -574,6 +611,11 @@ const { isMobile } = useMobileViewport()
 const mobilePanel = ref('')
 
 const articleData = ref(null)
+const detailTitle = computed(() => articleData.value?.title || (isPost.value
+    ? (articleData.value?.clean_content || '').trim().split(/\r?\n/, 1)[0].slice(0, 64) || '贴文详情'
+    : '无标题'))
+const sourceUrl = computed(() => isPost.value ? safePostUrl(articleData.value?.url) : articleData.value?.url)
+const headerEntity = computed(() => isPost.value ? { ...articleData.value, title: detailTitle.value, url: sourceUrl.value } : articleData.value)
 const loading = ref(false)
 const error = ref(null)
 let detailRequest = 0
@@ -637,6 +679,7 @@ const activeTab = ref('clean')
 const isContentFullscreen = ref(false)
 const analyzing = ref(false)
 const editableSafeRawContent = ref('')
+const sanitizedPostContent = computed(() => isPost.value ? sanitizeHtml(editableSafeRawContent.value) : '')
 const rawEditorRef = ref(null)
 const safeRawEditorRef = ref(null)
 const cleanContentRef = ref(null)
@@ -727,7 +770,7 @@ const {
     translateContentRef,
     activeTab,
     entityUuid: uuid,
-    entityType: 'article'
+    entityType: props.entityType
 })
 
 const analyzeOptions = ref([])
@@ -781,11 +824,23 @@ const loadArticleDetail = async () => {
     error.value = null
     revokeSnapshotBlob()
     snapshotError.value = ''
+    if (isPost.value) {
+        articleData.value = null
+        mobilePanel.value = ''
+        editableSafeRawContent.value = ''
+        if (!hasPerm(PERM.operations.content.post.read)) {
+            error.value = '当前账号无权限读取贴文'
+            loading.value = false
+            return
+        }
+    }
     
     try {
-        const response = await articleApi.getArticleDetail(requestedUuid)
+        const response = isPost.value
+            ? await postApi.getPostDetail(requestedUuid)
+            : await articleApi.getArticleDetail(requestedUuid)
         if (requestId !== detailRequest || requestedUuid !== uuid.value) return
-        if (response.code === 0) {
+        if (response.code === 0 && response.data) {
             articleData.value = response.data
             
             if (articleData.value.safe_raw_content && articleData.value.url) {
@@ -797,7 +852,9 @@ const loadArticleDetail = async () => {
                 editableSafeRawContent.value = articleData.value.safe_raw_content
             }
             
-            if (articleData.value.clean_content) {
+            if (isPost.value) {
+                activeTab.value = 'rendered'
+            } else if (articleData.value.clean_content) {
                 activeTab.value = 'clean'
             } else if (articleData.value.safe_raw_content) {
                 activeTab.value = 'rendered'
@@ -809,12 +866,12 @@ const loadArticleDetail = async () => {
             if (requestId !== detailRequest || requestedUuid !== uuid.value) return
             loadMarkings()
         } else {
-            error.value = response.message || '加载文章详情失败'
+            error.value = response.message || `加载${entityLabel.value}详情失败`
         }
     } catch (err) {
         if (requestId !== detailRequest || requestedUuid !== uuid.value) return
-        console.error('加载文章详情失败:', err)
-        error.value = '加载文章详情失败，请稍后重试'
+        console.error(`加载${entityLabel.value}详情失败:`, err)
+        error.value = `加载${entityLabel.value}详情失败，请稍后重试`
     } finally {
         if (requestId === detailRequest) loading.value = false
     }
@@ -828,7 +885,7 @@ const {
     togglePriorityTarget,
     confirmSetHighlight
 } = useHighlight({
-    entityType: 'article',
+    entityType: props.entityType,
     getData: () => articleData.value,
     reloadData: loadArticleDetail,
     withDialog: true
@@ -842,12 +899,18 @@ const hasArticleInfoTags = computed(() => {
 })
 
 const showArticleTimeline = computed(
-    () => Boolean(articleData.value?.entity_type && articleData.value?.source_id),
+    () => !isPost.value && Boolean(articleData.value?.entity_type && articleData.value?.source_id),
 )
+
+const postMetricLabels = { likes: '点赞', comments: '评论', shares: '转发', views: '浏览', bookmarks: '收藏', replies: '回复', reposts: '转发', quotes: '引用' }
+const postMetrics = computed(() => Object.entries(articleData.value?.metrics || {})
+    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+    .map(([key, value]) => ({ key, label: postMetricLabels[key] || key, value })))
 
 const hasCenterBottomExtraCards = computed(() => {
     const d = articleData.value
     if (!d) return false
+    if (isPost.value) return true
     if (d.emotion !== null && d.emotion !== undefined) return true
     if (d.political_bias?.length) return true
     if (d.confidence !== null && d.confidence !== undefined) return true
@@ -888,6 +951,9 @@ const articleInfoItems = computed(() => {
     }
     if (isValidMetric(d.likes)) {
         push({ key: 'likes', label: '点赞', value: d.likes.toLocaleString() })
+    }
+    if (isPost.value && d.post_type) {
+        push({ key: 'post_type', label: '贴文类型', value: ({ original: '原帖', reply: '回复', repost: '转发', quote: '引用' })[d.post_type] || d.post_type })
     }
     if (d.language) {
         push({ key: 'language', label: '语言', value: d.language })
@@ -1050,9 +1116,9 @@ watch(editableSafeRawContent, () => {
 
 onMounted(() => {
     loadArticleDetail()
-    loadAnalyzeOptions()
+    if (!isPost.value) loadAnalyzeOptions()
     setupEventListeners()
-    restoreAgentSessionFromQuery()
+    if (!isPost.value) restoreAgentSessionFromQuery()
     window.addEventListener('keydown', handleContentFullscreenKeydown)
     document.addEventListener('selectionchange', handleMobileSelectionChange)
 })

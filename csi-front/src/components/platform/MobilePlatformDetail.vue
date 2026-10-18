@@ -67,7 +67,7 @@ function plainText(value) {
 /** """只为可读取的已知实体类型开放情报详情入口。""" */
 function canReadEntity(item) {
   const type = String(item.entity_type || '').toLowerCase()
-  return Boolean(item.uuid && ['article', 'forum'].includes(type) && hasPerm(PERM.pages.search.access) && hasPerm(PERM.operations.content[type].read))
+  return Boolean(item.uuid && ['article', 'forum', 'post'].includes(type) && hasPerm(PERM.pages.search.access) && hasPerm(PERM.operations.content[type].read))
 }
 </script>
 

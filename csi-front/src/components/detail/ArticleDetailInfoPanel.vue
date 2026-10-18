@@ -6,6 +6,7 @@
             </h3>
             <div class="space-y-3">
                 <AgentStartButton
+                    v-if="showAnalysisAction"
                     button-text="分析此实体"
                     loading-text="分析实体中..."
                     :disabled="analyzing"
@@ -32,6 +33,7 @@
                             ? 'bg-amber-500 hover:bg-amber-600 text-white border-2 border-amber-500'
                             : 'border-2 border-gray-200 text-gray-600 hover:bg-gray-50',
                     ]"
+                    v-if="showPriorityAction"
                     @click="emit('toggle-priority')"
                 >
                     <Icon :icon="isPriorityTarget ? 'mdi:star' : 'mdi:star-outline'" />
@@ -96,6 +98,8 @@ import EntityMentionPanel from '@/components/entity/EntityMentionPanel.vue'
 import { hasEntities } from '@/utils/entityDisplay'
 
 defineProps({
+    showAnalysisAction: { type: Boolean, default: true },
+    showPriorityAction: { type: Boolean, default: true },
     keywords: {
         type: Array,
         default: () => [],

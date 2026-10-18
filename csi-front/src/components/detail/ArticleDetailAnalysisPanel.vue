@@ -6,7 +6,7 @@
         >
             <Icon icon="mdi:brain" class="text-4xl text-blue-400 mb-3" />
             <p class="text-sm font-medium text-gray-600">暂无分析会话</p>
-            <p class="text-xs mt-2 text-gray-400">请先在信息栏通过「分析此实体」启动分析任务</p>
+            <p class="text-xs mt-2 text-gray-400">{{ emptyDescription }}</p>
         </div>
         <template v-else>
             <AgentRealtimeEventsPanel
@@ -63,6 +63,7 @@ import AgentTodosPanel from '@/components/agent/AgentTodosPanel.vue'
 import AgentAutoApproveSwitch from '@/components/agent/AgentAutoApproveSwitch.vue'
 
 defineProps({
+    emptyDescription: { type: String, default: '请先在信息栏通过「分析此实体」启动分析任务' },
     sessionId: {
         type: String,
         default: '',

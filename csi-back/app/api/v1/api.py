@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     highlight,
     overview,
     platform,
+    post,
     search,
     system,
     system_config,
@@ -28,6 +29,7 @@ api_router.include_router(alert.router)
 api_router.include_router(annotation.router)
 api_router.include_router(article.router)
 api_router.include_router(forum.router)
+api_router.include_router(post.router)
 api_router.include_router(highlight.router)
 api_router.include_router(platform.router)
 api_router.include_router(search.router)

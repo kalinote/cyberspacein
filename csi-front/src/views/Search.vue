@@ -61,7 +61,7 @@
               <el-tag v-if="result.nsfw" type="danger" size="small">NSFW</el-tag>
               <el-tag v-if="result.is_highlighted" type="warning" size="small">重点</el-tag>
             </div>
-            <router-link v-if="getDetailRoute(result.entity_type, result.uuid) && hasPerm(result.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(result.entity_type, result.uuid)" class="mobile-result-body">
+            <router-link v-if="getDetailRoute(result.entity_type, result.uuid)" :to="getDetailRoute(result.entity_type, result.uuid)" class="mobile-result-body">
               <h2 class="search-highlight" v-html="sanitizeHtml(result.title || '无标题')"></h2>
               <p class="search-highlight" v-html="sanitizeHtml(truncateContent(result.clean_content, 140)) || '暂无正文摘要'"></p>
             </router-link>
@@ -159,7 +159,7 @@
             <Icon :icon="mobileSelectedResult.is_highlighted ? 'mdi:star' : 'mdi:star-outline'" />
             {{ mobileSelectedResult.is_highlighted ? '取消重点目标' : '设置重点目标' }}
           </el-button>
-          <router-link v-if="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid) && hasPerm(mobileSelectedResult.entity_type === 'forum' ? PERM.operations.content.forum.read : PERM.operations.content.article.read)" :to="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid)"
+          <router-link v-if="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid)" :to="getDetailRoute(mobileSelectedResult.entity_type, mobileSelectedResult.uuid)"
             @click="mobileResultActionsVisible = false">查看详情<Icon icon="mdi:arrow-right" /></router-link>
           <router-link v-if="mobileSelectedResult.platform_id" :to="`/details/platform/${mobileSelectedResult.platform_id}`"
             @click="mobileResultActionsVisible = false">查看来源平台</router-link>
@@ -491,7 +491,7 @@
                     </template>
                     {{ result.is_highlighted ? '取消重点目标' : '设置重点目标' }}
                   </el-button>
-                  <router-link v-if="getDetailRoute(result.entity_type, result.uuid) && canViewResultDetail" :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
+                  <router-link v-if="getDetailRoute(result.entity_type, result.uuid)" :to="getDetailRoute(result.entity_type, result.uuid)" class="text-blue-600 hover:text-blue-800 flex items-center">
                     查看详情
                     <Icon icon="mdi:arrow-right" class="ml-1" />
                   </router-link>
@@ -715,11 +715,6 @@ const canUseEditTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.update)
 const canViewDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.delete))
 const canUseDeleteTemplate = computed(() => hasPerm(PERM_SEARCH_TEMPLATES?.delete))
 
-const canViewResultDetail = computed(() => hasAny([
-  PERM.operations.content.article.read,
-  PERM.operations.content.forum.read,
-  PERM.operations.content.platform.read
-]))
 const canViewResultAnalysis = computed(() => hasPerm(PERM.pages.agent.access))
 
 const saveDialogVisible = ref(false)
@@ -1036,7 +1031,7 @@ function truncateContent(content, maxLength) {
     }
 
     function getDetailRoute(entityType, uuid) {
-      if (!uuid || !['article', 'forum'].includes(entityType)) return ''
+      if (!uuid || !['article', 'forum', 'post'].includes(entityType) || !hasPerm(PERM.operations.content[entityType].read)) return ''
       return `/details/${entityType}/${uuid}`
     }
 

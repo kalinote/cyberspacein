@@ -95,7 +95,7 @@ const pageTitle = computed(() => {
   const entry = groups.flatMap(group => group.items).find(item => item.path === route.path)
   if (entry) return entry.label
   return {
-    'article-detail': '文章阅读', 'forum-detail': '论坛阅读', 'platform': '平台详情',
+    'article-detail': '文章阅读', 'forum-detail': '论坛阅读', 'post-detail': '贴文阅读', 'platform': '平台详情',
     'wiki-detail': '专题详情', 'wiki-editor': '编辑专题', 'wiki-create': '新建专题', 'evidence-list': '证据链列表', 'evidence-editor': '证据链详情',
     'new-action-blueprint': '新建行动蓝图', 'edit-action-blueprint': '编辑行动蓝图',
     'action-detail': '行动详情', 'component-task-management': '组件任务', 'agent-analysis-detail': '分析详情', '403': '访问受限',

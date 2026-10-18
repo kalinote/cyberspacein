@@ -92,6 +92,7 @@ export const PERM = Object.freeze({
     },
     content: {
       article: { read: 'operation:content:article:read' },
+      post: { read: 'operation:content:post:read' },
       forum: { read: 'operation:content:forum:read' },
       platform: { read: 'operation:content:platform:read', create: 'operation:content:platform:create' }
     },

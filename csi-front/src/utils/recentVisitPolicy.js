@@ -3,6 +3,7 @@ import { hasAllForPermissions } from './permissionPolicy.js'
 
 const destinations = {
   'article-detail': { param: 'uuid', label: '文章阅读', permissions: [PERM.pages.search.access, PERM.operations.content.article.read] },
+  'post-detail': { param: 'uuid', label: '贴文阅读', permissions: [PERM.pages.search.access, PERM.operations.content.post.read] },
   'forum-detail': { param: 'uuid', label: '论坛阅读', permissions: [PERM.pages.search.access, PERM.operations.content.forum.read] },
   'wiki-detail': { param: 'id', label: '专题 Wiki', permissions: [PERM.pages.target.wiki.access, PERM.operations.target.wiki.read] },
   'evidence-editor': { param: 'id', label: '证据链', permissions: [PERM.pages.evidence.access, PERM.operations.evidence.chain.read] },
